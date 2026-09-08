@@ -621,7 +621,9 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       await screen.findByText("둘째 질문");
 
       expect(log.scrollTop).toBe(0);
-      expect(screen.getByRole("button", { name: "새 메시지 보기" })).toBeInTheDocument();
+      // 청크 반영과 안내 표시는 서로 다른 렌더에서 일어납니다. 동기로 잡으면 뒤 렌더를 기다리지
+      // 못해 테스트가 간헐적으로 실패합니다.
+      await screen.findByRole("button", { name: "새 메시지 보기" });
       expect(screen.getByText(/새 내용이 도착했습니다/)).toBeInTheDocument();
 
       fireEvent.click(screen.getByRole("button", { name: "새 메시지 보기" }));
@@ -659,6 +661,10 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       expect(JSON.parse(fetchImpl.mock.calls[turns][1].body).history).toHaveLength(
         INTERVIEW_HISTORY_MAX_ITEMS
       );
+      // 마지막 요청까지 완결시킵니다. 열린 스트림을 남기면 다음 테스트가 도는 동안 이 훅의 읽기가
+      // 끝나면서 상태를 건드려 뒤 테스트가 간헐적으로 실패합니다.
+      completeQuestion(sources[turns], `질문 ${turns + 1}`);
+      await screen.findByText(`질문 ${turns + 1}`);
 
       const notice = screen.getByText(/다음 질문의 이력에서 빠졌습니다/);
       expect(notice).toHaveTextContent("질문과 답변 1쌍이");
@@ -666,7 +672,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       // 화면의 대화는 자르지 않습니다. 빠진 항목도 그대로 남아 있습니다.
       expect(screen.getByText("질문 2")).toBeInTheDocument();
       const articles = screen.getAllByRole("article");
-      expect(articles).toHaveLength(turns * 2);
+      expect(articles).toHaveLength(turns * 2 + 1);
       // 안내는 빠진 구간이 시작되는 자리, 곧 첫 질문·답변 쌍 바로 뒤에 있습니다.
       expect(notice.previousElementSibling).toBe(articles[1]);
       // 절단은 오류가 아닙니다. 다시 시도를 권하지 않습니다.

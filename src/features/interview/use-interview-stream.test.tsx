@@ -402,6 +402,9 @@ describe("useInterviewStream", () => {
 
       act(() => {
         result.current.endInterview();
+        // 같은 틱입니다. `canSubmitRef`는 렌더 뒤 effect에서야 거짓이 되므로 이 자리에서는 아직
+        // 참이고, 종료 판정이 ref로 서 있지 않으면 답변이 대화에 들어갑니다.
+        expect(result.current.submitAnswer("같은 틱 답변")).toBe(false);
       });
 
       expect(result.current.isEnded).toBe(true);
