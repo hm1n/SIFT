@@ -115,3 +115,17 @@ pageload envelope 도착과 지표 수집을 조건 대기로 바꿨지만 상�
 완전히 지우지는 않았습니다. 리뷰가 제시한 대안 테스트가 SDK를 mock해 `instrumentation-client.ts`를
 직접 import하는 방식인데, 이슈 #81의 제약이 "jsdom 환경에서 `instrumentation-client.ts`가 로드되지
 않도록 합니다"입니다. 제약이 바뀌면 다시 봅니다.
+
+## 12. `interview-stream-view` 테스트가 간헐적으로 실패함
+
+이번 PR에서 `develop`을 머지한 뒤 전체 테스트를 돌리다 관측했습니다.
+`src/features/interview/interview-stream-view.test.tsx`의 "위로 올려 읽는 중에 새 질문이 도착하면
+자리를 빼앗지 않고 안내만 한다"가 회차에 따라 실패합니다. 파일 하나만 여덟 번 돌려 한 번 실패했습니다.
+
+**이 브랜치의 원인이 아닙니다.** `git diff origin/develop HEAD -- src/features/interview`가 비어
+있어 테스트와 대상 코드가 `develop`과 바이트 단위로 같습니다. 이 브랜치가 `src/`에 더한 것은
+`src/lib/sentry/client.ts`와 그 테스트뿐이고, 그 모듈을 import하는 곳은
+`instrumentation-client.ts` 하나이며 vitest는 그 파일을 로드하지 않습니다.
+
+이름이 스크롤 위치 유지에 관한 것이므로 타이밍에 의존하는 단정으로 보입니다. 원인 규명과 수정은
+인터뷰 스트리밍 쪽 작업에서 다룹니다. 이번 PR의 merge blocker로 취급하지 않습니다.
