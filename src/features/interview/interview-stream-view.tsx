@@ -143,7 +143,7 @@ export function InterviewStreamView({
 
   // 서버 상한과 같은 자로 잽니다. 글자 수로 막으면 줄바꿈이 많은 코드 블록 답변이 같은 글자 수로도
   // 서버에서 거절됩니다. 넘긴 뒤 413으로 알리는 대신 넘기지 못하게 막아 답변이 남아 있게 합니다.
-  const draftBytes = interviewHistoryItemBytes({ role: "answer", text: draft.trim() });
+  const draftBytes = interviewHistoryItemBytes({ role: "answer", text: draft });
   const isDraftTooLong = draftBytes > INTERVIEW_HISTORY_ITEM_MAX_BYTES;
   const isDraftEmpty = draft.trim() === "";
   const canSubmit = canSubmitAnswer && !isDraftEmpty && !isDraftTooLong;

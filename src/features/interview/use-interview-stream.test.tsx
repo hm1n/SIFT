@@ -169,7 +169,7 @@ describe("useInterviewStream", () => {
       await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
 
       act(() => {
-        expect(result.current.submitAnswer("  첫 답변  ")).toBe(true);
+        expect(result.current.submitAnswer("첫 답변")).toBe(true);
       });
 
       // 요청 결과가 오기 전인데 답변이 이미 대화에 있습니다.
@@ -196,6 +196,31 @@ describe("useInterviewStream", () => {
       // 새 스트림의 seq는 1부터 다시 셉니다. 앞 질문의 seq를 이어 쓰지 않습니다.
       expect(result.current.receivedSeq).toBe(1);
       expect(result.current.canSubmitAnswer).toBe(true);
+    });
+
+    it("답변의 앞뒤 공백을 지우지 않고 그대로 저장하고 보낸다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(first.response)
+        .mockResolvedValueOnce(second.response);
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+      // 들여쓰기로 시작하는 Markdown 코드 블록입니다. 앞 공백을 지우면 평문이 됩니다.
+      const indented = ["    const seq = lastSeq + 1;", "    emit(seq);", ""].join(String.fromCharCode(10));
+      act(() => {
+        expect(result.current.submitAnswer(indented)).toBe(true);
+      });
+
+      expect(result.current.messages[1]).toMatchObject({ role: "answer", text: indented });
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      expect(JSON.parse(fetchImpl.mock.calls[1][1].body).history[1]).toEqual({ role: "answer", text: indented });
     });
 
     it("빈 답변과 생성 중 제출은 받지 않는다", async () => {

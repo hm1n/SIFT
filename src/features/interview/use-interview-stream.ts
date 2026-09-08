@@ -317,9 +317,10 @@ export function useInterviewStream({
   const submitAnswer = useCallback(
     (text: string): boolean => {
       if (!canSubmitRef.current) return false;
-      const trimmedText = text.trim();
-      if (trimmedText === "") return false;
-      const answer: InterviewHistoryMessage = { role: "answer", text: trimmedText };
+      // 비어 있는지만 공백을 지워 판정하고 저장과 전송은 원문 그대로 합니다. 앞 공백을 지우면 들여쓰기로
+      // 시작한 Markdown 코드 블록이 평문이 되어 사용자가 쓴 것과 다른 답변이 화면과 이력에 남습니다.
+      if (text.trim() === "") return false;
+      const answer: InterviewHistoryMessage = { role: "answer", text };
       if (interviewHistoryItemBytes(answer) > INTERVIEW_HISTORY_ITEM_MAX_BYTES) return false;
       // 제출과 함께 잠급니다. 스트림의 첫 상태 콜백이 오기 전에 두 번 눌러도 답변이 두 개 들어가지
       // 않습니다.
