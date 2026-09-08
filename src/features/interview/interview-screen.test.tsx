@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { InterviewScreen } from "./interview-screen";
 import { evidenceSnapshotFixture, FIXTURE_REPRESENTATIVE_SHA } from "./question-fixture";
@@ -166,5 +166,21 @@ describe("InterviewScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "← 후보 목록으로" }));
 
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("첫 질문이 끝나면 답변 입력이 열리고 답변이 대화에 쌓인다", async () => {
+    const fetchImpl = testStreamFetch("normal");
+    render(<InterviewScreen snapshot={evidenceSnapshotFixture()} onBack={vi.fn()} fetchImpl={fetchImpl} />);
+
+    const input = await screen.findByLabelText("답변");
+    await waitFor(() => expect(input).toBeEnabled());
+
+    fireEvent.change(input, { target: { value: "첫 답변" } });
+    fireEvent.click(screen.getByRole("button", { name: "답변 보내기" }));
+
+    expect(screen.getByRole("article", { name: "내 답변" })).toHaveTextContent("첫 답변");
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+    const body = JSON.parse(fetchImpl.mock.calls[1][1].body);
+    expect(body.history.at(-1)).toEqual({ role: "answer", text: "첫 답변" });
   });
 });
