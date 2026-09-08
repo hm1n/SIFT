@@ -72,6 +72,7 @@ import {
   classifyErrorResponse,
   githubFetch,
   parseJson,
+  parseNextLink,
 } from "../../../lib/github/commits";
 import { GitHubFetchError } from "../../../lib/github/errors";
 import { fetchCommitDetailBySha, withoutPatch } from "../../../lib/github/contributions";
@@ -118,9 +119,40 @@ if (!githubToken) {
 // 문장과 인용 파일 경로입니다. 둘 다 확인 수준이 `AI가 고른 값`으로 실리므로 프롬프트에서 차지하는
 // 자리는 실제와 같습니다.
 
+/**
+ * PR 커밋 SHA를 `maxCommits`개까지 모읍니다.
+ *
+ * **다음 페이지 링크를 따라갑니다.** 한 페이지는 최대 100개입니다. 따라가지 않으면
+ * `--max-commits`가 100을 넘고 PR 커밋이 100개를 넘을 때 첫 페이지만 받고, 뒤의
+ * `slice`가 요청한 것보다 적은 커밋을 조용히 측정합니다. 측정값이 조용히 틀리면 그 값을
+ * 근거로 삼는 상수와 위키 문서가 함께 틀립니다.
+ *
+ * 필요한 만큼만 부릅니다. 기본값 6에서는 한 페이지로 끝나므로 호출 수가 늘지 않습니다.
+ */
 async function fetchPullRequestCommitShas(pullRequestNumber: number): Promise<string[]> {
-  const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/pulls/${pullRequestNumber}/commits?per_page=100`;
-  const response = await githubFetch(url, githubToken!);
+  const perPage = Math.min(Math.max(maxCommits, 1), 100);
+  let url: string | null =
+    `${GITHUB_API_BASE}/repos/${owner}/${repo}/pulls/${pullRequestNumber}/commits?per_page=${perPage}`;
+  const shas: string[] = [];
+  while (url !== null && shas.length < maxCommits) {
+    const page = await fetchCommitShaPage(url, pullRequestNumber);
+    shas.push(...page.shas);
+    url = page.next;
+  }
+  return shas;
+}
+
+interface CommitShaPage {
+  readonly shas: string[];
+  /** 다음 페이지 주소입니다. 마지막 페이지면 null입니다. */
+  readonly next: string | null;
+}
+
+async function fetchCommitShaPage(
+  pageUrl: string,
+  pullRequestNumber: number
+): Promise<CommitShaPage> {
+  const response = await githubFetch(pageUrl, githubToken!);
   if (!response.ok) {
     // status만 남기면 토큰 만료와 rate limit을 가릴 수 없어 기다릴지 자격 증명을 고칠지
     // 판단하지 못합니다. 저장소 분류기를 그대로 씁니다. 403의 1차와 2차 rate limit 판별이
@@ -132,7 +164,12 @@ async function fetchPullRequestCommitShas(pullRequestNumber: number): Promise<st
     );
   }
   const commits = await parseJson<{ sha: string }[]>(response, "PR 커밋 목록");
-  return commits.map(({ sha }) => sha);
+  return {
+    shas: commits.map(({ sha }) => sha),
+    // 커서로 브랜치명을 쓰지 않고 GitHub이 준 Link 헤더를 그대로 따라갑니다. 빈 페이지에서
+    // 멈추지 않으면 링크가 남아 있는 한 계속 부릅니다.
+    next: commits.length === 0 ? null : parseNextLink(response.headers.get("link")),
+  };
 }
 
 function toDiff(detail: CommitDetail): CandidateDiff {
