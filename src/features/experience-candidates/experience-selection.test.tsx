@@ -103,6 +103,8 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
     expect(screen.getByRole("heading", { name: "재시도 큐 도입" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: BACK_LABEL }));
+    // 인터뷰 화면의 뒤로가기는 대화가 사라진다는 확인을 한 번 받습니다.
+    fireEvent.click(screen.getByRole("button", { name: "후보 목록으로 돌아가기" }));
     fireEvent.click(screen.getByRole("button", { name: /지연 시간 조정/ }));
     fireEvent.click(screen.getByRole("button", { name: CONFIRM_LABEL }));
 

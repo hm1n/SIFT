@@ -3,7 +3,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { INTERVIEW_HISTORY_ITEM_MAX_BYTES } from "./history";
+import { INTERVIEW_HISTORY_ITEM_MAX_BYTES, INTERVIEW_HISTORY_MAX_ITEMS } from "./history";
 import { InterviewStreamView } from "./interview-stream-view";
 import { evidenceSnapshotFixture } from "./question-fixture";
 import { encodeSseEvent } from "./sse";
@@ -231,6 +231,7 @@ describe("InterviewStreamView", () => {
     expect(alert).toHaveTextContent("질문 생성 서비스가 응답하지 못했습니다.");
     expect(alert).toHaveTextContent("잠시 뒤에 다시 시도해 주세요.");
     expect(alert).not.toHaveTextContent("다시 시도해도 같은 결과가 나옵니다.");
+    expect(screen.getByRole("button", { name: "다시 시도" })).toBeInTheDocument();
   });
 
   it("자라나는 메시지가 아니라 상태와 새 메시지 안내를 낭독 대상으로 둔다", async () => {
@@ -374,6 +375,37 @@ describe("InterviewStreamView 실제 생성 경로", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("다시 시도해도 같은 결과가 나옵니다");
+    expect(screen.queryByRole("button", { name: "다시 시도" })).not.toBeInTheDocument();
+  });
+
+  it("이력 상한 초과는 다시 시도가 아니라 종료와 새 인터뷰를 권한다", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 413,
+      body: null,
+      json: () =>
+        Promise.resolve({
+          error: { kind: "history_too_large", message: "대화 이력이 상한을 넘었습니다." },
+        }),
+    } as unknown as Response);
+
+    render(
+      <InterviewStreamView
+        fetchImpl={fetchImpl}
+        snapshot={evidenceSnapshotFixture()}
+        retryDelaysMs={[]}
+        {...renderOptions}
+      />
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("대화 이력이 상한을 넘었습니다.");
+    // 기다리면 풀리는 실패와 갈라 씁니다. 대화를 줄이는 조작이 없으므로 종료를 가리킵니다.
+    expect(alert).toHaveTextContent("다시 시도해도 같은 결과가 나옵니다");
+    expect(alert).toHaveTextContent("인터뷰를 종료하고");
+    expect(alert).not.toHaveTextContent("잠시 뒤에 다시 시도해 주세요");
+    // 같은 이력을 그대로 다시 보내면 같은 413이 옵니다. 누를 자리를 남기지 않습니다.
+    expect(screen.queryByRole("button", { name: "다시 시도" })).not.toBeInTheDocument();
   });
 
   describe("답변 입력과 대화 누적", () => {
@@ -593,12 +625,136 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       await screen.findByText("둘째 질문");
 
       expect(log.scrollTop).toBe(0);
-      expect(screen.getByRole("button", { name: "새 메시지 보기" })).toBeInTheDocument();
+      // 청크 반영과 안내 표시는 서로 다른 렌더에서 일어납니다. 동기로 잡으면 뒤 렌더를 기다리지
+      // 못해 테스트가 간헐적으로 실패합니다.
+      await screen.findByRole("button", { name: "새 메시지 보기" });
       expect(screen.getByText(/새 내용이 도착했습니다/)).toBeInTheDocument();
 
       fireEvent.click(screen.getByRole("button", { name: "새 메시지 보기" }));
       expect(log.scrollTop).toBe(1_000);
       expect(screen.queryByRole("button", { name: "새 메시지 보기" })).not.toBeInTheDocument();
+    });
+
+    it("이력에서 앞부분이 빠지면 빠진 자리에 무엇이 빠졌는지 알린다", async () => {
+      const sources: ReturnType<typeof controllableResponse>[] = [];
+      const fetchImpl = vi.fn().mockImplementation(async () => {
+        const source = controllableResponse();
+        sources.push(source);
+        return source.response;
+      });
+      render(
+        <InterviewStreamView
+          fetchImpl={fetchImpl}
+          snapshot={snapshot}
+          retryDelaysMs={[]}
+          {...renderOptions}
+        />
+      );
+
+      // 상한까지 채운 뒤 한 턴을 더 진행합니다. 그 턴의 요청에서 두 번째 쌍이 빠집니다.
+      const turns = INTERVIEW_HISTORY_MAX_ITEMS / 2 + 1;
+      const input = screen.getByLabelText("답변");
+      for (let turn = 1; turn <= turns; turn += 1) {
+        await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(turn));
+        completeQuestion(sources[turn - 1], `질문 ${turn}`);
+        await waitFor(() => expect(input).toBeEnabled());
+        fireEvent.change(input, { target: { value: `답변 ${turn}` } });
+        fireEvent.click(screen.getByRole("button", { name: "답변 보내기" }));
+      }
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(turns + 1));
+      expect(JSON.parse(fetchImpl.mock.calls[turns][1].body).history).toHaveLength(
+        INTERVIEW_HISTORY_MAX_ITEMS
+      );
+      // 마지막 요청까지 완결시킵니다. 열린 스트림을 남기면 다음 테스트가 도는 동안 이 훅의 읽기가
+      // 끝나면서 상태를 건드려 뒤 테스트가 간헐적으로 실패합니다.
+      completeQuestion(sources[turns], `질문 ${turns + 1}`);
+      await screen.findByText(`질문 ${turns + 1}`);
+
+      const notice = screen.getByText(/다음 질문의 이력에서 빠졌습니다/);
+      expect(notice).toHaveTextContent("질문과 답변 1쌍이");
+      expect(notice).toHaveTextContent("AI는 더 이상 이 부분을 보지 못합니다");
+      // 화면의 대화는 자르지 않습니다. 빠진 항목도 그대로 남아 있습니다.
+      expect(screen.getByText("질문 2")).toBeInTheDocument();
+      const articles = screen.getAllByRole("article");
+      expect(articles).toHaveLength(turns * 2 + 1);
+      // 안내는 빠진 구간이 시작되는 자리, 곧 첫 질문·답변 쌍 바로 뒤에 있습니다.
+      expect(notice.previousElementSibling).toBe(articles[1]);
+      // 절단은 오류가 아닙니다. 다시 시도를 권하지 않습니다.
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "다시 시도" })).not.toBeInTheDocument();
+    });
+
+    it("종료는 확인을 받고 확인하면 답변 입력을 닫는다", async () => {
+      const first = controllableResponse();
+      const { fetchImpl, input } = await renderAfterFirstQuestion([first]);
+      fireEvent.change(input, { target: { value: "쓰다 만 답변" } });
+
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 종료하기" }));
+
+      // 확인 단계에서는 아직 아무것도 닫히지 않습니다. 사라지는 것을 모두 알립니다.
+      const confirm = screen.getByRole("group");
+      expect(confirm).toHaveTextContent("작성 중인 답변은 사라집니다");
+      expect(confirm).toHaveTextContent("읽기 전용으로 남습니다");
+      expect(confirm).toHaveTextContent("다시 이어갈 수 없습니다");
+      expect(input).toBeEnabled();
+
+      fireEvent.click(screen.getByRole("button", { name: "계속하기" }));
+      expect(screen.queryByRole("group")).not.toBeInTheDocument();
+      expect(input).toHaveValue("쓰다 만 답변");
+
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 종료하기" }));
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 종료" }));
+
+      // 대화는 남고 답변을 보낼 자리만 사라집니다. 다시 시작하는 조작도 두지 않습니다.
+      expect(screen.getByText("첫 질문")).toBeInTheDocument();
+      expect(screen.queryByLabelText("답변")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "답변 보내기" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "인터뷰 종료하기" })).not.toBeInTheDocument();
+      expect(screen.getByText("인터뷰를 종료했습니다. 대화는 읽기 전용입니다.")).toBeInTheDocument();
+      expect(screen.getByText(/후보 목록으로 돌아가면 이 대화는 사라지고/)).toBeInTheDocument();
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    });
+
+    it("오류가 떠 있는 상태에서 종료하면 다시 시도가 사라진다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const { fetchImpl, input, submit } = await renderAfterFirstQuestion([first, second]);
+      fireEvent.change(input, { target: { value: "첫 답변" } });
+      fireEvent.click(submit);
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      second.push(encodeSseEvent({ type: "chunk", seq: 1, text: "둘째 질문 앞부분" }));
+      await screen.findByText("둘째 질문 앞부분");
+      second.close();
+      await screen.findByRole("button", { name: "다시 시도" });
+
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 종료하기" }));
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 종료" }));
+
+      // 다시 시도는 요청을 보내는 조작입니다. 종료한 뒤에 눌릴 자리를 남기지 않습니다.
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "다시 시도" })).not.toBeInTheDocument();
+      expect(screen.getByText("둘째 질문 앞부분")).toBeInTheDocument();
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    });
+
+    it("질문이 도착하는 중에 종료하면 준비 안내와 진행 표시를 걷는다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const { fetchImpl, input, submit } = await renderAfterFirstQuestion([first, second]);
+      fireEvent.change(input, { target: { value: "첫 답변" } });
+      fireEvent.click(submit);
+      // 연결 중이라 준비 안내가 떠 있습니다. 이 상태에서 종료합니다.
+      expect(screen.getByText("다음 질문을 준비하고 있습니다.")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 종료하기" }));
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 종료" }));
+
+      expect(screen.queryByText("다음 질문을 준비하고 있습니다.")).not.toBeInTheDocument();
+      expect(screen.getByRole("log")).toHaveAttribute("aria-busy", "false");
+      expect(screen.getByRole("article", { name: "내 답변" })).toHaveTextContent("첫 답변");
+      // 종료가 요청을 끊었으므로 새 요청이 더 나가지 않습니다.
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      expect(screen.queryByLabelText("답변")).not.toBeInTheDocument();
     });
   });
 });

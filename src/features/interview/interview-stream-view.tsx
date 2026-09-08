@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { Fragment, useId, useState } from "react";
 import { clearsOnRetry } from "./errors";
 import type { InterviewStreamErrorKind, InterviewStreamRequestErrorKind } from "./errors";
 import { INTERVIEW_HISTORY_ITEM_MAX_BYTES, interviewHistoryItemBytes } from "./history";
@@ -21,6 +21,15 @@ const STATUS_TEXT: Record<InterviewStreamPhase, string> = {
 };
 
 /**
+ * 종료는 스트림 상태가 아니지만 사용자가 낭독으로 알아야 하는 상태는 같은 문단 하나입니다.
+ *
+ * `InterviewStreamPhase`에 값을 더하지 않았습니다. 그 union은 스트림 수신부의 상태이고 종료는
+ * 사용자의 조작입니다. 섞으면 스트림이 끝나지 않은 채 종료한 경우에 어느 쪽을 담을지 정할 수 없습니다.
+ * 종료 뒤에는 스트림 상태가 무엇이든 이 문장이 그 자리를 덮습니다.
+ */
+const ENDED_STATUS_TEXT = "인터뷰를 종료했습니다. 대화는 읽기 전용입니다.";
+
+/**
  * 스트림이 시작되기 전 서버가 거절한 경우입니다. 다시 시도해서 풀리는 것과 아닌 것을 구분해
  * 알립니다.
  */
@@ -29,6 +38,20 @@ const REQUEST_ERROR_GUIDANCE: Partial<Record<InterviewStreamRequestErrorKind, st
   invalid_request: "요청 형식이 올바르지 않습니다. 다시 시도해도 같은 결과가 나오면 화면을 새로 고쳐 주세요.",
   invalid_json: "요청 형식이 올바르지 않습니다. 다시 시도해도 같은 결과가 나오면 화면을 새로 고쳐 주세요.",
   body_too_large: "질문 근거가 한 번에 보낼 수 있는 크기를 넘었습니다. 다시 시도해도 같은 결과가 나옵니다.",
+  /**
+   * `body_too_large`와 문구를 갈라 씁니다. `clearsOnRetry`가 둘 다 거짓이지만 사용자가 할 수 있는
+   * 일이 다릅니다. 본문 상한은 근거가 정하므로 손댈 자리가 없고, 이 실패는 대화를 줄이면 풀립니다.
+   *
+   * **대화를 줄이는 조작은 두지 않았습니다.** 그래서 "대화를 줄여 주세요"로 끝내지 않고 실제로 있는
+   * 조작인 종료와 새 인터뷰를 가리킵니다. 없는 조작을 권하면 사용자는 같은 요청을 반복합니다.
+   *
+   * 절단은 클라이언트가 하므로 정상 경로에서는 이 분류가 오지 않습니다. 남은 도달 경로는 항목
+   * 하나가 항목 상한을 넘는 경우인데, 답변은 입력이 막고 질문은 `isLastQuestionTooLong`이 먼저
+   * 잡습니다. 그래도 문구를 둡니다. 서버가 이 분류를 실제로 내보내고, 항목이 없으면 기다리면
+   * 풀린다는 뜻의 일반 문구가 나갑니다.
+   */
+  history_too_large:
+    "대화가 길어져 다음 질문을 만들 수 없습니다. 다시 시도해도 같은 결과가 나옵니다. 인터뷰를 종료하고 후보 목록에서 경험을 다시 골라 새 인터뷰를 시작해 주세요.",
 };
 
 /**
@@ -118,27 +141,37 @@ export function InterviewStreamView({
     status,
     error,
     receivedSeq,
+    removedHistory,
     canSubmitAnswer,
     isLastQuestionTooLong,
+    isEnded,
     retry,
     submitAnswer,
+    endInterview,
   } = useInterviewStream({ url, ...streamOptions });
   // 청크 도착만이 아니라 답변 제출도 내용을 바꿉니다. 답변은 청크가 아니라 `receivedSeq`가 움직이지
   // 않으므로 메시지 수를 함께 묶습니다.
   const { containerRef, hasUnreadContent, scrollToBottom, handleScroll } =
     useAutoScroll<HTMLDivElement>(`${messages.length}:${receivedSeq}`);
   const [draft, setDraft] = useState("");
+  // 종료 확인은 화면 상태입니다. 훅에는 확정된 종료만 알립니다. 확인 단계를 훅에 두면 종료하지 않은
+  // 상태가 두 가지가 되고, 조작 잠금이 어느 쪽을 봐야 하는지 갈립니다.
+  const [isConfirmingEnd, setIsConfirmingEnd] = useState(false);
 
   const baseId = useId();
   const statusId = `${baseId}-status`;
   const unreadId = `${baseId}-unread`;
   const errorId = `${baseId}-error`;
   const answerHintId = `${baseId}-answer-hint`;
+  const endConfirmId = `${baseId}-end-confirm`;
 
   // 첫 내용이 오기 전의 Loading은 여기 한 곳에서만 그립니다. 첫 질문이면 대화가 비어 있고, 꼬리
   // 질문이면 마지막 항목이 사용자의 답변입니다. 두 경우 모두 아직 자라나는 질문이 없습니다.
+  // 종료하면 준비 중 안내도 걷습니다. 종료가 요청을 끊으므로 준비하던 질문은 오지 않습니다.
   const isPreparing =
-    (status === "connecting" || status === "idle") && !messages.some((message) => message.isStreaming);
+    !isEnded &&
+    (status === "connecting" || status === "idle") &&
+    !messages.some((message) => message.isStreaming);
   const isFollowUp = messages.length > 0;
 
   // 서버 상한과 같은 자로 잽니다. 글자 수로 막으면 줄바꿈이 많은 코드 블록 답변이 같은 글자 수로도
@@ -148,12 +181,37 @@ export function InterviewStreamView({
   const isDraftEmpty = draft.trim() === "";
   const canSubmit = canSubmitAnswer && !isDraftEmpty && !isDraftTooLong;
 
+  /**
+   * 다시 시도가 실제로 무언가를 바꾸는 실패인지입니다.
+   *
+   * 안내가 "다시 시도해도 같은 결과가 나옵니다"라고 말하면서 버튼을 남겨 두면 사용자는 그 버튼을
+   * 누르고 같은 요청을 반복합니다. `history_too_large`가 가장 뚜렷한 경우입니다. 그 응답에서는
+   * 마지막 항목이 사용자의 답변이라 `retry`가 지울 것이 없고, 같은 이력을 그대로 다시 보내
+   * 413이 되돌아옵니다.
+   *
+   * 판정은 분류 하나가 아니라 `clearsOnRetry`로 합니다. 같은 오류 박스가 그리는
+   * `unauthorized`·`invalid_json`·`invalid_request`·`body_too_large`·`llm_request`·`llm_auth`·
+   * `llm_configuration`·`server_error`가 모두 같은 성격이므로 분류마다 조건을 두면 다음 분류가
+   * 추가될 때 또 빠집니다.
+   *
+   * 상한을 넘은 질문은 예외입니다. 오류 객체가 없고, 다시 시도가 그 질문을 지우고 같은 이력으로
+   * 새로 만들므로 실제로 상태를 바꿉니다.
+   */
+  const canRetry = isLastQuestionTooLong || (error !== null && clearsOnRetry(error.kind));
+
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!submitAnswer(draft)) return;
     setDraft("");
     // 제출은 사용자의 행동이므로 위로 올려 둔 상태여도 자기 답변과 다음 질문이 보이는 자리로 내립니다.
     scrollToBottom();
+  };
+
+  // 작성 중이던 답변은 확인 문구가 알린 대로 버립니다. 어디에도 보내지 않으므로 남겨 둘 자리가 없습니다.
+  const handleEnd = () => {
+    endInterview();
+    setIsConfirmingEnd(false);
+    setDraft("");
   };
 
   return (
@@ -167,18 +225,37 @@ export function InterviewStreamView({
         // 메시지가 하나씩 추가되는 패턴을 전제하므로 여기에는 맞지 않습니다. 낭독은 아래 상태
         // 문단과 새 메시지 안내가 담당합니다.
         aria-live="off"
-        aria-busy={status === "connecting" || status === "streaming" || status === "reconnecting"}
+        aria-busy={
+          !isEnded && (status === "connecting" || status === "streaming" || status === "reconnecting")
+        }
         aria-describedby={statusId}
         tabIndex={0}
         onScroll={handleScroll}
       >
-        {messages.map((message) => (
-          <InterviewMessage
-            key={message.id}
-            role={message.role}
-            text={message.text}
-            isStreaming={message.isStreaming}
-          />
+        {messages.map((message, index) => (
+          <Fragment key={message.id}>
+            <InterviewMessage
+              role={message.role}
+              text={message.text}
+              isStreaming={message.isStreaming}
+            />
+            {/*
+              절단 안내를 빠진 자리에 그립니다. 자르는 쪽은 요청 이력이고 화면의 대화는 그대로
+              남으므로, 대화 밖에 안내를 두면 사용자가 어느 대목이 빠졌는지 알 수 없습니다.
+
+              자리는 첫 쌍 바로 뒤입니다. `trimInterviewHistory`가 첫 질문과 첫 답변을 남기고 그
+              다음부터 빼므로 빠진 구간의 시작이 언제나 여기입니다.
+
+              오류 안내와 같은 자리에 두지 않았습니다. 오류는 사용자가 조작해서 풀어야 하는 상태이고
+              절단은 이미 일어난 일을 알리는 것입니다. 같은 자리에 두면 다시 시도 버튼이 절단에도
+              달린 것처럼 보입니다.
+            */}
+            {index === 1 && removedHistory.length > 0 ? (
+              <p className={styles.trimNotice}>
+                {`대화가 길어져 여기서부터 질문과 답변 ${removedHistory.length / 2}쌍이 다음 질문의 이력에서 빠졌습니다. 화면에는 그대로 남아 있지만 AI는 더 이상 이 부분을 보지 못합니다. 첫 질문과 첫 답변, 그리고 최근 대화는 계속 실립니다.`}
+              </p>
+            ) : null}
+          </Fragment>
         ))}
         {isPreparing ? (
           <p className={styles.preparing}>
@@ -189,7 +266,7 @@ export function InterviewStreamView({
 
       {/* 상태 전이를 낭독하는 자리입니다. 처음부터 붙어 있어야 스크린리더가 변경을 잡습니다. */}
       <p id={statusId} className={styles.status} aria-live="polite">
-        {STATUS_TEXT[status]}
+        {isEnded ? ENDED_STATUS_TEXT : STATUS_TEXT[status]}
       </p>
 
       {/*
@@ -216,7 +293,7 @@ export function InterviewStreamView({
         상한을 넘은 질문은 전송 오류가 아니지만 사용자가 할 수 있는 일이 같으므로 같은 자리에 같은 모양으로
         그립니다. Error를 두 곳에서 그리지 않습니다.
       */}
-      {error || isLastQuestionTooLong ? (
+      {!isEnded && (error || isLastQuestionTooLong) ? (
         <div className={styles.error} role="alert">
           <p className={styles.errorMessage}>
             {error ? error.message : "질문이 너무 길어 대화를 이어갈 수 없습니다."}
@@ -226,14 +303,16 @@ export function InterviewStreamView({
               ? errorGuidance(error.kind, streamOptions.snapshot === undefined)
               : `이 질문은 한 번에 보낼 수 있는 크기 ${INTERVIEW_HISTORY_ITEM_MAX_BYTES.toLocaleString()}바이트를 넘어 답변을 받을 수 없습니다. 다시 시도하면 지금까지의 대화를 그대로 두고 이 질문만 새로 만듭니다.`}
           </p>
-          <button
-            type="button"
-            className={styles.retryButton}
-            onClick={retry}
-            aria-describedby={errorId}
-          >
-            다시 시도
-          </button>
+          {canRetry ? (
+            <button
+              type="button"
+              className={styles.retryButton}
+              onClick={retry}
+              aria-describedby={errorId}
+            >
+              다시 시도
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -242,7 +321,17 @@ export function InterviewStreamView({
         입력을 열면 답변이 아무 데도 가지 않습니다. 생성 중과 오류 표시 중에는 잠깁니다. 오류는 다시
         시도로 풀어야 하고, 그 다시 시도는 실패한 질문 하나만 다시 만듭니다.
       */}
-      {streamOptions.snapshot !== undefined ? (
+      {streamOptions.snapshot === undefined ? null : isEnded ? (
+        /*
+          종료 상태를 답변 입력이 있던 자리에 그립니다. 새 자리를 만들지 않는 이유는 이 자리가
+          "지금 사용자가 할 수 있는 일"을 그리는 자리이기 때문입니다. 종료 사실 자체는 위 상태
+          문단이 낭독하므로 여기서는 되풀이하지 않고 다음에 무엇이 일어나는지만 적습니다.
+        */
+        <p className={styles.endedNotice}>
+          답변 입력을 닫았습니다. 후보 목록으로 돌아가면 이 대화는 사라지고 다시 이어갈 수 없습니다.
+        </p>
+      ) : (
+        <>
         <form className={styles.answerForm} onSubmit={handleSubmit}>
           <label className={styles.answerLabel} htmlFor={`${baseId}-answer`}>
             답변
@@ -269,7 +358,50 @@ export function InterviewStreamView({
             답변 보내기
           </button>
         </form>
-      ) : null}
+
+        {/*
+          종료는 되돌릴 수 없으므로 한 번 확인을 받습니다. 확인 문구는 사라지는 것을 모두 적습니다.
+          작성 중인 답변, 그리고 후보 목록으로 돌아갈 때의 대화입니다.
+
+          생성 중에도 누를 수 있게 둡니다. 질문을 기다리다 그만두는 것을 막을 이유가 없고, 종료가
+          진행 중인 요청을 끊습니다.
+        */}
+        {isConfirmingEnd ? (
+          <div className={styles.endConfirm} role="group" aria-labelledby={endConfirmId}>
+            <p id={endConfirmId} className={styles.endConfirmText}>
+              인터뷰를 종료하면 답변 입력이 닫히고 대화는 읽기 전용으로 남습니다. 작성 중인 답변은
+              사라집니다. 후보 목록으로 돌아가면 대화도 사라지고 다시 이어갈 수 없습니다.
+            </p>
+            <div className={styles.endActions}>
+              {/* 확인 문구를 읽지 않고 누르는 일을 줄이려고 초점을 확인 버튼으로 옮깁니다. */}
+              <button
+                type="button"
+                className={styles.endConfirmButton}
+                onClick={handleEnd}
+                autoFocus
+              >
+                인터뷰 종료
+              </button>
+              <button
+                type="button"
+                className={styles.endButton}
+                onClick={() => setIsConfirmingEnd(false)}
+              >
+                계속하기
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            className={styles.endButton}
+            onClick={() => setIsConfirmingEnd(true)}
+          >
+            인터뷰 종료하기
+          </button>
+        )}
+        </>
+      )}
     </section>
   );
 }

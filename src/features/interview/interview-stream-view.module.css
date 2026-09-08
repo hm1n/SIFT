@@ -12,6 +12,7 @@
 .message code { border-radius: 4px; background: #f5f4fa; font-size: 13px; padding: 1px 4px; }
 .codeBlock pre, .plainCode { overflow-x: auto; border-radius: 10px; background: #f7f7fb; font-size: 13px; line-height: 1.6; padding: 12px 14px; }
 .codeBlock code, .plainCode code { background: none; font-size: 13px; padding: 0; }
+.trimNotice { border-left: 3px solid #e0ddf0; border-radius: 6px; background: #f7f7fb; color: #55535e; font-size: 12px; line-height: 1.6; margin: 4px 0; padding: 10px 12px; }
 .status { color: #777580; font-size: 13px; }
 .unreadButton { width: fit-content; min-height: 44px; border: 0; border-radius: 999px; background: #5b52d6; color: #fff; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
 .unreadButton:focus-visible { outline: 3px solid rgba(109, 99, 232, .35); outline-offset: 2px; }
@@ -34,3 +35,11 @@
 .submitButton { width: fit-content; min-height: 44px; border: 0; border-radius: 999px; background: #5b52d6; color: #fff; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
 .submitButton:disabled { background: #c9c6e6; cursor: not-allowed; }
 .submitButton:focus-visible { outline: 3px solid rgba(109, 99, 232, .35); outline-offset: 2px; }
+.endButton { width: fit-content; min-height: 44px; border: 1px solid #d9d8e0; border-radius: 999px; background: #fff; color: #55535e; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
+.endButton:focus-visible { outline: 3px solid rgba(109, 99, 232, .25); outline-offset: 2px; }
+.endConfirm { display: grid; gap: 10px; border: 1px solid #e4e2ec; border-radius: 10px; background: #f7f7fb; padding: 12px 14px; }
+.endConfirmText { color: #34333d; font-size: 13px; line-height: 1.6; }
+.endActions { display: flex; flex-wrap: wrap; gap: 8px; }
+.endConfirmButton { min-height: 44px; border: 0; border-radius: 999px; background: #34333d; color: #fff; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
+.endConfirmButton:focus-visible { outline: 3px solid rgba(52, 51, 61, .3); outline-offset: 2px; }
+.endedNotice { border-radius: 10px; background: #f7f7fb; color: #55535e; font-size: 13px; line-height: 1.6; padding: 12px 14px; }

@@ -157,13 +157,27 @@ describe("InterviewScreen", () => {
     }
   });
 
-  it("후보 목록으로 돌아갈 수 있다", () => {
+  it("후보 목록으로 돌아갈 때 대화가 사라진다고 알리고 확인을 받는다", () => {
     const onBack = vi.fn();
     render(
       <InterviewScreen snapshot={evidenceSnapshotFixture()} onBack={onBack} fetchImpl={pendingFetch()} />
     );
 
     fireEvent.click(screen.getByRole("button", { name: "← 후보 목록으로" }));
+
+    // 이 버튼이 대화의 유일본을 지우는 자리입니다. 확인을 지나쳐 바로 돌아가면 제출한 답변과 작성
+    // 중인 답변이 함께 사라집니다.
+    expect(onBack).not.toHaveBeenCalled();
+    const confirm = screen.getByRole("group", { name: /지금까지의 대화가 사라지고/ });
+    expect(confirm).toHaveTextContent("지금까지의 대화가 사라지고 다시 이어갈 수 없습니다");
+    expect(confirm).toHaveTextContent("작성 중인 답변도 사라집니다");
+
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 계속하기" }));
+    expect(onBack).not.toHaveBeenCalled();
+    expect(screen.queryByRole("group", { name: /지금까지의 대화가 사라지고/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "← 후보 목록으로" }));
+    fireEvent.click(screen.getByRole("button", { name: "후보 목록으로 돌아가기" }));
 
     expect(onBack).toHaveBeenCalledTimes(1);
   });
