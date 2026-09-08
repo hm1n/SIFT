@@ -8,3 +8,10 @@
 .screen .eyebrow { color: #5b52d6; font-size: 12px; font-weight: 750; text-transform: uppercase; }
 .backButton { width: fit-content; min-height: 44px; border: 0; background: #fff; color: #34333d; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0; }
 .backButton:focus-visible { outline: 3px solid rgba(109, 99, 232, .25); outline-offset: 2px; }
+.backConfirm { display: grid; gap: 10px; width: fit-content; border: 1px solid #e4e2ec; border-radius: 10px; background: #f7f7fb; padding: 12px 14px; }
+.screen .backConfirmText { color: #34333d; font-size: 13px; line-height: 1.6; }
+.backActions { display: flex; flex-wrap: wrap; gap: 8px; }
+.backConfirmButton { min-height: 44px; border: 0; border-radius: 999px; background: #34333d; color: #fff; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
+.backConfirmButton:focus-visible { outline: 3px solid rgba(52, 51, 61, .3); outline-offset: 2px; }
+.backCancelButton { min-height: 44px; border: 1px solid #d9d8e0; border-radius: 999px; background: #fff; color: #55535e; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
+.backCancelButton:focus-visible { outline: 3px solid rgba(109, 99, 232, .25); outline-offset: 2px; }
