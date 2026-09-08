@@ -231,6 +231,7 @@ describe("InterviewStreamView", () => {
     expect(alert).toHaveTextContent("질문 생성 서비스가 응답하지 못했습니다.");
     expect(alert).toHaveTextContent("잠시 뒤에 다시 시도해 주세요.");
     expect(alert).not.toHaveTextContent("다시 시도해도 같은 결과가 나옵니다.");
+    expect(screen.getByRole("button", { name: "다시 시도" })).toBeInTheDocument();
   });
 
   it("자라나는 메시지가 아니라 상태와 새 메시지 안내를 낭독 대상으로 둔다", async () => {
@@ -374,6 +375,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("다시 시도해도 같은 결과가 나옵니다");
+    expect(screen.queryByRole("button", { name: "다시 시도" })).not.toBeInTheDocument();
   });
 
   it("이력 상한 초과는 다시 시도가 아니라 종료와 새 인터뷰를 권한다", async () => {
@@ -402,6 +404,8 @@ describe("InterviewStreamView 실제 생성 경로", () => {
     expect(alert).toHaveTextContent("다시 시도해도 같은 결과가 나옵니다");
     expect(alert).toHaveTextContent("인터뷰를 종료하고");
     expect(alert).not.toHaveTextContent("잠시 뒤에 다시 시도해 주세요");
+    // 같은 이력을 그대로 다시 보내면 같은 413이 옵니다. 누를 자리를 남기지 않습니다.
+    expect(screen.queryByRole("button", { name: "다시 시도" })).not.toBeInTheDocument();
   });
 
   describe("답변 입력과 대화 누적", () => {

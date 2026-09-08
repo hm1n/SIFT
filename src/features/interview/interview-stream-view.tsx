@@ -181,6 +181,24 @@ export function InterviewStreamView({
   const isDraftEmpty = draft.trim() === "";
   const canSubmit = canSubmitAnswer && !isDraftEmpty && !isDraftTooLong;
 
+  /**
+   * 다시 시도가 실제로 무언가를 바꾸는 실패인지입니다.
+   *
+   * 안내가 "다시 시도해도 같은 결과가 나옵니다"라고 말하면서 버튼을 남겨 두면 사용자는 그 버튼을
+   * 누르고 같은 요청을 반복합니다. `history_too_large`가 가장 뚜렷한 경우입니다. 그 응답에서는
+   * 마지막 항목이 사용자의 답변이라 `retry`가 지울 것이 없고, 같은 이력을 그대로 다시 보내
+   * 413이 되돌아옵니다.
+   *
+   * 판정은 분류 하나가 아니라 `clearsOnRetry`로 합니다. 같은 오류 박스가 그리는
+   * `unauthorized`·`invalid_json`·`invalid_request`·`body_too_large`·`llm_request`·`llm_auth`·
+   * `llm_configuration`·`server_error`가 모두 같은 성격이므로 분류마다 조건을 두면 다음 분류가
+   * 추가될 때 또 빠집니다.
+   *
+   * 상한을 넘은 질문은 예외입니다. 오류 객체가 없고, 다시 시도가 그 질문을 지우고 같은 이력으로
+   * 새로 만들므로 실제로 상태를 바꿉니다.
+   */
+  const canRetry = isLastQuestionTooLong || (error !== null && clearsOnRetry(error.kind));
+
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!submitAnswer(draft)) return;
@@ -285,14 +303,16 @@ export function InterviewStreamView({
               ? errorGuidance(error.kind, streamOptions.snapshot === undefined)
               : `이 질문은 한 번에 보낼 수 있는 크기 ${INTERVIEW_HISTORY_ITEM_MAX_BYTES.toLocaleString()}바이트를 넘어 답변을 받을 수 없습니다. 다시 시도하면 지금까지의 대화를 그대로 두고 이 질문만 새로 만듭니다.`}
           </p>
-          <button
-            type="button"
-            className={styles.retryButton}
-            onClick={retry}
-            aria-describedby={errorId}
-          >
-            다시 시도
-          </button>
+          {canRetry ? (
+            <button
+              type="button"
+              className={styles.retryButton}
+              onClick={retry}
+              aria-describedby={errorId}
+            >
+              다시 시도
+            </button>
+          ) : null}
         </div>
       ) : null}
 
