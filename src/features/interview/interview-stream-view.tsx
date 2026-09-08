@@ -364,7 +364,7 @@ export function InterviewStreamView({
               </button>
               <button
                 type="button"
-                className={styles.endCancelButton}
+                className={styles.endButton}
                 onClick={() => setIsConfirmingEnd(false)}
               >
                 계속하기
