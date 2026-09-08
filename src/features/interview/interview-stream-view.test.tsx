@@ -376,6 +376,34 @@ describe("InterviewStreamView 실제 생성 경로", () => {
     expect(alert).toHaveTextContent("다시 시도해도 같은 결과가 나옵니다");
   });
 
+  it("이력 상한 초과는 다시 시도가 아니라 종료와 새 인터뷰를 권한다", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 413,
+      body: null,
+      json: () =>
+        Promise.resolve({
+          error: { kind: "history_too_large", message: "대화 이력이 상한을 넘었습니다." },
+        }),
+    } as unknown as Response);
+
+    render(
+      <InterviewStreamView
+        fetchImpl={fetchImpl}
+        snapshot={evidenceSnapshotFixture()}
+        retryDelaysMs={[]}
+        {...renderOptions}
+      />
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("대화 이력이 상한을 넘었습니다.");
+    // 기다리면 풀리는 실패와 갈라 씁니다. 대화를 줄이는 조작이 없으므로 종료를 가리킵니다.
+    expect(alert).toHaveTextContent("다시 시도해도 같은 결과가 나옵니다");
+    expect(alert).toHaveTextContent("인터뷰를 종료하고");
+    expect(alert).not.toHaveTextContent("잠시 뒤에 다시 시도해 주세요");
+  });
+
   describe("답변 입력과 대화 누적", () => {
     const snapshot = evidenceSnapshotFixture();
 
