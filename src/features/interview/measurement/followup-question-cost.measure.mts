@@ -43,7 +43,13 @@ import {
   renderInterviewEvidencePrompt,
   renderInterviewQuestionSystemPrompt,
 } from "../question-prompt";
-import { GITHUB_API_BASE, githubFetch, parseJson } from "../../../lib/github/commits";
+import {
+  GITHUB_API_BASE,
+  classifyErrorResponse,
+  githubFetch,
+  parseJson,
+} from "../../../lib/github/commits";
+import { GitHubFetchError } from "../../../lib/github/errors";
 import { fetchCommitDetailBySha, withoutPatch } from "../../../lib/github/contributions";
 import type { CandidateDataOutput, CommitDetail } from "../../../lib/github/types";
 
@@ -146,7 +152,14 @@ async function fetchPullRequestCommitShas(pullRequestNumber: number): Promise<st
   const url = `${GITHUB_API_BASE}/repos/${owner}/${repo}/pulls/${pullRequestNumber}/commits?per_page=100`;
   const response = await githubFetch(url, githubToken!);
   if (!response.ok) {
-    throw new Error(`PR #${pullRequestNumber} 커밋 목록 조회 실패: ${response.status}`);
+    // status만 남기면 토큰 만료와 rate limit을 가릴 수 없어 기다릴지 자격 증명을 고칠지
+    // 판단하지 못합니다. 저장소 분류기를 그대로 씁니다. 403의 1차와 2차 rate limit 판별이
+    // 여기 들어 있습니다.
+    const kind = await classifyErrorResponse(response);
+    throw new GitHubFetchError(
+      kind,
+      `PR #${pullRequestNumber} 커밋 목록 조회 실패(${kind}): ${response.status}`
+    );
   }
   const commits = await parseJson<{ sha: string }[]>(response, "PR 커밋 목록");
   return commits.map(({ sha }) => sha);
@@ -250,6 +263,23 @@ interface Content {
 
 const text = (value: string): Content["parts"] => [{ text: value }];
 
+/**
+ * countTokens 호출이 실패한 자리입니다. 어느 모델의 어느 단계에서 깨졌는지를 들고 다닙니다.
+ *
+ * 분류를 두는 이유는 조치가 다르기 때문입니다. `http`는 상태 코드를 보고 판단하고, `parse`는
+ * 성공 응답인데 본문이 비었거나 잘린 경우라 다시 부르면 풀릴 수 있습니다. raw SyntaxError로
+ * 터지면 둘을 가릴 수 없고 어느 호출에서 났는지도 남지 않습니다.
+ */
+class CountTokensError extends Error {
+  readonly kind: "http" | "parse" | "schema";
+
+  constructor(kind: "http" | "parse" | "schema", message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "CountTokensError";
+    this.kind = kind;
+  }
+}
+
 async function countTokens(system: string, contents: readonly Content[]): Promise<number> {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:countTokens?key=${googleKey}`;
   const body = {
@@ -265,10 +295,26 @@ async function countTokens(system: string, contents: readonly Content[]): Promis
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(`countTokens 실패 ${response.status}: ${(await response.text()).slice(0, 300)}`);
+    throw new CountTokensError(
+      "http",
+      `countTokens 실패 ${model} ${response.status}: ${(await response.text()).slice(0, 300)}`
+    );
   }
-  const parsed = (await response.json()) as { totalTokens?: number };
-  if (typeof parsed.totalTokens !== "number") throw new Error("countTokens 응답에 totalTokens가 없습니다.");
+  let parsed: { totalTokens?: number };
+  try {
+    parsed = (await response.json()) as { totalTokens?: number };
+  } catch (error) {
+    // 성공 상태인데 본문이 비었거나 잘린 경우입니다. 감싸지 않으면 모델과 단계를 잃은
+    // SyntaxError만 남아 측정이 분류되지 않은 실패로 끝납니다.
+    throw new CountTokensError(
+      "parse",
+      `countTokens 응답을 읽지 못했습니다 ${model}: ${(error as Error).message}`,
+      { cause: error }
+    );
+  }
+  if (typeof parsed.totalTokens !== "number") {
+    throw new CountTokensError("schema", `countTokens 응답에 totalTokens가 없습니다 ${model}.`);
+  }
   return parsed.totalTokens;
 }
 
