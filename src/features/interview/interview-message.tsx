@@ -81,6 +81,8 @@ function CodeBlock({ code, language, complete }: CodeBlockProps) {
 }
 
 export interface InterviewMessageProps {
+  /** `question`은 모델이 만든 질문, `answer`는 사용자가 제출한 답변입니다. */
+  role: "question" | "answer";
   text: string;
   /** 아직 도착 중인 메시지인지 여부입니다. 완료된 메시지는 다시 파싱하지 않습니다. */
   isStreaming: boolean;
@@ -93,7 +95,10 @@ export interface InterviewMessageProps {
  * 스트리밍 중인 마지막 메시지만 렌더하면 0.13밀리초입니다. 완료된 메시지는 내용이 더 바뀌지
  * 않으므로 다시 파싱할 이유가 없습니다.
  */
+const ROLE_LABEL = { question: "AI 질문", answer: "내 답변" } as const;
+
 export const InterviewMessage = memo(function InterviewMessage({
+  role,
   text,
   isStreaming,
 }: InterviewMessageProps) {
@@ -110,8 +115,12 @@ export const InterviewMessage = memo(function InterviewMessage({
     [isStreaming, text.length]
   );
 
+  // 누가 말한 것인지는 색이 아니라 글자로 구분합니다. 답변도 질문과 같은 Markdown 렌더러를 씁니다.
+  // 사용자가 코드 블록을 답변에 붙이는 경우가 있고, 답변은 제출 즉시 확정되므로 다시 파싱하지
+  // 않습니다.
   return (
-    <article className={styles.message}>
+    <article className={styles.message} data-role={role} aria-label={ROLE_LABEL[role]}>
+      <p className={styles.roleLabel}>{ROLE_LABEL[role]}</p>
       <Markdown components={components}>{text}</Markdown>
     </article>
   );
