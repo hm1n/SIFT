@@ -424,20 +424,35 @@ function usd(value: number): string {
 
 async function measurePullRequest(pullRequestNumber: number): Promise<void> {
   const snapshot = await buildSnapshot(pullRequestNumber);
-  const system = renderInterviewQuestionSystemPrompt();
+  /**
+   * 시스템 프롬프트가 두 개인 이유는 운영이 이력 유무로 갈라 쓰기 때문입니다.
+   * `buildInterviewQuestionPrompt`가 `renderInterviewQuestionSystemPrompt(variant, history.length > 0)`로
+   * 부르므로, 이력이 붙은 호출에는 꼬리 질문 규칙 넷이 함께 실립니다.
+   *
+   * **이 스크립트가 재는 턴은 2턴부터입니다.** 전부 이력이 붙은 호출이므로 꼬리 질문 쪽을 써야
+   * 합니다. 첫 질문 쪽을 쓰면 매 턴 약 195토큰씩 적게 세어, 배포된 프롬프트를 설명하지 않는 값이
+   * 나옵니다.
+   */
+  const systemFirst = renderInterviewQuestionSystemPrompt();
+  const systemFollowUp = renderInterviewQuestionSystemPrompt(undefined, true);
   const evidenceFull = renderInterviewEvidencePrompt(snapshot);
   const evidenceLite = renderInterviewEvidencePrompt(stripPatches(snapshot));
 
-  const systemTokens = await countTokens(system, [{ role: "user", parts: text("") }]);
-  const fullTokens = await countTokens(system, [{ role: "user", parts: text(evidenceFull) }]);
-  const liteTokens = await countTokens(system, [{ role: "user", parts: text(evidenceLite) }]);
+  // 아래 세 값은 첫 질문 경로를 설명하는 진단값입니다. 근거 몫은 뺄셈으로 시스템 몫이 지워집니다.
+  const systemTokens = await countTokens(systemFirst, [{ role: "user", parts: text("") }]);
+  const fullTokens = await countTokens(systemFirst, [{ role: "user", parts: text(evidenceFull) }]);
+  const liteTokens = await countTokens(systemFirst, [{ role: "user", parts: text(evidenceLite) }]);
+  const systemFollowUpTokens = await countTokens(systemFollowUp, [
+    { role: "user", parts: text("") },
+  ]);
   const questionTokens = await countTokens("", [{ role: "model", parts: text(QUESTION_TEXT) }]);
 
   console.log(`\n${"=".repeat(78)}`);
   console.log(`PR #${pullRequestNumber} · 커밋 ${1 + snapshot.relatedCommits.length}개 · 모델 ${model}`);
   console.log(`${"=".repeat(78)}`);
   console.log(
-    `시스템+빈 사용자 메시지 ${systemTokens}토큰 / 근거 전량 포함 ${fullTokens}토큰 / 축약 근거 포함 ${liteTokens}토큰`
+    `시스템+빈 사용자 메시지 ${systemTokens}토큰(첫 질문) / ${systemFollowUpTokens}토큰(꼬리 질문) / ` +
+      `근거 전량 포함 ${fullTokens}토큰 / 축약 근거 포함 ${liteTokens}토큰`
   );
   console.log(
     `근거 몫: 전량 ${fullTokens - systemTokens}토큰, 축약 ${liteTokens - systemTokens}토큰 ` +
@@ -458,7 +473,7 @@ async function measurePullRequest(pullRequestNumber: number): Promise<void> {
       const costs: TurnCost[] = [];
       for (let turn = 2; turn <= maxTurns; turn += 1) {
         const contents = buildContents(design, turn, evidenceFull, evidenceLite, answer);
-        costs.push({ turn, inputTokens: await countTokens(system, contents) });
+        costs.push({ turn, inputTokens: await countTokens(systemFollowUp, contents) });
       }
       const totalInput = costs.reduce((sum, cost) => sum + cost.inputTokens, 0);
       const totalOutput = costs.length * OUTPUT_TOKENS_PER_TURN;
@@ -478,11 +493,14 @@ async function measurePullRequest(pullRequestNumber: number): Promise<void> {
 
     // 설계 C는 A와 같은 입력이고 접두사(시스템+근거)만 캐시 단가로 계산합니다. 접두사는 인터뷰
     // 내내 바뀌지 않으므로 캐시가 맞습니다.
-    const prefixTokens = fullTokens;
+    // 접두사는 운영이 실제로 캐시할 값이어야 하므로 꼬리 질문 시스템 프롬프트로 셉니다.
+    const prefixTokens = await countTokens(systemFollowUp, [
+      { role: "user", parts: text(evidenceFull) },
+    ]);
     let cachedCost = 0;
     for (let turn = 2; turn <= maxTurns; turn += 1) {
       const contents = buildContents("A", turn, evidenceFull, evidenceLite, buildAnswer(answerChars));
-      const total = await countTokens(system, contents);
+      const total = await countTokens(systemFollowUp, contents);
       const uncached = Math.max(0, total - prefixTokens);
       cachedCost +=
         (prefixTokens * PRICE.cachedInput + uncached * PRICE.input + OUTPUT_TOKENS_PER_TURN * PRICE.output) /
