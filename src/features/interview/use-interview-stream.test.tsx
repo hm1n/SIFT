@@ -390,6 +390,103 @@ describe("useInterviewStream", () => {
       expect(result.current.messages[2]).toMatchObject({ role: "question", text: "둘째 질문 다시" });
     });
 
+    it("종료하면 답변 제출과 다시 시도를 모두 거절한다", async () => {
+      const first = controllableResponse();
+      const fetchImpl = vi.fn().mockResolvedValue(first.response);
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+      act(() => {
+        result.current.endInterview();
+      });
+
+      expect(result.current.isEnded).toBe(true);
+      // 대화는 지우지 않습니다. 사라지는 것은 후보 목록으로 돌아갈 때입니다.
+      expect(result.current.messages.map((message) => message.text)).toEqual(["첫 질문"]);
+      expect(result.current.canSubmitAnswer).toBe(false);
+      act(() => {
+        expect(result.current.submitAnswer("종료 뒤 답변")).toBe(false);
+        result.current.retry();
+        result.current.start();
+      });
+      expect(result.current.messages.map((message) => message.text)).toEqual(["첫 질문"]);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    });
+
+    it("도착 중에 종료하면 받은 만큼을 남기고 그 질문을 닫는다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(first.response)
+        .mockResolvedValueOnce(second.response);
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+      act(() => {
+        result.current.submitAnswer("첫 답변");
+      });
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      second.push(encodeSseEvent({ type: "chunk", seq: 1, text: "둘째 질문 앞부분" }));
+      await waitFor(() => expect(result.current.messages).toHaveLength(3));
+
+      act(() => {
+        result.current.endInterview();
+      });
+
+      expect(result.current.messages[2]).toMatchObject({
+        text: "둘째 질문 앞부분",
+        isStreaming: false,
+      });
+      // 끊은 뒤에 오는 이벤트는 화면을 바꾸지 않습니다.
+      second.push(encodeSseEvent({ type: "chunk", seq: 2, text: "뒤에 온 조각" }));
+      second.close();
+      await waitFor(() => expect(result.current.isEnded).toBe(true));
+      expect(result.current.messages[2].text).toBe("둘째 질문 앞부분");
+      expect(result.current.error).toBeNull();
+    });
+
+    it("상한을 넘는 질문이 떠 있는 상태에서 종료하면 상한 초과 판정을 지운다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(first.response)
+        .mockResolvedValueOnce(second.response);
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+      act(() => {
+        result.current.submitAnswer("첫 답변");
+      });
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      completeQuestion(second, "가".repeat(INTERVIEW_HISTORY_ITEM_MAX_BYTES / 3 + 10));
+      await waitFor(() => expect(result.current.isLastQuestionTooLong).toBe(true));
+
+      act(() => {
+        result.current.endInterview();
+      });
+
+      // 종료한 대화에는 다시 시도가 없으므로 상한 초과 안내가 권할 조작이 없습니다.
+      expect(result.current.isLastQuestionTooLong).toBe(false);
+      expect(result.current.messages).toHaveLength(3);
+      act(() => {
+        result.current.retry();
+      });
+      expect(result.current.messages).toHaveLength(3);
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    });
+
     it("근거 스냅샷이 없는 테스트용 스트림에서는 답변을 받지 않는다", async () => {
       const source = controllableResponse();
       const fetchImpl = vi.fn().mockResolvedValueOnce(source.response);

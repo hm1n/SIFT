@@ -71,8 +71,26 @@ export interface InterviewStreamState {
    * 서버 쪽 출력 상한은 `wiki/2026-09-08-꼬리질문-요청계약-후속-backlog.md` 3번에 있습니다.
    */
   isLastQuestionTooLong: boolean;
+  /**
+   * 사용자가 인터뷰를 종료했는지입니다. 종료는 되돌릴 수 없고 이 훅은 더 이상 요청을 보내지
+   * 않습니다.
+   *
+   * 판정을 화면이 아니라 여기 두는 이유는 화면이 버튼을 잠그는 것만으로는 부족하기 때문입니다.
+   * `retry`는 오류 안내 안의 버튼에 걸려 있고 `submitAnswer`는 Enter 제출로도 불립니다. 어느
+   * 경로든 종료 뒤에 요청을 보내면 사용자가 끝낸 대화가 다시 자랍니다.
+   */
+  isEnded: boolean;
   start: () => void;
   retry: () => void;
+  /**
+   * 인터뷰를 종료합니다. 진행 중인 요청을 끊고 이후의 `start`·`retry`·`submitAnswer`를 모두
+   * 거절합니다. 대화는 지우지 않고 읽기 전용으로 남깁니다.
+   *
+   * 저장 계층이 없으므로 종료한 대화를 다시 이어갈 수 없습니다. 같은 화면에서 다시 시작하는 조작도
+   * 두지 않았습니다. 재시작은 첫 질문 재생성이 되고, 그러면 종료 상태를 푸는 경로가 생겨 위의 세
+   * 조작을 다시 열어야 합니다. 다시 하려면 후보 목록에서 경험을 다시 확정합니다.
+   */
+  endInterview: () => void;
   /**
    * 답변을 대화에 넣고 다음 질문 생성을 시작합니다. 답변은 요청 결과와 무관하게 즉시 확정 항목으로
    * 들어가므로 생성이 실패해도 사라지지 않습니다. `canSubmitAnswer`가 거짓이거나 본문이 비어 있거나
@@ -132,10 +150,13 @@ export function useInterviewStream({
   const [receivedSeq, setReceivedSeq] = useState(0);
   const [removedHistory, setRemovedHistory] = useState<readonly InterviewHistoryMessage[]>([]);
   const [isLastQuestionTooLong, setIsLastQuestionTooLong] = useState(false);
+  const [isEnded, setIsEnded] = useState(false);
 
   const messagesRef = useRef<readonly InterviewStreamMessage[]>([]);
   // 상태와 같은 값을 ref에도 둡니다. `retry`가 이벤트 안에서 다음 렌더를 기다리지 않고 읽습니다.
   const isLastQuestionTooLongRef = useRef(false);
+  // 종료도 같은 이유로 ref에 둡니다. 종료와 같은 틱에 들어온 제출을 다음 렌더 전에 거절해야 합니다.
+  const isEndedRef = useRef(false);
   const messageCountRef = useRef(0);
   const bufferRef = useRef<string[]>([]);
   // 프레임이 잡혀 있는지는 handle 값과 따로 둡니다. 스케줄러가 콜백을 동기로 실행하면 handle을
@@ -216,6 +237,9 @@ export function useInterviewStream({
   }, [updateMessages]);
 
   const start = useCallback(() => {
+    // 종료한 인터뷰는 요청을 보내지 않습니다. 모든 요청이 이 함수를 지나므로 여기 한 번 막으면
+    // `retry`와 `submitAnswer`가 각자 다시 막지 않아도 요청이 나가지 않습니다.
+    if (isEndedRef.current) return;
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -280,6 +304,9 @@ export function useInterviewStream({
   // 이전 오류 표시는 사용자가 다시 시도할 때 지웁니다. 자동 재연결 중에는 오류를 표시하지 않으므로
   // 지울 것도 없습니다.
   const retry = useCallback(() => {
+    // `start`가 이미 막지만 여기서도 막습니다. 아래에서 실패한 질문을 지우는 것이 요청 전에
+    // 일어나므로, 이 갈래를 열어 두면 종료한 대화의 마지막 질문만 사라지고 새 질문은 오지 않습니다.
+    if (isEndedRef.current) return;
     setError(null);
     // 실제 생성 경로는 이어받을 수 없으므로 다시 시도가 처음부터 다시 생성합니다. 이미 표시된
     // 앞부분을 남겨 두면 새 생성 결과가 그 뒤에 붙어 한 메시지 안에서 서로 다른 질문이 이어집니다.
@@ -299,7 +326,34 @@ export function useInterviewStream({
     start();
   }, [start, updateMessages]);
 
+  /**
+   * 종료 처리입니다.
+   *
+   * 도착 중이던 청크까지 화면에 반영하고 그 메시지를 닫습니다. 지우지 않는 이유는 사용자가 이미
+   * 읽고 있던 내용이기 때문입니다. 닫지 않으면 도착 중 표시가 영영 남습니다.
+   *
+   * 상한 초과 판정은 지웁니다. 그 판정이 뜻하는 것은 "이 질문으로는 대화를 이어갈 수 없다"이고
+   * 화면에서 다시 시도를 권하는데, 종료한 대화에는 다시 시도가 없어 사용자가 할 수 있는 일이
+   * 없습니다.
+   */
+  const endInterview = useCallback(() => {
+    if (isEndedRef.current) return;
+    isEndedRef.current = true;
+    setIsEnded(true);
+    abortRef.current?.abort();
+    abortRef.current = null;
+    flushNow();
+    updateMessages((previous) => {
+      const last = previous[previous.length - 1];
+      if (!last?.isStreaming) return previous;
+      return [...previous.slice(0, -1), { ...last, isStreaming: false }];
+    });
+    isLastQuestionTooLongRef.current = false;
+    setIsLastQuestionTooLong(false);
+  }, [flushNow, updateMessages]);
+
   const canSubmitAnswer =
+    !isEnded &&
     snapshot !== undefined &&
     status === "done" &&
     error === null &&
@@ -316,6 +370,9 @@ export function useInterviewStream({
 
   const submitAnswer = useCallback(
     (text: string): boolean => {
+      // 종료는 상태가 아니라 ref로 봅니다. `canSubmitRef`는 렌더 뒤 effect에서 갱신되므로 종료와
+      // 같은 틱에 들어온 제출은 아직 참인 값을 읽습니다.
+      if (isEndedRef.current) return false;
       if (!canSubmitRef.current) return false;
       // 비어 있는지만 공백을 지워 판정하고 저장과 전송은 원문 그대로 합니다. 앞 공백을 지우면 들여쓰기로
       // 시작한 Markdown 코드 블록이 평문이 되어 사용자가 쓴 것과 다른 답변이 화면과 이력에 남습니다.
@@ -352,8 +409,10 @@ export function useInterviewStream({
     removedHistory,
     canSubmitAnswer,
     isLastQuestionTooLong,
+    isEnded,
     start,
     retry,
     submitAnswer,
+    endInterview,
   };
 }
