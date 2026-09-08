@@ -3,6 +3,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { INTERVIEW_HISTORY_ITEM_MAX_BYTES } from "./history";
 import { InterviewStreamView } from "./interview-stream-view";
 import { evidenceSnapshotFixture } from "./question-fixture";
 import { encodeSseEvent } from "./sse";
@@ -373,5 +374,202 @@ describe("InterviewStreamView 실제 생성 경로", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("다시 시도해도 같은 결과가 나옵니다");
+  });
+
+  describe("답변 입력과 대화 누적", () => {
+    const snapshot = evidenceSnapshotFixture();
+
+    function completeQuestion(source: ReturnType<typeof controllableResponse>, text: string) {
+      source.push(encodeSseEvent({ type: "chunk", seq: 1, text }));
+      source.push(encodeSseEvent({ type: "done", seq: 1 }));
+    }
+
+    /** 첫 질문을 끝내고 답변 입력이 열린 화면을 만듭니다. */
+    async function renderAfterFirstQuestion(
+      responses: ReturnType<typeof controllableResponse>[],
+      props: Partial<React.ComponentProps<typeof InterviewStreamView>> = {}
+    ) {
+      const fetchImpl = vi.fn();
+      responses.forEach((response) => fetchImpl.mockResolvedValueOnce(response.response));
+      render(
+        <InterviewStreamView
+          fetchImpl={fetchImpl}
+          snapshot={snapshot}
+          retryDelaysMs={[]}
+          {...renderOptions}
+          {...props}
+        />
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(responses[0], "첫 질문");
+      const input = await screen.findByLabelText("답변");
+      await waitFor(() => expect(input).toBeEnabled());
+      return { fetchImpl, input, submit: screen.getByRole("button", { name: "답변 보내기" }) };
+    }
+
+    it("근거 스냅샷이 없으면 답변 입력을 두지 않는다", async () => {
+      const source = controllableResponse();
+      const fetchImpl = vi.fn().mockResolvedValue(source.response);
+      render(<InterviewStreamView fetchImpl={fetchImpl} {...renderOptions} />);
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
+      completeQuestion(source, "고정 질문");
+      await screen.findByText("고정 질문");
+
+      expect(screen.queryByLabelText("답변")).not.toBeInTheDocument();
+    });
+
+    it("첫 질문이 도착하는 동안에는 입력이 잠기고 빈 답변은 보낼 수 없다", async () => {
+      const first = controllableResponse();
+      const fetchImpl = vi.fn().mockResolvedValueOnce(first.response);
+      render(<InterviewStreamView fetchImpl={fetchImpl} snapshot={snapshot} {...renderOptions} />);
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
+
+      const input = screen.getByLabelText("답변");
+      const submit = screen.getByRole("button", { name: "답변 보내기" });
+      expect(input).toBeDisabled();
+      expect(submit).toBeDisabled();
+
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(input).toBeEnabled());
+      // 열렸지만 비어 있으면 아직 보낼 수 없습니다.
+      expect(submit).toBeDisabled();
+      fireEvent.change(input, { target: { value: "   " } });
+      expect(submit).toBeDisabled();
+      fireEvent.change(input, { target: { value: "답변" } });
+      expect(submit).toBeEnabled();
+    });
+
+    it("답변을 보내면 대화에 답변이 남고 다음 질문이 그 아래에 쌓인다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const { fetchImpl, input, submit } = await renderAfterFirstQuestion([first, second]);
+
+      fireEvent.change(input, { target: { value: "첫 답변" } });
+      fireEvent.click(submit);
+
+      // 제출 즉시 대화에 들어가고 입력은 비워지며 생성 중에는 잠깁니다.
+      const answer = screen.getByRole("article", { name: "내 답변" });
+      expect(answer).toHaveTextContent("첫 답변");
+      expect(input).toHaveValue("");
+      expect(input).toBeDisabled();
+      expect(submit).toBeDisabled();
+      // Loading은 질문 영역 한 곳에서만 나옵니다.
+      expect(screen.getByText("다음 질문을 준비하고 있습니다.")).toBeInTheDocument();
+      expect(screen.queryByText("질문을 준비하고 있습니다.")).not.toBeInTheDocument();
+
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual({
+        snapshot,
+        history: [
+          { role: "question", text: "첫 질문" },
+          { role: "answer", text: "첫 답변" },
+        ],
+      });
+
+      completeQuestion(second, "둘째 질문");
+      await screen.findByText("둘째 질문");
+      const articles = screen.getAllByRole("article");
+      expect(articles.map((article) => article.getAttribute("aria-label"))).toEqual([
+        "AI 질문",
+        "내 답변",
+        "AI 질문",
+      ]);
+      expect(screen.queryByText("다음 질문을 준비하고 있습니다.")).not.toBeInTheDocument();
+      await waitFor(() => expect(input).toBeEnabled());
+    });
+
+    it("서버 상한과 같은 바이트 기준으로 긴 답변을 막고 이유를 알린다", async () => {
+      const first = controllableResponse();
+      const { fetchImpl, input, submit } = await renderAfterFirstQuestion([first]);
+
+      // 글자 수는 상한 안이지만 줄바꿈이 직렬화되면 두 배로 셉니다. 글자 수로 막으면 통과시켰을
+      // 답변입니다.
+      const tooLong = "a\n".repeat(INTERVIEW_HISTORY_ITEM_MAX_BYTES / 2);
+      fireEvent.change(input, { target: { value: tooLong } });
+
+      expect(submit).toBeDisabled();
+      expect(input).toHaveAttribute("aria-invalid", "true");
+      const hint = document.getElementById(input.getAttribute("aria-describedby") ?? "");
+      expect(hint).toHaveTextContent("한 번에 보낼 수 있는 크기를 넘었습니다");
+      expect(hint).toHaveTextContent("4,500바이트");
+      fireEvent.submit(submit.closest("form")!);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+
+      fireEvent.change(input, { target: { value: "짧은 답변" } });
+      expect(submit).toBeEnabled();
+      expect(input).not.toHaveAttribute("aria-invalid");
+    });
+
+    it("다음 질문 생성이 실패해도 답변은 남고 다시 시도는 그 질문만 다시 만든다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const third = controllableResponse();
+      const { fetchImpl, input, submit } = await renderAfterFirstQuestion([first, second, third]);
+
+      fireEvent.change(input, { target: { value: "첫 답변" } });
+      fireEvent.click(submit);
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      second.push(encodeSseEvent({ type: "chunk", seq: 1, text: "둘째 질문 앞부분" }));
+      await screen.findByText("둘째 질문 앞부분");
+      second.close();
+
+      const retry = await screen.findByRole("button", { name: "다시 시도" });
+      // 오류가 떠 있는 동안 답변은 남아 있고 입력은 잠깁니다. Error도 한 곳에서만 나옵니다.
+      expect(screen.getByRole("article", { name: "내 답변" })).toHaveTextContent("첫 답변");
+      expect(screen.getAllByRole("alert")).toHaveLength(1);
+      expect(input).toBeDisabled();
+
+      fireEvent.click(retry);
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
+      expect(screen.queryByText("둘째 질문 앞부분")).not.toBeInTheDocument();
+      expect(screen.getByText("첫 질문")).toBeInTheDocument();
+      expect(screen.getByRole("article", { name: "내 답변" })).toHaveTextContent("첫 답변");
+      expect(JSON.parse(fetchImpl.mock.calls[2][1].body).history).toHaveLength(2);
+
+      completeQuestion(third, "둘째 질문 다시");
+      await screen.findByText("둘째 질문 다시");
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      await waitFor(() => expect(input).toBeEnabled());
+    });
+
+    it("답변을 보내면 위로 올려 둔 상태여도 하단으로 내려간다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const { input, submit } = await renderAfterFirstQuestion([first, second]);
+      const log = screen.getByRole("log");
+      setScroll(log, { scrollHeight: 1_000, clientHeight: 200, scrollTop: 0 });
+      fireEvent.scroll(log);
+
+      fireEvent.change(input, { target: { value: "첫 답변" } });
+      fireEvent.click(submit);
+
+      expect(log.scrollTop).toBe(1_000);
+      expect(screen.queryByRole("button", { name: "새 메시지 보기" })).not.toBeInTheDocument();
+    });
+
+    it("위로 올려 읽는 중에 새 질문이 도착하면 자리를 빼앗지 않고 안내만 한다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const { fetchImpl, input, submit } = await renderAfterFirstQuestion([first, second]);
+      fireEvent.change(input, { target: { value: "첫 답변" } });
+      fireEvent.click(submit);
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+
+      // 앞의 답변을 다시 읽으려고 위로 올립니다.
+      const log = screen.getByRole("log");
+      setScroll(log, { scrollHeight: 1_000, clientHeight: 200, scrollTop: 0 });
+      fireEvent.scroll(log);
+
+      second.push(encodeSseEvent({ type: "chunk", seq: 1, text: "둘째 질문" }));
+      await screen.findByText("둘째 질문");
+
+      expect(log.scrollTop).toBe(0);
+      expect(screen.getByRole("button", { name: "새 메시지 보기" })).toBeInTheDocument();
+      expect(screen.getByText(/새 내용이 도착했습니다/)).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "새 메시지 보기" }));
+      expect(log.scrollTop).toBe(1_000);
+      expect(screen.queryByRole("button", { name: "새 메시지 보기" })).not.toBeInTheDocument();
+    });
   });
 });

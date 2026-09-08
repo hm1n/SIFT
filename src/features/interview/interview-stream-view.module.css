@@ -4,6 +4,9 @@
 .preparing { color: #777580; font-size: 14px; }
 .message { display: grid; gap: 10px; border-top: 1px solid #f2f1f6; padding: 12px 0; color: #34333d; font-size: 15px; line-height: 1.7; }
 .message:first-child { border-top: 0; padding-top: 0; }
+.roleLabel { color: #777580; font-size: 12px; font-weight: 700; letter-spacing: .02em; }
+.message[data-role="answer"] { border-left: 3px solid #d9d6f2; padding-left: 12px; }
+.message[data-role="answer"] .roleLabel { color: #5b52d6; }
 .message h2 { color: #1f1e28; font-size: 18px; letter-spacing: -.02em; }
 .message ul { display: grid; gap: 4px; margin: 0; padding-left: 18px; }
 .message code { border-radius: 4px; background: #f5f4fa; font-size: 13px; padding: 1px 4px; }
@@ -21,3 +24,13 @@
 .errorGuidance { color: #8c4a4a; font-size: 13px; line-height: 1.6; }
 .retryButton { width: fit-content; min-height: 44px; border: 1px solid #d9b5b5; border-radius: 999px; background: #fff; color: #8c2f2f; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
 .retryButton:focus-visible { outline: 3px solid rgba(140, 47, 47, .25); outline-offset: 2px; }
+.answerForm { display: grid; gap: 8px; }
+.answerLabel { color: #34333d; font-size: 14px; font-weight: 700; }
+.answerInput { width: 100%; box-sizing: border-box; resize: vertical; border: 1px solid #d9d8e0; border-radius: 10px; background: #fff; color: #34333d; font: inherit; font-size: 15px; line-height: 1.6; padding: 10px 12px; }
+.answerInput:focus-visible { outline: 3px solid rgba(109, 99, 232, .25); outline-offset: 2px; }
+.answerInput:disabled { background: #f7f7fb; color: #9a98a3; }
+.answerInput[aria-invalid="true"] { border-color: #c94f4f; }
+.answerHint { color: #777580; font-size: 12px; line-height: 1.5; }
+.submitButton { width: fit-content; min-height: 44px; border: 0; border-radius: 999px; background: #5b52d6; color: #fff; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
+.submitButton:disabled { background: #c9c6e6; cursor: not-allowed; }
+.submitButton:focus-visible { outline: 3px solid rgba(109, 99, 232, .35); outline-offset: 2px; }

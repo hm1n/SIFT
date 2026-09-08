@@ -1,8 +1,9 @@
 "use client";
 
-import { useId } from "react";
+import { useId, useState } from "react";
 import { clearsOnRetry } from "./errors";
 import type { InterviewStreamErrorKind, InterviewStreamRequestErrorKind } from "./errors";
+import { INTERVIEW_HISTORY_ITEM_MAX_BYTES, interviewHistoryItemBytes } from "./history";
 import { InterviewMessage } from "./interview-message";
 import { useAutoScroll } from "./use-auto-scroll";
 import { useInterviewStream, type InterviewStreamPhase, type UseInterviewStreamOptions } from "./use-interview-stream";
@@ -112,16 +113,40 @@ export function InterviewStreamView({
   url = DEFAULT_INTERVIEW_STREAM_URL,
   ...streamOptions
 }: InterviewStreamViewProps = {}) {
-  const { messages, status, error, receivedSeq, retry } = useInterviewStream({ url, ...streamOptions });
+  const { messages, status, error, receivedSeq, canSubmitAnswer, retry, submitAnswer } =
+    useInterviewStream({ url, ...streamOptions });
+  // 청크 도착만이 아니라 답변 제출도 내용을 바꿉니다. 답변은 청크가 아니라 `receivedSeq`가 움직이지
+  // 않으므로 메시지 수를 함께 묶습니다.
   const { containerRef, hasUnreadContent, scrollToBottom, handleScroll } =
-    useAutoScroll<HTMLDivElement>(receivedSeq);
+    useAutoScroll<HTMLDivElement>(`${messages.length}:${receivedSeq}`);
+  const [draft, setDraft] = useState("");
 
   const baseId = useId();
   const statusId = `${baseId}-status`;
   const unreadId = `${baseId}-unread`;
   const errorId = `${baseId}-error`;
+  const answerHintId = `${baseId}-answer-hint`;
 
-  const isPreparing = messages.length === 0 && (status === "connecting" || status === "idle");
+  // 첫 내용이 오기 전의 Loading은 여기 한 곳에서만 그립니다. 첫 질문이면 대화가 비어 있고, 꼬리
+  // 질문이면 마지막 항목이 사용자의 답변입니다. 두 경우 모두 아직 자라나는 질문이 없습니다.
+  const isPreparing =
+    (status === "connecting" || status === "idle") && !messages.some((message) => message.isStreaming);
+  const isFollowUp = messages.length > 0;
+
+  // 서버 상한과 같은 자로 잽니다. 글자 수로 막으면 줄바꿈이 많은 코드 블록 답변이 같은 글자 수로도
+  // 서버에서 거절됩니다. 넘긴 뒤 413으로 알리는 대신 넘기지 못하게 막아 답변이 남아 있게 합니다.
+  const draftBytes = interviewHistoryItemBytes({ role: "answer", text: draft.trim() });
+  const isDraftTooLong = draftBytes > INTERVIEW_HISTORY_ITEM_MAX_BYTES;
+  const isDraftEmpty = draft.trim() === "";
+  const canSubmit = canSubmitAnswer && !isDraftEmpty && !isDraftTooLong;
+
+  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!submitAnswer(draft)) return;
+    setDraft("");
+    // 제출은 사용자의 행동이므로 위로 올려 둔 상태여도 자기 답변과 다음 질문이 보이는 자리로 내립니다.
+    scrollToBottom();
+  };
 
   return (
     <section className={styles.stream} aria-label="AI 질문 스트리밍">
@@ -139,10 +164,19 @@ export function InterviewStreamView({
         tabIndex={0}
         onScroll={handleScroll}
       >
-        {isPreparing ? <p className={styles.preparing}>질문을 준비하고 있습니다.</p> : null}
         {messages.map((message) => (
-          <InterviewMessage key={message.id} text={message.text} isStreaming={message.isStreaming} />
+          <InterviewMessage
+            key={message.id}
+            role={message.role}
+            text={message.text}
+            isStreaming={message.isStreaming}
+          />
         ))}
+        {isPreparing ? (
+          <p className={styles.preparing}>
+            {isFollowUp ? "다음 질문을 준비하고 있습니다." : "질문을 준비하고 있습니다."}
+          </p>
+        ) : null}
       </div>
 
       {/* 상태 전이를 낭독하는 자리입니다. 처음부터 붙어 있어야 스크린리더가 변경을 잡습니다. */}
@@ -185,6 +219,40 @@ export function InterviewStreamView({
             다시 시도
           </button>
         </div>
+      ) : null}
+
+      {/*
+        답변 입력은 근거 스냅샷이 있을 때만 둡니다. 테스트용 스트림은 대화를 받지 않으므로 그 경로에서
+        입력을 열면 답변이 아무 데도 가지 않습니다. 생성 중과 오류 표시 중에는 잠깁니다. 오류는 다시
+        시도로 풀어야 하고, 그 다시 시도는 실패한 질문 하나만 다시 만듭니다.
+      */}
+      {streamOptions.snapshot !== undefined ? (
+        <form className={styles.answerForm} onSubmit={handleSubmit}>
+          <label className={styles.answerLabel} htmlFor={`${baseId}-answer`}>
+            답변
+          </label>
+          <textarea
+            id={`${baseId}-answer`}
+            className={styles.answerInput}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            disabled={!canSubmitAnswer}
+            rows={4}
+            placeholder="질문에 대한 답변을 적어 주세요. 코드 블록도 쓸 수 있습니다."
+            aria-describedby={answerHintId}
+            aria-invalid={isDraftTooLong || undefined}
+          />
+          <p id={answerHintId} className={styles.answerHint}>
+            {isDraftTooLong
+              ? `답변이 한 번에 보낼 수 있는 크기를 넘었습니다. ${draftBytes.toLocaleString()}바이트이고 상한은 ${INTERVIEW_HISTORY_ITEM_MAX_BYTES.toLocaleString()}바이트입니다. 줄바꿈과 코드 블록도 크기에 들어갑니다.`
+              : canSubmitAnswer
+                ? "답변을 보내면 지금까지의 대화를 바탕으로 다음 질문을 만듭니다."
+                : "질문이 다 도착하면 답변을 쓸 수 있습니다."}
+          </p>
+          <button type="submit" className={styles.submitButton} disabled={!canSubmit}>
+            답변 보내기
+          </button>
+        </form>
       ) : null}
     </section>
   );
