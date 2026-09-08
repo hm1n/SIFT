@@ -61,6 +61,16 @@ export interface InterviewStreamState {
    * 오류가 없을 때만 참입니다. 생성 중에는 거짓이라 다시 제출할 수 없습니다.
    */
   canSubmitAnswer: boolean;
+  /**
+   * 마지막 질문이 이력 항목 상한을 넘어 대화를 이어갈 수 없는 상태인지입니다.
+   *
+   * 생성 경로에 출력 길이 상한이 없어 모델이 `INTERVIEW_HISTORY_ITEM_MAX_BYTES`를 넘는 질문을 낼 수
+   * 있습니다. 그 질문을 확정하고 답변을 받으면 서버가 이력을 `history_too_large`로 거절하는데, 그 시점에는
+   * 답변이 이미 대화에 들어가 있고 같은 이력을 다시 보내도 같은 거절이 옵니다. 그래서 넘치는 질문을
+   * 생성 실패로 취급합니다. 제출은 잠기고 `retry`가 그 질문을 지우고 같은 이력으로 새로 만듭니다.
+   * 서버 쪽 출력 상한은 `wiki/2026-09-08-꼬리질문-요청계약-후속-backlog.md` 3번에 있습니다.
+   */
+  isLastQuestionTooLong: boolean;
   start: () => void;
   retry: () => void;
   /**
@@ -121,8 +131,11 @@ export function useInterviewStream({
   const [error, setError] = useState<InterviewStreamError | null>(null);
   const [receivedSeq, setReceivedSeq] = useState(0);
   const [removedHistory, setRemovedHistory] = useState<readonly InterviewHistoryMessage[]>([]);
+  const [isLastQuestionTooLong, setIsLastQuestionTooLong] = useState(false);
 
   const messagesRef = useRef<readonly InterviewStreamMessage[]>([]);
+  // 상태와 같은 값을 ref에도 둡니다. `retry`가 이벤트 안에서 다음 렌더를 기다리지 않고 읽습니다.
+  const isLastQuestionTooLongRef = useRef(false);
   const messageCountRef = useRef(0);
   const bufferRef = useRef<string[]>([]);
   // 프레임이 잡혀 있는지는 handle 값과 따로 둡니다. 스케줄러가 콜백을 동기로 실행하면 handle을
@@ -193,6 +206,11 @@ export function useInterviewStream({
     updateMessages((previous) => {
       const last = previous[previous.length - 1];
       if (!last?.isStreaming) return previous;
+      // 서버가 이력 항목을 재는 자와 같은 자로 잽니다. 넘치면 화면에는 남기되 대화로 확정하지 않습니다.
+      const tooLong =
+        interviewHistoryItemBytes({ role: last.role, text: last.text }) > INTERVIEW_HISTORY_ITEM_MAX_BYTES;
+      isLastQuestionTooLongRef.current = tooLong;
+      setIsLastQuestionTooLong(tooLong);
       return [...previous.slice(0, -1), { ...last, isStreaming: false }];
     });
   }, [updateMessages]);
@@ -266,12 +284,17 @@ export function useInterviewStream({
     // 실제 생성 경로는 이어받을 수 없으므로 다시 시도가 처음부터 다시 생성합니다. 이미 표시된
     // 앞부분을 남겨 두면 새 생성 결과가 그 뒤에 붙어 한 메시지 안에서 서로 다른 질문이 이어집니다.
     // 지우는 것은 실패한 그 질문 하나뿐입니다. 앞선 질문과 사용자가 쓴 답변은 그대로 두고 같은
-    // 이력으로 그 질문만 다시 만듭니다.
+    // 이력으로 그 질문만 다시 만듭니다. 도착 중에 끊긴 질문과 상한을 넘어 확정하지 못한 질문이
+    // 여기에 해당합니다.
     if (optionsRef.current.snapshot !== undefined) {
+      const tooLong = isLastQuestionTooLongRef.current;
       updateMessages((previous) => {
         const last = previous[previous.length - 1];
-        return last?.isStreaming ? previous.slice(0, -1) : previous;
+        if (!last) return previous;
+        return last.isStreaming || (tooLong && last.role === "question") ? previous.slice(0, -1) : previous;
       });
+      isLastQuestionTooLongRef.current = false;
+      setIsLastQuestionTooLong(false);
     }
     start();
   }, [start, updateMessages]);
@@ -280,6 +303,7 @@ export function useInterviewStream({
     snapshot !== undefined &&
     status === "done" &&
     error === null &&
+    !isLastQuestionTooLong &&
     messages.length > 0 &&
     messages[messages.length - 1].role === "question" &&
     !messages[messages.length - 1].isStreaming;
@@ -326,6 +350,7 @@ export function useInterviewStream({
     receivedSeq,
     removedHistory,
     canSubmitAnswer,
+    isLastQuestionTooLong,
     start,
     retry,
     submitAnswer,

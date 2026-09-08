@@ -532,6 +532,35 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       await waitFor(() => expect(input).toBeEnabled());
     });
 
+    it("상한을 넘는 질문에는 답변을 받지 않고 다시 시도로 그 질문만 새로 만든다고 알린다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const third = controllableResponse();
+      const { fetchImpl, input, submit } = await renderAfterFirstQuestion([first, second, third]);
+      fireEvent.change(input, { target: { value: "첫 답변" } });
+      fireEvent.click(submit);
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+
+      completeQuestion(second, "가".repeat(INTERVIEW_HISTORY_ITEM_MAX_BYTES / 3 + 10));
+
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent("질문이 너무 길어 대화를 이어갈 수 없습니다.");
+      expect(alert).toHaveTextContent("이 질문만 새로 만듭니다");
+      expect(screen.getAllByRole("alert")).toHaveLength(1);
+      expect(input).toBeDisabled();
+      expect(screen.getByRole("article", { name: "내 답변" })).toHaveTextContent("첫 답변");
+
+      fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(screen.getAllByRole("article")).toHaveLength(2);
+      expect(JSON.parse(fetchImpl.mock.calls[2][1].body).history).toHaveLength(2);
+
+      completeQuestion(third, "둘째 질문 다시");
+      await screen.findByText("둘째 질문 다시");
+      await waitFor(() => expect(input).toBeEnabled());
+    });
+
     it("답변을 보내면 위로 올려 둔 상태여도 하단으로 내려간다", async () => {
       const first = controllableResponse();
       const second = controllableResponse();

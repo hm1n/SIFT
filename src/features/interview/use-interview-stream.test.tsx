@@ -3,7 +3,7 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { INTERVIEW_HISTORY_MAX_ITEMS } from "./history";
+import { INTERVIEW_HISTORY_ITEM_MAX_BYTES, INTERVIEW_HISTORY_MAX_ITEMS } from "./history";
 import { evidenceSnapshotFixture } from "./question-fixture";
 import { encodeSseEvent } from "./sse";
 import { useInterviewStream } from "./use-interview-stream";
@@ -314,6 +314,55 @@ describe("useInterviewStream", () => {
       ]);
       // 화면의 대화는 자르지 않습니다. 잘리는 것은 요청 이력뿐입니다.
       expect(result.current.messages).toHaveLength(turns * 2);
+    });
+
+    it("상한을 넘는 질문이 오면 제출을 잠그고 다시 시도가 그 질문만 새로 만든다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const third = controllableResponse();
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(first.response)
+        .mockResolvedValueOnce(second.response)
+        .mockResolvedValueOnce(third.response);
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+      act(() => {
+        result.current.submitAnswer("첫 답변");
+      });
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+
+      // 한글 한 글자가 3바이트이므로 글자 수는 상한보다 적어도 바이트는 넘습니다.
+      const tooLong = "가".repeat(INTERVIEW_HISTORY_ITEM_MAX_BYTES / 3 + 10);
+      completeQuestion(second, tooLong);
+      await waitFor(() => expect(result.current.status).toBe("done"));
+
+      // 화면에는 남지만 답변은 받지 않습니다. 서버가 이 질문을 이력으로 거절하기 때문입니다.
+      expect(result.current.messages).toHaveLength(3);
+      expect(result.current.isLastQuestionTooLong).toBe(true);
+      expect(result.current.canSubmitAnswer).toBe(false);
+      act(() => {
+        expect(result.current.submitAnswer("둘째 답변")).toBe(false);
+      });
+
+      act(() => {
+        result.current.retry();
+      });
+      expect(result.current.messages.map((message) => message.text)).toEqual(["첫 질문", "첫 답변"]);
+      expect(result.current.isLastQuestionTooLong).toBe(false);
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
+      expect(JSON.parse(fetchImpl.mock.calls[2][1].body).history).toEqual([
+        { role: "question", text: "첫 질문" },
+        { role: "answer", text: "첫 답변" },
+      ]);
+
+      completeQuestion(third, "둘째 질문 다시");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+      expect(result.current.messages[2]).toMatchObject({ role: "question", text: "둘째 질문 다시" });
     });
 
     it("근거 스냅샷이 없는 테스트용 스트림에서는 답변을 받지 않는다", async () => {

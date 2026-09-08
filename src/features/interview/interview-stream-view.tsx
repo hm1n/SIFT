@@ -113,8 +113,16 @@ export function InterviewStreamView({
   url = DEFAULT_INTERVIEW_STREAM_URL,
   ...streamOptions
 }: InterviewStreamViewProps = {}) {
-  const { messages, status, error, receivedSeq, canSubmitAnswer, retry, submitAnswer } =
-    useInterviewStream({ url, ...streamOptions });
+  const {
+    messages,
+    status,
+    error,
+    receivedSeq,
+    canSubmitAnswer,
+    isLastQuestionTooLong,
+    retry,
+    submitAnswer,
+  } = useInterviewStream({ url, ...streamOptions });
   // 청크 도착만이 아니라 답변 제출도 내용을 바꿉니다. 답변은 청크가 아니라 `receivedSeq`가 움직이지
   // 않으므로 메시지 수를 함께 묶습니다.
   const { containerRef, hasUnreadContent, scrollToBottom, handleScroll } =
@@ -204,11 +212,19 @@ export function InterviewStreamView({
           : ""}
       </p>
 
-      {error ? (
+      {/*
+        상한을 넘은 질문은 전송 오류가 아니지만 사용자가 할 수 있는 일이 같으므로 같은 자리에 같은 모양으로
+        그립니다. Error를 두 곳에서 그리지 않습니다.
+      */}
+      {error || isLastQuestionTooLong ? (
         <div className={styles.error} role="alert">
-          <p className={styles.errorMessage}>{error.message}</p>
+          <p className={styles.errorMessage}>
+            {error ? error.message : "질문이 너무 길어 대화를 이어갈 수 없습니다."}
+          </p>
           <p id={errorId} className={styles.errorGuidance}>
-            {errorGuidance(error.kind, streamOptions.snapshot === undefined)}
+            {error
+              ? errorGuidance(error.kind, streamOptions.snapshot === undefined)
+              : `이 질문은 한 번에 보낼 수 있는 크기 ${INTERVIEW_HISTORY_ITEM_MAX_BYTES.toLocaleString()}바이트를 넘어 답변을 받을 수 없습니다. 다시 시도하면 지금까지의 대화를 그대로 두고 이 질문만 새로 만듭니다.`}
           </p>
           <button
             type="button"
