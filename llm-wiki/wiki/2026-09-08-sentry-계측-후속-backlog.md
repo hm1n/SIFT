@@ -129,3 +129,12 @@ pageload envelope 도착과 지표 수집을 조건 대기로 바꿨지만 상�
 
 이름이 스크롤 위치 유지에 관한 것이므로 타이밍에 의존하는 단정으로 보입니다. 원인 규명과 수정은
 인터뷰 스트리밍 쪽 작업에서 다룹니다. 이번 PR의 merge blocker로 취급하지 않습니다.
+
+## 13. 기존 측정 스크립트도 Chromium을 성공 경로에서만 닫음
+
+`src/features/interview/measurement/streaming-render-cost.measure.mts`가 201행에서 Chromium을 띄우고
+308행에서 닫으며 `finally`가 없습니다. 이번 PR에서 고친 것과 같은 근본 원인입니다. 중간에서 던지면
+브라우저가 살아남아 Node가 종료하지 않습니다.
+
+이 PR에서 고치지 않았습니다. 이번 변경이 건드리지 않은 파일이고 Issue #81 범위 밖입니다. 스트리밍
+렌더링 측정 작업에서 함께 고칩니다.
