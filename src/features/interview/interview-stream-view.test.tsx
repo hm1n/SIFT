@@ -600,5 +600,78 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       expect(log.scrollTop).toBe(1_000);
       expect(screen.queryByRole("button", { name: "새 메시지 보기" })).not.toBeInTheDocument();
     });
+
+    it("종료는 확인을 받고 확인하면 답변 입력을 닫는다", async () => {
+      const first = controllableResponse();
+      const { fetchImpl, input } = await renderAfterFirstQuestion([first]);
+      fireEvent.change(input, { target: { value: "쓰다 만 답변" } });
+
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 종료하기" }));
+
+      // 확인 단계에서는 아직 아무것도 닫히지 않습니다. 사라지는 것을 모두 알립니다.
+      const confirm = screen.getByRole("group");
+      expect(confirm).toHaveTextContent("작성 중인 답변은 사라집니다");
+      expect(confirm).toHaveTextContent("읽기 전용으로 남습니다");
+      expect(confirm).toHaveTextContent("다시 이어갈 수 없습니다");
+      expect(input).toBeEnabled();
+
+      fireEvent.click(screen.getByRole("button", { name: "계속하기" }));
+      expect(screen.queryByRole("group")).not.toBeInTheDocument();
+      expect(input).toHaveValue("쓰다 만 답변");
+
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 종료하기" }));
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 종료" }));
+
+      // 대화는 남고 답변을 보낼 자리만 사라집니다. 다시 시작하는 조작도 두지 않습니다.
+      expect(screen.getByText("첫 질문")).toBeInTheDocument();
+      expect(screen.queryByLabelText("답변")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "답변 보내기" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "인터뷰 종료하기" })).not.toBeInTheDocument();
+      expect(screen.getByText("인터뷰를 종료했습니다. 대화는 읽기 전용입니다.")).toBeInTheDocument();
+      expect(screen.getByText(/후보 목록으로 돌아가면 이 대화는 사라지고/)).toBeInTheDocument();
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    });
+
+    it("오류가 떠 있는 상태에서 종료하면 다시 시도가 사라진다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const { fetchImpl, input, submit } = await renderAfterFirstQuestion([first, second]);
+      fireEvent.change(input, { target: { value: "첫 답변" } });
+      fireEvent.click(submit);
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      second.push(encodeSseEvent({ type: "chunk", seq: 1, text: "둘째 질문 앞부분" }));
+      await screen.findByText("둘째 질문 앞부분");
+      second.close();
+      await screen.findByRole("button", { name: "다시 시도" });
+
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 종료하기" }));
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 종료" }));
+
+      // 다시 시도는 요청을 보내는 조작입니다. 종료한 뒤에 눌릴 자리를 남기지 않습니다.
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "다시 시도" })).not.toBeInTheDocument();
+      expect(screen.getByText("둘째 질문 앞부분")).toBeInTheDocument();
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    });
+
+    it("질문이 도착하는 중에 종료하면 준비 안내와 진행 표시를 걷는다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const { fetchImpl, input, submit } = await renderAfterFirstQuestion([first, second]);
+      fireEvent.change(input, { target: { value: "첫 답변" } });
+      fireEvent.click(submit);
+      // 연결 중이라 준비 안내가 떠 있습니다. 이 상태에서 종료합니다.
+      expect(screen.getByText("다음 질문을 준비하고 있습니다.")).toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 종료하기" }));
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 종료" }));
+
+      expect(screen.queryByText("다음 질문을 준비하고 있습니다.")).not.toBeInTheDocument();
+      expect(screen.getByRole("log")).toHaveAttribute("aria-busy", "false");
+      expect(screen.getByRole("article", { name: "내 답변" })).toHaveTextContent("첫 답변");
+      // 종료가 요청을 끊었으므로 새 요청이 더 나가지 않습니다.
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      expect(screen.queryByLabelText("답변")).not.toBeInTheDocument();
+    });
   });
 });
