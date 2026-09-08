@@ -12,6 +12,7 @@
 .message code { border-radius: 4px; background: #f5f4fa; font-size: 13px; padding: 1px 4px; }
 .codeBlock pre, .plainCode { overflow-x: auto; border-radius: 10px; background: #f7f7fb; font-size: 13px; line-height: 1.6; padding: 12px 14px; }
 .codeBlock code, .plainCode code { background: none; font-size: 13px; padding: 0; }
+.trimNotice { border-left: 3px solid #e0ddf0; border-radius: 6px; background: #f7f7fb; color: #55535e; font-size: 12px; line-height: 1.6; margin: 4px 0; padding: 10px 12px; }
 .status { color: #777580; font-size: 13px; }
 .unreadButton { width: fit-content; min-height: 44px; border: 0; border-radius: 999px; background: #5b52d6; color: #fff; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
 .unreadButton:focus-visible { outline: 3px solid rgba(109, 99, 232, .35); outline-offset: 2px; }

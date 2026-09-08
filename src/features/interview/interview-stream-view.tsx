@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { Fragment, useId, useState } from "react";
 import { clearsOnRetry } from "./errors";
 import type { InterviewStreamErrorKind, InterviewStreamRequestErrorKind } from "./errors";
 import { INTERVIEW_HISTORY_ITEM_MAX_BYTES, interviewHistoryItemBytes } from "./history";
@@ -127,6 +127,7 @@ export function InterviewStreamView({
     status,
     error,
     receivedSeq,
+    removedHistory,
     canSubmitAnswer,
     isLastQuestionTooLong,
     isEnded,
@@ -199,13 +200,30 @@ export function InterviewStreamView({
         tabIndex={0}
         onScroll={handleScroll}
       >
-        {messages.map((message) => (
-          <InterviewMessage
-            key={message.id}
-            role={message.role}
-            text={message.text}
-            isStreaming={message.isStreaming}
-          />
+        {messages.map((message, index) => (
+          <Fragment key={message.id}>
+            <InterviewMessage
+              role={message.role}
+              text={message.text}
+              isStreaming={message.isStreaming}
+            />
+            {/*
+              절단 안내를 빠진 자리에 그립니다. 자르는 쪽은 요청 이력이고 화면의 대화는 그대로
+              남으므로, 대화 밖에 안내를 두면 사용자가 어느 대목이 빠졌는지 알 수 없습니다.
+
+              자리는 첫 쌍 바로 뒤입니다. `trimInterviewHistory`가 첫 질문과 첫 답변을 남기고 그
+              다음부터 빼므로 빠진 구간의 시작이 언제나 여기입니다.
+
+              오류 안내와 같은 자리에 두지 않았습니다. 오류는 사용자가 조작해서 풀어야 하는 상태이고
+              절단은 이미 일어난 일을 알리는 것입니다. 같은 자리에 두면 다시 시도 버튼이 절단에도
+              달린 것처럼 보입니다.
+            */}
+            {index === 1 && removedHistory.length > 0 ? (
+              <p className={styles.trimNotice}>
+                {`대화가 길어져 여기서부터 질문과 답변 ${removedHistory.length / 2}쌍이 다음 질문의 이력에서 빠졌습니다. 화면에는 그대로 남아 있지만 AI는 더 이상 이 부분을 보지 못합니다. 첫 질문과 첫 답변, 그리고 최근 대화는 계속 실립니다.`}
+              </p>
+            ) : null}
+          </Fragment>
         ))}
         {isPreparing ? (
           <p className={styles.preparing}>

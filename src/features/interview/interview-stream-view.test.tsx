@@ -3,7 +3,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { INTERVIEW_HISTORY_ITEM_MAX_BYTES } from "./history";
+import { INTERVIEW_HISTORY_ITEM_MAX_BYTES, INTERVIEW_HISTORY_MAX_ITEMS } from "./history";
 import { InterviewStreamView } from "./interview-stream-view";
 import { evidenceSnapshotFixture } from "./question-fixture";
 import { encodeSseEvent } from "./sse";
@@ -599,6 +599,51 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       fireEvent.click(screen.getByRole("button", { name: "새 메시지 보기" }));
       expect(log.scrollTop).toBe(1_000);
       expect(screen.queryByRole("button", { name: "새 메시지 보기" })).not.toBeInTheDocument();
+    });
+
+    it("이력에서 앞부분이 빠지면 빠진 자리에 무엇이 빠졌는지 알린다", async () => {
+      const sources: ReturnType<typeof controllableResponse>[] = [];
+      const fetchImpl = vi.fn().mockImplementation(async () => {
+        const source = controllableResponse();
+        sources.push(source);
+        return source.response;
+      });
+      render(
+        <InterviewStreamView
+          fetchImpl={fetchImpl}
+          snapshot={snapshot}
+          retryDelaysMs={[]}
+          {...renderOptions}
+        />
+      );
+
+      // 상한까지 채운 뒤 한 턴을 더 진행합니다. 그 턴의 요청에서 두 번째 쌍이 빠집니다.
+      const turns = INTERVIEW_HISTORY_MAX_ITEMS / 2 + 1;
+      const input = screen.getByLabelText("답변");
+      for (let turn = 1; turn <= turns; turn += 1) {
+        await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(turn));
+        completeQuestion(sources[turn - 1], `질문 ${turn}`);
+        await waitFor(() => expect(input).toBeEnabled());
+        fireEvent.change(input, { target: { value: `답변 ${turn}` } });
+        fireEvent.click(screen.getByRole("button", { name: "답변 보내기" }));
+      }
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(turns + 1));
+      expect(JSON.parse(fetchImpl.mock.calls[turns][1].body).history).toHaveLength(
+        INTERVIEW_HISTORY_MAX_ITEMS
+      );
+
+      const notice = screen.getByText(/다음 질문의 이력에서 빠졌습니다/);
+      expect(notice).toHaveTextContent("질문과 답변 1쌍이");
+      expect(notice).toHaveTextContent("AI는 더 이상 이 부분을 보지 못합니다");
+      // 화면의 대화는 자르지 않습니다. 빠진 항목도 그대로 남아 있습니다.
+      expect(screen.getByText("질문 2")).toBeInTheDocument();
+      const articles = screen.getAllByRole("article");
+      expect(articles).toHaveLength(turns * 2);
+      // 안내는 빠진 구간이 시작되는 자리, 곧 첫 질문·답변 쌍 바로 뒤에 있습니다.
+      expect(notice.previousElementSibling).toBe(articles[1]);
+      // 절단은 오류가 아닙니다. 다시 시도를 권하지 않습니다.
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "다시 시도" })).not.toBeInTheDocument();
     });
 
     it("종료는 확인을 받고 확인하면 답변 입력을 닫는다", async () => {
