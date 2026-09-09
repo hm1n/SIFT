@@ -18,6 +18,8 @@ import {
   EVIDENCE_SNAPSHOT_MAX_INPUT_TOKENS,
 } from "@/features/experience-candidates/evidence-snapshot";
 import { createInterviewQuestionModel } from "@/features/experience-candidates/llm-provider";
+import { serializedByteLength } from "@/features/experience-candidates/evidence-snapshot";
+import { INTERVIEW_HISTORY_ITEM_MAX_BYTES } from "./history";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
 
 /**
@@ -74,11 +76,14 @@ export const INTERVIEW_QUESTION_MODEL = "gemini-3.1-flash-lite";
  * 이력 항목 상한 `INTERVIEW_HISTORY_ITEM_MAX_BYTES`를 넘으면 클라이언트가 그 질문을 생성 실패로
  * 취급해 제출을 잠그고, 서버에 상한이 없으므로 다시 생성해도 또 넘칠 수 있습니다.
  *
- * 값을 임의로 고르지 않고 이력 항목 상한에서 유도합니다. 2026-09-09 실측 표본 160개에서 출력
- * 토큰 하나가 차지한 UTF-8 바이트의 최대가 4.87이었습니다. 5로 올려 잡으면
- * `4,500 ÷ 5 = 900`입니다. 같은 실측의 출력 최대가 356토큰이므로 정상 질문의 2.5배 자리에 있고,
- * 상한이 실제로 질문을 자르는 일은 없어야 합니다. 자르는 일이 생기면 그것은 이 값이 아니라
- * 프롬프트가 길어졌다는 신호입니다.
+ * 값을 임의로 고르지 않고 이력 항목 상한에서 유도합니다. 2026-09-09 실측 표본에서 출력 토큰
+ * 하나가 차지한 바이트의 최대가 4.87이었습니다. 5로 올려 잡으면 `4,500 ÷ 5 = 900`입니다. 같은
+ * 실측의 출력 최대가 356토큰이므로 정상 질문의 2.5배 자리에 있고, 이 상한이 실제로 질문을 자르는
+ * 일은 없어야 합니다. 자른다면 그것은 이 값이 아니라 프롬프트나 모델이 바뀌었다는 신호입니다.
+ *
+ * **이 상한만으로는 항목 상한이 지켜지지 않습니다.** 4.87은 관측값이지 토크나이저의 불변식이
+ * 아니므로 토큰당 5바이트를 넘는 출력이 오면 900토큰도 4,500바이트를 넘길 수 있습니다. 바이트를
+ * 실제로 막는 것은 `toItemBoundedTextStream`이고 이 값은 그 절단이 걸리지 않게 하는 1차 방어입니다.
  */
 export const INTERVIEW_QUESTION_MAX_OUTPUT_TOKENS = 900;
 
@@ -87,6 +92,8 @@ export const INTERVIEW_QUESTION_MAX_OUTPUT_TOKENS = 900;
  *
  * 상수로 두는 이유는 위 유도를 회귀 테스트가 붙들 수 있게 하기 위해서입니다. 이력 항목 상한이나
  * 출력 상한 가운데 하나만 움직이면 테스트가 깨집니다.
+ *
+ * 이 값은 유도의 기록이지 보장이 아닙니다. 실제 바이트는 `toItemBoundedTextStream`이 셉니다.
  */
 export const INTERVIEW_QUESTION_BYTES_PER_OUTPUT_TOKEN = 5;
 
@@ -287,6 +294,62 @@ export function toInterviewQuestionMessages({
  * 객체를 만들려면 provider 자격 증명이 필요하고, 그러면 출력 상한이 실렸는지를 확인하는 데 키가
  * 필요해집니다.
  */
+/**
+ * 앞에서부터 `maxBytes` 안에 들어가는 만큼만 남깁니다. 코드 포인트 경계에서 자릅니다.
+ *
+ * 바이트 단위로 자르면 서로게이트 쌍이나 한 글자의 UTF-8 바이트가 쪼개져 깨진 문자가 남습니다.
+ * 재는 자는 `serializedByteLength`이고 코드 포인트마다 더해지므로 앞에서부터 누적하면 됩니다.
+ */
+function fitToBytes(text: string, maxBytes: number): string {
+  let used = 0;
+  let fitted = "";
+  for (const character of text) {
+    const bytes = serializedByteLength(character);
+    if (used + bytes > maxBytes) break;
+    used += bytes;
+    fitted += character;
+  }
+  return fitted;
+}
+
+/**
+ * 질문 본문이 이력 항목 상한을 넘지 않도록 스트림을 끊습니다.
+ *
+ * **`maxOutputTokens`만으로는 이 상한이 지켜지지 않습니다.** 상한은 토큰 단위이고 계약은 바이트
+ * 단위인데, 토큰 하나가 몇 바이트가 되는지는 우리가 정하는 값이 아닙니다. 실측 표본 160개에서
+ * 최대가 4.87이었지만 그것은 관측값이지 토크나이저의 불변식이 아닙니다.
+ *
+ * 넘겼을 때 지금 벌어지는 일이 이 방어의 이유입니다. 클라이언트가 그 질문을 생성 실패로 취급해
+ * **제출을 잠그고**, 서버에 상한이 없으므로 다시 만들어도 또 넘칠 수 있어 사용자가 그 자리에서
+ * 빠져나오지 못합니다. 잘린 질문은 그것과 바꾼 대가입니다.
+ *
+ * `maxOutputTokens`는 그대로 1차 방어로 둡니다. 관측 최대 출력이 356토큰이고 상한이 900이므로 이
+ * 절단이 실제로 걸릴 일은 없어야 합니다. 걸린다면 프롬프트나 모델이 바뀌었다는 신호입니다.
+ *
+ * 재는 자를 클라이언트와 맞춥니다. `serializedByteLength`는 JSON 문자열로 직렬화했을 때의
+ * 바이트이고, 원본 UTF-8로 재면 줄바꿈이 많은 질문에서 실제 크기를 낮게 봅니다. 자르는 쪽과
+ * 검증하는 쪽이 다른 자를 쓰면 서버가 통과시킨 질문이 클라이언트에서 거절됩니다.
+ */
+export async function* toItemBoundedTextStream(
+  source: AsyncIterable<string>,
+  maxBytes: number = INTERVIEW_HISTORY_ITEM_MAX_BYTES
+): AsyncIterable<string> {
+  let used = 0;
+  for await (const delta of source) {
+    const remaining = maxBytes - used;
+    if (remaining <= 0) return;
+    const bytes = serializedByteLength(delta);
+    if (bytes <= remaining) {
+      used += bytes;
+      yield delta;
+      continue;
+    }
+    const fitted = fitToBytes(delta, remaining);
+    if (fitted !== "") yield fitted;
+    return;
+  }
+}
+
 export function interviewQuestionRequestOptions(
   prompt: InterviewQuestionPrompt,
   abortSignal: AbortSignal
@@ -304,11 +367,13 @@ export function createInterviewQuestionGenerate(
   model: string = INTERVIEW_QUESTION_MODEL
 ): GenerateInterviewQuestion {
   return (prompt, abortSignal) =>
-    toThrowingTextStream(
-      streamText({
-        model: createInterviewQuestionModel(model),
-        ...interviewQuestionRequestOptions(prompt, abortSignal),
-      })
+    toItemBoundedTextStream(
+      toThrowingTextStream(
+        streamText({
+          model: createInterviewQuestionModel(model),
+          ...interviewQuestionRequestOptions(prompt, abortSignal),
+        })
+      )
     );
 }
 

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ExperienceCandidateOutputError } from "@/features/experience-candidates/errors";
 import { InterviewStreamError } from "./errors";
 import { evidenceSnapshotFixture } from "./question-fixture";
+import { serializedByteLength } from "@/features/experience-candidates/evidence-snapshot";
 import { INTERVIEW_HISTORY_ITEM_MAX_BYTES } from "./history";
 import {
   INTERVIEW_QUESTION_BYTES_PER_OUTPUT_TOKEN,
@@ -11,6 +12,7 @@ import {
   buildInterviewQuestionPrompt,
   interviewQuestionPromptBytes,
   interviewQuestionRequestOptions,
+  toItemBoundedTextStream,
   toInterviewQuestionMessages,
   startInterviewQuestionStream,
   toThrowingTextStream,
@@ -305,5 +307,58 @@ describe("출력 상한", () => {
     ).toBeLessThanOrEqual(INTERVIEW_HISTORY_ITEM_MAX_BYTES);
     // 2026-09-09 실측의 출력 최대는 356토큰입니다. 상한이 그보다 낮으면 정상 질문을 자릅니다.
     expect(INTERVIEW_QUESTION_MAX_OUTPUT_TOKENS).toBeGreaterThan(356);
+  });
+});
+
+describe("toItemBoundedTextStream", () => {
+  async function collect(source: AsyncIterable<string>): Promise<string> {
+    let text = "";
+    for await (const delta of source) text += delta;
+    return text;
+  }
+
+  async function* deltas(...values: string[]): AsyncIterable<string> {
+    for (const value of values) yield value;
+  }
+
+  it("상한 안의 스트림은 그대로 흘린다", async () => {
+    expect(await collect(toItemBoundedTextStream(deltas("가", "나", "다")))).toBe("가나다");
+  });
+
+  it("토큰당 바이트가 관측 표본을 넘겨도 상한에서 끊는다", async () => {
+    // `maxOutputTokens`는 토큰을 세고 계약은 바이트를 셉니다. 토큰 하나가 몇 바이트가 되는지는
+    // 우리가 정하는 값이 아니므로, 관측 최대 4.87을 넘는 출력이 오면 토큰 상한만으로는 항목
+    // 상한을 지키지 못합니다. 그때 클라이언트는 제출을 잠급니다.
+    const chunk = "가".repeat(1_000);
+    const bounded = toItemBoundedTextStream(deltas(chunk, chunk, chunk, chunk, chunk));
+
+    const text = await collect(bounded);
+
+    expect(serializedByteLength(text)).toBeLessThanOrEqual(INTERVIEW_HISTORY_ITEM_MAX_BYTES);
+    // 상한까지는 채웁니다. 넘긴 조각만 버리고 앞의 내용을 함께 버리지 않습니다.
+    expect(serializedByteLength(text)).toBe(INTERVIEW_HISTORY_ITEM_MAX_BYTES);
+  });
+
+  it("코드 포인트 경계에서 자른다", async () => {
+    // 바이트로 자르면 서로게이트 쌍이 쪼개져 깨진 문자가 남습니다.
+    const text = await collect(toItemBoundedTextStream(deltas("가나다라"), 7));
+
+    expect(text).toBe("가나");
+    expect([...text]).toHaveLength(2);
+  });
+
+  it("상한을 채운 뒤에는 남은 조각을 읽지 않는다", async () => {
+    let pulled = 0;
+    async function* counted(): AsyncIterable<string> {
+      for (let index = 0; index < 5; index += 1) {
+        pulled += 1;
+        yield "가".repeat(1_000);
+      }
+    }
+
+    await collect(toItemBoundedTextStream(counted()));
+
+    // 5,000자를 다 받으면 15,000바이트입니다. 상한을 채운 조각에서 멈춰야 합니다.
+    expect(pulled).toBeLessThan(5);
   });
 });
