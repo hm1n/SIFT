@@ -18,6 +18,8 @@ import {
   EVIDENCE_SNAPSHOT_MAX_INPUT_TOKENS,
 } from "@/features/experience-candidates/evidence-snapshot";
 import { createInterviewQuestionModel } from "@/features/experience-candidates/llm-provider";
+import { serializedByteLength } from "@/features/experience-candidates/evidence-snapshot";
+import { INTERVIEW_HISTORY_ITEM_MAX_BYTES } from "./history";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
 
 /**
@@ -45,6 +47,67 @@ import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidate
  * `llm-wiki/wiki/2026-08-25-첫-질문-생성-provider-실측과-재개-방침.md`에 있습니다.
  */
 export const INTERVIEW_QUESTION_MODEL = "gemini-3.1-flash-lite";
+
+/**
+ * 꼬리 질문 경로도 이 상수를 씁니다. 2026-09-09 실측으로 확정했습니다(이슈 #79).
+ *
+ * 상수를 갈라 두지 않는 이유는 두 경로가 같은 모델로 확정됐기 때문입니다. 판정 기준은 첫 청크
+ * 지연이고 판정선은 20초인데, 두 후보 모두 호출 120건에서 최대 1,087밀리초로 판정선의 5.4%였고
+ * 넘긴 호출이 없었습니다. 입력이 5,043토큰에서 15,270토큰으로 3배가 되는 동안에도 지연에 방향이
+ * 없었습니다. **지연으로는 갈리지 않습니다.**
+ *
+ * 갈린 축은 비용입니다. 암묵적 컨텍스트 캐싱이 이 모델에만 걸립니다. 그 모델의 호출 60건 중 47건에서
+ * 캐시를 읽었고 최대 12,203토큰이었습니다. `gemini-3.5-flash-lite`는 같은 접두사를 열 번 연속
+ * 보낸 단독 실행에서도 0건이었으므로 호출 순서 때문이 아닙니다. 그 결과 인터뷰 한 번이
+ * 0.03405~0.03445달러로 24.2~37.6% 쌉니다. **격차는 단가와 캐시가 함께 만듭니다.** 두 모델의 입력
+ * 토큰은 같지만 `gemini-3.5-flash-lite`가 입력 1.2배 출력 1.67배이고, 그 위에 캐시가 얹힙니다.
+ * 짧은 답변에서는 두 몫이 거의 반반이고 긴 답변에서는 캐시가 3분의 2입니다.
+ *
+ * **명시적 캐싱은 배선하지 않습니다.** 최소 토큰 조건 1,024는 우리 접두사 5,043토큰이 넘기지만,
+ * 암묵적 캐싱이 스토리지 요금 없이 같은 절감을 이미 주고 있습니다.
+ *
+ * 질문의 성격은 사람이 원문을 읽고 골랐습니다. 측정과 판정 경위는
+ * `llm-wiki/raw/2026-09-09-꼬리질문-모델-확정-session-log.md`에 있습니다.
+ */
+
+/**
+ * 질문 한 번의 출력 토큰 상한입니다.
+ *
+ * 이 상한이 필요한 이유는 상한이 없을 때의 실패가 사용자에게 막다른 길이기 때문입니다. 질문 하나가
+ * 이력 항목 상한 `INTERVIEW_HISTORY_ITEM_MAX_BYTES`를 넘으면 클라이언트가 그 질문을 생성 실패로
+ * 취급해 제출을 잠그고, 서버에 상한이 없으므로 다시 생성해도 또 넘칠 수 있습니다.
+ *
+ * 값을 임의로 고르지 않고 이력 항목 상한에서 유도합니다. 실측에서 출력 토큰 하나가 차지한
+ * 바이트의 최대가 `INTERVIEW_QUESTION_BYTES_PER_OUTPUT_TOKEN`보다 작았으므로
+ * `4,500 ÷ 5 = 900`입니다. 같은 실측의 출력 최대가 `INTERVIEW_QUESTION_OBSERVED_MAX_OUTPUT_TOKENS`
+ * 이므로 정상 질문의 2.8배 자리에 있고, 이 상한이 실제로 질문을 자르는 일은 없어야 합니다.
+ * 자른다면 그것은 이 값이 아니라 프롬프트나 모델이 바뀌었다는 신호입니다.
+ *
+ * **이 상한만으로는 항목 상한이 지켜지지 않습니다.** 위 비율은 관측값이지 토크나이저의 불변식이
+ * 아니므로 토큰당 5바이트를 넘는 출력이 오면 900토큰도 4,500바이트를 넘길 수 있습니다. 바이트를
+ * 실제로 막는 것은 `toItemBoundedTextStream`이고 이 값은 그 절단이 걸리지 않게 하는 1차 방어입니다.
+ */
+export const INTERVIEW_QUESTION_MAX_OUTPUT_TOKENS = 900;
+
+/**
+ * 출력 토큰 하나가 차지할 수 있다고 보는 바이트입니다. 실측 최대 4.76을 올려 잡았습니다.
+ *
+ * 상수로 두는 이유는 위 유도를 회귀 테스트가 붙들 수 있게 하기 위해서입니다. 이력 항목 상한이나
+ * 출력 상한 가운데 하나만 움직이면 테스트가 깨집니다.
+ *
+ * 이 값은 유도의 기록이지 보장이 아닙니다. 실제 바이트는 `toItemBoundedTextStream`이 셉니다.
+ */
+export const INTERVIEW_QUESTION_BYTES_PER_OUTPUT_TOKEN = 5;
+
+/**
+ * 실측에서 관측된 질문 하나의 최대 출력 토큰입니다.
+ *
+ * 이 값을 주석 문장이 아니라 상수로 둡니다. 1차 리뷰 재검증에서 나온 지적이 이것입니다. 실측을 다시
+ * 돌려 수치가 바뀌었는데 문서만 고치고 이 파일의 주석 여러 곳이 폐기한 회차의 값을 그대로 들고
+ * 있었습니다. 상수로 두면 회귀 테스트가 출력 상한과의 관계를 붙들고, 실측을 다시 돌릴 때 고칠 자리가
+ * 한 곳으로 모입니다.
+ */
+export const INTERVIEW_QUESTION_OBSERVED_MAX_OUTPUT_TOKENS = 316;
 
 /**
  * 첫 청크가 오기까지 기다리는 시한입니다.
@@ -236,18 +299,94 @@ export function toInterviewQuestionMessages({
   ];
 }
 
+/**
+ * provider에 보낼 인자 가운데 모델을 뺀 나머지입니다.
+ *
+ * 모델을 함께 만들지 않는 이유는 이 부분만 테스트에서 그대로 볼 수 있게 하기 위해서입니다. 모델
+ * 객체를 만들려면 provider 자격 증명이 필요하고, 그러면 출력 상한이 실렸는지를 확인하는 데 키가
+ * 필요해집니다.
+ */
+/**
+ * 앞에서부터 `maxBytes` 안에 들어가는 만큼만 남깁니다. 코드 포인트 경계에서 자릅니다.
+ *
+ * 바이트 단위로 자르면 서로게이트 쌍이나 한 글자의 UTF-8 바이트가 쪼개져 깨진 문자가 남습니다.
+ * 재는 자는 `serializedByteLength`이고 코드 포인트마다 더해지므로 앞에서부터 누적하면 됩니다.
+ */
+function fitToBytes(text: string, maxBytes: number): string {
+  let used = 0;
+  let fitted = "";
+  for (const character of text) {
+    const bytes = serializedByteLength(character);
+    if (used + bytes > maxBytes) break;
+    used += bytes;
+    fitted += character;
+  }
+  return fitted;
+}
+
+/**
+ * 질문 본문이 이력 항목 상한을 넘지 않도록 스트림을 끊습니다.
+ *
+ * **`maxOutputTokens`만으로는 이 상한이 지켜지지 않습니다.** 상한은 토큰 단위이고 계약은 바이트
+ * 단위인데, 토큰 하나가 몇 바이트가 되는지는 우리가 정하는 값이 아닙니다. 실측에서 관측된 최대는
+ * `INTERVIEW_QUESTION_BYTES_PER_OUTPUT_TOKEN`보다 작았지만 그것은 관측값이지 토크나이저의
+ * 불변식이 아닙니다.
+ *
+ * 넘겼을 때 지금 벌어지는 일이 이 방어의 이유입니다. 클라이언트가 그 질문을 생성 실패로 취급해
+ * **제출을 잠그고**, 서버에 상한이 없으므로 다시 만들어도 또 넘칠 수 있어 사용자가 그 자리에서
+ * 빠져나오지 못합니다. 잘린 질문은 그것과 바꾼 대가입니다.
+ *
+ * `maxOutputTokens`는 그대로 1차 방어로 둡니다. 관측 최대 출력이 상한의 3분의 1 남짓이므로 이
+ * 절단이 실제로 걸릴 일은 없어야 합니다. 걸린다면 프롬프트나 모델이 바뀌었다는 신호입니다.
+ *
+ * 재는 자를 클라이언트와 맞춥니다. `serializedByteLength`는 JSON 문자열로 직렬화했을 때의
+ * 바이트이고, 원본 UTF-8로 재면 줄바꿈이 많은 질문에서 실제 크기를 낮게 봅니다. 자르는 쪽과
+ * 검증하는 쪽이 다른 자를 쓰면 서버가 통과시킨 질문이 클라이언트에서 거절됩니다.
+ */
+export async function* toItemBoundedTextStream(
+  source: AsyncIterable<string>,
+  maxBytes: number = INTERVIEW_HISTORY_ITEM_MAX_BYTES
+): AsyncIterable<string> {
+  let used = 0;
+  for await (const delta of source) {
+    const remaining = maxBytes - used;
+    if (remaining <= 0) return;
+    const bytes = serializedByteLength(delta);
+    if (bytes <= remaining) {
+      used += bytes;
+      yield delta;
+      continue;
+    }
+    const fitted = fitToBytes(delta, remaining);
+    if (fitted !== "") yield fitted;
+    return;
+  }
+}
+
+export function interviewQuestionRequestOptions(
+  prompt: InterviewQuestionPrompt,
+  abortSignal: AbortSignal
+) {
+  return {
+    system: prompt.system,
+    messages: toInterviewQuestionMessages(prompt),
+    abortSignal,
+    maxRetries: INTERVIEW_QUESTION_MAX_RETRIES,
+    maxOutputTokens: INTERVIEW_QUESTION_MAX_OUTPUT_TOKENS,
+  };
+}
+
 export function createInterviewQuestionGenerate(
   model: string = INTERVIEW_QUESTION_MODEL
 ): GenerateInterviewQuestion {
   return (prompt, abortSignal) =>
-    toThrowingTextStream(
-      streamText({
-        model: createInterviewQuestionModel(model),
-        system: prompt.system,
-        messages: toInterviewQuestionMessages(prompt),
-        abortSignal,
-        maxRetries: INTERVIEW_QUESTION_MAX_RETRIES,
-      })
+    toItemBoundedTextStream(
+      toThrowingTextStream(
+        streamText({
+          model: createInterviewQuestionModel(model),
+          ...interviewQuestionRequestOptions(prompt, abortSignal),
+        })
+      )
     );
 }
 
