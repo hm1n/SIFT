@@ -81,6 +81,13 @@ import {
   type InterviewHistoryMessage,
 } from "../history";
 import { buildSnapshot } from "./evidence-fixture.mjs";
+import {
+  averageUsagePerRound,
+  completeRounds,
+  interviewCost,
+  priceFor,
+  type UsageRow,
+} from "./cost.mjs";
 
 // ---------------------------------------------------------------------------
 // 인자
@@ -109,6 +116,10 @@ const dryRun = has("dry-run");
 const answerScenarioFlag = flag("answer", "both");
 const pullRequestNumber = Number(flag("pr", "61"));
 
+// 단가를 모르는 모델이 섞여 있으면 호출을 쓰기 전에 끊습니다. 다 돌린 뒤에 비용 표에서
+// 깨지면 그만큼의 호출과 요금이 버려집니다.
+for (const model of models) priceFor(model);
+
 if (!models.includes(canonicalModel)) {
   console.error(`--canonical=${canonicalModel}은 --models 안에 있어야 합니다.`);
   process.exit(1);
@@ -132,20 +143,6 @@ if (!dryRun && !process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
   console.error("GOOGLE_GENERATIVE_AI_API_KEY가 필요합니다. --env-file로 넘겨 주세요.");
   process.exit(1);
 }
-
-// ---------------------------------------------------------------------------
-// 단가 (llm-wiki/wiki/2026-09-02-LLM-비용-산정.md 2절, 백만 토큰당 달러)
-// ---------------------------------------------------------------------------
-
-const PRICE = { input: 0.25, output: 1.5, cachedInput: 0.025 } as const;
-
-/**
- * 질문 생성을 뺀 인터뷰 한 번의 LLM 비용입니다. Stage A와 Stage B 몫입니다.
- *
- * `wiki/2026-09-01-네-경로-LLM-모델-확정.md`의 전체 분석 + 첫 질문 0.02182달러에서 첫 질문 회당
- * 0.00157달러를 뺀 값입니다. 첫 질문은 이 스크립트가 턴 1로 직접 재므로 두 번 세지 않습니다.
- */
-const STAGE_COST_PER_INTERVIEW = 0.02182 - 0.00157;
 
 // ---------------------------------------------------------------------------
 // 답변 픽스처
@@ -570,11 +567,41 @@ function renderTranscript(
   return lines.join("\n");
 }
 
+/**
+ * 이 실행이 낸 표본이 몇 개인지 못박습니다.
+ *
+ * 1차 리뷰 지적이 이것입니다. 회차를 여러 번 돌린 뒤 문서에 옮길 때 어느 실행의 값인지가 흐려져
+ * 서로 다른 실행의 수치가 한 표에 섞였고, 모델당 호출 수보다 큰 캐시 히트 수가 근거로 적혔습니다.
+ *
+ * 그래서 실행이 스스로 표본 수를 세고 기대한 수와 다르면 요약을 내기 전에 끊습니다. 문서에는 이
+ * 줄이 낸 수치만 옮깁니다.
+ */
+function describeDataset(runs: readonly RunResult[]): string {
+  const expected = runs.length * maxTurns * models.length;
+  const actual = runs.reduce((total, run) => total + run.measurements.length, 0);
+  if (actual !== expected) {
+    throw new Error(
+      `표본 수가 맞지 않습니다. 기대 ${expected}건(회차 ${runs.length} × 턴 ${maxTurns} × 모델 ${models.length}), 실제 ${actual}건.`
+    );
+  }
+  return (
+    `데이터셋: 시나리오 ${scenarios.length} × 회차 ${repeat} × 턴 ${maxTurns} × 모델 ${models.length} ` +
+    `= 생성 호출 ${expected}건, 모델당 ${expected / models.length}건`
+  );
+}
+
 function summarize(runs: readonly RunResult[]): void {
   console.log(`\n${"=".repeat(78)}`);
   console.log("요약 · 첫 청크 지연(밀리초)");
   console.log(`${"=".repeat(78)}`);
-  console.log(["시나리오", "모델", "최소", "중앙", "최대", "판정선 20초 초과"].join(" | "));
+  console.log(describeDataset(runs));
+  const failed = runs.flatMap((run) => run.measurements).filter((entry) => entry.failure !== null);
+  console.log(
+    failed.length === 0
+      ? "실패한 호출 0건"
+      : `실패한 호출 ${failed.length}건: ${failed.map((entry) => `${entry.model} 턴 ${entry.turn}`).join(", ")}`
+  );
+  console.log(["시나리오", "모델", "표본", "최소", "중앙", "최대", "판정선 20초 초과"].join(" | "));
   for (const scenario of scenarios) {
     for (const model of models) {
       const values = runs
@@ -584,7 +611,7 @@ function summarize(runs: readonly RunResult[]): void {
         .map((entry) => entry.firstChunkMs as number)
         .sort((left, right) => left - right);
       if (values.length === 0) {
-        console.log([scenario.label, model, "-", "-", "-", "측정 없음"].join(" | "));
+        console.log([scenario.label, model, "0", "-", "-", "-", "측정 없음"].join(" | "));
         continue;
       }
       const over = values.filter(
@@ -594,6 +621,7 @@ function summarize(runs: readonly RunResult[]): void {
         [
           scenario.label,
           model,
+          `${values.length}`,
           `${Math.round(values[0])}`,
           `${Math.round(values[Math.floor(values.length / 2)])}`,
           `${Math.round(values[values.length - 1])}`,
@@ -604,7 +632,9 @@ function summarize(runs: readonly RunResult[]): void {
   }
 
   console.log(`\n출력 토큰 · maxOutputTokens를 정하는 근거`);
-  console.log(["모델", "최소", "최대", "질문 최대 바이트", "이력 항목 상한 초과"].join(" | "));
+  console.log(
+    ["모델", "표본", "최소", "최대", "질문 최대 바이트", "토큰당 최대 바이트", "상한 초과"].join(" | ")
+  );
   for (const model of models) {
     const rows = runs.flatMap((run) => run.measurements).filter((entry) => entry.model === model);
     const outputs = rows
@@ -612,14 +642,38 @@ function summarize(runs: readonly RunResult[]): void {
       .filter((value): value is number => value !== null);
     const bytes = rows.map((entry) => entry.questionBytes);
     const over = bytes.filter((value) => value > INTERVIEW_HISTORY_ITEM_MAX_BYTES).length;
+    // 토큰당 바이트의 최대는 출력 상한을 유도하는 값입니다. 실행이 직접 내야 문서에 적은 값과
+    // 갈리지 않습니다.
+    const ratios = rows
+      .filter((entry) => entry.outputTokens !== null && entry.outputTokens > 0)
+      .map((entry) => entry.questionBytes / (entry.outputTokens as number));
     console.log(
       [
         model,
+        `${rows.length}`,
         outputs.length === 0 ? "-" : `${Math.min(...outputs)}`,
         outputs.length === 0 ? "-" : `${Math.max(...outputs)}`,
         bytes.length === 0 ? "-" : `${Math.max(...bytes)}`,
+        ratios.length === 0 ? "-" : Math.max(...ratios).toFixed(2),
         `${over}/${bytes.length}`,
       ].join(" | ")
+    );
+  }
+
+  console.log(`
+캐시 읽기 · 분모는 그 모델의 호출 수입니다`);
+  for (const model of models) {
+    const modelRows = runs
+      .flatMap((run) => run.measurements)
+      .filter((entry) => entry.model === model);
+    const hits = modelRows.filter(
+      (entry) => entry.cacheReadTokens !== null && entry.cacheReadTokens > 0
+    );
+    console.log(
+      `${model}: ${hits.length}/${modelRows.length}건` +
+        (hits.length === 0
+          ? " (암묵적 캐싱이 걸린 흔적 없음)"
+          : `, 최대 ${Math.max(...hits.map((entry) => entry.cacheReadTokens as number))}토큰`)
     );
   }
 
@@ -649,41 +703,55 @@ function summarize(runs: readonly RunResult[]): void {
  *
  * 이 스크립트의 턴 1은 이력이 없으므로 첫 질문 호출과 같습니다. 따라서 아래 합계는 인터뷰 한 번의
  * LLM 비용 가운데 질문 생성 몫 전체이고, 여기에 Stage A·B 몫만 더하면 인터뷰 한 번의 총액입니다.
+ *
+ * 계산은 `cost.mts`에 있습니다. 단가는 모델마다 다르고, 중간에 끊긴 회차는 평균에서 뺍니다. 둘 다
+ * 틀리면 표가 정상으로 보이면서 값만 낮아집니다.
  */
 function reportCost(runs: readonly RunResult[]): void {
   console.log(`
 회당 비용 · 실제 usage 기준`);
   console.log(
-    ["시나리오", "모델", "입력", "캐시읽기", "출력", "질문 생성 몫", "인터뷰 한 번", "10달러"].join(
+    ["시나리오", "모델", "입력", "캐시읽기", "출력", "질문 생성 몫", "인터뷰 한 번", "10달러", "쓴 회차"].join(
       " | "
     )
   );
   for (const scenario of scenarios) {
     for (const model of models) {
-      const rows = runs
+      const rows: UsageRow[] = runs
         .filter((run) => run.scenario.id === scenario.id)
-        .flatMap((run) => run.measurements)
-        .filter((entry) => entry.model === model);
-      const rounds = new Set(rows.map((entry) => `${entry.turn}`)).size === 0 ? 1 : repeat;
-      const sum = (pick: (entry: Measurement) => number | null) =>
-        rows.reduce((total, entry) => total + (pick(entry) ?? 0), 0) / rounds;
-      const input = sum((entry) => entry.inputTokens);
-      const cacheRead = sum((entry) => entry.cacheReadTokens);
-      const output = sum((entry) => entry.outputTokens);
-      const questionCost =
-        ((input - cacheRead) * PRICE.input + cacheRead * PRICE.cachedInput + output * PRICE.output) /
-        1_000_000;
-      const total = STAGE_COST_PER_INTERVIEW + questionCost;
+        .flatMap((run) =>
+          run.measurements
+            .filter((entry) => entry.model === model)
+            .map((entry) => ({
+              round: run.round,
+              turn: entry.turn,
+              inputTokens: entry.inputTokens,
+              outputTokens: entry.outputTokens,
+              cacheReadTokens: entry.cacheReadTokens,
+            }))
+        );
+      const selection = completeRounds(rows, maxTurns);
+      const totals = averageUsagePerRound(selection);
+      const used = `${selection.complete.length}/${selection.complete.length + selection.skipped.length}`;
+      if (totals === null) {
+        console.log(
+          [scenario.label, model, "-", "-", "-", "-", "-", "-", `${used} · 온전한 회차 없음`].join(" | ")
+        );
+        continue;
+      }
+      const price = priceFor(model);
+      const total = interviewCost(totals, price);
       console.log(
         [
           scenario.label,
           model,
-          `${Math.round(input)}`,
-          `${Math.round(cacheRead)}`,
-          `${Math.round(output)}`,
-          `${questionCost.toFixed(5)}달러`,
+          `${Math.round(totals.inputTokens)}`,
+          `${Math.round(totals.cacheReadTokens)}`,
+          `${Math.round(totals.outputTokens)}`,
+          `${(total - 0.02025).toFixed(5)}달러`,
           `${total.toFixed(5)}달러`,
           `${Math.floor(10 / total)}회`,
+          selection.skipped.length === 0 ? used : `${used} · ${selection.skipped.join(",")}회차 제외`,
         ].join(" | ")
       );
     }
