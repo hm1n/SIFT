@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { CachedContentParseError, parseCreatedCache } from "./cache-response.mjs";
 import {
+  CommitDetailCollectError,
   PullRequestCommitShaError,
+  collectCommitDetails,
   collectShas,
   type CommitShaPage,
 } from "./evidence-fixture.mjs";
+import type { CommitDetail } from "../../../lib/github/types";
 
 describe("캐시 생성 응답 읽기", () => {
   it("정상 응답에서 이름과 캐시 토큰을 읽는다", () => {
@@ -81,5 +84,43 @@ describe("PR 커밋 페이지 따라가기", () => {
 
     expect(await collectShas(2, "first", fetchPage)).toEqual(["a", "b", "c"]);
     expect(calls).toBe(1);
+  });
+});
+
+describe("커밋 상세 모으기", () => {
+  function detail(sha: string): CommitDetail {
+    return {
+      sha,
+      message: `커밋 ${sha}`,
+      authoredAt: "2026-09-09T00:00:00Z",
+      authorLogin: "hm1n",
+      files: [],
+    } as unknown as CommitDetail;
+  }
+
+  it("모든 SHA의 상세를 순서대로 모은다", async () => {
+    const details = await collectCommitDetails(["a", "b"], async (sha) => detail(sha));
+
+    expect(details.map(({ sha }) => sha)).toEqual(["a", "b"]);
+  });
+
+  it("뒤 커밋이 깨져도 앞에서 받은 상세를 오류에 남긴다", async () => {
+    // 상세 조회는 커밋마다 한 번씩 나갑니다. 앞에서 받은 것을 버리면 그만큼의 요청을 다시 씁니다.
+    const fetchDetail = async (sha: string): Promise<CommitDetail> => {
+      if (sha === "a") return detail("a");
+      throw new Error("커밋 상세 응답을 읽지 못했습니다.");
+    };
+
+    await expect(collectCommitDetails(["a", "b"], fetchDetail)).rejects.toThrow(
+      CommitDetailCollectError
+    );
+    try {
+      await collectCommitDetails(["a", "b"], fetchDetail);
+    } catch (error) {
+      expect((error as CommitDetailCollectError).collectedDetails.map(({ sha }) => sha)).toEqual([
+        "a",
+      ]);
+      expect((error as Error).cause).toBeInstanceOf(Error);
+    }
   });
 });

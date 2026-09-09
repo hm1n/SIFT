@@ -57,6 +57,47 @@ export class PullRequestCommitShaError extends Error {
 }
 
 /**
+ * 커밋 상세를 모으다 실패했을 때 그때까지 받은 것을 들고 다니는 오류입니다.
+ *
+ * SHA 목록 쪽과 같은 계약입니다. 커밋 하나가 상세 조회에서 깨졌다고 앞에서 이미 받은 커밋을 함께
+ * 버리면, 상세 조회는 커밋마다 한 번씩 나가므로 버려지는 요청이 SHA 목록 쪽보다 많습니다.
+ */
+export class CommitDetailCollectError extends Error {
+  readonly collectedDetails: readonly CommitDetail[];
+
+  constructor(message: string, collectedDetails: readonly CommitDetail[], options?: ErrorOptions) {
+    super(message, options);
+    this.name = "CommitDetailCollectError";
+    this.collectedDetails = collectedDetails;
+  }
+}
+
+/**
+ * SHA마다 커밋 상세를 받습니다. 가져오는 방법은 인자로 받습니다.
+ *
+ * 네트워크를 떼어 낸 이유는 부분 결과 보존이 회귀 테스트를 붙일 수 있는 자리이기 때문입니다.
+ * 앞 커밋 성공 뒤 뒤 커밋이 깨지는 상황은 실제 GitHub으로는 만들기 어렵습니다.
+ */
+export async function collectCommitDetails(
+  shas: readonly string[],
+  fetchDetail: (sha: string) => Promise<CommitDetail>
+): Promise<CommitDetail[]> {
+  const details: CommitDetail[] = [];
+  for (const sha of shas) {
+    try {
+      details.push(await fetchDetail(sha));
+    } catch (error) {
+      throw new CommitDetailCollectError(
+        `커밋 ${sha}의 상세를 받지 못했습니다(${details.length}개 수집): ${(error as Error).message}`,
+        details,
+        { cause: error }
+      );
+    }
+  }
+  return details;
+}
+
+/**
  * 페이지를 따라가며 SHA를 모읍니다. 페이지를 가져오는 방법은 인자로 받습니다.
  *
  * 네트워크를 떼어 낸 이유는 부분 결과 보존이 회귀 테스트를 붙일 수 있는 자리이기 때문입니다.
@@ -160,10 +201,9 @@ export async function buildSnapshot(
   const shas = (await fetchPullRequestCommitShas(options, pullRequestNumber)).slice(0, maxCommits);
   if (shas.length === 0) throw new Error(`PR #${pullRequestNumber}에 커밋이 없습니다.`);
 
-  const details: CommitDetail[] = [];
-  for (const sha of shas) {
-    details.push(await fetchCommitDetailBySha({ owner, repo, token }, sha));
-  }
+  const details = await collectCommitDetails(shas, (sha) =>
+    fetchCommitDetailBySha({ owner, repo, token }, sha)
+  );
 
   const [representative, ...related] = details;
   const citedFilePaths = representative.files
