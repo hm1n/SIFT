@@ -8,6 +8,7 @@ import { INTERVIEW_HISTORY_ITEM_MAX_BYTES } from "./history";
 import {
   INTERVIEW_QUESTION_BYTES_PER_OUTPUT_TOKEN,
   INTERVIEW_QUESTION_MAX_OUTPUT_TOKENS,
+  INTERVIEW_QUESTION_OBSERVED_MAX_OUTPUT_TOKENS,
   INTERVIEW_QUESTION_MAX_RETRIES,
   buildInterviewQuestionPrompt,
   interviewQuestionPromptBytes,
@@ -305,8 +306,11 @@ describe("출력 상한", () => {
     expect(
       INTERVIEW_QUESTION_MAX_OUTPUT_TOKENS * INTERVIEW_QUESTION_BYTES_PER_OUTPUT_TOKEN
     ).toBeLessThanOrEqual(INTERVIEW_HISTORY_ITEM_MAX_BYTES);
-    // 2026-09-09 실측의 출력 최대는 356토큰입니다. 상한이 그보다 낮으면 정상 질문을 자릅니다.
-    expect(INTERVIEW_QUESTION_MAX_OUTPUT_TOKENS).toBeGreaterThan(356);
+    // 상한이 관측 최대보다 낮으면 정상 질문을 자릅니다. 관측값을 주석이 아니라 상수로 두어,
+    // 실측을 다시 돌릴 때 고칠 자리가 한 곳으로 모이게 합니다.
+    expect(INTERVIEW_QUESTION_MAX_OUTPUT_TOKENS).toBeGreaterThan(
+      INTERVIEW_QUESTION_OBSERVED_MAX_OUTPUT_TOKENS
+    );
   });
 });
 
@@ -327,7 +331,7 @@ describe("toItemBoundedTextStream", () => {
 
   it("토큰당 바이트가 관측 표본을 넘겨도 상한에서 끊는다", async () => {
     // `maxOutputTokens`는 토큰을 세고 계약은 바이트를 셉니다. 토큰 하나가 몇 바이트가 되는지는
-    // 우리가 정하는 값이 아니므로, 관측 최대 4.87을 넘는 출력이 오면 토큰 상한만으로는 항목
+    // 우리가 정하는 값이 아니므로, 관측 최대를 넘는 출력이 오면 토큰 상한만으로는 항목
     // 상한을 지키지 못합니다. 그때 클라이언트는 제출을 잠급니다.
     const chunk = "가".repeat(1_000);
     const bounded = toItemBoundedTextStream(deltas(chunk, chunk, chunk, chunk, chunk));
