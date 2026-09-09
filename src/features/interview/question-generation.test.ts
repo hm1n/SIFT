@@ -3,9 +3,14 @@ import { describe, expect, it } from "vitest";
 import { ExperienceCandidateOutputError } from "@/features/experience-candidates/errors";
 import { InterviewStreamError } from "./errors";
 import { evidenceSnapshotFixture } from "./question-fixture";
+import { INTERVIEW_HISTORY_ITEM_MAX_BYTES } from "./history";
 import {
+  INTERVIEW_QUESTION_BYTES_PER_OUTPUT_TOKEN,
+  INTERVIEW_QUESTION_MAX_OUTPUT_TOKENS,
+  INTERVIEW_QUESTION_MAX_RETRIES,
   buildInterviewQuestionPrompt,
   interviewQuestionPromptBytes,
+  interviewQuestionRequestOptions,
   toInterviewQuestionMessages,
   startInterviewQuestionStream,
   toThrowingTextStream,
@@ -276,5 +281,29 @@ describe("대화 이력", () => {
 
   it("이력이 없으면 사용자 메시지 하나만 보낸다", () => {
     expect(toInterviewQuestionMessages(buildInterviewQuestionPrompt(snapshot))).toHaveLength(1);
+  });
+});
+
+describe("출력 상한", () => {
+  it("생성 호출에 출력 상한을 싣는다", () => {
+    // 상한이 빠지면 질문이 이력 항목 상한을 넘길 수 있고, 그때 클라이언트는 제출을 잠급니다.
+    // 서버에 상한이 없으면 다시 생성해도 또 넘칠 수 있어 사용자가 빠져나오지 못합니다.
+    const options = interviewQuestionRequestOptions(
+      buildInterviewQuestionPrompt(snapshot),
+      new AbortController().signal
+    );
+
+    expect(options.maxOutputTokens).toBe(INTERVIEW_QUESTION_MAX_OUTPUT_TOKENS);
+    expect(options.maxRetries).toBe(INTERVIEW_QUESTION_MAX_RETRIES);
+  });
+
+  it("상한이 이력 항목 상한 안에서 유도된 값이다", () => {
+    // 출력 상한을 이력 항목 상한과 따로 움직이면 유도가 깨집니다. 두 상수 가운데 하나만 바뀌면
+    // 이 단언이 먼저 깨져서 다른 하나를 함께 보게 합니다.
+    expect(
+      INTERVIEW_QUESTION_MAX_OUTPUT_TOKENS * INTERVIEW_QUESTION_BYTES_PER_OUTPUT_TOKEN
+    ).toBeLessThanOrEqual(INTERVIEW_HISTORY_ITEM_MAX_BYTES);
+    // 2026-09-09 실측의 출력 최대는 356토큰입니다. 상한이 그보다 낮으면 정상 질문을 자릅니다.
+    expect(INTERVIEW_QUESTION_MAX_OUTPUT_TOKENS).toBeGreaterThan(356);
   });
 });

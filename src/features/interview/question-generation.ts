@@ -47,6 +47,50 @@ import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidate
 export const INTERVIEW_QUESTION_MODEL = "gemini-3.1-flash-lite";
 
 /**
+ * 꼬리 질문 경로도 이 상수를 씁니다. 2026-09-09 실측으로 확정했습니다(이슈 #79).
+ *
+ * 상수를 갈라 두지 않는 이유는 두 경로가 같은 모델로 확정됐기 때문입니다. 판정 기준은 첫 청크
+ * 지연이고 판정선은 20초인데, 두 후보 모두 호출 120건에서 최대 1,220밀리초로 판정선의 6.1%였고
+ * 넘긴 호출이 없었습니다. 입력이 5,043토큰에서 15,270토큰으로 3배가 되는 동안에도 지연에 방향이
+ * 없었습니다. **지연으로는 갈리지 않습니다.**
+ *
+ * 갈린 축은 비용입니다. 암묵적 컨텍스트 캐싱이 이 모델에만 걸립니다. 호출 120건 중 61건에서
+ * 캐시를 읽었고 최대 12,204토큰이었습니다. `gemini-3.5-flash-lite`는 같은 접두사를 열 번 연속
+ * 보낸 단독 실행에서도 0건이었으므로 호출 순서 때문이 아닙니다. 그 결과 인터뷰 한 번이
+ * 0.03398~0.03437달러로 12.7~29.6% 쌉니다. 두 모델의 입력 토큰은 같으므로 격차는 단가가 아니라
+ * 캐시에서 나옵니다.
+ *
+ * **명시적 캐싱은 배선하지 않습니다.** 최소 토큰 조건 1,024는 우리 접두사 5,043토큰이 넘기지만,
+ * 암묵적 캐싱이 스토리지 요금 없이 같은 절감을 이미 주고 있습니다.
+ *
+ * 질문의 성격은 사람이 원문을 읽고 골랐습니다. 측정과 판정 경위는
+ * `llm-wiki/raw/2026-09-09-꼬리질문-모델-확정-session-log.md`에 있습니다.
+ */
+
+/**
+ * 질문 한 번의 출력 토큰 상한입니다.
+ *
+ * 이 상한이 필요한 이유는 상한이 없을 때의 실패가 사용자에게 막다른 길이기 때문입니다. 질문 하나가
+ * 이력 항목 상한 `INTERVIEW_HISTORY_ITEM_MAX_BYTES`를 넘으면 클라이언트가 그 질문을 생성 실패로
+ * 취급해 제출을 잠그고, 서버에 상한이 없으므로 다시 생성해도 또 넘칠 수 있습니다.
+ *
+ * 값을 임의로 고르지 않고 이력 항목 상한에서 유도합니다. 2026-09-09 실측 표본 160개에서 출력
+ * 토큰 하나가 차지한 UTF-8 바이트의 최대가 4.87이었습니다. 5로 올려 잡으면
+ * `4,500 ÷ 5 = 900`입니다. 같은 실측의 출력 최대가 356토큰이므로 정상 질문의 2.5배 자리에 있고,
+ * 상한이 실제로 질문을 자르는 일은 없어야 합니다. 자르는 일이 생기면 그것은 이 값이 아니라
+ * 프롬프트가 길어졌다는 신호입니다.
+ */
+export const INTERVIEW_QUESTION_MAX_OUTPUT_TOKENS = 900;
+
+/**
+ * 출력 토큰 하나가 차지할 수 있다고 보는 UTF-8 바이트입니다. 실측 최대 4.87을 올려 잡았습니다.
+ *
+ * 상수로 두는 이유는 위 유도를 회귀 테스트가 붙들 수 있게 하기 위해서입니다. 이력 항목 상한이나
+ * 출력 상한 가운데 하나만 움직이면 테스트가 깨집니다.
+ */
+export const INTERVIEW_QUESTION_BYTES_PER_OUTPUT_TOKEN = 5;
+
+/**
  * 첫 청크가 오기까지 기다리는 시한입니다.
  *
  * 이 시한이 따로 있는 이유는 첫 청크 전과 후의 실패가 사용자에게 다르게 보이기 때문입니다. 첫
@@ -236,6 +280,26 @@ export function toInterviewQuestionMessages({
   ];
 }
 
+/**
+ * provider에 보낼 인자 가운데 모델을 뺀 나머지입니다.
+ *
+ * 모델을 함께 만들지 않는 이유는 이 부분만 테스트에서 그대로 볼 수 있게 하기 위해서입니다. 모델
+ * 객체를 만들려면 provider 자격 증명이 필요하고, 그러면 출력 상한이 실렸는지를 확인하는 데 키가
+ * 필요해집니다.
+ */
+export function interviewQuestionRequestOptions(
+  prompt: InterviewQuestionPrompt,
+  abortSignal: AbortSignal
+) {
+  return {
+    system: prompt.system,
+    messages: toInterviewQuestionMessages(prompt),
+    abortSignal,
+    maxRetries: INTERVIEW_QUESTION_MAX_RETRIES,
+    maxOutputTokens: INTERVIEW_QUESTION_MAX_OUTPUT_TOKENS,
+  };
+}
+
 export function createInterviewQuestionGenerate(
   model: string = INTERVIEW_QUESTION_MODEL
 ): GenerateInterviewQuestion {
@@ -243,10 +307,7 @@ export function createInterviewQuestionGenerate(
     toThrowingTextStream(
       streamText({
         model: createInterviewQuestionModel(model),
-        system: prompt.system,
-        messages: toInterviewQuestionMessages(prompt),
-        abortSignal,
-        maxRetries: INTERVIEW_QUESTION_MAX_RETRIES,
+        ...interviewQuestionRequestOptions(prompt, abortSignal),
       })
     );
 }
