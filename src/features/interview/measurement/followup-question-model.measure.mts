@@ -83,7 +83,9 @@ import {
 import { buildSnapshot } from "./evidence-fixture.mjs";
 import {
   averageUsagePerRound,
+  canonicalQuestionOf,
   completeRounds,
+  datasetShortfall,
   interviewCost,
   priceFor,
   type UsageRow,
@@ -442,11 +444,11 @@ async function runScenario(
       continue;
     }
 
-    let canonicalQuestion = "";
+    let canonicalNext: string | null = null;
     for (const model of models) {
       const measurement = await measureOnce(model, prompt, turn);
       measurements.push(measurement);
-      if (model === canonicalModel) canonicalQuestion = measurement.text;
+      if (model === canonicalModel) canonicalNext = canonicalQuestionOf(measurement);
       console.log(
         [
           `${scenario.label} R${round}`,
@@ -473,11 +475,16 @@ async function runScenario(
 
     // 이력은 한 모델의 질문으로만 쌓습니다. 모델마다 자기 질문을 쌓으면 다음 턴부터 입력이 갈려
     // 지연 차이가 모델 차이인지 입력 차이인지 가릴 수 없습니다.
-    if (canonicalQuestion === "") {
-      console.log(`턴 ${turn}에서 ${canonicalModel}이 질문을 만들지 못해 이 시나리오를 끊습니다.`);
+    // 본문이 비었는지로 판정하지 않습니다. 첫 조각이 도착한 뒤 오류가 나면 본문은 남아 있는데
+    // 질문은 완성되지 않았고, 그 잘린 본문 위에 다음 턴을 쌓으면 이후 측정이 모두 망가집니다.
+    if (canonicalNext === null) {
+      console.log(
+        `턴 ${turn}에서 ${canonicalModel}이 쓸 수 있는 질문을 내지 못해 이 회차를 끊습니다. ` +
+          `이 회차는 비용 표에서 빠집니다.`
+      );
       break;
     }
-    history.push({ role: "question", text: canonicalQuestion });
+    history.push({ role: "question", text: canonicalNext });
     history.push({ role: "answer", text: scenario.answerFor(turn) });
   }
 
@@ -576,25 +583,24 @@ function renderTranscript(
  * 그래서 실행이 스스로 표본 수를 세고 기대한 수와 다르면 요약을 내기 전에 끊습니다. 문서에는 이
  * 줄이 낸 수치만 옮깁니다.
  */
-function describeDataset(runs: readonly RunResult[]): string {
+function describeDataset(runs: readonly RunResult[]): { line: string; shortfall: string | null } {
   const expected = runs.length * maxTurns * models.length;
   const actual = runs.reduce((total, run) => total + run.measurements.length, 0);
-  if (actual !== expected) {
-    throw new Error(
-      `표본 수가 맞지 않습니다. 기대 ${expected}건(회차 ${runs.length} × 턴 ${maxTurns} × 모델 ${models.length}), 실제 ${actual}건.`
-    );
-  }
-  return (
-    `데이터셋: 시나리오 ${scenarios.length} × 회차 ${repeat} × 턴 ${maxTurns} × 모델 ${models.length} ` +
-    `= 생성 호출 ${expected}건, 모델당 ${expected / models.length}건`
-  );
+  return {
+    line:
+      `데이터셋: 시나리오 ${scenarios.length} × 회차 ${repeat} × 턴 ${maxTurns} × 모델 ${models.length} ` +
+      `= 생성 호출 ${expected}건 기대, 실제 ${actual}건 (모델당 ${actual / models.length}건)`,
+    shortfall: datasetShortfall(expected, actual),
+  };
 }
 
 function summarize(runs: readonly RunResult[]): void {
   console.log(`\n${"=".repeat(78)}`);
   console.log("요약 · 첫 청크 지연(밀리초)");
   console.log(`${"=".repeat(78)}`);
-  console.log(describeDataset(runs));
+  const dataset = describeDataset(runs);
+  console.log(dataset.line);
+  if (dataset.shortfall !== null) console.log(`경고: ${dataset.shortfall}`);
   const failed = runs.flatMap((run) => run.measurements).filter((entry) => entry.failure !== null);
   console.log(
     failed.length === 0
@@ -781,14 +787,20 @@ async function main(): Promise<void> {
     }
   }
 
-  // dry-run에서도 파일은 씁니다. 모델에 보낸 것은 생성 호출 없이도 확정되므로, 그 부분만 다시
-  // 뽑을 때 호출과 요금을 쓰지 않게 합니다.
-  if (!dryRun) summarize(runs);
-
+  // 질문 원문을 먼저 적습니다. 요약이 먼저 오면 그쪽에서 무슨 일이 생겼을 때 이미 쓴 호출의
+  // 결과까지 함께 잃습니다. dry-run에서도 파일은 씁니다. 모델에 보낸 것은 생성 호출 없이도
+  // 확정되므로 그 부분만 다시 뽑을 때 호출과 요금을 쓰지 않게 합니다.
   if (outPath !== "") {
     writeFileSync(outPath, renderTranscript(snapshotLabel, snapshot, runs), "utf8");
-    console.log(`\n질문 원문을 ${outPath}에 적었습니다.`);
+    console.log(`
+${dryRun ? "모델에 보낸 것을" : "질문 원문을"} ${outPath}에 적었습니다.`);
   }
+  if (dryRun) return;
+  summarize(runs);
+
+  // 온전하지 않은 실행을 종료 코드로 알립니다. 값을 감추지 않으면서도 문서에 옮겨도 되는 실행인지를
+  // 가릅니다. 앞 단계에서 던지면 회차 제외와 비용 표와 원문 저장이 모두 도달 불가능해집니다.
+  if (describeDataset(runs).shortfall !== null) process.exitCode = 1;
 }
 
 await main();

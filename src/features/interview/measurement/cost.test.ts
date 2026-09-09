@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   MODEL_PRICES,
+  canonicalQuestionOf,
+  datasetShortfall,
   UnknownModelPriceError,
   averageUsagePerRound,
   completeRounds,
@@ -123,5 +125,44 @@ describe("인터뷰 한 번", () => {
     const totals = { inputTokens: 0, cacheReadTokens: 0, outputTokens: 0 };
 
     expect(interviewCost(totals, priceFor("gemini-3.1-flash-lite"))).toBeCloseTo(0.02025, 12);
+  });
+});
+
+describe("이력에 쌓을 질문 고르기", () => {
+  it("첫 조각이 온 뒤 실패한 호출의 잘린 본문은 쓰지 않는다", () => {
+    // 본문이 비었는지로 판정하면 이 경우가 성공으로 취급되어, 잘린 질문 위에 다음 턴을 쌓게
+    // 됩니다. 그 뒤의 측정이 전부 망가진 이력 위에서 나옵니다.
+    expect(
+      canonicalQuestionOf({ failure: "총 시한에서 끊겼습니다.", text: "질문 앞부분만 도착" })
+    ).toBeNull();
+  });
+
+  it("첫 조각 전에 실패한 호출도 쓰지 않는다", () => {
+    expect(canonicalQuestionOf({ failure: "network error", text: "" })).toBeNull();
+  });
+
+  it("실패 없이 아무것도 내지 않은 응답도 쓰지 않는다", () => {
+    expect(canonicalQuestionOf({ failure: null, text: "   " })).toBeNull();
+  });
+
+  it("성공한 호출의 본문은 그대로 쓴다", () => {
+    expect(canonicalQuestionOf({ failure: null, text: "왜 이 구조를 골랐나요?" })).toBe(
+      "왜 이 구조를 골랐나요?"
+    );
+  });
+});
+
+describe("표본 수 확인", () => {
+  it("기대와 같으면 아무 말도 하지 않는다", () => {
+    expect(datasetShortfall(120, 120)).toBeNull();
+  });
+
+  it("모자라면 문장을 돌려주되 던지지 않는다", () => {
+    // 던지면 뒤에 있는 회차 제외와 비용 표와 질문 원문 저장이 모두 도달 불가능해집니다.
+    // 온전하지 않은 회차를 걸러 내려고 만든 경로가 정작 그 상황에서 실행되지 않습니다.
+    const message = datasetShortfall(120, 114);
+
+    expect(message).toContain("120");
+    expect(message).toContain("114");
   });
 });

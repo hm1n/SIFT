@@ -156,3 +156,41 @@ export function questionGenerationCost(totals: UsageTotals, price: ModelPrice): 
 export function interviewCost(totals: UsageTotals, price: ModelPrice): number {
   return STAGE_COST_PER_INTERVIEW + questionGenerationCost(totals, price);
 }
+
+/**
+ * 이력에 쌓을 질문을 고릅니다. 쌓을 수 없으면 null입니다.
+ *
+ * **본문이 비었는지로 판정하지 않습니다.** 재검증 라운드에서 나온 지적입니다. 첫 조각이 도착한 뒤
+ * 오류나 중단이 나면 본문은 남아 있는데 질문은 완성되지 않았습니다. 빈 문자열을 실패의 대리 지표로
+ * 쓰면 그 잘린 본문이 성공으로 취급되어 다음 턴부터 망가진 이력 위에서 측정하게 됩니다.
+ *
+ * 실패 여부는 직접 나타내는 값인 `failure`로 봅니다. 본문이 비어 있는 경우도 함께 걸러 냅니다.
+ * 실패 없이 아무것도 내지 않은 응답으로는 다음 턴을 만들 수 없기 때문입니다.
+ */
+export function canonicalQuestionOf(measurement: {
+  readonly failure: string | null;
+  readonly text: string;
+}): string | null {
+  if (measurement.failure !== null) return null;
+  if (measurement.text.trim() === "") return null;
+  return measurement.text;
+}
+
+/**
+ * 표본 수가 기대와 다른지 봅니다. 다르면 사람이 읽을 문장을, 같으면 null을 돌려줍니다.
+ *
+ * **던지지 않습니다.** 재검증 라운드에서 나온 지적입니다. 앞 단계에서 던지면 뒤에 있는 회차 제외와
+ * 비용 표와 질문 원문 저장이 모두 도달 불가능해집니다. 온전하지 않은 회차를 걸러 내려고 만든 경로가
+ * 정작 그 상황에서 실행되지 않았습니다.
+ *
+ * 대신 실행이 끝날 때 종료 코드로 알립니다. 값을 감추지 않으면서도 온전하지 않은 실행을 온전한
+ * 실행과 구별할 수 있습니다.
+ */
+export function datasetShortfall(expected: number, actual: number): string | null {
+  if (expected === actual) return null;
+  return (
+    `표본 수가 기대와 다릅니다. 기대 ${expected}건, 실제 ${actual}건. ` +
+    `중간에 끊긴 회차가 있습니다. 아래 표는 온전한 회차만으로 낸 값이고, 문서에는 이 실행의 값을 ` +
+    `온전한 실행의 값으로 옮기지 마세요.`
+  );
+}
