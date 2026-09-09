@@ -22,6 +22,8 @@
  * 출력에 키를 남기지 않습니다. 헤더는 이름만 찍고 값은 찍지 않습니다.
  */
 
+import { parseCreatedCache, type CreatedCache } from "./cache-response.mjs";
+
 const args = process.argv.slice(2);
 const flag = (name: string, fallback: string) =>
   args.find((arg) => arg.startsWith(`--${name}=`))?.split("=")[1] ?? fallback;
@@ -87,13 +89,21 @@ async function probeMinimumTokens(model: string, chars: number): Promise<void> {
     console.log(`    한도 헤더: ${limitHeaders}`);
     return;
   }
-  const created = (await response.json()) as {
-    name?: string;
-    usageMetadata?: { totalTokenCount?: number };
-  };
-  console.log(
-    `  본문 ${chars}자 → 생성됨 (캐시 토큰 ${created.usageMetadata?.totalTokenCount ?? "?"})`
-  );
+  // 본문을 먼저 문자열로 받고 파싱은 감쌉니다. 여기서 분류 없이 던지면 아래 정리 경로가 돌지
+  // 않아 방금 만든 캐시가 TTL이 끝날 때까지 남습니다.
+  const raw = await response.text();
+  let created: CreatedCache;
+  try {
+    created = parseCreatedCache(model, raw);
+  } catch (error) {
+    console.log(`  본문 ${chars}자 → 생성은 됐지만 응답을 읽지 못했습니다`);
+    console.log(`    ${(error as Error).message}`);
+    console.log(`    한도 헤더: ${limitHeaders}`);
+    // 이름을 모르면 지울 수 없습니다. `ttl: 60s`로 만들었으므로 1분 뒤 사라집니다.
+    console.log(`    정리: 캐시 이름을 몰라 지우지 못했습니다. ttl 60초가 지나면 사라집니다.`);
+    return;
+  }
+  console.log(`  본문 ${chars}자 → 생성됨 (캐시 토큰 ${created.totalTokenCount ?? "?"})`);
   console.log(`    한도 헤더: ${limitHeaders}`);
   if (created.name !== undefined) {
     const deleted = await fetch(`${BASE}/${created.name}?key=${apiKey}`, { method: "DELETE" });

@@ -40,6 +40,53 @@ export interface EvidenceFixtureOptions {
 }
 
 /**
+ * 페이지를 따라가다 실패했을 때 그때까지 모은 SHA를 들고 다니는 오류입니다.
+ *
+ * 저장소의 다른 조회 경로가 같은 계약을 씁니다(`GitHubFetchError.partialCommits`). 2페이지에서
+ * 본문이 깨졌다고 1페이지에서 이미 받은 커밋까지 버리면, 부르는 쪽이 다시 처음부터 받아야 하고
+ * 그동안 쓴 요청도 함께 버려집니다.
+ */
+export class PullRequestCommitShaError extends Error {
+  readonly collectedShas: readonly string[];
+
+  constructor(message: string, collectedShas: readonly string[], options?: ErrorOptions) {
+    super(message, options);
+    this.name = "PullRequestCommitShaError";
+    this.collectedShas = collectedShas;
+  }
+}
+
+/**
+ * 페이지를 따라가며 SHA를 모읍니다. 페이지를 가져오는 방법은 인자로 받습니다.
+ *
+ * 네트워크를 떼어 낸 이유는 부분 결과 보존이 회귀 테스트를 붙일 수 있는 자리이기 때문입니다.
+ * 1페이지 성공 뒤 2페이지가 깨지는 상황은 실제 GitHub으로는 만들기 어렵습니다.
+ */
+export async function collectShas(
+  maxCommits: number,
+  firstUrl: string,
+  fetchPage: (url: string) => Promise<CommitShaPage>
+): Promise<string[]> {
+  let url: string | null = firstUrl;
+  const shas: string[] = [];
+  while (url !== null && shas.length < maxCommits) {
+    let page: CommitShaPage;
+    try {
+      page = await fetchPage(url);
+    } catch (error) {
+      throw new PullRequestCommitShaError(
+        `커밋 목록을 따라가다 실패했습니다(${shas.length}개 수집): ${(error as Error).message}`,
+        shas,
+        { cause: error }
+      );
+    }
+    shas.push(...page.shas);
+    url = page.next;
+  }
+  return shas;
+}
+
+/**
  * PR 커밋 SHA를 `maxCommits`개까지 모읍니다.
  *
  * **다음 페이지 링크를 따라갑니다.** 한 페이지는 최대 100개입니다. 따라가지 않으면
@@ -54,18 +101,14 @@ async function fetchPullRequestCommitShas(
   pullRequestNumber: number
 ): Promise<string[]> {
   const perPage = Math.min(Math.max(options.maxCommits, 1), 100);
-  let url: string | null =
+  const firstUrl =
     `${GITHUB_API_BASE}/repos/${options.owner}/${options.repo}/pulls/${pullRequestNumber}/commits?per_page=${perPage}`;
-  const shas: string[] = [];
-  while (url !== null && shas.length < options.maxCommits) {
-    const page = await fetchCommitShaPage(options, url, pullRequestNumber);
-    shas.push(...page.shas);
-    url = page.next;
-  }
-  return shas;
+  return collectShas(options.maxCommits, firstUrl, (url) =>
+    fetchCommitShaPage(options, url, pullRequestNumber)
+  );
 }
 
-interface CommitShaPage {
+export interface CommitShaPage {
   readonly shas: string[];
   /** 다음 페이지 주소입니다. 마지막 페이지면 null입니다. */
   readonly next: string | null;
