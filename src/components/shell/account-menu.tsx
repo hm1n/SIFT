@@ -2,9 +2,8 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
+import { SESSION_PATH } from "@/lib/github/auth-paths";
 import styles from "./top-header.module.css";
-
-export const SESSION_PATH = "/api/auth/session";
 
 export interface AccountMenuProps {
   fetchImpl?: typeof fetch;

@@ -1,13 +1,15 @@
 import Link from "next/link";
+import { LOGIN_PATH } from "@/lib/github/auth-paths";
 import { ButtonLink } from "./button";
 import { AccountMenu } from "./account-menu";
 import { GitHubIcon, SiftMark } from "./sift-mark";
 import styles from "./top-header.module.css";
 
-export const LOGIN_PATH = "/api/auth/github/login";
-
 export interface TopHeaderProps {
-  /** 세션 쿠키가 있는지입니다. 사용자명은 세션에 없어 그리지 않습니다. #94가 정합니다. */
+  /**
+   * 세션 쿠키가 있는지입니다. 사용자명은 세션에 없어 그리지 않습니다.
+   * #94에서 쿠키 계약을 바꾸지 않기로 해 사용자 정보는 쿠키에 넣지 않습니다. 표시 여부는 Repository 목록 API를 만드는 #95가 정합니다.
+   */
   isAuthenticated: boolean;
   /** 테스트에서 fetch를 대체하는 통로입니다. */
   fetchImpl?: typeof fetch;

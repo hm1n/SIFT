@@ -3,8 +3,8 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SESSION_PATH } from "./account-menu";
-import { LOGIN_PATH, TopHeader } from "./top-header";
+import { LOGIN_PATH, SESSION_PATH } from "@/lib/github/auth-paths";
+import { TopHeader } from "./top-header";
 
 const routerMock = { push: vi.fn(), refresh: vi.fn() };
 vi.mock("next/navigation", () => ({ useRouter: () => routerMock }));
