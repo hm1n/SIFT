@@ -1,0 +1,40 @@
+import Link from "next/link";
+import { ButtonLink } from "./button";
+import { AccountMenu } from "./account-menu";
+import { GitHubIcon, SiftMark } from "./sift-mark";
+import styles from "./top-header.module.css";
+
+export const LOGIN_PATH = "/api/auth/github/login";
+export const SESSION_PATH = "/api/auth/session";
+
+export interface TopHeaderProps {
+  /** 세션 쿠키가 있는지입니다. 사용자명은 세션에 없어 그리지 않습니다. #94가 정합니다. */
+  isAuthenticated: boolean;
+  /** 테스트에서 fetch를 대체하는 통로입니다. */
+  fetchImpl?: typeof fetch;
+  /** 로그아웃 뒤 처리입니다. 기본은 첫 화면으로 이동하고 서버 컴포넌트를 다시 그립니다. 테스트가 이동을 대체합니다. */
+  onSignedOut?: () => void;
+}
+
+/**
+ * 모든 화면 위에 놓이는 상단 헤더입니다. 로고 마크와 제품명, 그리고 로그인 전에는 로그인 버튼, 로그인 후에는 계정 메뉴를 그립니다.
+ * 디자인 파일 `App.tsx`의 `TopHeader`를 옮겼고 계정 삭제 항목은 MVP 범위 밖이라 빼두었습니다.
+ */
+export function TopHeader({ isAuthenticated, fetchImpl, onSignedOut }: TopHeaderProps) {
+  return (
+    <header className={styles.header}>
+      <Link className={styles.brand} href="/" aria-label="SIFT home">
+        <SiftMark size={16} />
+        <span className={styles.brandName}>SIFT</span>
+      </Link>
+      {isAuthenticated ? (
+        <AccountMenu fetchImpl={fetchImpl} onSignedOut={onSignedOut} />
+      ) : (
+        <ButtonLink variant="secondary" href={LOGIN_PATH}>
+          <GitHubIcon size={13} />
+          Log in with GitHub
+        </ButtonLink>
+      )}
+    </header>
+  );
+}
