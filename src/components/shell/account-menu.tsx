@@ -4,11 +4,10 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import styles from "./top-header.module.css";
 
-const SESSION_PATH = "/api/auth/session";
+export const SESSION_PATH = "/api/auth/session";
 
 export interface AccountMenuProps {
   fetchImpl?: typeof fetch;
-  onSignedOut?: () => void;
 }
 
 /**
@@ -19,7 +18,7 @@ export interface AccountMenuProps {
  * 쿠키를 읽어 그리므로 갱신만으로 로그인 전 상태가 되고, `RepositoryAnalysisView`는 바뀐 `hasSession` prop을
  * 따라갑니다.
  */
-export function AccountMenu({ fetchImpl, onSignedOut }: AccountMenuProps) {
+export function AccountMenu({ fetchImpl }: AccountMenuProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -47,12 +46,11 @@ export function AccountMenu({ fetchImpl, onSignedOut }: AccountMenuProps) {
     const doFetch = fetchImpl ?? fetch;
     // 삭제 요청이 실패해도 진행합니다. 쿠키가 남아 있으면 다음 화면이 다시 로그인 상태로 그려지므로 사용자가 알 수 있습니다.
     await doFetch(SESSION_PATH, { method: "DELETE" }).catch(() => undefined);
-    if (onSignedOut) {
-      onSignedOut();
-      return;
-    }
     router.push("/");
     router.refresh();
+    // 삭제가 실패해 쿠키가 남으면 다시 그린 헤더에 이 메뉴가 그대로 있습니다. 버튼을 다시 누를 수 있게 되돌립니다.
+    setIsSigningOut(false);
+    setIsOpen(false);
   }
 
   return (

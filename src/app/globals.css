@@ -32,10 +32,6 @@
   --label-size-md: 11px;
   --label-tracking: 0.1em;
   --label-tracking-wide: 0.05em;
-
-  /* 이전 이름입니다. 기존 모듈이 참조하므로 새 토큰을 가리키게 두고 새 코드에서는 쓰지 않습니다. */
-  --background: var(--color-background);
-  --foreground: var(--color-foreground);
 }
 
 html {
@@ -89,11 +85,3 @@ a {
   background: var(--color-scrollbar-hover);
 }
 
-/* 대문자 mono 라벨의 공통 형태입니다. 크기는 쓰는 자리에서 --label-size-* 로 정합니다. */
-.monoLabel {
-  font-family: var(--font-mono);
-  font-size: var(--label-size-sm);
-  letter-spacing: var(--label-tracking);
-  text-transform: uppercase;
-  color: var(--color-muted-foreground);
-}
