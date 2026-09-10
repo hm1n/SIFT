@@ -2,6 +2,7 @@ import type { AnchorHTMLAttributes, ButtonHTMLAttributes } from "react";
 import styles from "./button.module.css";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost";
+
 function buttonClassName(variant: ButtonVariant, extra?: string) {
   return [styles.button, styles[variant], extra ?? ""].filter(Boolean).join(" ");
 }
