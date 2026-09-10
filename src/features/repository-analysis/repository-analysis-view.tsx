@@ -1,6 +1,7 @@
 "use client";
 
-import { type FormEvent, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import type { RepositoryRef } from "@/lib/github/types";
 import { ExperienceCandidateList, StageAExclusions } from "@/features/experience-candidates/experience-candidate-list";
 import {
@@ -76,27 +77,54 @@ function loadingCopy(loading: LoadingPhase) {
   };
 }
 
-export function RepositoryAnalysisView({ hasSession: initialHasSession, authError }: { hasSession: boolean; authError?: string }) {
+/**
+ * 세션 여부의 출처는 서버가 쿠키를 읽어 넘기는 `hasSession` prop 하나입니다. 화면이 따로 들고 있지 않습니다.
+ * 로그아웃 진입점은 둘입니다. 상단 헤더의 Sign out과 이 화면 오류 안내의 다시 로그인입니다. 둘 다 세션 삭제 뒤
+ * 라우터를 갱신해 서버가 헤더와 이 화면을 함께 다시 그리게 하고, prop이 false로 바뀌는 순간 분석 상태를 버립니다.
+ * 한쪽만 갱신하면 로그아웃 뒤에도 비공개 저장소의 후보 목록이 남습니다. PR #99 리뷰 P1이 이 지점이었습니다.
+ */
+export function RepositoryAnalysisView({ hasSession, authError }: { hasSession: boolean; authError?: string }) {
+  const router = useRouter();
   const [owner, setOwner] = useState("");
   const [repo, setRepo] = useState("");
   const [contributionItems, setContributionItems] = useState("");
-  const [hasSession, setHasSession] = useState(initialHasSession);
   const [analyzedRepository, setAnalyzedRepository] = useState<RepositoryRef | null>(null);
   const [state, setState] = useState<AnalysisState>(INITIAL_STATE);
-
-  // 상단 헤더의 Sign out이 서버 컴포넌트를 다시 그리면 이 prop이 바뀝니다. 초기값으로만 잡아 두면 로그인 폼이 남습니다.
-  // 렌더 중에 prop 변화를 감지해 맞춥니다. effect에서 setState를 부르는 것은 lint가 막습니다.
-  const [seenHasSession, setSeenHasSession] = useState(initialHasSession);
-  if (initialHasSession !== seenHasSession) {
-    setSeenHasSession(initialHasSession);
-    setHasSession(initialHasSession);
-  }
+  // 진행 중인 분석의 실행 번호입니다. 초기화 뒤 늦게 도착한 결과가 화면에 다시 나타나지 않게 걸러냅니다.
+  const runRef = useRef(0);
   const ownerInput = useRef<HTMLInputElement>(null);
   const loading = state.status === "loading";
 
+  function resetAnalysis() {
+    runRef.current += 1;
+    setAnalyzedRepository(null);
+    setState(INITIAL_STATE);
+  }
+
+  // 세션이 사라지면 분석 상태를 버립니다. 렌더 중에 prop 변화를 감지해 상태를 비우고(effect의 setState는 lint가 막습니다),
+  // 실행 번호는 렌더 중에 ref를 만질 수 없어 effect에서 올립니다. 그 사이 도착하는 결과는 아래 렌더의 세션 게이트가 막습니다.
+  const [seenHasSession, setSeenHasSession] = useState(hasSession);
+  if (hasSession !== seenHasSession) {
+    setSeenHasSession(hasSession);
+    if (!hasSession) {
+      setAnalyzedRepository(null);
+      setState(INITIAL_STATE);
+    }
+  }
+  useEffect(() => {
+    if (!hasSession) runRef.current += 1;
+  }, [hasSession]);
+
+  /** 이 실행이 아직 최신일 때만 상태를 반영합니다. */
+  function stateSinkFor(run: number) {
+    return (next: AnalysisState) => {
+      if (runRef.current === run) setState(next);
+    };
+  }
+
   function analyze(repository: RepositoryRef) {
     setAnalyzedRepository(repository);
-    return analyzeRepository(repository, parseContributionItems(contributionItems), setState);
+    return analyzeRepository(repository, parseContributionItems(contributionItems), stateSinkFor(runRef.current));
   }
 
   function runAnalysis() {
@@ -112,24 +140,23 @@ export function RepositoryAnalysisView({ hasSession: initialHasSession, authErro
   function retry() {
     if (state.status === "error" && state.retryPoint) {
       setAnalyzedRepository(state.retryPoint.repository);
-      return generateCandidates(state.retryPoint, setState);
+      return generateCandidates(state.retryPoint, stateSinkFor(runRef.current));
     }
     runAnalysis();
   }
 
   async function reauthenticate() {
+    // 삭제가 실패해도 진행합니다. 갱신된 헤더가 로그인 상태로 남으면 사용자가 알 수 있습니다.
     await fetch("/api/auth/session", { method: "DELETE" }).catch(() => undefined);
-    setHasSession(false);
-    setAnalyzedRepository(null);
-    setState(INITIAL_STATE);
+    resetAnalysis();
+    router.refresh();
   }
 
   function selectRepository() {
     setOwner("");
     setRepo("");
     setContributionItems("");
-    setAnalyzedRepository(null);
-    setState(INITIAL_STATE);
+    resetAnalysis();
     requestAnimationFrame(() => ownerInput.current?.focus());
   }
 
@@ -178,8 +205,8 @@ export function RepositoryAnalysisView({ hasSession: initialHasSession, authErro
           </button>
         </form>}
 
-        {state.status === "loading" ? <LoadingState loading={state.loading} /> : null}
-        {state.status === "empty" ? (
+        {hasSession && state.status === "loading" ? <LoadingState loading={state.loading} /> : null}
+        {hasSession && state.status === "empty" ? (
           <EmptyState
             kind={state.kind}
             reason={state.kind === "no_final_candidates" ? state.reason : undefined}
@@ -187,7 +214,7 @@ export function RepositoryAnalysisView({ hasSession: initialHasSession, authErro
             onSelectRepository={selectRepository}
           />
         ) : null}
-        {state.status === "error" ? (
+        {hasSession && state.status === "error" ? (
           <ErrorState
             error={state.error}
             retryLabel={state.retryPoint ? "후보 생성 다시 시도" : "전체 조회 다시 시도"}
@@ -196,7 +223,7 @@ export function RepositoryAnalysisView({ hasSession: initialHasSession, authErro
             onSelectRepository={selectRepository}
           />
         ) : null}
-        {state.status === "success" && analyzedRepository ? (
+        {hasSession && state.status === "success" && analyzedRepository ? (
           <ExperienceCandidateList
             repository={analyzedRepository}
             data={state.data}

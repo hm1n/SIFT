@@ -22,6 +22,10 @@ vi.mock("./repository-analysis", async (importOriginal) => {
   return { ...original, analyzeRepository: vi.fn(), generateCandidates: vi.fn() };
 });
 
+/** 라우터 갱신은 서버가 prop을 다시 넘기는 일이므로, 테스트가 그 뒤에 세션 없는 prop으로 다시 그립니다. */
+const routerMock = { push: vi.fn(), refresh: vi.fn() };
+vi.mock("next/navigation", () => ({ useRouter: () => routerMock }));
+
 const analyzeMock = vi.mocked(analyzeRepository);
 const generateMock = vi.mocked(generateCandidates);
 
@@ -57,6 +61,7 @@ function mockState(state: AnalysisState) {
 beforeEach(() => {
   analyzeMock.mockReset();
   generateMock.mockReset();
+  routerMock.refresh.mockReset();
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
   vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
     callback(0);
@@ -324,27 +329,74 @@ describe("RepositoryAnalysisView Error", () => {
     expect(analyzeMock.mock.calls[1][0]).toEqual({ owner: "octocat", repo: "hello-world" });
   });
 
-  it("인증 재진행을 선택하면 세션을 삭제하고 로그인 진입점으로 이어진다", async () => {
+  it("인증 재진행을 선택하면 세션을 삭제하고 라우터를 갱신해 헤더와 화면이 함께 로그인 전 상태가 된다", async () => {
     const error: AnalysisError = { kind: "auth_revoked", title: "인증 취소", message: "인증 필요", recovery: "reauthenticate" };
     mockState({ status: "error", error });
-    render(<RepositoryAnalysisView hasSession={true} />);
+    const { rerender } = render(<RepositoryAnalysisView hasSession={true} />);
     await submitRepository();
     fireEvent.click(screen.getByRole("button", { name: "GitHub으로 다시 로그인" }));
-    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    await waitFor(() => expect(routerMock.refresh).toHaveBeenCalledTimes(1));
     expect(fetch).toHaveBeenLastCalledWith("/api/auth/session", { method: "DELETE" });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    rerender(<RepositoryAnalysisView hasSession={false} />);
     expect(screen.getByRole("link", { name: "GitHub으로 로그인" })).toHaveAttribute("href", "/api/auth/github/login");
   });
 
-  // 쿠키를 지우지 못해도 화면은 로그인 상태로 남지 않아야 합니다.
-  it("세션 삭제 요청이 실패해도 로그인 진입점으로 되돌아간다", async () => {
+  // 쿠키를 지우지 못해도 오류 화면은 내리고 서버에 다시 묻습니다. 쿠키가 남았다면 서버가 로그인 상태로 다시 그려 사용자가 알 수 있습니다.
+  it("세션 삭제 요청이 실패해도 분석 상태를 버리고 라우터를 갱신한다", async () => {
     const error: AnalysisError = { kind: "auth_revoked", title: "인증 취소", message: "인증 필요", recovery: "reauthenticate" };
     mockState({ status: "error", error });
     render(<RepositoryAnalysisView hasSession={true} />);
     await submitRepository();
     vi.mocked(fetch).mockRejectedValueOnce(new Error("offline"));
     fireEvent.click(screen.getByRole("button", { name: "GitHub으로 다시 로그인" }));
-    await waitFor(() => expect(screen.getByRole("link", { name: "GitHub으로 로그인" })).toBeInTheDocument());
-    expect(screen.queryByLabelText("Owner")).not.toBeInTheDocument();
+    await waitFor(() => expect(routerMock.refresh).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  // 상단 헤더의 Sign out은 이 화면을 거치지 않고 서버가 prop만 바꿉니다. 그래도 완료된 결과가 남으면 안 됩니다.
+  it("헤더 Sign out으로 세션이 사라지면 완료된 후보 목록을 버린다", async () => {
+    mockState({
+      status: "success",
+      data: RETRY_POINT.data,
+      candidates: {
+        candidates: [{ sha: "a1b2c3d4e5", relatedShas: [], evidence: "상태 머신을 구현했습니다.", citedFilePaths: [], source: "automatic_recommendation" }],
+        insufficientCandidatesReason: null,
+        diffs: [],
+      },
+      stageASelection: EMPTY_STAGE_A_SELECTION,
+    });
+    const { rerender } = render(<RepositoryAnalysisView hasSession={true} />);
+    await submitRepository();
+    await waitFor(() => expect(screen.getByText("상태 머신을 구현했습니다.")).toBeInTheDocument());
+    rerender(<RepositoryAnalysisView hasSession={false} />);
+    expect(screen.getByRole("link", { name: "GitHub으로 로그인" })).toBeInTheDocument();
+    expect(screen.queryByText("상태 머신을 구현했습니다.")).not.toBeInTheDocument();
+  });
+
+  it("분석 진행 중 세션이 사라지면 늦게 도착한 결과를 화면에 올리지 않는다", async () => {
+    let finish: ((state: AnalysisState) => void) | undefined;
+    analyzeMock.mockImplementation((_repo, _items, onStateChange) => {
+      onStateChange({ status: "loading", loading: { step: "commits" } });
+      return new Promise<void>((resolve) => {
+        finish = (state) => {
+          onStateChange(state);
+          resolve();
+        };
+      });
+    });
+    const { rerender } = render(<RepositoryAnalysisView hasSession={true} />);
+    await submitRepository();
+    expect(screen.getByRole("status")).toBeInTheDocument();
+
+    rerender(<RepositoryAnalysisView hasSession={false} />);
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+
+    const error: AnalysisError = { kind: "auth_revoked", title: "인증 취소", message: "인증 필요", recovery: "reauthenticate" };
+    finish!({ status: "error", error });
+    await Promise.resolve();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "GitHub으로 로그인" })).toBeInTheDocument();
   });
 
 });
@@ -521,9 +573,9 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
     await submitRepository();
 
     fireEvent.click(screen.getByRole("button", { name: "GitHub으로 다시 로그인" }));
-    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    await waitFor(() => expect(routerMock.refresh).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 
-    expect(screen.getByRole("link", { name: "GitHub으로 로그인" })).toHaveAttribute("href", "/api/auth/github/login");
     expect(analyzeMock).toHaveBeenCalledTimes(1);
     expect(generateMock).not.toHaveBeenCalled();
   });
