@@ -310,12 +310,18 @@ async function runDetails() {
   const targets = included.slice(0, limit);
   const before = await coreRateLimit();
   const startedAt = ms();
-  const { details, durations } = await fetchDetailsSequential(targets);
+  // --cache가 있으면 상세를 캐시에 저장한다. 묶음 방식 측정(measure-grouping.mts)의 입력을
+  // 만드는 용도라 소요 시간 분포는 이 경로에서 재지 않는다.
+  const cachePath = rest.find((option) => option.startsWith("--cache="));
+  const { details, durations } =
+    cachePath === undefined
+      ? await fetchDetailsSequential(targets)
+      : { details: await fetchDetailsCached(targets), durations: [] as number[] };
   const elapsed = ms() - startedAt;
   const after = await coreRateLimit();
 
   console.log(`[details] 순차 조회 커밋=${details.length} 총 소요=${round(elapsed)}ms 커밋당 평균=${round(elapsed / (details.length || 1))}ms`);
-  distribution("[details] 커밋별 조회 소요(ms)", durations);
+  if (durations.length > 0) distribution("[details] 커밋별 조회 소요(ms)", durations);
   console.log(`[details] core rate limit 소비=${consumed(before, after)} 잔량=${after.remaining}/${after.limit}`);
   // 이 줄은 프로덕션 예산 환산이 목적이라 로컬 축소값이 아니라 상수를 씁니다.
   console.log(
