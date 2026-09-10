@@ -1,0 +1,68 @@
+/* 버튼 세 종류입니다. primary는 검정 배경, secondary는 1px border, ghost는 텍스트만 둡니다. */
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--color-foreground);
+  outline-offset: 2px;
+}
+
+.button:disabled,
+.button[aria-disabled="true"] {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.primary {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-primary-foreground);
+}
+
+.primary:hover:not(:disabled) {
+  background: #404040;
+  border-color: #404040;
+}
+
+.secondary {
+  background: var(--color-card);
+  border-color: #d4d4d4;
+  color: #404040;
+}
+
+.secondary:hover:not(:disabled) {
+  border-color: var(--color-muted-foreground);
+  color: var(--color-foreground);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--color-muted-foreground);
+}
+
+.ghost:hover:not(:disabled) {
+  background: var(--color-accent);
+  color: var(--color-foreground);
+}
+
+.large {
+  min-height: 40px;
+  padding: 0 16px;
+  font-size: 14px;
+}

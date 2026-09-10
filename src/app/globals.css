@@ -1,6 +1,41 @@
+/*
+ * 디자인 토큰입니다. 원본은 디자인 파일 `Chat Interface Design/src/index.css`의 `@theme` 블록이고,
+ * 배경과 경위는 `llm-wiki/wiki/2026-09-10-디자인-개편-계획.md`에 있습니다.
+ * 화면 모듈은 색과 라운드와 폰트를 여기 변수로만 참조합니다. 같은 회색이 여러 값으로 흩어지는 것을 막습니다.
+ */
 :root {
-  --background: #f8f8fb;
-  --foreground: #171717;
+  /* 색 9종 */
+  --color-background: #ffffff;
+  --color-foreground: #0a0a0a;
+  --color-card: #ffffff;
+  --color-muted: #f5f5f5;
+  --color-muted-foreground: #737373;
+  --color-border: #e5e5e5;
+  --color-primary: #0a0a0a;
+  --color-primary-foreground: #ffffff;
+  --color-accent: #f5f5f5;
+
+  /* 스크롤바와 호버 경계에 쓰는 보조 회색입니다. 디자인 파일의 neutral-300과 neutral-400입니다. */
+  --color-scrollbar: #d4d4d4;
+  --color-scrollbar-hover: #a3a3a3;
+
+  --radius: 7px;
+
+  /* 폰트. Inter와 Geist Mono는 layout.tsx가 next/font로 등록한 변수이고, Pretendard는 CDN 스타일시트가 제공합니다. */
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-pretendard: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Helvetica, Arial, sans-serif;
+
+  /* 대문자 mono 라벨. 크기 셋과 자간 둘입니다. */
+  --label-size-xs: 9px;
+  --label-size-sm: 10px;
+  --label-size-md: 11px;
+  --label-tracking: 0.1em;
+  --label-tracking-wide: 0.05em;
+
+  /* 이전 이름입니다. 기존 모듈이 참조하므로 새 토큰을 가리키게 두고 새 코드에서는 쓰지 않습니다. */
+  --background: var(--color-background);
+  --foreground: var(--color-foreground);
 }
 
 html {
@@ -17,9 +52,9 @@ body {
   min-height: 100%;
   display: flex;
   flex-direction: column;
-  color: var(--foreground);
-  background: var(--background);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  color: var(--color-foreground);
+  background: var(--color-background);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -33,4 +68,32 @@ body {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+/* 스크롤바 4px. 디자인 파일 index.css와 같은 값입니다. */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-scrollbar);
+  border-radius: 2px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-scrollbar-hover);
+}
+
+/* 대문자 mono 라벨의 공통 형태입니다. 크기는 쓰는 자리에서 --label-size-* 로 정합니다. */
+.monoLabel {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
 }
