@@ -171,6 +171,14 @@ describe("RepositoryAnalysisView Empty", () => {
     expect(analyzeMock).not.toHaveBeenCalled();
   });
 
+  it("서버가 다시 그려 hasSession이 false로 바뀌면 폼을 내리고 로그인 진입점을 표시한다", () => {
+    const { rerender } = render(<RepositoryAnalysisView hasSession={true} />);
+    expect(screen.getByLabelText("Owner")).toBeInTheDocument();
+    rerender(<RepositoryAnalysisView hasSession={false} />);
+    expect(screen.queryByLabelText("Owner")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "GitHub으로 로그인" })).toBeInTheDocument();
+  });
+
   it.each([
     ["access_denied", "GitHub에서 권한 허용을 취소했습니다. 다시 로그인할 수 있습니다."],
     ["state_mismatch", "로그인 요청을 확인하지 못했습니다. 처음부터 다시 로그인해야 합니다."],

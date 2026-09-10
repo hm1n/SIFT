@@ -83,6 +83,14 @@ export function RepositoryAnalysisView({ hasSession: initialHasSession, authErro
   const [hasSession, setHasSession] = useState(initialHasSession);
   const [analyzedRepository, setAnalyzedRepository] = useState<RepositoryRef | null>(null);
   const [state, setState] = useState<AnalysisState>(INITIAL_STATE);
+
+  // 상단 헤더의 Sign out이 서버 컴포넌트를 다시 그리면 이 prop이 바뀝니다. 초기값으로만 잡아 두면 로그인 폼이 남습니다.
+  // 렌더 중에 prop 변화를 감지해 맞춥니다. effect에서 setState를 부르는 것은 lint가 막습니다.
+  const [seenHasSession, setSeenHasSession] = useState(initialHasSession);
+  if (initialHasSession !== seenHasSession) {
+    setSeenHasSession(initialHasSession);
+    setHasSession(initialHasSession);
+  }
   const ownerInput = useRef<HTMLInputElement>(null);
   const loading = state.status === "loading";
 
