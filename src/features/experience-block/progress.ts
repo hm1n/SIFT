@@ -176,7 +176,12 @@ export function selectNextTarget(input: SelectNextTargetInput): NextQuestionTarg
   // 6. 유효한 질문 후보가 없으면 질문을 만들지 않습니다.
   if (openBlocks.length === 0) return { kind: "done" };
 
-  const unvisitedBlocks = openBlocks.filter((block) => !progress[block].visited);
+  // "미확인"은 질문을 보낸 적이 없는 것뿐 아니라 평가도 없는 블록입니다(설계 6-2절: "다른 답변에서
+  // 정보를 얻었다면 별도 질문을 예약하지 않습니다"). `evaluation[block]`이 있다는 것은 다른 블록을
+  // 겨냥한 답변이 이 블록의 주장까지 만들어 이미 한 번 평가받았다는 뜻이므로, 질문을 보낸 적이
+  // 없어도(`visited=false`) 예약 대상에서 뺍니다. `visited`만 보면 이런 블록도 미확인으로 잘못 세어
+  // 남은 질문을 억지로 그쪽에 씁니다(구현검토 2026-09-11 P2, R8).
+  const unvisitedBlocks = openBlocks.filter((block) => !progress[block].visited && evaluation[block] === null);
   const remainingQuestions = maxTurns - turnsUsed;
 
   // 3. 예약 예산: 남은 질문 수가 다른 미확인 블록 수(블록당 예약 수만큼) 이하이면 미확인 블록으로 이동합니다.

@@ -127,6 +127,24 @@ describe("selectNextTarget", () => {
     expect(reserved).toEqual({ kind: "ask", block: "result", element: "a" });
   });
 
+  it("다른 답변에서 이미 평가받은 블록은 질문을 보낸 적이 없어도 미확인으로 예약하지 않는다 (구현검토 P2, R8)", () => {
+    // problem만 직접 질문을 보냈습니다(visited=true). alternatives는 다른 답변에서 정보를 얻어
+    // 평가는 있지만(evaluation !== null) 한 번도 직접 묻지 않았습니다(visited=false).
+    const askable = { sufficient: false, askable: true, reason: "askable" as const };
+    const next = selectNextTarget({
+      evaluation: { problem: askable, alternatives: askable, action: null, result: null },
+      progress: recordAsked(emptyInterviewProgress(), "problem", "a"),
+      turnsUsed: 7,
+      maxTurns: 10,
+      isEnded: false,
+      lastTarget: { block: "problem", element: "a" },
+    });
+    // alternatives를 미확인으로 잘못 세면 예약이 걸려 강제로 그쪽으로 이동합니다. 실제 미확인은
+    // action·result뿐이라(둘 다 evaluation === null) 예약 조건(남은 3 <= 미확인 2 * 1)이 걸리지
+    // 않고 problem을 이어갑니다.
+    expect(next).toEqual({ kind: "ask", block: "problem", element: "b" });
+  });
+
   it("재질문 1회 제한: 요소 하나가 재질문 예산을 다 써도 같은 블록의 다른 요소는 계속 물을 수 있다", () => {
     let progress = recordAsked(emptyInterviewProgress(), "problem", "a");
     progress = recordResponse(progress, "problem", "a", "unknown");
