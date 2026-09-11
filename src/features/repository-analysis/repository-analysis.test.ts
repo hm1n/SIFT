@@ -31,7 +31,6 @@ const STAGE_A_OUTPUT: StageACandidateResult = {
   candidates: [{ sha: "sha-1", source: "automatic_recommendation", contributionItem: null }],
   unclassifiedShas: [],
   unjudgedShas: [],
-  excludedCommits: [],
   excludedUnits: [],
   thresholdScore: 3,
   selectedUnitCount: 0,
@@ -221,7 +220,6 @@ describe("generateCandidates", () => {
         candidates: [],
         unclassifiedShas: ["sha-1"],
         unjudgedShas: ["sha-2"],
-        excludedCommits: [{ sha: "sha-3", title: "오타 수정", reason: "no_pull_request" }],
         excludedUnits: [],
         thresholdScore: 3,
         selectedUnitCount: 0,
@@ -234,7 +232,6 @@ describe("generateCandidates", () => {
     expect(last).toMatchObject({ status: "empty", kind: "no_stage_a_candidates" });
     if (last?.status !== "empty" || last.kind !== "no_stage_a_candidates") throw new Error("unreachable");
     expect(last.stageASelection).toEqual({
-      excludedCommits: [{ sha: "sha-3", title: "오타 수정", reason: "no_pull_request" }],
       excludedUnits: [],
       thresholdScore: 3,
       selectedUnitCount: 0,
@@ -261,7 +258,6 @@ describe("generateCandidates", () => {
     });
     if (last?.status !== "empty" || last.kind !== "no_final_candidates") throw new Error("unreachable");
     expect(last.stageASelection).toEqual({
-      excludedCommits: STAGE_A_OUTPUT.excludedCommits,
       excludedUnits: STAGE_A_OUTPUT.excludedUnits,
       thresholdScore: STAGE_A_OUTPUT.thresholdScore,
       selectedUnitCount: STAGE_A_OUTPUT.selectedUnitCount,
@@ -294,7 +290,6 @@ describe("generateCandidates", () => {
 
   it("Stage A 후보 0개·최종 후보 0개·성공 세 상태가 같은 stageASelection 값을 싣는다", async () => {
     const expected = {
-      excludedCommits: STAGE_A_OUTPUT.excludedCommits,
       excludedUnits: STAGE_A_OUTPUT.excludedUnits,
       thresholdScore: STAGE_A_OUTPUT.thresholdScore,
       selectedUnitCount: STAGE_A_OUTPUT.selectedUnitCount,

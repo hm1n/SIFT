@@ -292,7 +292,6 @@ export async function generateCandidates(
     // 세 상태(빈 둘·성공)가 같은 선별 값을 싣도록 여기서 한 번만 만듭니다. 후보가 0개일 때가 제외
     // 사유를 가장 알아야 할 순간이라 두 빈 갈래에도 성공 경로와 동일한 객체를 실어 보냅니다(이슈 #58 P1-2).
     const stageASelection: StageASelectionState = {
-      excludedCommits: stageA.excludedCommits,
       excludedUnits: stageA.excludedUnits,
       thresholdScore: stageA.thresholdScore,
       selectedUnitCount: stageA.selectedUnitCount,

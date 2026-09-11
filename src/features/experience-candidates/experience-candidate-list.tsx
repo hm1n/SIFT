@@ -8,7 +8,6 @@ import { AI_SELECTION_LABEL, EVIDENCE_VERIFIABILITY_NOTICE, VERIFIABILITY_LABEL 
 import { ExperienceCandidateDetail } from "./experience-candidate-detail";
 import { InterviewScreen } from "@/features/interview/interview-screen";
 import { confirmExperienceSelection, type ExperienceSelectionState } from "./experience-selection";
-import { WORK_UNIT_EXCLUSION_COPY, type ExcludedCommit } from "./work-unit";
 import {
   WORK_UNIT_SELECTION_EXCLUSION_COPY,
   type ExcludedWorkUnit,
@@ -22,7 +21,6 @@ import styles from "./experience-candidate-list.module.css";
  * 상위 계층이기 때문입니다. 여기서 가져오면 역방향 의존이 생깁니다.
  */
 export interface StageASelectionDisplay {
-  readonly excludedCommits: readonly ExcludedCommit[];
   readonly excludedUnits: readonly ExcludedWorkUnit<ReadonlyCommitDetail>[];
   readonly thresholdScore: number;
   /** 점수 선별을 통과해 실제로 판단한 묶음 수입니다. 전체 대비 얼마인지 말하려면 필요합니다. */
@@ -149,10 +147,14 @@ export function ExperienceCandidateList({
 }
 
 /**
- * 이슈 #58이 못박은 원칙("어떤 커밋도 사용자 모르게 배제하지 않는다")을 지키려고 세 지점의
- * 배제를 보여줍니다. 후보 목록이 주인공이므로 이 구획은 목록과 요약 아래, 화면 맨 끝에 둡니다.
+ * 이슈 #58이 못박은 원칙("어떤 커밋도 사용자 모르게 배제하지 않는다")을 지키려고 판단 단위가
+ * 빠진 지점을 보여줍니다. 후보 목록이 주인공이므로 이 구획은 목록과 요약 아래, 화면 맨 끝에 둡니다.
  *
- * 점수 컷에서 밀린 묶음(`below_score_threshold`)과 분량 상한에서 밀린 묶음(`over_byte_budget`)은
+ * Pull Request에 속하지 않은 커밋은 더는 여기서 배제하지 않습니다. 커밋 하나짜리 판단 단위가
+ * 되어 다른 단위와 똑같이 점수 선별을 거칩니다. 근거는
+ * `llm-wiki/wiki/2026-09-10-PR-없는-저장소-커밋-묶음-방식-실험.md` 6절입니다.
+ *
+ * 점수 컷에서 밀린 묶음(`over_input_budget`)과 분량 상한에서 밀린 묶음(`over_byte_budget`)은
  * 같은 "제외"라도 사용자에게 다른 의미라 구획을 나눕니다. 점수는 우리 휴리스틱이지 Repository
  * 사실이 아니므로 `확인 가능` 태그를 씌우지 않고 별도로 표시합니다. PR 번호·제목은 GitHub 응답
  * 값이라 `확인 가능`을 씌웁니다.
@@ -161,8 +163,14 @@ export function ExperienceCandidateList({
  * 지점이라 이 컴포넌트를 그대로 재사용합니다. 같은 정보를 두 곳에서 다르게 그리면 어긋납니다
  * (이슈 #58 Codex 리뷰 P1-2).
  */
+/** Pull Request 묶음은 번호로, 단일 커밋은 SHA 7자리로 사람이 읽을 라벨을 만듭니다. */
+function unitLabel(unit: ExcludedWorkUnit<ReadonlyCommitDetail>["unit"]): string {
+  return unit.kind === "pull_request"
+    ? `PR #${unit.pullRequest.number}`
+    : `커밋 ${unit.unitId.slice("commit:".length, "commit:".length + 7)}`;
+}
+
 export function StageAExclusions({
-  excludedCommits,
   excludedUnits,
   thresholdScore,
   selectedUnitCount,
@@ -178,7 +186,6 @@ export function StageAExclusions({
     .sort((a, b) => b.score - a.score);
 
   if (
-    excludedCommits.length === 0 &&
     overInputBudget.length === 0 &&
     overBudget.length === 0 &&
     unjudgedShas.length === 0
@@ -189,24 +196,6 @@ export function StageAExclusions({
   return (
     <section className={styles.exclusions} aria-labelledby="stage-a-exclusions-heading">
       <h3 id="stage-a-exclusions-heading">1차 선별에서 제외된 항목</h3>
-
-      {excludedCommits.length > 0 ? (
-        <details className={styles.exclusionDetails}>
-          <summary>
-            <span>{`Pull Request에 속하지 않아 제외한 커밋 ${excludedCommits.length}건`}</span>
-            <span className={styles.verifiedTag}>{VERIFIABILITY_LABEL.verified}</span>
-          </summary>
-          <p className={styles.exclusionReason}>{WORK_UNIT_EXCLUSION_COPY.no_pull_request}</p>
-          <ul className={styles.exclusionList}>
-            {excludedCommits.map((commit) => (
-              <li key={commit.sha}>
-                <code>{commit.sha.slice(0, 7)}</code>
-                <span>{commit.title}</span>
-              </li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
 
       {overInputBudget.length > 0 ? (
         <details className={styles.exclusionDetails}>
@@ -226,10 +215,10 @@ export function StageAExclusions({
           </p>
           <ul className={`${styles.exclusionList} ${styles.scrollableList}`}>
             {overInputBudget.map(({ unit, score, signals }) => (
-              <li key={unit.pullRequestNumber}>
+              <li key={unit.unitId}>
                 <span className={styles.verifiedTag}>{VERIFIABILITY_LABEL.verified}</span>
-                <span>{`PR #${unit.pullRequestNumber}`}</span>
-                <span>{unit.pullRequest.title}</span>
+                <span>{unitLabel(unit)}</span>
+                <span>{unit.title}</span>
                 <span className={styles.heuristicScore}>{`${score}점 · 휴리스틱`}</span>
                 {signals.length > 0 ? (
                   <span className={styles.signalList}>
@@ -250,10 +239,10 @@ export function StageAExclusions({
           <p className={styles.exclusionReason}>{WORK_UNIT_SELECTION_EXCLUSION_COPY.over_byte_budget}</p>
           <ul className={`${styles.exclusionList} ${styles.scrollableList}`}>
             {overBudget.map(({ unit, score, signals }) => (
-              <li key={unit.pullRequestNumber}>
+              <li key={unit.unitId}>
                 <span className={styles.verifiedTag}>{VERIFIABILITY_LABEL.verified}</span>
-                <span>{`PR #${unit.pullRequestNumber}`}</span>
-                <span>{unit.pullRequest.title}</span>
+                <span>{unitLabel(unit)}</span>
+                <span>{unit.title}</span>
                 <span className={styles.heuristicScore}>{`${score}점 · 휴리스틱`}</span>
                 {signals.length > 0 ? (
                   <span className={styles.signalList}>
