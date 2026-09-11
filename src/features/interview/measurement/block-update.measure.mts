@@ -14,8 +14,8 @@ import { buildSnapshot } from "./evidence-fixture.mjs";
 import { createInterviewQuestionModel } from "../../experience-candidates/llm-provider";
 import { EVIDENCE_SNAPSHOT_MAX_INPUT_TOKENS } from "../../experience-candidates/evidence-snapshot";
 import type { ExperienceEvidenceSnapshot } from "../../experience-candidates/types";
-import { buildBlockUpdatePrompt, BLOCK_MAX_BYTES, BLOCK_MAX_OUTPUT_TOKENS, BLOCK_UPDATE_MODEL,
-  BLOCK_UPDATE_REASONING_EFFORT, type BlockKind } from "../block-prompt";
+import { buildBlockUpdatePrompt, BLOCK_MAX_BYTES, BLOCK_MAX_OUTPUT_TOKENS, BLOCK_MAX_STATEMENTS,
+  BLOCK_UPDATE_MODEL, BLOCK_UPDATE_REASONING_EFFORT, type BlockKind } from "../block-prompt";
 import { buildInterviewQuestionPrompt, toInterviewQuestionMessages, INTERVIEW_QUESTION_MODEL,
   INTERVIEW_QUESTION_MAX_OUTPUT_TOKENS, INTERVIEW_QUESTION_TOTAL_TIMEOUT_MS,
   INTERVIEW_QUESTION_FIRST_CHUNK_TIMEOUT_MS } from "../question-generation";
@@ -51,11 +51,13 @@ if (args.includes("--prepare")) {
   process.exit(0);
 }
 
-interface Statement { text: string; source: "repository" | "user"; commitSha: string | null; filePath: string | null }
+// 2026-09-10 2차: 문장 단위 출처를 인용 배열로 바꿨습니다. 한 문장에 repository 인용 여러 개와 user 표시가 함께 붙습니다.
+interface Citation { source: "repository" | "user"; commitSha: string | null; filePath: string | null }
+interface Statement { text: string; citations: Citation[] }
 interface Block { statements: Statement[]; sufficient: boolean }
 interface Fixture { id: string; kind: BlockKind; question: string; answer: string; current: Block }
 const empty = (): Block => ({ statements: [], sufficient: false });
-const userBlock = (text: string): Block => ({ statements: [{ text, source: "user", commitSha: null, filePath: null }], sufficient: false });
+const userBlock = (text: string): Block => ({ statements: [{ text, citations: [{ source: "user", commitSha: null, filePath: null }] }], sufficient: false });
 // 고정 질의/응답은 합성입니다. 실제 코드 사실은 evidence-fixture가 받은 PR에서만 가져옵니다.
 const fixtures: Fixture[] = [
   { id: "problem-start", kind: "problem", current: empty(), question: "스트리밍 표시를 구현하게 된 상황과 기존 화면의 한계는 무엇인가요?", answer: "질문 전체가 완성될 때까지 화면이 비어 있어 기다리는지 실패했는지 구별하기 어려웠습니다. 그래서 도착한 텍스트부터 보여 주려 했습니다. 사용자가 몇 초를 기다렸는지는 측정하지 않았습니다." },
@@ -73,9 +75,13 @@ const schema = {
   type: "object", additionalProperties: false, required: ["statements", "sufficient"],
   properties: {
     statements: { type: "array", items: { type: "object", additionalProperties: false,
-      required: ["text", "source", "commitSha", "filePath"], properties: {
-        text: { type: "string" }, source: { type: "string", enum: ["repository", "user"] },
-        commitSha: { type: ["string", "null"] }, filePath: { type: ["string", "null"] },
+      required: ["text", "citations"], properties: {
+        text: { type: "string" },
+        citations: { type: "array", items: { type: "object", additionalProperties: false,
+          required: ["source", "commitSha", "filePath"], properties: {
+            source: { type: "string", enum: ["repository", "user"] },
+            commitSha: { type: ["string", "null"] }, filePath: { type: ["string", "null"] },
+          } } },
       } } }, sufficient: { type: "boolean" },
   },
 };
@@ -97,15 +103,19 @@ function validateBlock(value: unknown): { block: Block | null; errors: string[] 
   const block = value as Block;
   if (!Array.isArray(block.statements) || typeof block.sufficient !== "boolean") return { block: null, errors: ["invalid_shape"] };
   const commits = [snapshot.representativeCommit, ...snapshot.relatedCommits];
+  if (block.statements.length > BLOCK_MAX_STATEMENTS) errors.push("too_many_statements");
   for (const s of block.statements) {
     if (!s || typeof s.text !== "string" || !s.text.trim()) { errors.push("empty_statement"); continue; }
-    if (s.source === "user") {
-      if (s.commitSha !== null || s.filePath !== null) errors.push("user_has_citation");
-    } else if (s.source === "repository") {
-      const commit = commits.find(c => c.sha === s.commitSha);
-      if (!commit) errors.push("unknown_commit");
-      if (s.filePath !== null && !commit?.files.some(f => f.path === s.filePath)) errors.push("unknown_file");
-    } else errors.push("unknown_source");
+    if (!Array.isArray(s.citations) || s.citations.length === 0) { errors.push("no_citation"); continue; }
+    for (const c of s.citations) {
+      if (c.source === "user") {
+        if (c.commitSha !== null || c.filePath !== null) errors.push("user_has_citation");
+      } else if (c.source === "repository") {
+        const commit = commits.find(x => x.sha === c.commitSha);
+        if (!commit) errors.push("unknown_commit");
+        if (c.filePath !== null && !commit?.files.some(f => f.path === c.filePath)) errors.push("unknown_file");
+      } else errors.push("unknown_source");
+    }
   }
   if (Buffer.byteLength(JSON.stringify(block)) > BLOCK_MAX_BYTES) errors.push("block_too_large");
   return { block, errors };
