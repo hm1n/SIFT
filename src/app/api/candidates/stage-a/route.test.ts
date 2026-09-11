@@ -308,7 +308,7 @@ describe("POST /api/candidates/stage-a", () => {
     expect(response.status).toBe(200);
     expect(JSON.stringify(received)).not.toContain("patch");
     expect((received as { units: { summary: string }[] }).units[0].summary)
-      .toContain("PR#1 경량 입력 [1커밋 1일 +1-0 1파일]");
+      .toContain("pr:1 경량 입력 [1커밋 1일 +1-0 1파일]");
   });
 
   it("묶음 수 상한을 넘는 단일 청크는 LLM 호출 전에 422로 거부한다", async () => {

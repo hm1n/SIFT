@@ -125,15 +125,25 @@ function foldFilePaths(paths: readonly string[]): string {
 }
 
 /**
- * 요약 머리줄에서 판단 단위를 가리키는 라벨입니다. Pull Request 묶음은 `unitId`(`pr:번호`)를
- * 그대로 사람이 읽기 좋은 형태로 바꿉니다. 단일 커밋은 `work-unit.ts`의 `modelFacingUnitId`로
- * SHA 앞 7자리만 남겨 보여줍니다. 이 화면 머리줄이 모델이 실제로 읽는 문자열이기도 하므로
- * (`renderWorkUnitSummary`), 자르는 자리수를 이 함수가 따로 정하지 않고 `modelFacingUnitId` 하나만
- * 참조합니다.
+ * 요약 머리줄에서 판단 단위를 가리키는 라벨입니다. `work-unit.ts`의 `modelFacingUnitId`가 만드는
+ * 식별자를 그대로 씁니다(`pr:12`, `commit:abcdef1`).
+ *
+ * 사람이 읽기 좋은 형태(`PR#12`, `커밋 abcdef1`)로 바꾸지 않습니다. 이 머리줄은 모델이 실제로
+ * 읽는 문자열이고(`renderWorkUnitSummary`), 모델은 같은 판단 단위를 `unitId`로 되돌려줘야 합니다.
+ * 표기를 바꿔 보여주면 프롬프트가 모델에게 되돌리기를 요구하게 되는데, `gemini-3.1-flash-lite`는
+ * 되돌리는 대신 머리줄을 그대로 복사해 `demian` 41묶음과 `andbread` 23묶음이 각각 6회 시도 6회
+ * 모두 `unknown_sha`로 끝났습니다(이슈 #107). 보여주는 문자열과 요구하는 문자열을 같게 두면
+ * 변환할 것이 없어집니다.
+ *
+ * 접두어와 자르는 자리수를 이 함수가 따로 정하지 않는 것도 같은 이유입니다. 머리줄을 만드는 곳과
+ * 응답을 검증하는 곳이 각자 다른 상수를 쓰면 응답 검증이 조용히 잘못된 커밋에 판정을 붙입니다
+ * (이슈 #101).
+ *
+ * 화면에 보이는 라벨은 `experience-candidate-list.tsx`의 `unitLabel`이 따로 만듭니다. 그쪽은
+ * 모델과 주고받는 문자열이 아니라 사람이 읽기 좋은 형태를 유지합니다.
  */
 function renderUnitLabel(summary: WorkUnitSummary): string {
-  if (summary.kind === "pull_request") return `PR#${summary.unitId.slice("pr:".length)}`;
-  return `커밋 ${modelFacingUnitId(summary.unitId).slice("commit:".length)}`;
+  return modelFacingUnitId(summary.unitId);
 }
 
 /**

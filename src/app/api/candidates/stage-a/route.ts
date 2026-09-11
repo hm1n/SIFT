@@ -42,9 +42,11 @@ function isStageAInput(value: unknown): value is StageAInput {
       typeof summary.unitId === "string" &&
       UNIT_ID_PATTERN.test(summary.unitId) &&
       (summary.kind === "pull_request" || summary.kind === "commit") &&
-      // kind와 unitId 접두어가 어긋나면 renderUnitLabel이 엉뚱한 접두어 기준으로 잘라 깨진
-      // 라벨을 모델에 보내고, 실패도 여기서 막지 않으면 LLM 호출 한 번을 쓴 뒤에야 드러납니다
-      // (Codex 리뷰, 이슈 #101). 여기서 즉시 422로 거부합니다.
+      // kind와 unitId 접두어가 어긋나면 한 요약 안에서 기준이 갈립니다. renderWorkUnitSummary는
+      // kind를 보고 커밋 제목 줄을 넣거나 빼는데, 머리줄 맨 앞의 식별자는 modelFacingUnitId가
+      // 접두어를 보고 정합니다. 둘이 다른 것을 가리키는 요약을 모델에 보내게 되고, 여기서 막지
+      // 않으면 LLM 호출 한 번을 쓴 뒤에야 드러납니다(Codex 리뷰, 이슈 #101). 즉시 422로
+      // 거부합니다.
       summary.kind === (summary.unitId.startsWith("pr:") ? "pull_request" : "commit") &&
       typeof summary.title === "string" &&
       isCount(summary.commitCount) &&
