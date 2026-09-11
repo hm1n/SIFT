@@ -21,6 +21,7 @@
 
 ## 최근 산출물
 
+- `wiki/2026-09-11-Repository-분석-진행-화면-개편.md` : #96이 만든 Loading 체크리스트, Empty·Error의 StatusScreen 전환과 StageAExclusions 배치, 번역 범위, AppShell 첫 실사용
 - `wiki/2026-09-11-PAAR-경험블록-설계-개정.md` : PAAR 경험 블록의 상태 분리와 주장 연산 계약, 전체 이력 입력, 충분성과 이동 분리, 세션 내 보존 범위와 새 계약 실측
 - `wiki/2026-09-10-블록갱신-모델-확정.md` : 블록 갱신 호출의 모델과 변형, 명시 캐시 경계, 회당 비용
 - `wiki/2026-09-11-Repository-목록-조회와-선택-화면.md` : #95가 만든 `GET /api/github/repositories` 라우트의 응답·오류 계약, Repository 선택 화면의 상태 5개와 기여 항목 섹션, 분석 화면과의 연결
