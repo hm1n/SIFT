@@ -92,3 +92,13 @@ Empty와 Error는 이제 공용 `StatusScreen`(`@/components/shell/status-screen
 PR #105를 올린 뒤 Codex가 P2로 지적했습니다(프로젝트 판정은 P1: 기존 기능 regression). `AppShell` 도입으로 공용 `<header>`·`<main>`이 사라지면서 Loading·Empty·Error·Success 네 상태 전부 시맨틱 랜드마크와 접근 가능한 제목을 잃었습니다. Codex는 루트의 `<main>` 부재와 Empty·Error의 헤딩 부재를 지적했고, 재확인 과정에서 Success 상태가 `<h1>` 없이 곧바로 `<h2>`부터 시작하는 것도 같은 원인임을 확인했습니다.
 
 `StatusScreen`(#94·#95도 참조)과 `ExperienceCandidateList`(#97 담당)는 건드리지 않고 `RepositoryAnalysisView` 안에서만 고쳤습니다. 루트 엘리먼트를 `<main>`으로 바꾸고, Loading이 아닌 상태에는 시각적으로 숨긴 `<h1>{owner} / {name}</h1>`(`.visuallyHidden`)을 추가했습니다. Loading은 기존의 보이는 `<h1>`을 그대로 씁니다. 상태 4개 각각에 회귀 테스트를 추가했습니다. 테스트 1030개, lint, typecheck 통과.
+
+## 9. PR #105 Codex 재검증 반영
+
+1차 수정을 재검증하는 과정에서 지적 2건이 새로 나왔습니다. 둘 다 직전 수정이 아니라 원래 #96 구현에 있던 결함으로 확인했습니다.
+
+**P1 (프로젝트 판정, 도구는 P1): Loading 체크리스트 상태가 보조 기술에 노출되지 않음.** 완료·진행·대기 구분이 `data-state`와 CSS, `aria-hidden` 기호에만 있어 스크린리더는 여섯 라벨을 구분 없이 나열했습니다. 진행 중인 `<li>`에 `aria-current="step"`을 추가하고, 항목마다 시각적으로 숨긴 상태 문구(`Completed:`/`In progress:`/`Pending:`)를 라벨 앞에 두었습니다. 이 문구는 단계가 바뀔 때마다 텍스트 자체가 바뀌므로 `checklistStatus`의 기존 `aria-live="polite"`가 전환을 그대로 알립니다. 상태 4개 각각에 회귀 테스트를 추가했습니다.
+
+**P2 (프로젝트 판정 동일): 후보 생성 계약 위반이 GitHub 오류로 표시됨.** `toCandidateGenerationError`가 `invalid_request`·`invalid_response`·`invalid_json`과 예기치 않은 예외를 전부 `kind: "server_error"`로 변환해, Stage A 응답 파싱 실패처럼 GitHub를 전혀 호출하지 않은 오류도 화면에 `ERROR / GITHUB`로 표시됐습니다. AGENTS.md 판별 기준 원칙(상태를 직접 나타내지 않는 대리 지표를 쓰지 않는다)을 그대로 위반하는 사례라 P2지만 같은 PR에서 반영했습니다. `CandidateGenerationErrorKind`에 `contract_violation`을 추가해 GitHub 조회 오류의 `server_error`와 분리했습니다. `errorStatusCode`는 이미 목록에 없는 kind를 일반 `ERROR`로 떨어뜨리므로 뷰 쪽은 코드를 바꾸지 않았습니다. 회귀 테스트 3건을 추가하고 기존 `server_error` 기대값 3곳을 갱신했습니다.
+
+테스트 1035개, lint, typecheck 통과. 재검증 라운드는 여기서 종료합니다.
