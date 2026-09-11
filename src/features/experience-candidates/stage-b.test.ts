@@ -507,4 +507,19 @@ describe("출력 계약 프롬프트", () => {
   it("Pull Request가 없는 판단 단위의 relatedShas를 빈 배열로 못박는다", async () => {
     expect(await capturedSystemPrompt(3)).toContain("pullRequest가 null인 workUnits 항목");
   });
+
+  /**
+   * `assertCandidateEvidence`는 대표 커밋과 relatedShas에 적힌 커밋의 파일만 인용으로 받습니다.
+   * 이 관계를 문장에 적지 않으면 모델이 relatedShas를 비운 채 같은 묶음의 다른 커밋 파일을
+   * 인용해 `unknown_file_path`로 거부됩니다. `hm1n/SIFT` 6회 중 5회가 그렇게 실패했습니다
+   * (이슈 #108).
+   */
+  it("인용 경로와 relatedShas의 관계를 프롬프트에 적는다", async () => {
+    const system = await capturedSystemPrompt(3);
+
+    expect(system).toContain(
+      "citedFilePaths에는 sha와 relatedShas에 적은 커밋의 files[].path만 넣습니다"
+    );
+    expect(system).toContain("relatedShas에 먼저 넣으세요");
+  });
 });

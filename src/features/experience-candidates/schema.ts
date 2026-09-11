@@ -82,10 +82,14 @@ function isCandidate(value: unknown): value is ExperienceCandidate {
 }
 
 /**
- * Stage A와 Stage B의 구조화 응답을 동일한 계약으로 검증합니다.
+ * Stage B 구조화 응답을 검증합니다. 서버의 `selectStageBCandidates`와 클라이언트의
+ * `fetchStageBCandidatesFromApi`가 같은 계약으로 한 번씩 봅니다.
  *
- * `maxCandidates`는 호출부가 정합니다. Stage B는 입력 판단 단위 수와 `STAGE_B_MAX_CANDIDATES`
- * 중 작은 값을 넘기고, 클라이언트는 Stage A 후보 수를 넘깁니다.
+ * Stage A는 이 계약을 쓰지 않습니다. 판단 단위마다 판정을 돌려주는 다른 구조라
+ * `stage-a.ts`의 `validateStructuredOutput`이 따로 검증합니다.
+ *
+ * `maxCandidates`는 호출부가 정합니다. Stage B는 입력 커밋 수를 넘기고 판단 단위 상한은 같은
+ * Pull Request 후보를 합친 뒤에 따로 적용합니다. 클라이언트는 Stage A 후보 수를 넘깁니다.
  */
 export function validateExperienceCandidateOutput(
   value: unknown,
@@ -133,26 +137,6 @@ export function validateExperienceCandidateOutput(
   }
 
   return value as unknown as ExperienceCandidateOutput;
-}
-
-/** JSON 텍스트의 파싱 실패와 스키마 위반을 구분된 오류로 변환합니다. */
-export function parseExperienceCandidateOutput(
-  text: string,
-  maxCandidates: number
-): ExperienceCandidateOutput {
-  let value: unknown;
-
-  try {
-    value = JSON.parse(text);
-  } catch (cause) {
-    throw new ExperienceCandidateOutputError(
-      "json_parse",
-      "경험 후보 응답을 JSON으로 파싱할 수 없습니다.",
-      { cause }
-    );
-  }
-
-  return validateExperienceCandidateOutput(value, maxCandidates);
 }
 
 /** 대표 SHA와 관련 SHA 중 입력 집합에 없는 값이 하나라도 있으면 전체 결과를 거부합니다. */
@@ -237,7 +221,7 @@ export function assertCandidateEvidence(
 }
 
 /**
- * generateObject와 streamObject에 직접 전달하는 공통 구조화 출력 스키마입니다.
+ * Stage B의 `generateObject` 호출에 직접 전달하는 구조화 출력 스키마입니다.
  *
  * 모듈 상수가 아니라 팩토리인 이유는 후보 개수 상한이 호출마다 다르기 때문입니다. 상한은 Stage B
  * 입력 판단 단위 수에 따라 정해집니다(이슈 #108).

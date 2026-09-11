@@ -2,7 +2,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   assertCandidateEvidence,
   assertCandidateShas,
-  parseExperienceCandidateOutput,
+  createExperienceCandidateOutputSchema,
   validateExperienceCandidateOutput,
 } from "./schema";
 import { ExperienceCandidateOutputError } from "./errors";
@@ -43,10 +43,17 @@ describe("경험 후보 출력 검증", () => {
     expectTypeOf(output).toEqualTypeOf<ExperienceCandidateOutput>();
   });
 
-  it("JSON 파싱 실패를 타입 있는 오류로 변환한다", () => {
-    expect(() => parseExperienceCandidateOutput("{invalid json", 3)).toThrowError(
-      expect.objectContaining<Partial<ExperienceCandidateOutputError>>({ kind: "json_parse" })
-    );
+  /**
+   * 모델에 보내는 JSON Schema의 `maxItems`는 런타임 검증과 같은 상한을 써야 합니다. 이 값이
+   * 굳어 있으면 상한을 올려도 모델 쪽 계약만 옛 값에 남고, 단위 테스트는 전부 통과합니다.
+   */
+  it("JSON Schema의 maxItems가 넘긴 상한을 따른다", () => {
+    const { jsonSchema } = createExperienceCandidateOutputSchema(7);
+
+    expect(
+      (jsonSchema as { properties: { candidates: { maxItems: number } } }).properties.candidates
+        .maxItems
+    ).toBe(7);
   });
 
   it("스키마 위반을 타입 있는 오류로 변환한다", () => {
