@@ -149,4 +149,17 @@ describe("fetchUserRepositories", () => {
     await expectKind(promise, "rate_limit");
     await expect(promise).rejects.not.toHaveProperty("partialCommits", expect.anything());
   });
+
+  // PR #102 Codex 재검증 P2. 첫 페이지의 깨진 JSON만 검사하던 앞 테스트와 달리, 두 번째 페이지의 파싱
+  // 실패에서도 첫 페이지 결과를 버리는 것이 의도한 동작인지 잠급니다. 이 값을 보존하는 일은
+  // wiki/2026-09-10-디자인-개편-후속-backlog.md 15번으로 분리했습니다.
+  it("두 번째 페이지의 JSON 파싱이 실패해도 첫 페이지 결과를 돌려주지 않고 network 오류를 던진다", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(jsonResponse([rawRepository(1)], { headers: { link: `<${REPOS_URL}?page=2>; rel="next"` } }))
+      .mockResolvedValueOnce(new Response("{broken", { status: 200 })));
+
+    const promise = fetchUserRepositories("token");
+    await expectKind(promise, "network");
+    await expect(promise).rejects.not.toHaveProperty("partialCommits", expect.anything());
+  });
 });
