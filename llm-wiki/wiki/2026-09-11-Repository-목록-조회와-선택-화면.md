@@ -4,6 +4,10 @@
 
 확인 날짜는 2026-09-11입니다.
 
+## 0. OAuth scope
+
+`repo` scope가 필요합니다. `src/lib/github/oauth.ts`의 `createGitHubAuthorizeUrl`이 `read:user repo`를 요청합니다. 경위는 `raw/2026-09-11-OAuth-repo-scope-결정-session-log.md`에 있습니다.
+
 ## 1. 라우트
 
 `GET /api/github/repositories`입니다. 기존 GitHub 라우트 3개와 달리 owner·repo가 없는 GET이라 `readGitHubRouteRequest`를 거치지 않고 `getGitHubTokenFromRequest`로 쿠키의 토큰만 읽습니다. 조회 함수는 `src/lib/github/repositories.ts`의 `fetchUserRepositories`이고, `githubFetch`, `classifyErrorResponse`, `parseJson`, `parseNextLink`를 `commits.ts`에서 그대로 씁니다.
@@ -96,5 +100,5 @@ Error의 sub는 `rate_limit`이 "GitHub rate limit reached. Wait a moment and tr
 
 - 실제 GitHub 계정으로 목록을 받는 흐름은 OAuth 앱 설정이 이 워크트리에 없어 보지 않았습니다. Vercel 프리뷰에서 확인해야 합니다.
 - 조직 Repository는 `affiliation` 기본값(owner, collaborator, organization_member)대로 함께 옵니다. Organization 전환과 필터는 이슈 Non-goal입니다.
-- OAuth scope가 `read:user` 하나라 `/user/repos`는 공개 Repository만 돌려줍니다. 화면의 `PRIVATE` 표시와 `visibility` 필드는 scope가 넓어질 때를 위한 자리입니다. 결정은 `wiki/2026-09-10-디자인-개편-후속-backlog.md` 13번입니다.
+- OAuth scope가 `read:user repo`로 넓어져 `/user/repos`가 비공개 Repository도 돌려줍니다. 경위는 `wiki/2026-09-10-디자인-개편-후속-backlog.md` 13번과 `raw/2026-09-11-OAuth-repo-scope-결정-session-log.md`에 있습니다. 기존에 로그인한 세션은 이전 scope(`read:user`)로 발급된 토큰을 그대로 쓰므로, 재로그인해야 비공개 목록이 보입니다.
 - 노션 기능 정의서에 owner·repo 직접 입력 방식이 남아 있는지 확인하지 않았습니다.
