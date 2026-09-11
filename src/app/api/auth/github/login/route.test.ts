@@ -19,7 +19,7 @@ describe("GitHub OAuth login", () => {
     expect(response.status).toBe(302);
     expect(location.origin + location.pathname).toBe("https://github.com/login/oauth/authorize");
     expect(location.searchParams.get("client_id")).toBe("client-id");
-    expect(location.searchParams.get("scope")).toBe("read:user");
+    expect(location.searchParams.get("scope")).toBe("read:user repo");
     expect(location.searchParams.get("state")).toBeTruthy();
     expect(cookie).toContain(`github_oauth_state=${location.searchParams.get("state")}`);
     expect(cookie).toContain("Max-Age=600");
