@@ -362,6 +362,28 @@ describe("renderStageAPrompt", () => {
     const actualPrompt = generateObjectMock.mock.calls[0]![0].prompt;
     expect(actualPrompt).toBe(renderStageAPrompt(payload));
   });
+
+  it("근거가 없는 입력은 추천하지 않아도 되고 추천 상한과 전수 응답 계약은 유지한다", async () => {
+    const payload = buildStageAPayload(input);
+    const generateObjectMock = vi.mocked(generateObject);
+    generateObjectMock.mockResolvedValue({
+      object: { decisions: payload.units.map(({ unitId }) => ({
+        unitId, contributionItem: "미분류", recommended: false,
+      })) },
+      response: { headers: {} },
+      usage: { totalTokens: 0 },
+    } as unknown as Awaited<ReturnType<typeof generateObject>>);
+
+    await createStageAGenerate("test-model")(payload, new AbortController().signal);
+
+    const system = generateObjectMock.mock.calls.at(-1)![0].system;
+    expect(system).toContain("하나의 완결된 경험이라고 가정하지 마세요");
+    expect(system).toContain(`추천 개수는 최대 ${payload.candidateLimit}개까지입니다`);
+    expect(system).toContain("decisions 배열의 길이를 줄이는 데 쓰면 안 됩니다");
+    expect(system).toContain("추천하지 않는 나머지는 '미분류'로 담으세요");
+    expect(system).not.toContain("최소 1개");
+    expect(system).not.toContain("고를 것이 없는 입력이 아닙니다");
+  });
 });
 
 describe("로컬 전용 입력 범위 안내", () => {

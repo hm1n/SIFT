@@ -420,9 +420,9 @@ export function createStageAGenerate(
        * 그 모델에 맞춰져 있었습니다.
        *
        * 하한을 넣은 뒤 같은 입력에서 `gemini-3.5-flash-lite`가 5회 모두 5개,
-       * `gemini-3.1-flash-lite`가 7회 모두 3개 이상을 골랐고 0개는 사라졌습니다. 로컬 전용 문구를
-       * 프로덕션으로 올리는 방식은 효과가 없어 되돌렸습니다. 측정은
-       * `llm-wiki/raw/2026-09-01-Stage-A-후보-선정-분산-측정.md`에 있습니다.
+       * `gemini-3.1-flash-lite`가 7회 모두 3개 이상을 골랐고 0개는 사라졌습니다. 그러나 판단
+       * 단위를 PR 묶음과 단일 커밋으로 넓힌 이슈 #101에서는 근거 없는 입력의 후보 0개가 정상
+       * 결과여야 하므로 하한을 제거합니다. 전후 측정은 `llm-wiki/raw`에 기록합니다.
        */
       system:
         `Pull Request 단위 작업 묶음 또는 단일 커밋 판단 단위를 보고 개발 경험 후보를 선별하세요. 각 묶음은 'PR#번호 제목 [커밋수 기간 증감 파일수]' 또는 '커밋 SHA7자리 제목 [커밋수 기간 증감 파일수]' 한 줄로 시작합니다. Pull Request 단위는 커밋 제목 목록이 뒤따르고, 두 종류 모두 변경량 상위 파일 경로가 뒤따를 수 있습니다.
@@ -431,7 +431,7 @@ export function createStageAGenerate(
 
 각 묶음의 판정은 이렇게 씁니다. 기여 항목과 명확히 맞으면 contributionItem을 목록의 원문 그대로 씁니다. 어느 항목에도 맞지 않지만 설명할 가치가 있으면 contributionItem을 null로 두고 recommended를 true로 합니다. 그 밖에는 contributionItem을 '${UNCLASSIFIED_LABEL}'로 두고 recommended를 false로 합니다.
 
-입력으로 들어온 묶음은 이미 저장소 전체에서 점수로 걸러낸 상위 후보입니다. 따라서 고를 것이 없는 입력이 아닙니다. recommended가 true이거나 기여 항목에 맞는 묶음을 합쳐서 최소 1개, 최대 ${payload.candidateLimit}개 고르세요. 이 상한은 고르는 개수에만 걸립니다. decisions 배열의 길이를 줄이는 데 쓰면 안 됩니다. 나머지 묶음은 전부 '${UNCLASSIFIED_LABEL}'로 담으세요. 고를 때는 규모가 큰 묶음보다 설명할 거리가 있는 묶음을 앞세우세요.` +
+각 입력은 PR 묶음 또는 단일 커밋입니다. 하나의 완결된 경험이라고 가정하지 마세요. 제공된 정보에서 기술적 선택이나 문제 해결을 확인할 단서가 있는 항목을 후속 diff 검토 대상으로 추천하세요. 변경 규모나 커밋 수만으로 설명 가치를 판단하지 마세요. 제공되지 않은 문제 상황, 선택 이유, 성과를 추정하지 마세요. 추천 개수는 최대 ${payload.candidateLimit}개까지입니다. 이 상한은 고르는 개수에만 걸리며 decisions 배열의 길이를 줄이는 데 쓰면 안 됩니다. 추천하지 않는 나머지는 '${UNCLASSIFIED_LABEL}'로 담으세요.` +
         localInputScopeHint(),
       prompt: renderStageAPrompt(payload),
       abortSignal,
