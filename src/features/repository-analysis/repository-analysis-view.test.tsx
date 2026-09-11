@@ -223,7 +223,7 @@ describe("RepositoryAnalysisView Empty의 Stage A 제외 표시", () => {
     await submitRepository();
 
     expect(screen.getByRole("heading", { name: "1차 선별에서 제외된 항목" })).toBeInTheDocument();
-    expect(screen.getByText("저장소가 커서 전체 1묶음 중 점수 상위 0묶음만 판단했습니다")).toBeInTheDocument();
+    expect(screen.getByText("저장소가 커서 전체 1묶음 중 0묶음만 판단했습니다")).toBeInTheDocument();
   });
 
   it("제외 0건이면 제외 섹션이 렌더되지 않는다", async () => {
@@ -289,7 +289,7 @@ describe("RepositoryAnalysisView Empty의 Stage A 제외 표시", () => {
     render(<RepositoryAnalysisView hasSession={true} />);
     await submitRepository();
 
-    const summaryText = "저장소가 커서 전체 1묶음 중 점수 상위 0묶음만 판단했습니다";
+    const summaryText = "저장소가 커서 전체 1묶음 중 0묶음만 판단했습니다";
     const details = screen.getByText(summaryText).closest("details");
     expect(details).not.toHaveAttribute("open");
     fireEvent.click(screen.getByText(summaryText));

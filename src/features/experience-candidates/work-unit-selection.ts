@@ -67,7 +67,11 @@ export interface ExcludedWorkUnit<TCommit extends ScorableCommit>
 export interface WorkUnitSelection<TCommit extends ScorableCommit> {
   readonly selected: readonly SelectedWorkUnit<TCommit>[];
   readonly excluded: readonly ExcludedWorkUnit<TCommit>[];
-  /** 선택된 묶음 중 가장 낮은 점수입니다. 화면이 "N점 미만 제외"를 표시할 때 씁니다. */
+  /**
+   * 선택된 묶음 중 가장 낮은 점수입니다. 통계로만 씁니다. 선택이 개별 항목 단위로 이뤄지므로
+   * 이 값보다 낮은 점수가 선택되고 이 값과 같거나 높은 점수가 제외될 수 있습니다. 화면에서
+   * "N점 이상을 선택했다"는 합격선으로 설명하지 않습니다.
+   */
   readonly thresholdScore: number;
   readonly bytes: number;
 }
@@ -90,14 +94,17 @@ export const WORK_UNIT_SELECTION_EXCLUSION_COPY: Record<
  * 결과까지 버리고 전체가 실패했습니다(`andbread` 66묶음 7청크 실측). 쿼터를 청크에 나눠주는
  * 것도 "어느 청크에 담겼는가"라는 우연이 선정을 좌우해 근거가 없었습니다.
  *
- * 상위 N개가 아니라 점수 경계에서 끊습니다. `andbread`는 2점짜리가 15개 뭉쳐 있어서 상위
- * 20개로 자르면 그중 10개만 남고 5개가 입력 순서로 잘립니다. 그러면 "상위 20개를 골랐습니다"가
- * 설명이 되지 않습니다. 같은 점수는 전부 넣거나 전부 뺍니다.
+ * 점수 내림차순으로 정렬한 뒤 항목을 하나씩 순회하며 남은 예산에 들어가는지 개별로 봅니다.
+ * 한 항목이 들어가지 않아도 뒤 항목은 계속 확인합니다. 그 결과 점수가 높고 요약이 큰 항목이
+ * 빠지고 점수가 낮고 작은 항목이 들어갈 수 있습니다. **선택 결과는 "N점 이상"이라는 단일 점수
+ * 경계로 설명되지 않습니다.**
  *
- * 점수가 같은 무리 하나가 예산보다 큰 경우에만 그 무리를 쪼갭니다. 무리를 쪼개도 낱개 묶음
- * 하나가 예산을 혼자 넘으면 그 묶음은 선택하지 않습니다. 모든 묶음이 개별적으로 예산을 넘으면
- * `selected`는 빈 배열이 됩니다 — 억지로 하나를 남기지 않습니다. 그 경우 Stage A를 아예 부르지
- * 않는 것이 호출부의 책임입니다.
+ * **2026-09-11 이전에는 동점 무리를 통째로 넣거나 뺐습니다.** 이슈 #101 측정에서
+ * `hm1n/Algorithm`은 435개 커밋 중 1점 커밋 1개만 선택되고, 0점 커밋 434개가 하나의 동점
+ * 무리로 묶여 개수 상한 200에 199자리가 남아 있었는데도 통째로 제외됐습니다. 점수는 제한된
+ * 예산 안에서 처리 순서를 정할 뿐 경험의 유무를 확정하지 않으므로, 동점 무리 크기 때문에 남은
+ * 예산을 쓰지 못하는 것은 의도한 동작이 아닙니다. 설계 경위는
+ * `llm-wiki/raw/2026-09-11-Stage-A-개별-예산-선별-설계-session-log.md`에 있습니다.
  *
  * 제외된 묶음은 사유와 점수를 달아 그대로 돌려줍니다. 조용히 버리면 사용자가 자기 작업이 왜
  * 안 보이는지 알 수 없습니다.
@@ -127,70 +134,37 @@ export function selectWorkUnitsForStageA<TCommit extends ScorableCommit>(
   const selected: SelectedWorkUnit<TCommit>[] = [];
   const excluded: ExcludedWorkUnit<TCommit>[] = [];
   let selectedBytes = 0;
-  let budgetExhausted = false;
 
-  for (let index = 0; index < ordered.length; ) {
-    const score = ordered[index].score;
-    const group: typeof ordered = [];
-    while (index < ordered.length && ordered[index].score === score) {
-      group.push(ordered[index]);
-      index += 1;
-    }
-    const groupBytes = group.reduce((sum, item) => sum + item.bytes, 0);
-    // 묶음 사이마다 줄바꿈 한 글자가 들어갑니다.
-    const separators = selected.length + group.length - 1;
-    if (
-      !budgetExhausted &&
-      selectedBytes + groupBytes + separators <= maxBytes &&
-      selected.length + group.length <= maxUnits
-    ) {
-      group.forEach(({ unit, score: itemScore }) => selected.push({ unit, score: itemScore }));
-      selectedBytes += groupBytes;
+  for (const { unit, score, signals, bytes } of ordered) {
+    /**
+     * 두 사유를 정확히 갈라야 화면 문구가 원인을 바로 지목합니다.
+     *
+     * `over_byte_budget`은 **이 묶음 하나가 혼자 전체 바이트 상한을 넘는** 경우입니다. 상한을
+     * 올리지 않으면 이 묶음은 어떤 저장소에서도 들어가지 못합니다. 그 밖의 제외는 상한 안에
+     * 자리(개수 또는 남은 바이트)가 없어서 밀린 것이고, 상한을 올리면 들어올 수 있습니다.
+     */
+    if (bytes > maxBytes) {
+      excluded.push({ unit, score, signals, reason: "over_byte_budget" });
       continue;
     }
-    budgetExhausted = true;
-    // 아직 아무것도 선택되지 않았을 때만 무리를 쪼개 개별 묶음이 예산에 드는지 봅니다. 이미
-    // 무언가 선택됐다면 남은 예산을 채우려 하지 않고 점수 순위 그대로 자릅니다.
-    const allowSplit = selected.length === 0;
-    for (const { unit, score: itemScore, bytes, signals } of group) {
-      if (
-        allowSplit &&
-        selectedBytes + bytes + selected.length <= maxBytes &&
-        selected.length < maxUnits
-      ) {
-        selected.push({ unit, score: itemScore });
-        selectedBytes += bytes;
-        continue;
-      }
-      excluded.push({
-        unit,
-        score: itemScore,
-        signals,
-        /**
-         * 두 사유를 정확히 갈라야 화면 문구가 원인을 바로 지목합니다.
-         *
-         * `over_byte_budget`은 **이 묶음 하나가 혼자 예산을 넘는** 경우입니다. 상한을 올리지
-         * 않으면 이 묶음은 어떤 저장소에서도 들어가지 못합니다. 그 밖의 제외는 상한 안에 자리가
-         * 없어서 점수 순위에서 밀린 것이고, 상한을 올리면 들어옵니다. 2026-09-02까지는 무리를
-         * 쪼개는 경로 전체가 `over_byte_budget`이어서, 자리만 없던 묶음에도 "분량을 넘었다"고
-         * 알렸습니다.
-         */
-        reason: bytes > maxBytes ? "over_byte_budget" : "over_input_budget",
-      });
+    // 이미 선택된 항목이 있으면 그 뒤에 줄바꿈 한 글자가 붙습니다. 첫 선택 항목에는 구분자가
+    // 없습니다.
+    const separator = selected.length > 0 ? 1 : 0;
+    if (selected.length < maxUnits && selectedBytes + separator + bytes <= maxBytes) {
+      selected.push({ unit, score });
+      selectedBytes += separator + bytes;
+      continue;
     }
+    excluded.push({ unit, score, signals, reason: "over_input_budget" });
   }
 
-  // 이전에는 selected가 비면 최고 점수 묶음을 무조건 되살렸습니다. 그 묶음이 예산을 넘어
-  // over_byte_budget으로 제외됐을 때도 되살려서 excluded에서 지웠고, 결과로 나간 요청이 예산을
-  // 넘어 서버가 422로 거부했습니다(Codex 리뷰 P2-2). 위 루프는 예산 안에 드는 묶음이 하나라도
-  // 있으면 점수 순으로 이미 그 묶음을 selected에 담았으므로, 이 시점에 selected가 비어 있다는
-  // 것은 모든 묶음이 개별적으로 예산을 넘는다는 뜻입니다. 그런 경우는 되살리지 않고 selected를
-  // 빈 배열로 둡니다. 입력이 비면 호출부가 Stage A를 부르지 않고 빈 상태를 보여줍니다.
-
+  // 모든 묶음이 개별적으로 예산을 넘으면 selected는 빈 배열로 남습니다. 억지로 하나를 되살리지
+  // 않습니다. 입력이 비면 호출부가 Stage A를 부르지 않고 빈 상태를 보여줍니다(Codex 리뷰 P2-2
+  // 재발 방지).
   return {
     selected,
     excluded,
     thresholdScore: selected.length > 0 ? selected[selected.length - 1].score : 0,
-    bytes: selectedBytes + Math.max(0, selected.length - 1),
+    bytes: selectedBytes,
   };
 }

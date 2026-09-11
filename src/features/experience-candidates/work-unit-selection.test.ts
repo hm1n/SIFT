@@ -55,15 +55,32 @@ function unitBytes(target: WorkUnit<ScorableCommit>): number {
   return Buffer.byteLength(renderWorkUnitSummary(summarizeWorkUnit(target)), "utf8");
 }
 
-describe("selectWorkUnitsForStageA", () => {
-  it("점수가 높은 묶음부터 고르고 나머지는 사유와 함께 남긴다", () => {
-    const units = [scoredUnit(1, 0), scoredUnit(2, 2), scoredUnit(3, 1)];
-    const selection = selectWorkUnitsForStageA(units, 400);
+/** 0점 단일 커밋 단위입니다. 개수 상한 회귀 테스트에서 대량으로 만들어 씁니다. */
+function zeroScoreCommitUnit(id: string): WorkUnit<ScorableCommit> {
+  const sha = id.padStart(40, "0");
+  return {
+    kind: "commit",
+    unitId: `commit:${sha}`,
+    title: "fix: 오타 수정",
+    commits: [commit({ sha, title: "fix: 오타 수정", message: "fix: 오타 수정" })],
+  };
+}
 
-    expect(selection.selected.map(({ unit: item }) => item.unitId)).toEqual(["pr:2"]);
-    expect(selection.excluded.map(({ unit: item }) => item.unitId)).toEqual(["pr:3", "pr:1"]);
-    expect(selection.excluded.every(({ reason }) => reason === "over_input_budget")).toBe(true);
-    expect(selection.thresholdScore).toBe(2);
+describe("selectWorkUnitsForStageA", () => {
+  it("점수 높은 항목 다음이 예산에 안 들어가도 그 뒤 낮은 점수 항목은 계속 확인한다", () => {
+    // 2026-09-11 이전에는 첫 무리가 선택된 뒤 예산이 막히면 이후 항목을 전부 개별 확인 없이
+    // 제외했습니다. 이 테스트는 그 회귀를 재현합니다: 중간 점수(pr:2)는 못 들어가도 그보다
+    // 작은 최하위 점수(pr:1)는 남은 예산에 들어가면 선택됩니다.
+    const high = scoredUnit(3, 2);
+    const mid = scoredUnit(2, 1);
+    const low = scoredUnit(1, 0);
+    const budget = unitBytes(high) + 1 + unitBytes(low);
+    const selection = selectWorkUnitsForStageA([high, mid, low], budget);
+
+    expect(selection.selected.map(({ unit: item }) => item.unitId)).toEqual(["pr:3", "pr:1"]);
+    expect(selection.excluded.map(({ unit: item }) => item.unitId)).toEqual(["pr:2"]);
+    expect(selection.excluded[0].reason).toBe("over_input_budget");
+    expect(selection.thresholdScore).toBe(0);
   });
 
   it("어떤 묶음도 조용히 사라지지 않는다", () => {
@@ -77,18 +94,21 @@ describe("selectWorkUnitsForStageA", () => {
     expect(seen).toEqual(["pr:1", "pr:2", "pr:3", "pr:4"]);
   });
 
-  it("같은 점수 무리는 예산에 다 들어갈 때만 넣는다", () => {
-    // 1점 두 개가 함께 들어가지 못하면 둘 다 빠집니다. 상위 N으로 자르면 하나만 남습니다.
+  it("동점 항목도 개별로 확인해 예산에 드는 만큼만 선택한다", () => {
+    // 2026-09-11 이전에는 동점 무리 하나가 통째로 예산을 못 채우면 무리 전체를 제외했습니다.
+    // `hm1n/Algorithm`에서 0점 434개가 이 규칙 때문에 한꺼번에 빠진 것과 같은 유형입니다. 이제는
+    // 같은 점수라도 항목마다 개별로 검사해 예산에 드는 만큼(pr:2)은 선택하고 나머지(pr:3)만
+    // 제외합니다.
     const units = [scoredUnit(1, 2), scoredUnit(2, 1), scoredUnit(3, 1)];
-    const full = selectWorkUnitsForStageA(units, STAGE_A_MAX_SELECTION_BYTES);
-    const tight = selectWorkUnitsForStageA(units, full.bytes - 1);
+    const budget = unitBytes(units[0]) + 1 + unitBytes(units[1]);
+    const selection = selectWorkUnitsForStageA(units, budget);
 
-    expect(full.selected).toHaveLength(3);
-    expect(tight.selected.map(({ unit: item }) => item.unitId)).toEqual(["pr:1"]);
-    expect(tight.excluded).toHaveLength(2);
+    expect(selection.selected.map(({ unit: item }) => item.unitId)).toEqual(["pr:1", "pr:2"]);
+    expect(selection.excluded.map(({ unit: item }) => item.unitId)).toEqual(["pr:3"]);
+    expect(selection.excluded[0].reason).toBe("over_input_budget");
   });
 
-  it("가장 높은 점수 무리 하나가 예산을 넘으면 그 무리만 쪼갠다", () => {
+  it("동점 무리 하나가 예산을 넘으면 개별 항목 단위로 쪼갠다", () => {
     const units = [scoredUnit(1, 2), scoredUnit(2, 2), scoredUnit(3, 2)];
     const singleBytes = unitBytes(units[0]);
     const selection = selectWorkUnitsForStageA(units, singleBytes * 2 + 1);
@@ -147,11 +167,65 @@ describe("selectWorkUnitsForStageA", () => {
   });
 
   it("제외된 묶음은 발화한 신호를 함께 돌려준다", () => {
-    // scoredUnit(3, 1)은 커밋 6개로만 1점을 얻어 many_commits 신호 하나만 발화시킵니다.
+    // scoredUnit(3, 1)은 커밋 6개로만 1점을 얻어 many_commits 신호 하나만 발화시킵니다. 예산을
+    // 최고 점수 항목 하나만 들어갈 크기로 잡아 pr:3이 확실히 제외되게 합니다.
     const units = [scoredUnit(1, 0), scoredUnit(2, 2), scoredUnit(3, 1)];
-    const selection = selectWorkUnitsForStageA(units, 400);
+    const budget = unitBytes(units[1]);
+    const selection = selectWorkUnitsForStageA(units, budget);
 
     const excludedThree = selection.excluded.find(({ unit: item }) => item.unitId === "pr:3");
     expect(excludedThree?.signals).toEqual(["many_commits"]);
+  });
+
+  it("동점 항목이 개수 상한을 넘으면 입력 순서대로 상한까지만 선택한다", () => {
+    // `hm1n/Algorithm` 축소판입니다. 0점 커밋 20개 중 개수 상한 5개만 예산이 허용하면, 바이트
+    // 예산이 충분해도 입력 순서상 앞의 5개만 선택되고 나머지는 개수 상한 사유로 제외됩니다.
+    const units = Array.from({ length: 20 }, (_, index) => zeroScoreCommitUnit(String(index + 1)));
+    const selection = selectWorkUnitsForStageA(units, STAGE_A_MAX_SELECTION_BYTES, 5);
+
+    expect(selection.selected).toHaveLength(5);
+    expect(selection.selected.map(({ unit: item }) => item.unitId)).toEqual(
+      units.slice(0, 5).map((item) => item.unitId)
+    );
+    expect(selection.excluded).toHaveLength(15);
+    expect(selection.excluded.every(({ reason }) => reason === "over_input_budget")).toBe(true);
+  });
+
+  it("전체 입력이 두 예산 안에 들어가면 종류와 점수에 관계없이 모두 선택한다", () => {
+    const units: WorkUnit<ScorableCommit>[] = [
+      scoredUnit(1, 2),
+      zeroScoreCommitUnit("1"),
+      scoredUnit(2, 0),
+    ];
+    const selection = selectWorkUnitsForStageA(units, STAGE_A_MAX_SELECTION_BYTES);
+
+    expect(selection.selected).toHaveLength(3);
+    expect(selection.excluded).toHaveLength(0);
+  });
+
+  it("같은 입력을 반복 실행하면 선택과 제외가 그대로 반복된다", () => {
+    const units = [scoredUnit(1, 1), scoredUnit(2, 1), scoredUnit(3, 0)];
+    const budget = unitBytes(units[0]) + 1 + unitBytes(units[1]);
+
+    const first = selectWorkUnitsForStageA(units, budget);
+    const second = selectWorkUnitsForStageA(units, budget);
+
+    expect(second.selected.map(({ unit: item }) => item.unitId)).toEqual(
+      first.selected.map(({ unit: item }) => item.unitId)
+    );
+    expect(second.excluded.map(({ unit: item }) => item.unitId)).toEqual(
+      first.excluded.map(({ unit: item }) => item.unitId)
+    );
+  });
+
+  it("동점 입력 순서를 바꾸면 예산 경계에서 선택 집합이 달라질 수 있다", () => {
+    const [a, b] = [scoredUnit(1, 1), scoredUnit(2, 1)];
+    const budget = unitBytes(a);
+
+    const original = selectWorkUnitsForStageA([a, b], budget);
+    const reversed = selectWorkUnitsForStageA([b, a], budget);
+
+    expect(original.selected.map(({ unit: item }) => item.unitId)).toEqual(["pr:1"]);
+    expect(reversed.selected.map(({ unit: item }) => item.unitId)).toEqual(["pr:2"]);
   });
 });

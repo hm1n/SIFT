@@ -172,7 +172,6 @@ function unitLabel(unit: ExcludedWorkUnit<ReadonlyCommitDetail>["unit"]): string
 
 export function StageAExclusions({
   excludedUnits,
-  thresholdScore,
   selectedUnitCount,
   unjudgedShas,
 }: StageASelectionDisplay) {
@@ -204,13 +203,19 @@ export function StageAExclusions({
             개수만 적으면 그것이 전체의 얼마인지 알 수 없어, 저장소가 커서 잘렸다는 사실이 드러나지
             않습니다. 2026-09-02까지 이 줄은 "점수 N점 미만 M묶음을 제외했습니다"였고, 점수에 합격선이
             있다는 뜻으로 읽혔습니다. 실제 방아쇠는 입력 상한입니다.
+
+            2026-09-11에 선별을 동점 무리 일괄 처리에서 개별 항목 예산 검사로 바꾸면서 "점수 상위
+            N묶음"이라는 표현과 `thresholdScore` 경계 문장을 지웠습니다. 이제 선택은 점수가 높고
+            요약이 큰 묶음이 빠지고 점수가 낮고 작은 묶음이 들어가는 비단조 결과일 수 있어, 단일
+            점수 경계로 설명하면 사실과 다릅니다. 근거는
+            `llm-wiki/raw/2026-09-11-Stage-A-개별-예산-선별-설계-session-log.md`에 있습니다.
           */}
           <summary>
-            <span>{`저장소가 커서 전체 ${totalUnitCount}묶음 중 점수 상위 ${selectedUnitCount}묶음만 판단했습니다`}</span>
+            <span>{`저장소가 커서 전체 ${totalUnitCount}묶음 중 ${selectedUnitCount}묶음만 판단했습니다`}</span>
           </summary>
           <p className={styles.exclusionReason}>
             {WORK_UNIT_SELECTION_EXCLUSION_COPY.over_input_budget}
-            {` 이번 판단의 점수 경계는 ${thresholdScore}점이었습니다.`}
+            {" 분석 가능한 분량 안에서 점수순으로 선택했고, 같은 점수에서는 최신 커밋을 우선했습니다."}
             <span className={styles.heuristicNotice}> 점수는 자동 계산한 휴리스틱이고 Repository 사실이 아닙니다.</span>
           </p>
           <ul className={`${styles.exclusionList} ${styles.scrollableList}`}>

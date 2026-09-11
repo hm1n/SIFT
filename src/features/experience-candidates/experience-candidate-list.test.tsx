@@ -298,11 +298,15 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
     });
 
     // 점수에 합격선이 있다는 뜻으로 읽히던 문구를 고쳤습니다. 실제 방아쇠는 입력 상한이므로
-    // 전체 대비 몇 묶음을 판단했는지 말합니다. 점수 경계는 본문에 남깁니다.
+    // 전체 대비 몇 묶음을 판단했는지만 말하고, 선별 방식은 별도 문장으로 설명합니다. 선택이
+    // 개별 항목 단위 예산 검사로 바뀌면서(2026-09-11) 단일 점수 경계로는 더 이상 설명하지
+    // 않습니다.
     expect(
-      screen.getByText("저장소가 커서 전체 12묶음 중 점수 상위 10묶음만 판단했습니다")
+      screen.getByText("저장소가 커서 전체 12묶음 중 10묶음만 판단했습니다")
     ).toBeInTheDocument();
-    expect(screen.getByText(/이번 판단의 점수 경계는 3점이었습니다/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/분석 가능한 분량 안에서 점수순으로 선택했고, 같은 점수에서는 최신 커밋을 우선했습니다\./)
+    ).toBeInTheDocument();
     expect(screen.getByText("PR #2")).toBeInTheDocument();
     expect(screen.getByText("PR #1")).toBeInTheDocument();
     expect(screen.getByText("2점 · 휴리스틱")).toBeInTheDocument();
@@ -326,7 +330,7 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
     });
 
     expect(
-      screen.getByText("저장소가 커서 전체 12묶음 중 점수 상위 10묶음만 판단했습니다")
+      screen.getByText("저장소가 커서 전체 12묶음 중 10묶음만 판단했습니다")
     ).toBeInTheDocument();
     expect(screen.getByText("한 번에 보낼 수 있는 분량을 넘어 1묶음을 제외했습니다")).toBeInTheDocument();
   });
@@ -379,7 +383,7 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
       excludedUnits: many,
     });
 
-    const summaryText = "저장소가 커서 전체 66묶음 중 점수 상위 10묶음만 판단했습니다";
+    const summaryText = "저장소가 커서 전체 66묶음 중 10묶음만 판단했습니다";
     expect(screen.getByText(summaryText)).toBeInTheDocument();
     const details = screen.getByText(summaryText).closest("details");
     const list = details?.querySelector("ul");
