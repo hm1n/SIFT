@@ -89,9 +89,30 @@ export function useExperienceInterview({
   const turnSeqRef = useRef(0);
   // 방금 답한 질문이 겨냥했던 대상입니다. 첫 질문은 `initialTarget`과 같은 값으로 시작합니다.
   const answeredTargetRef = useRef<NonNullable<InterviewQuestionTarget>>(FIRST_TARGET);
-  // 미반영 턴의 재처리에 필요한 요청 맥락을 들고 있습니다.
-  const unreflectedRef = useRef<{ turn: BlockUpdateTurn; target: NonNullable<InterviewQuestionTarget> } | null>(null);
+  type PendingTurn = { turn: BlockUpdateTurn; target: NonNullable<InterviewQuestionTarget> };
+  /**
+   * 미반영 턴마다 재처리에 필요한 요청 맥락을 들고 있습니다. 턴 ID로 키를 둬 어느 턴이든 성공하면
+   * 그 턴 자신의 항목만 지웁니다. 단일 슬롯이던 이전 구현은 어느 턴이 성공하든 슬롯을 통째로
+   * 지워, t1 실패 뒤 t2만 성공해도 t1의 실패 기록과 재시도 대상이 사라졌습니다(구현검토
+   * 2026-09-11 P1-2, R3).
+   */
+  const unreflectedRef = useRef<Map<string, PendingTurn>>(new Map());
+  /**
+   * 지금 실행 중인 블록 갱신 호출의 턴입니다. 완료(성공·실패 모두)되면 비웁니다. `callSeq`는 이
+   * 항목을 남긴 `applyTurn` 호출 자신의 번호입니다. 같은 턴을 재시도하면 turnId가 같으므로,
+   * turnId만으로 "이 항목이 내가 넣은 것"을 판정하면 아직 정리 중(catch/finally)인 이전 시도가
+   * 방금 시작한 재시도의 항목을 지워 버릴 수 있습니다. 번호로 자기 항목인지 확인해야 이 경합을
+   * 막습니다.
+   */
+  const inFlightRef = useRef<(PendingTurn & { readonly callSeq: number }) | null>(null);
+  const callSeqRef = useRef(0);
   const blockUpdateAbortRef = useRef<AbortController | null>(null);
+
+  /** `unreflectedRef`가 바뀐 뒤 노출용 상태를 맞춥니다. 가장 오래된(먼저 실패한) 턴을 보여 줍니다. */
+  const syncUnreflectedTurnId = useCallback(() => {
+    const oldest = unreflectedRef.current.keys().next();
+    setUnreflectedTurnId(oldest.done ? null : oldest.value);
+  }, []);
 
   const optionsRef = useRef({ questionUrl, blockUpdateUrl, snapshot, fetchImpl, retryDelaysMs, sleep, scheduleFrame, cancelFrame });
   useEffect(() => {
@@ -99,9 +120,15 @@ export function useExperienceInterview({
   });
 
   /**
-   * `answerTurnId`의 답변에 대한 블록 갱신을 부릅니다. 성공하면 상태와 진행을 갱신하고 미반영
-   * 표시를 지웁니다. 실패하면 이전 상태를 유지하고 미반영으로 표시합니다(설계 9절). 어느 쪽이든
-   * 던지지 않습니다. 호출부가 그대로 다음 단계로 진행할 수 있어야 하기 때문입니다.
+   * `answerTurnId`의 답변에 대한 블록 갱신을 부릅니다. 성공하면 상태와 진행을 갱신하고 그 턴의
+   * 미반영 표시만 지웁니다(다른 턴이 여전히 미반영이면 그대로 남습니다). 실패하면 이전 상태를
+   * 유지하고 그 턴을 미반영으로 표시합니다(설계 9절). 어느 쪽이든 던지지 않습니다. 호출부가
+   * 그대로 다음 단계로 진행할 수 있어야 하기 때문입니다.
+   *
+   * 이 호출이 최신 요청을 abort한 뒤 그 abort 때문에 스스로도 취소되면(다른 `applyTurn` 호출이
+   * 겹쳐 들어온 경우) 아무 기록도 남기지 않고 조용히 돌아갑니다. 그 턴을 미반영으로 기록할지는
+   * 취소한 쪽(주로 `endInterview`)이 `inFlightRef`를 보고 직접 판단합니다. 그래야 "종료가 끊은
+   * 진행 중이던 호출"과 "이 함수 자신이 이전 호출을 끊은 것"을 헷갈리지 않습니다.
    */
   const applyTurn = useCallback(
     async (turn: BlockUpdateTurn, target: NonNullable<InterviewQuestionTarget>): Promise<void> => {
@@ -109,6 +136,8 @@ export function useExperienceInterview({
       blockUpdateAbortRef.current?.abort();
       const controller = new AbortController();
       blockUpdateAbortRef.current = controller;
+      const callSeq = ++callSeqRef.current;
+      inFlightRef.current = { turn, target, callSeq };
       try {
         const result = await fetchBlockUpdate({
           url: current.blockUpdateUrl,
@@ -123,18 +152,31 @@ export function useExperienceInterview({
         });
         setBlockStateBoth(result.state);
         progressRef.current = recordResponse(progressRef.current, target.targetBlock, target.targetElement, result.targetResponse);
-        unreflectedRef.current = null;
-        setUnreflectedTurnId(null);
+        unreflectedRef.current.delete(turn.turnId);
+        syncUnreflectedTurnId();
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
         // 갱신 실패만으로 같은 블록에 고정하지 않습니다. progress는 건드리지 않고 다음 단계에서
         // 이전 평가 그대로 이동 정책을 적용합니다.
-        unreflectedRef.current = { turn, target };
-        setUnreflectedTurnId(turn.turnId);
+        unreflectedRef.current.set(turn.turnId, { turn, target });
+        syncUnreflectedTurnId();
+      } finally {
+        if (inFlightRef.current?.callSeq === callSeq) inFlightRef.current = null;
       }
     },
-    [setBlockStateBoth]
+    [setBlockStateBoth, syncUnreflectedTurnId]
   );
+
+  /**
+   * 미반영 턴을 전부(오래된 순서로) 다시 시도합니다. 순서대로 기다려 가며 부르므로 각 재처리가
+   * 직전 재처리로 갱신된 최신 상태를 보고 판단합니다. 사용자 종료·열 턴 자동 종료가 공유하는
+   * 정리 경로입니다(구현검토 2026-09-11 P1-2).
+   */
+  const retryAllUnreflected = useCallback(async () => {
+    for (const pending of [...unreflectedRef.current.values()]) {
+      await applyTurn(pending.turn, pending.target);
+    }
+  }, [applyTurn]);
 
   /**
    * `useInterviewStream`의 접합점입니다. 답변 하나가 확정될 때마다 불려, 블록 갱신 → 다음 대상
@@ -197,36 +239,45 @@ export function useExperienceInterview({
   // 상한 도달로 정한 종료 사유를 실제 종료로 잇습니다. 훅 스스로 `endInterview`를 부르는 유일한
   // 자리입니다. 사용자 종료는 아래 `endInterview` 래퍼가 직접 부릅니다.
   //
+  // 사용자 종료와 같은 정리 경로(`retryAllUnreflected`)를 거친 뒤에 끝냅니다. 이전에는
+  // `inner.endInterview()`를 곧장 불러, 마지막 턴의 블록 갱신이 실패한 채로 남아도 재처리를
+  // 시도하지 않고 그대로 종료했습니다(구현검토 2026-09-11 P1-2, R9).
+  //
   // `inner` 전체가 아니라 실제로 읽는 필드만 의존성에 둡니다. `inner`는 `useInterviewStream`이 매
   // 렌더 새로 만드는 객체라, 전체를 넣으면 이 효과가 매 렌더 다시 실행됩니다. `isEnded`와
   // `endInterview`는 그 훅 내부에서 각각 상태와 안정된 `useCallback`으로 나오므로 필요한 시점에만
   // 바뀝니다.
   useEffect(() => {
-    if (endReason === "turn_limit" && !inner.isEnded) inner.endInterview();
+    if (endReason !== "turn_limit" || inner.isEnded) return;
+    void retryAllUnreflected().then(() => inner.endInterview());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endReason, inner.isEnded, inner.endInterview]);
+  }, [endReason, inner.isEnded, inner.endInterview, retryAllUnreflected]);
 
   const retryUnreflectedBlockUpdate = useCallback(() => {
-    const pending = unreflectedRef.current;
-    if (pending === null) return;
-    void applyTurn(pending.turn, pending.target);
-  }, [applyTurn]);
+    void retryAllUnreflected();
+  }, [retryAllUnreflected]);
 
   /**
    * 사용자 종료입니다. 진행 중이던 블록 갱신 호출을 끊어 화면 이탈이 이 작업 전체를 끊는다는
-   * 계약을 지킵니다(설계 Approach 4). 종료와 정리 완료는 구분합니다(설계 9절): 마지막 턴이
-   * 미반영이면 그 자리에서 한 번 더 반영을 시도하되, 이 호출은 턴으로 세지 않고 실패해도 종료
-   * 자체는 그대로 진행합니다.
+   * 계약을 지킵니다(설계 Approach 4). 끊긴 호출이 겨냥하던 턴은 abort 자체가 아니라 여기서
+   * `inFlightRef`를 직접 읽어 미반영으로 등록합니다. `applyTurn`의 catch가 비동기로(다음
+   * 마이크로태스크에) 도는 것과 달리 이 값은 동기로 최신이라, 등록을 놓치는 경합이 없습니다(구현검토
+   * 2026-09-11 P1-2, R6). 종료와 정리 완료는 구분합니다(설계 9절): 미반영 턴이 있으면 그 자리에서
+   * 한 번 더 반영을 시도하되, 이 호출은 턴으로 세지 않고 실패해도 종료 자체는 그대로 진행합니다.
    */
   // 위 효과와 같은 이유로 `inner.endInterview`만 둡니다.
   const endInterview = useCallback(() => {
     if (endReason === null) setEndReason("user");
+    const interrupted = inFlightRef.current;
     blockUpdateAbortRef.current?.abort();
-    const pending = unreflectedRef.current;
-    if (pending !== null) void applyTurn(pending.turn, pending.target);
+    if (interrupted !== null) {
+      unreflectedRef.current.set(interrupted.turn.turnId, interrupted);
+      syncUnreflectedTurnId();
+    }
+    void retryAllUnreflected();
     inner.endInterview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applyTurn, endReason, inner.endInterview]);
+  }, [endReason, inner.endInterview, retryAllUnreflected, syncUnreflectedTurnId]);
 
   return {
     ...inner,

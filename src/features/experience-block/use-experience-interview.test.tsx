@@ -173,6 +173,38 @@ describe("useExperienceInterview", () => {
     expect(result.current.blockState.evaluation.problem).toEqual(ASKABLE);
   });
 
+  it("성공한 다음 턴이 앞서 실패한 턴의 미반영 표시를 지우지 않는다 (구현검토 P1-2, R3)", async () => {
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    const q3 = controllableResponse();
+    const fetchImpl = makeFetchImpl({
+      questionSources: [q1, q2, q3],
+      blockUpdateResponses: [
+        jsonResponse(502, { error: { kind: "block_update_rejected", message: "검증 실패" } }), // t1 실패
+        jsonResponse(200, blockUpdateBody()), // t2 성공
+      ],
+    });
+    const { result } = renderHook(() =>
+      useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    completeQuestion(q1, "질문1");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+    act(() => result.current.submitAnswer("t1 답변"));
+
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3)); // 질문1, 블록갱신 실패, 질문2
+    expect(result.current.unreflectedTurnId).toBe("t1");
+
+    completeQuestion(q2, "질문2");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+    act(() => result.current.submitAnswer("t2 답변"));
+
+    await waitFor(() => expect(result.current.turnsUsed).toBe(2));
+    // t2는 성공했지만 t1은 여전히 미반영이어야 합니다. 단일 슬롯이던 이전 구현은 t2 성공이
+    // t1의 실패 기록을 통째로 지웠습니다.
+    expect(result.current.unreflectedTurnId).toBe("t1");
+  });
+
   it("유효한 질문 후보가 없으면 질문을 만들지 않고 완료 대기 상태로 둔다. 사용자가 종료해야 실제로 끝난다", async () => {
     const q1 = controllableResponse();
     const fetchImpl = makeFetchImpl({
@@ -207,7 +239,7 @@ describe("useExperienceInterview", () => {
     expect(result.current.endReason).toBe("user");
   });
 
-  it("블록 갱신이 진행 중일 때 종료하면 그 호출을 끊고, 끝난 응답은 다음 질문을 만들지 않는다", async () => {
+  it("블록 갱신이 진행 중일 때 종료하면 그 호출을 끊고 미반영으로 등록한 뒤 한 번 더 반영을 시도한다 (구현검토 P1-2, R6)", async () => {
     const q1 = controllableResponse();
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const url = String(input);
@@ -235,12 +267,14 @@ describe("useExperienceInterview", () => {
       result.current.endInterview();
     });
 
-    // 중단된 블록 갱신은 실패로 취급하지 않습니다(사용자가 끊은 것이지 오류가 아닙니다).
+    // 끊긴 호출은 실패로 취급하지 않지만(사용자가 끊은 것이지 오류가 아닙니다), 그 턴의 정보를
+    // 잃지 않도록 미반영으로 등록하고 한 번 더 반영을 시도합니다(이 목은 재시도도 다시 걸어 두어
+    // 그 호출도 끝나지 않고 남습니다).
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(result.current.unreflectedTurnId).toBeNull();
+    expect(result.current.unreflectedTurnId).toBe("t1");
     expect(result.current.isEnded).toBe(true);
-    // 끊긴 자리에서 이어지는 질문 요청은 나오지 않습니다.
-    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    // 원래 호출과 종료 시점의 재시도, 둘 다 나갑니다. 끊긴 자리에서 다음 "질문" 요청은 나오지 않습니다.
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
   it("열 턴을 채우면 사용자 조작 없이 자동으로 종료하고 사유를 turn_limit으로 남긴다", async () => {
@@ -287,5 +321,34 @@ describe("useExperienceInterview", () => {
     expect(result.current.endReason).toBe("turn_limit");
     // 열 번째 질문(질문 10) 뒤에 열한 번째 질문 요청은 없습니다.
     expect(fetchImpl).toHaveBeenCalledTimes(20);
+  });
+
+  it("마지막 턴의 블록 갱신이 실패해도 열 턴 자동 종료가 한 번 더 반영을 시도한다 (구현검토 P1-2, R9)", async () => {
+    const questionSources = Array.from({ length: 10 }, () => controllableResponse());
+    const blockUpdateResponses = [
+      ...Array.from({ length: 9 }, () => jsonResponse(200, blockUpdateBody())),
+      jsonResponse(502, { error: { kind: "block_update_rejected", message: "검증 실패" } }), // 10번째 턴 실패
+      jsonResponse(200, blockUpdateBody()), // 종료 시 재시도는 성공
+    ];
+    const fetchImpl = makeFetchImpl({ questionSources, blockUpdateResponses });
+    const { result } = renderHook(() =>
+      useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate })
+    );
+
+    for (let turn = 1; turn <= 10; turn += 1) {
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2 * turn - 1));
+      completeQuestion(questionSources[turn - 1], `질문 ${turn}`);
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+      act(() => {
+        result.current.submitAnswer(`답변 ${turn}`);
+      });
+    }
+
+    await waitFor(() => expect(result.current.isEnded).toBe(true));
+    expect(result.current.endReason).toBe("turn_limit");
+    // 질문 10회 + 블록 갱신 10회 + 상한 종료가 시도한 마지막 재처리 1회 = 21회입니다. 이전
+    // 구현은 `inner.endInterview()`를 곧장 불러 이 재처리 없이 그대로 끝났습니다.
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(21));
+    expect(result.current.unreflectedTurnId).toBeNull();
   });
 });
