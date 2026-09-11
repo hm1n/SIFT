@@ -20,23 +20,50 @@ vi.mock("ai", async (importOriginal) => {
 });
 
 function unit(
-  pullRequestNumber: number,
+  number: number,
   representativeSha: string,
-  pullRequestTitle: string,
+  title: string,
   commitTitles: readonly string[],
   topFilePaths: readonly string[]
 ): StageAUnitInput {
+  const unitId = `pr:${number}`;
   return {
-    pullRequestNumber,
+    unitId,
     representativeSha,
     summary: {
-      pullRequestNumber,
-      pullRequestTitle,
+      unitId,
+      kind: "pull_request",
+      title,
       commitCount: commitTitles.length,
       spanDays: 1,
       additions: 20,
       deletions: 2,
       commitTitles: [...commitTitles],
+      changedFilePathCount: topFilePaths.length,
+      topFilePaths: [...topFilePaths],
+    },
+  };
+}
+
+/** PR에 속하지 않은 커밋 하나짜리 판단 단위입니다. `sha`는 실제 커밋 SHA(40자)를 가정합니다. */
+function commitUnit(
+  sha: string,
+  title: string,
+  topFilePaths: readonly string[] = ["src/a.ts"]
+): StageAUnitInput {
+  const unitId = `commit:${sha}`;
+  return {
+    unitId,
+    representativeSha: sha,
+    summary: {
+      unitId,
+      kind: "commit",
+      title,
+      commitCount: 1,
+      spanDays: 1,
+      additions: 20,
+      deletions: 2,
+      commitTitles: [title],
       changedFilePathCount: topFilePaths.length,
       topFilePaths: [...topFilePaths],
     },
@@ -61,9 +88,9 @@ afterEach(() => {
 describe("Stage A 후보 선별", () => {
   it("기여 항목 매칭과 미분류 자동 추천을 한 경로에서 조합한다", async () => {
     const output = await selectStageACandidates(input, async () => ({ decisions: [
-      { pullRequestNumber: 1, contributionItem: "인증 구현", recommended: true },
-      { pullRequestNumber: 2, contributionItem: "미분류", recommended: true },
-      { pullRequestNumber: 3, contributionItem: "미분류", recommended: false },
+      { unitId: "pr:1", contributionItem: "인증 구현", recommended: true },
+      { unitId: "pr:2", contributionItem: "미분류", recommended: true },
+      { unitId: "pr:3", contributionItem: "미분류", recommended: false },
     ] }));
 
     expect(output).toEqual({
@@ -79,7 +106,7 @@ describe("Stage A 후보 선별", () => {
   it("기여 항목이 없으면 추천된 SHA를 자동 추천 후보로 만든다", async () => {
     const output = await selectStageACandidates(
       { ...input, contributionItems: [] },
-      async () => ({ decisions: input.units.map(({ pullRequestNumber }) => ({ pullRequestNumber, contributionItem: null, recommended: pullRequestNumber === 2 })) })
+      async () => ({ decisions: input.units.map(({ unitId }) => ({ unitId, contributionItem: null, recommended: unitId === "pr:2" })) })
     );
     expect(output.candidates).toEqual([
       { sha: "automatic", source: "automatic_recommendation", contributionItem: null },
@@ -88,9 +115,9 @@ describe("Stage A 후보 선별", () => {
 
   it("기여 항목만 있으면 일치한 SHA를 해당 항목 후보로 만든다", async () => {
     const output = await selectStageACandidates(input, async () => ({ decisions: [
-      { pullRequestNumber: 1, contributionItem: "인증 구현", recommended: false },
-      { pullRequestNumber: 2, contributionItem: null, recommended: false },
-      { pullRequestNumber: 3, contributionItem: null, recommended: false },
+      { unitId: "pr:1", contributionItem: "인증 구현", recommended: false },
+      { unitId: "pr:2", contributionItem: null, recommended: false },
+      { unitId: "pr:3", contributionItem: null, recommended: false },
     ] }));
     expect(output.candidates[0]).toEqual({
       sha: "matched",
@@ -101,9 +128,9 @@ describe("Stage A 후보 선별", () => {
 
   it.each(["미분류", "존재하지 않는 항목"])("%s 라벨도 추천되면 자동 추천 후보로 정규화한다", async (label) => {
     const output = await selectStageACandidates(input, async () => ({ decisions: [
-      { pullRequestNumber: 1, contributionItem: label, recommended: true },
-      { pullRequestNumber: 2, contributionItem: null, recommended: false },
-      { pullRequestNumber: 3, contributionItem: null, recommended: false },
+      { unitId: "pr:1", contributionItem: label, recommended: true },
+      { unitId: "pr:2", contributionItem: null, recommended: false },
+      { unitId: "pr:3", contributionItem: null, recommended: false },
     ] }));
     expect(output.candidates).toEqual([
       { sha: "matched", source: "automatic_recommendation", contributionItem: null },
@@ -112,9 +139,9 @@ describe("Stage A 후보 선별", () => {
 
   it("recommended가 false인 커밋만 미분류로 남긴다", async () => {
     const output = await selectStageACandidates(input, async () => ({ decisions: [
-      { pullRequestNumber: 1, contributionItem: null, recommended: false },
-      { pullRequestNumber: 2, contributionItem: null, recommended: true },
-      { pullRequestNumber: 3, contributionItem: "미분류", recommended: false },
+      { unitId: "pr:1", contributionItem: null, recommended: false },
+      { unitId: "pr:2", contributionItem: null, recommended: true },
+      { unitId: "pr:3", contributionItem: "미분류", recommended: false },
     ] }));
     expect(output.unclassifiedShas).toEqual(["matched", "unclassified"]);
   });
@@ -123,9 +150,9 @@ describe("Stage A 후보 선별", () => {
     const output = await selectStageACandidates(
       { ...input, contributionItems: ["미분류"] },
       async () => ({ decisions: [
-        { pullRequestNumber: 1, contributionItem: "미분류", recommended: false },
-        { pullRequestNumber: 2, contributionItem: null, recommended: false },
-        { pullRequestNumber: 3, contributionItem: null, recommended: false },
+        { unitId: "pr:1", contributionItem: "미분류", recommended: false },
+        { unitId: "pr:2", contributionItem: null, recommended: false },
+        { unitId: "pr:3", contributionItem: null, recommended: false },
       ] })
     );
     expect(output.candidates).toEqual([]);
@@ -143,7 +170,7 @@ describe("Stage A 후보 선별", () => {
     const payload = buildStageAPayload(taintedInput);
     expect(JSON.stringify(payload)).not.toContain("patch");
     expect(payload.units[0]).toEqual({
-      pullRequestNumber: 1,
+      unitId: "pr:1",
       summary: [
         "PR#1 인증 구현 [1커밋 1일 +20-2 1파일]",
         "  feat: 인증 구현",
@@ -152,14 +179,32 @@ describe("Stage A 후보 선별", () => {
     });
   });
 
-  it("구조 위반, 환각 SHA, 누락 SHA를 전체 거부한다", async () => {
+  it("구조 위반, 환각 식별자, 누락 식별자를 전체 거부한다", async () => {
     await expect(selectStageACandidates(input, async () => ({ decisions: "invalid" }))).rejects.toMatchObject({ kind: "schema_validation" });
     await expect(selectStageACandidates(input, async () => ({ decisions: [
-      { pullRequestNumber: 99, contributionItem: null, recommended: true },
-    ] }))).rejects.toMatchObject({ kind: "unknown_sha", unknownShas: ["#99"] });
+      { unitId: "pr:99", contributionItem: null, recommended: true },
+    ] }))).rejects.toMatchObject({ kind: "unknown_sha", unknownShas: ["pr:99"] });
     await expect(selectStageACandidates(input, async () => ({ decisions: [
-      { pullRequestNumber: 1, contributionItem: "인증 구현", recommended: true },
+      { unitId: "pr:1", contributionItem: "인증 구현", recommended: true },
     ] }))).rejects.toMatchObject({ kind: "schema_validation" });
+  });
+
+  it("단일 커밋 단위는 모델이 SHA 7자리로 답해도 대표 SHA(40자)로 되돌린다", async () => {
+    const fullSha = "abcdef1234567890abcdef1234567890abcdef12";
+    const mixedInput: StageAInput = {
+      contributionItems: [],
+      candidateLimit: 2,
+      units: [commitUnit(fullSha, "직접 푸시한 변경")],
+    };
+
+    const output = await selectStageACandidates(mixedInput, async () => ({
+      decisions: [{ unitId: "commit:abcdef1", contributionItem: null, recommended: true }],
+    }));
+
+    expect(output.candidates).toEqual([
+      { sha: fullSha, source: "automatic_recommendation", contributionItem: null },
+    ]);
+    expect(output.unclassifiedShas).toEqual([]);
   });
 
   it("청크 쿼터를 넘긴 응답을 순서대로 절단하지 않고 전체 거부한다", async () => {
@@ -168,8 +213,8 @@ describe("Stage A 후보 선별", () => {
     );
     await expect(selectStageACandidates(
       { units, contributionItems: [], candidateLimit: 2 },
-      async () => ({ decisions: units.map(({ pullRequestNumber }) => ({
-        pullRequestNumber,
+      async () => ({ decisions: units.map(({ unitId }) => ({
+        unitId,
         contributionItem: null,
         recommended: true,
       })) })
@@ -271,8 +316,8 @@ describe("Stage A 후보 선별", () => {
     let signal: AbortSignal | undefined;
     await selectStageACandidates(input, async (_payload, receivedSignal) => {
       signal = receivedSignal;
-      return { decisions: input.units.map(({ pullRequestNumber }) => ({
-        pullRequestNumber,
+      return { decisions: input.units.map(({ unitId }) => ({
+        unitId,
         contributionItem: null,
         recommended: false,
       })) };
@@ -303,8 +348,8 @@ describe("renderStageAPrompt", () => {
     const payload = buildStageAPayload(input);
     const generateObjectMock = vi.mocked(generateObject);
     generateObjectMock.mockResolvedValue({
-      object: { decisions: payload.units.map(({ pullRequestNumber }) => ({
-        pullRequestNumber, contributionItem: null, recommended: false,
+      object: { decisions: payload.units.map(({ unitId }) => ({
+        unitId, contributionItem: null, recommended: false,
       })) },
       response: { headers: {} },
       usage: { totalTokens: 0 },
@@ -325,8 +370,8 @@ describe("로컬 전용 입력 범위 안내", () => {
     const generateObjectMock = vi.mocked(generateObject);
     generateObjectMock.mockResolvedValue({
       object: {
-        decisions: payload.units.map(({ pullRequestNumber }) => ({
-          pullRequestNumber,
+        decisions: payload.units.map(({ unitId }) => ({
+          unitId,
           contributionItem: null,
           recommended: false,
         })),
@@ -347,7 +392,7 @@ describe("로컬 전용 입력 범위 안내", () => {
 
     const call = await capturedCall();
 
-    expect(call.system).not.toContain("커밋 제목 안에 적힌 다른 PR 번호");
+    expect(call.system).not.toContain("판단 대상은 각 묶음 첫 줄의");
     expect(call.temperature).toBe(STAGE_JUDGMENT_TEMPERATURE);
     expect(call.maxRetries).toBe(LLM_MAX_RETRIES);
   });
@@ -363,9 +408,9 @@ describe("로컬 전용 입력 범위 안내", () => {
 
     const call = await capturedCall();
 
-    expect(call.system).toContain("커밋 제목 안에 적힌 다른 PR 번호");
+    expect(call.system).toContain("판단 대상은 각 묶음 첫 줄의 'PR#번호' 또는 '커밋 SHA7자리'뿐입니다");
     expect(call.temperature).toBe(0);
     // 프로덕션 지시는 그대로 남아 있어야 합니다.
-    expect(call.system).toContain("decisions 배열은 입력에 있는 PR 번호 전부를");
+    expect(call.system).toContain("decisions 배열은 입력에 있는 판단 단위 전부를");
   });
 });

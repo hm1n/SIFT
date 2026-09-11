@@ -394,12 +394,16 @@ function instrumentedStageAGenerate(model: string | undefined): GenerateStageA {
   return async (payload, abortSignal) => {
     const output = await generate(payload, abortSignal);
     const decisions =
-      (output as { decisions?: { pullRequestNumber?: number }[] }).decisions ?? [];
-    const returned = decisions.map((decision) => decision.pullRequestNumber);
+      (output as { decisions?: { unitId?: string }[] }).decisions ?? [];
+    const returned = decisions.map((decision) => decision.unitId);
     const unique = new Set(returned);
     const expected = payload.units.length;
-    const inputNumbers = new Set(payload.units.map(({ pullRequestNumber }) => pullRequestNumber));
-    const missing = [...inputNumbers].filter((number) => !unique.has(number)).length;
+    // 모델은 단일 커밋 단위에 대해 SHA 7자리로만 답합니다(`stage-a.ts`의
+    // `modelFacingUnitId`). 입력 쪽 식별자도 같은 형태로 바꿔야 비교가 맞습니다.
+    const modelFacingId = (unitId: string) =>
+      unitId.startsWith("commit:") ? `commit:${unitId.slice(7, 14)}` : unitId;
+    const inputIds = new Set(payload.units.map(({ unitId }) => modelFacingId(unitId)));
+    const missing = [...inputIds].filter((id) => !unique.has(id)).length;
     console.log(
       `[stage-a] 모델 응답 decision=${returned.length}/${expected} 고유=${unique.size} ` +
         `누락=${missing} 중복=${returned.length - unique.size} 계약충족=${returned.length === expected && unique.size === expected && missing === 0}`
@@ -455,12 +459,12 @@ async function runStageA() {
             const source = stageAUnits[index % stageAUnits.length];
             const round = Math.floor(index / stageAUnits.length);
             if (round === 0) return source;
-            const pullRequestNumber = source.pullRequestNumber + round * 10_000;
+            const unitId = `${source.unitId}-round${round}`;
             return {
               ...source,
-              pullRequestNumber,
+              unitId,
               representativeSha: index.toString(16).padStart(40, "0"),
-              summary: { ...source.summary, pullRequestNumber },
+              summary: { ...source.summary, unitId },
             };
           });
     if (syntheticUnits > stageAUnits.length) {

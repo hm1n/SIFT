@@ -30,13 +30,18 @@ function isStageAInput(value: unknown): value is StageAInput {
     Array.isArray(item) && item.every((entry) => typeof entry === "string");
   // Stage A는 patch를 받지 않습니다. 묶음 요약에는 patch가 들어갈 자리가 없지만, 클라이언트가
   // 임의 필드를 덧붙여 보내는 경로를 막기 위해 요약 필드 수를 고정합니다.
+  // `unitId`는 Stage B의 `resolveWorkUnitKey`와 같은 형식입니다. PR 묶음은 `pr:번호`, 단일
+  // 커밋은 `commit:SHA`(40자)입니다.
+  const UNIT_ID_PATTERN = /^(pr:\d+|commit:[0-9a-f]{40})$/;
   const isSummary = (item: unknown) => {
     if (typeof item !== "object" || item === null) return false;
     const summary = item as Record<string, unknown>;
     return (
-      Object.keys(summary).length === 9 &&
-      Number.isInteger(summary.pullRequestNumber) &&
-      typeof summary.pullRequestTitle === "string" &&
+      Object.keys(summary).length === 10 &&
+      typeof summary.unitId === "string" &&
+      UNIT_ID_PATTERN.test(summary.unitId) &&
+      (summary.kind === "pull_request" || summary.kind === "commit") &&
+      typeof summary.title === "string" &&
       isCount(summary.commitCount) &&
       (summary.commitCount as number) >= 1 &&
       isCount(summary.spanDays) &&
@@ -47,23 +52,30 @@ function isStageAInput(value: unknown): value is StageAInput {
       isStringArray(summary.topFilePaths)
     );
   };
-  const isUnit = (item: unknown) =>
-    typeof item === "object" &&
-    item !== null &&
-    Number.isInteger((item as { pullRequestNumber?: unknown }).pullRequestNumber) &&
-    typeof (item as { representativeSha?: unknown }).representativeSha === "string" &&
-    /^[0-9a-f]{40}$/.test((item as { representativeSha: string }).representativeSha) &&
-    isSummary((item as { summary?: unknown }).summary) &&
-    (item as { summary: { pullRequestNumber: number } }).summary.pullRequestNumber ===
-      (item as { pullRequestNumber: number }).pullRequestNumber;
+  const isUnit = (item: unknown) => {
+    if (typeof item !== "object" || item === null) return false;
+    const unit = item as { unitId?: unknown; representativeSha?: unknown; summary?: unknown };
+    if (typeof unit.unitId !== "string" || !UNIT_ID_PATTERN.test(unit.unitId)) return false;
+    if (typeof unit.representativeSha !== "string" || !/^[0-9a-f]{40}$/.test(unit.representativeSha)) {
+      return false;
+    }
+    if (!isSummary(unit.summary)) return false;
+    if ((unit.summary as { unitId: string }).unitId !== unit.unitId) return false;
+    // 단일 커밋 단위는 대표 SHA가 곧 그 커밋 자신이어야 합니다. 대리 지표가 아니라 실제 값으로
+    // 확인합니다.
+    if (unit.unitId.startsWith("commit:") && unit.unitId !== `commit:${unit.representativeSha}`) {
+      return false;
+    }
+    return true;
+  };
 
   const input = value as StageAInput;
   if (typeof value !== "object" || value === null) return false;
   if (!Array.isArray(input.units) || !input.units.every(isUnit)) return false;
   if (input.units.length === 0 || input.units.length > STAGE_A_MAX_UNITS) return false;
   // 같은 묶음을 두 번 보내면 전수 응답 계약이 성립하지 않습니다.
-  const numbers = input.units.map(({ pullRequestNumber }) => pullRequestNumber);
-  if (new Set(numbers).size !== numbers.length) return false;
+  const unitIds = input.units.map(({ unitId }) => unitId);
+  if (new Set(unitIds).size !== unitIds.length) return false;
   if (!Array.isArray(input.contributionItems)) return false;
   if (!input.contributionItems.every((item) => typeof item === "string" && item.length > 0)) {
     return false;
