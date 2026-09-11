@@ -376,7 +376,7 @@ describe("generateCandidates", () => {
     const last = states.at(-1);
     if (last?.status !== "error") throw new Error("unreachable");
     expect(last.retryPoint).toBeUndefined();
-    expect(last.error).toMatchObject({ kind: "server_error", recovery: "retry" });
+    expect(last.error).toMatchObject({ kind: "contract_violation", recovery: "retry" });
     expect(last.error.title).toContain("서버 계약과 맞지 않았습니다");
   });
 
@@ -513,7 +513,22 @@ describe("toCandidateGenerationError", () => {
 
   it("CandidateRequestError가 아닌 오류는 일반 실패와 재시도로 변환한다", () => {
     expect(toCandidateGenerationError(new Error("boom"), "stage_a")).toMatchObject({
-      kind: "server_error",
+      kind: "contract_violation",
+      recovery: "retry",
+    });
+  });
+
+  // PR #105 Codex 리뷰 P2: GitHub를 호출하지 않고도 나는 오류를 server_error로 표시하면 화면이
+  // GitHub 문제로 잘못 안내합니다. invalid_request·invalid_response·invalid_json은 GitHub 조회
+  // 오류(server_error)와 구분되는 contract_violation이어야 합니다.
+  it.each([
+    "invalid_request",
+    "invalid_response",
+    "invalid_json",
+  ] as const)("%s는 GitHub 오류가 아닌 서버 계약 위반으로 구분한다", (serverKind) => {
+    const error = new CandidateRequestError("stage_a", serverKind, "계약 위반 메시지입니다.");
+    expect(toCandidateGenerationError(error, "stage_a")).toMatchObject({
+      kind: "contract_violation",
       recovery: "retry",
     });
   });

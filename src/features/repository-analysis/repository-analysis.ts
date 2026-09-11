@@ -44,13 +44,19 @@ export type EmptyKind =
   | "no_stage_a_candidates";
 export type RecoveryAction = "retry" | "reauthenticate" | "select_repository";
 
-/** 이슈 #18이 구분하는 후보 생성 오류 4종과 요청 크기 초과입니다. */
+/**
+ * 이슈 #18이 구분하는 후보 생성 오류 4종과 요청 크기 초과, 그리고 서버 계약 위반입니다.
+ * `contract_violation`은 GitHub를 호출하지 않고도 나는 오류(잘못된 요청, 응답 형식 위반, 예기치 않은
+ * 예외)라 GitHub 조회 오류의 `server_error`와 구분합니다. 같은 값을 재사용하면 화면이 GitHub 문제로
+ * 잘못 안내합니다(PR #105 Codex 리뷰).
+ */
 export type CandidateGenerationErrorKind =
   | "llm_call_failure"
   | "llm_schema_violation"
   | "llm_hallucination_rejected"
   | "diff_refetch_failure"
-  | "request_too_large";
+  | "request_too_large"
+  | "contract_violation";
 
 export interface AnalysisError {
   kind: GitHubFetchErrorKind | CandidateGenerationErrorKind;
@@ -353,7 +359,7 @@ const DIFF_REFETCH_GUIDANCE: Record<Exclude<GitHubFetchErrorKind, "partial_failu
 
 export function toCandidateGenerationError(error: unknown, stage: CandidateStage): AnalysisError {
   const fallback: AnalysisError = {
-    kind: "server_error",
+    kind: "contract_violation",
     title: "경험 후보 생성에 실패했습니다",
     message: "예상하지 못한 오류가 발생했습니다. 후보 생성을 다시 시도해 주세요.",
     recovery: "retry",
@@ -454,7 +460,7 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
       };
     case "invalid_request":
       return {
-        kind: "server_error",
+        kind: "contract_violation",
         title: "후보 생성 요청이 서버 계약과 맞지 않았습니다",
         message: `${error.message} 같은 입력을 그대로 다시 보내지 않고 Repository 조회부터 다시 구성해 재시도합니다. 문제가 반복되면 사용자 조작으로 해결할 수 없는 결함일 수 있습니다.`,
         recovery: "retry",
