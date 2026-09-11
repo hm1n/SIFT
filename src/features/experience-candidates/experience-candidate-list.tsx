@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { EvidenceOrigin, ExperienceCandidateListItem, StageBCandidateResult } from "./types";
 import type { CandidateDataOutput, ReadonlyCommitDetail } from "@/lib/github/types";
 import type { RepositoryRef } from "@/lib/github/types";
@@ -54,6 +54,12 @@ interface ExperienceCandidateListProps {
   /** 생략하면 제외 요약을 표시하지 않습니다. 실제 화면은 항상 값을 넘깁니다. */
   stageASelection?: StageASelectionDisplay;
   onSelectRepository: () => void;
+  /**
+   * 인터뷰 확정 여부가 바뀔 때마다 상위(`RepositoryFlow`)에 알립니다. `AppShell` 사이드바의
+   * Change repository는 이 컴포넌트 밖에 있어, 인터뷰 중인지 모르면 `InterviewScreen`의 이탈
+   * 확인을 그대로 건너뛰고 대화를 잃습니다(PR #105 Codex 리뷰 P1).
+   */
+  onInterviewActiveChange?: (active: boolean) => void;
 }
 
 export function ExperienceCandidateList({
@@ -62,10 +68,14 @@ export function ExperienceCandidateList({
   candidates,
   stageASelection,
   onSelectRepository,
+  onInterviewActiveChange,
 }: ExperienceCandidateListProps) {
   const [selectedSha, setSelectedSha] = useState<string | null>(null);
   // 확정 상태는 `AnalysisState`가 아니라 후보 기능 안에 둡니다. 이유는 `experience-selection.ts`에 있습니다.
   const [selection, setSelection] = useState<ExperienceSelectionState>({ status: "idle" });
+  useEffect(() => {
+    onInterviewActiveChange?.(selection.status === "confirmed");
+  }, [selection.status, onInterviewActiveChange]);
   const items = useMemo(() => createExperienceCandidateListItems(data, candidates), [data, candidates]);
   const selectedItem = items.find(({ candidate }) => candidate.sha === selectedSha);
 
