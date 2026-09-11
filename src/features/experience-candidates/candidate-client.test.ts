@@ -654,9 +654,35 @@ describe("fetchStageBCandidatesFromApi", () => {
     });
   });
 
-  it("후보가 3개 미만인데 부족 사유가 없는 응답을 invalid_response로 거부한다", async () => {
+  /**
+   * 이슈 #108로 부족 사유는 후보 0개에만 필수가 됐습니다. Stage A 후보가 1개인 저장소는 후보를
+   * 1개만 돌려주는 것이 정상이므로 사유 없이도 통과해야 합니다.
+   */
+  it("후보가 1개이고 부족 사유가 없는 응답을 그대로 받는다", async () => {
+    const withoutReason = { ...output, insufficientCandidatesReason: null };
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(withoutReason));
+
+    await expect(
+      fetchStageBCandidatesFromApi(REPOSITORY, [STAGE_A_CANDIDATE])
+    ).resolves.toEqual(withoutReason);
+  });
+
+  it("후보가 0개인데 부족 사유가 없는 응답을 invalid_response로 거부한다", async () => {
     vi.mocked(fetch).mockResolvedValue(
-      jsonResponse({ ...output, insufficientCandidatesReason: null })
+      jsonResponse({ candidates: [], insufficientCandidatesReason: null, diffs: [] })
+    );
+    await expectRequestError(fetchStageBCandidatesFromApi(REPOSITORY, [STAGE_A_CANDIDATE]), {
+      kind: "invalid_response",
+    });
+  });
+
+  /** 서버가 Stage A 후보 수보다 많은 최종 후보를 돌려주면 전송 계층 문제로 거부합니다. */
+  it("Stage A 후보 수를 넘는 응답을 invalid_response로 거부한다", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        ...output,
+        candidates: [output.candidates[0], { ...output.candidates[0], sha: "sha-2" }],
+      })
     );
     await expectRequestError(fetchStageBCandidatesFromApi(REPOSITORY, [STAGE_A_CANDIDATE]), {
       kind: "invalid_response",

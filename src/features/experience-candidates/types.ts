@@ -28,7 +28,11 @@ export interface ExperienceCandidateListItem {
 
 export interface ExperienceCandidateOutput {
   readonly candidates: readonly ExperienceCandidate[];
-  /** 후보가 3개 미만인 이유입니다. 후보가 3개이면 null입니다. */
+  /**
+   * 후보를 더 채우지 않은 이유입니다. 후보가 0개이면 반드시 채웁니다. 1개 이상이면 설명할 것이
+   * 없을 때 null입니다. 상한을 채운 응답에도 같은 Pull Request 후보를 합친 사유가 들어올 수
+   * 있습니다.
+   */
   readonly insufficientCandidatesReason: string | null;
 }
 

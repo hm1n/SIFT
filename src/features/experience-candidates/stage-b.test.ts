@@ -4,6 +4,7 @@ import {
   buildStageBPayload,
   createStageBGenerate,
   selectStageBCandidates,
+  STAGE_B_MAX_CANDIDATES,
   STAGE_B_MAX_PATCH_CHARS,
   STAGE_B_MAX_TOTAL_PATCH_CHARS,
 } from "./stage-b";
@@ -147,6 +148,114 @@ describe("Stage B", () => {
     }));
     expect(output.candidates).toHaveLength(3);
     await expect(selectStageBCandidates(commits, candidates, async () => ({ candidates: [], insufficientCandidatesReason: null }))).rejects.toMatchObject({ kind: "schema_validation" });
+  });
+
+  /**
+   * 이슈 #108 회귀입니다. 후보 상한이 3으로 고정되어 있으면 판단 단위가 1개나 2개인 저장소는
+   * "서로 다른 묶음에서 3개"와 "부족 사유 null"을 동시에 만족할 수 없어 `schema_validation`으로
+   * 실패했습니다. `hm1n/programmers-badge-v1`(1묶음)과 `hm1n/CAREER-CAMP-TIL`(2묶음)이 그랬습니다.
+   */
+  it.each([1, 2])("판단 단위가 %i개면 그만큼만 골라도 부족 사유 없이 통과한다", async (unitCount) => {
+    const units = commits.slice(0, unitCount);
+    const unitCandidates = candidates.slice(0, unitCount);
+
+    const output = await selectStageBCandidates(units, unitCandidates, async (payload) => {
+      expect(payload.candidateLimit).toBe(unitCount);
+      return {
+        candidates: units.map(({ sha }) => ({
+          sha,
+          relatedShas: [],
+          evidence: "근거",
+          citedFilePaths: [`src/${sha}.ts`],
+          source: "automatic_recommendation" as const,
+        })),
+        insufficientCandidatesReason: null,
+      };
+    });
+
+    expect(output.candidates).toHaveLength(unitCount);
+    expect(output.insufficientCandidatesReason).toBeNull();
+  });
+
+  it("입력 커밋 수보다 많은 후보를 돌려주면 거부한다", async () => {
+    await expect(
+      selectStageBCandidates(commits.slice(0, 1), candidates.slice(0, 1), async () => ({
+        candidates: commits.map(({ sha }) => ({
+          sha,
+          relatedShas: [],
+          evidence: "근거",
+          citedFilePaths: [`src/${sha}.ts`],
+          source: "automatic_recommendation" as const,
+        })),
+        insufficientCandidatesReason: null,
+      }))
+    ).rejects.toMatchObject({ kind: "schema_validation" });
+  });
+
+  /**
+   * 판단 단위가 상한보다 많으면 `STAGE_B_MAX_CANDIDATES`가 실제 상한이 됩니다. 이 판정은 같은
+   * Pull Request 후보 정리가 끝난 뒤에 적용합니다. 정리 전에 개수를 재면 모델이 같은 묶음에서 둘
+   * 이상 고른 응답이 정리에 닿기 전에 거부됩니다.
+   */
+  it("정리 후에도 STAGE_B_MAX_CANDIDATES를 넘는 후보는 거부한다", async () => {
+    const manyCommits: CommitDetail[] = Array.from(
+      { length: STAGE_B_MAX_CANDIDATES + 1 },
+      (_, index) => ({
+        ...commits[1],
+        sha: `m${index}`,
+        files: [{ ...commits[1].files[0], path: `src/m${index}.ts` }],
+        pullRequests: [{ ...commits[1].pullRequests[0], number: 100 + index }],
+      })
+    );
+    const manyCandidates = manyCommits.map(({ sha }) => ({
+      sha,
+      source: "automatic_recommendation" as const,
+      contributionItem: null,
+    }));
+
+    await expect(
+      selectStageBCandidates(manyCommits, manyCandidates, async (payload) => {
+        expect(payload.candidateLimit).toBe(STAGE_B_MAX_CANDIDATES);
+        return {
+          candidates: manyCommits.map(({ sha }) => ({
+            sha,
+            relatedShas: [],
+            evidence: "근거",
+            citedFilePaths: [`src/${sha}.ts`],
+            source: "automatic_recommendation" as const,
+          })),
+          insufficientCandidatesReason: null,
+        };
+      })
+    ).rejects.toMatchObject({ kind: "schema_validation" });
+  });
+
+  /**
+   * 이슈 #108 회귀입니다. 대표 커밋에 Pull Request가 없으면 빈 배열에 대한 `every`가 항상 `true`라
+   * 관련 SHA가 무엇이든 `unrelated_sha`가 됐고, 자기 SHA를 넣은 응답도 같이 거부됐습니다.
+   */
+  it("Pull Request가 없는 대표 커밋은 관련 SHA가 비면 통과하고 자기 SHA를 넣으면 거부한다", async () => {
+    const noPrCommit: CommitDetail = { ...commits[0], pullRequests: [] };
+    const rawCandidate = {
+      sha: "a",
+      relatedShas: [] as string[],
+      evidence: "근거",
+      citedFilePaths: ["src/a.ts"],
+      source: "contribution_match" as const,
+    };
+
+    const output = await selectStageBCandidates([noPrCommit], [candidates[0]], async () => ({
+      candidates: [rawCandidate],
+      insufficientCandidatesReason: null,
+    }));
+    expect(output.candidates).toHaveLength(1);
+
+    await expect(
+      selectStageBCandidates([noPrCommit], [candidates[0]], async () => ({
+        candidates: [{ ...rawCandidate, relatedShas: ["a"] }],
+        insufficientCandidatesReason: null,
+      }))
+    ).rejects.toMatchObject({ kind: "unrelated_sha" });
   });
 
   it("입력 밖 SHA와 다른 PR 관련 SHA를 전체 거부한다", async () => {
@@ -350,38 +459,67 @@ describe("Stage B 최종 후보의 PR 중복 정리", () => {
   });
 });
 
-describe("로컬 전용 출력 계약 안내", () => {
-  async function capturedSystemPrompt() {
+describe("출력 계약 프롬프트", () => {
+  async function capturedSystemPrompt(candidateLimit: number) {
     const generateObjectMock = vi.mocked(generateObject);
     generateObjectMock.mockResolvedValue({ object: { candidates: [], insufficientCandidatesReason: "없음" } } as unknown as Awaited<
       ReturnType<typeof generateObject>
     >);
 
-    await createStageBGenerate("test-model")({}, new AbortController().signal);
+    await createStageBGenerate("test-model")(
+      { workUnits: [], candidateLimit },
+      new AbortController().signal
+    );
 
     return generateObjectMock.mock.calls.at(-1)![0].system ?? "";
   }
 
-  it("프로덕션 경로에서는 프롬프트를 늘리지 않는다", async () => {
+  /**
+   * 2026-08-25까지 이 계약은 로컬 제공자에만 붙었습니다. Gemini는 스키마만 보고 지켰기 때문입니다.
+   * 판단 단위가 1~2개인 저장소가 들어오면서 Gemini도 부족 사유를 채우지 않아 실패했으므로 갈래를
+   * 없앴습니다(이슈 #108).
+   */
+  it("프로덕션 경로에도 출력 계약을 싣는다", async () => {
     vi.stubEnv("NEXT_PUBLIC_LLM_BASE_URL", undefined);
 
-    expect(await capturedSystemPrompt()).not.toContain("insufficientCandidatesReason");
-  });
-
-  /**
-   * `validateExperienceCandidateOutput`은 후보가 3개 미만이면 부족 사유를 요구하지만 프로덕션
-   * 프롬프트는 그 규칙을 말하지 않습니다. 2026-08-25 실측에서 `qwen2.5:7b`와 `llama3.1:8b`가
-   * 모두 이 규칙을 어겼습니다.
-   */
-  it("로컬 경로에서는 출력 계약을 프롬프트로 알려준다", async () => {
-    vi.stubEnv("NEXT_PUBLIC_LLM_BASE_URL", "http://localhost:11434/v1");
-    vi.stubEnv("STAGE_B_MODEL", "qwen2.5:7b");
-
-    const system = await capturedSystemPrompt();
+    const system = await capturedSystemPrompt(3);
 
     expect(system).toContain("insufficientCandidatesReason");
     expect(system).toContain("citedFilePaths");
-    // 프로덕션 지시는 그대로 남아 있어야 합니다.
     expect(system).toContain("실제 diff와 PR 소속만 근거로");
+  });
+
+  it("제공자에 따라 출력 계약이 갈리지 않는다", async () => {
+    vi.stubEnv("NEXT_PUBLIC_LLM_BASE_URL", undefined);
+    const production = await capturedSystemPrompt(3);
+
+    vi.stubEnv("NEXT_PUBLIC_LLM_BASE_URL", "http://localhost:11434/v1");
+    vi.stubEnv("STAGE_B_MODEL", "qwen2.5:7b");
+
+    expect(await capturedSystemPrompt(3)).toBe(production);
+  });
+
+  it("계산된 후보 상한을 프롬프트 문장에 넣는다", async () => {
+    expect(await capturedSystemPrompt(1)).toContain("최대 1개의 개발 경험 후보");
+    expect(await capturedSystemPrompt(20)).toContain("최대 20개의 개발 경험 후보");
+  });
+
+  it("Pull Request가 없는 판단 단위의 relatedShas를 빈 배열로 못박는다", async () => {
+    expect(await capturedSystemPrompt(3)).toContain("pullRequest가 null인 workUnits 항목");
+  });
+
+  /**
+   * `assertCandidateEvidence`는 대표 커밋과 relatedShas에 적힌 커밋의 파일만 인용으로 받습니다.
+   * 이 관계를 문장에 적지 않으면 모델이 relatedShas를 비운 채 같은 묶음의 다른 커밋 파일을
+   * 인용해 `unknown_file_path`로 거부됩니다. `hm1n/SIFT` 6회 중 5회가 그렇게 실패했습니다
+   * (이슈 #108).
+   */
+  it("인용 경로와 relatedShas의 관계를 프롬프트에 적는다", async () => {
+    const system = await capturedSystemPrompt(3);
+
+    expect(system).toContain(
+      "citedFilePaths에는 sha와 relatedShas에 적은 커밋의 files[].path만 넣습니다"
+    );
+    expect(system).toContain("relatedShas에 먼저 넣으세요");
   });
 });
