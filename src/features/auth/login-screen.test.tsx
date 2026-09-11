@@ -3,6 +3,8 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { AuthTransitionProvider } from "@/components/shell/auth-transition";
+import { TopHeader } from "@/components/shell/top-header";
 import { LOGIN_PATH } from "@/lib/github/auth-paths";
 import { LoginScreen } from "./login-screen";
 
@@ -14,16 +16,39 @@ afterEach(() => {
   routerMock.replace.mockClear();
 });
 
+/** 로그인 화면은 layout의 `AuthTransitionProvider` 안에서만 그려집니다. */
+function renderLogin(authError?: string) {
+  return render(<AuthTransitionProvider><LoginScreen authError={authError} /></AuthTransitionProvider>);
+}
+
+/** layout과 같은 배치입니다. 헤더 진입점이 로그인 화면의 상태를 바꾸는지 볼 때 씁니다. */
+function renderWithHeader(authError?: string) {
+  return render(
+    <AuthTransitionProvider>
+      <TopHeader isAuthenticated={false} />
+      <LoginScreen authError={authError} />
+    </AuthTransitionProvider>,
+  );
+}
+
 /** jsdom은 링크 이동을 구현하지 않아 기본 동작을 막고 클릭만 전달합니다. React의 onClick은 그대로 실행됩니다. */
-function clickLogin(init?: MouseEventInit) {
-  const link = screen.getByRole("link", { name: "Continue with GitHub" });
+function click(name: string, init?: MouseEventInit) {
+  const link = screen.getByRole("link", { name });
   link.addEventListener("click", (event) => event.preventDefault(), { once: true });
   fireEvent.click(link, init);
 }
 
+function expectAuthenticating() {
+  const status = screen.getByRole("status");
+  expect(status).toHaveAttribute("data-status-kind", "loading");
+  expect(status).toHaveTextContent("Authenticating");
+  expect(status).toHaveTextContent("Connecting to GitHub...");
+  expect(screen.queryByRole("link", { name: "Continue with GitHub" })).not.toBeInTheDocument();
+}
+
 describe("LoginScreen", () => {
   it("세션이 없으면 로고 자리, 제목, 설명, GitHub 로그인 버튼, 약관 문구를 그린다", () => {
-    render(<LoginScreen />);
+    renderLogin();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/Turn your code into experiences/);
     expect(screen.getByText(/Analyze your GitHub history/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Continue with GitHub" })).toHaveAttribute("href", LOGIN_PATH);
@@ -33,13 +58,26 @@ describe("LoginScreen", () => {
   });
 
   it("버튼을 누르면 브라우저가 이동하기 전까지 AUTHENTICATING 상태를 그린다", () => {
-    render(<LoginScreen />);
-    clickLogin();
-    const status = screen.getByRole("status");
-    expect(status).toHaveAttribute("data-status-kind", "loading");
-    expect(status).toHaveTextContent("Authenticating");
-    expect(status).toHaveTextContent("Connecting to GitHub...");
-    expect(screen.queryByRole("link", { name: "Continue with GitHub" })).not.toBeInTheDocument();
+    renderLogin();
+    click("Continue with GitHub");
+    expectAuthenticating();
+  });
+
+  // PR #100 리뷰: 헤더의 로그인 링크도 진입점이므로 같은 AUTHENTICATING을 그려야 합니다.
+  it("헤더의 로그인 링크로 시작한 인증도 AUTHENTICATING 상태를 그린다", () => {
+    renderWithHeader();
+    click("Log in with GitHub");
+    expectAuthenticating();
+    expect(screen.getByRole("link", { name: "Connecting to GitHub…" })).toHaveAttribute("aria-busy", "true");
+  });
+
+  // 오류 판정이 인증 중 판정보다 앞에 있으면 오류 화면 위에서 시작한 인증이 오류 화면에 머무릅니다.
+  it("ERROR / AUTH 화면에서 헤더 로그인을 눌러도 AUTHENTICATING으로 바뀐다", () => {
+    renderWithHeader("exchange_failed");
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    click("Log in with GitHub");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expectAuthenticating();
   });
 
   // 새 탭으로 열면 이 화면은 그대로 남습니다. 인증 중으로 바꾸면 사용자가 돌아와도 버튼을 다시 누를 수 없습니다.
@@ -49,15 +87,18 @@ describe("LoginScreen", () => {
     ["shift", { shiftKey: true }],
     ["가운데 버튼", { button: 1 }],
   ])("%s 클릭은 새 탭으로 여는 것이므로 로그인 화면을 유지한다", (_name, init) => {
-    render(<LoginScreen />);
-    clickLogin(init);
+    renderLogin();
+    click("Continue with GitHub", init);
     expect(screen.getByRole("link", { name: "Continue with GitHub" })).toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
-  it("bfcache에서 복원되면 인증 중 상태를 풀고 로그인 화면으로 돌아간다", () => {
-    render(<LoginScreen />);
-    clickLogin();
+  it.each([
+    ["Continue with GitHub", renderLogin],
+    ["Log in with GitHub", renderWithHeader],
+  ])("%s 로 시작한 인증은 bfcache에서 복원되면 풀려 로그인 화면으로 돌아간다", (name, renderScreen) => {
+    renderScreen();
+    click(name);
     expect(screen.getByRole("status")).toBeInTheDocument();
     const pageshow = new Event("pageshow");
     Object.defineProperty(pageshow, "persisted", { value: true });
@@ -66,8 +107,8 @@ describe("LoginScreen", () => {
   });
 
   it("bfcache가 아닌 pageshow는 상태를 바꾸지 않는다", () => {
-    render(<LoginScreen />);
-    clickLogin();
+    renderLogin();
+    click("Continue with GitHub");
     fireEvent(window, new Event("pageshow"));
     expect(screen.getByRole("status")).toBeInTheDocument();
   });
@@ -79,7 +120,7 @@ describe("LoginScreen", () => {
     ["exchange_failed", "GitHub authentication didn't complete. Try again in a moment."],
     ["config_missing", "The server has no GitHub login configuration. A server administrator needs to complete the setup."],
   ])("%s 는 ERROR / AUTH 상태와 종류별 안내를 그린다", (authError, message) => {
-    render(<LoginScreen authError={authError} />);
+    renderLogin(authError);
     const alert = screen.getByRole("alert");
     expect(alert).toHaveAttribute("data-status-kind", "error");
     expect(alert).toHaveTextContent("ERROR / AUTH");
@@ -89,14 +130,14 @@ describe("LoginScreen", () => {
   });
 
   it("Try again은 auth_error 쿼리를 지워 로그인 화면으로 돌아간다", () => {
-    render(<LoginScreen authError="exchange_failed" />);
+    renderLogin("exchange_failed");
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(routerMock.replace).toHaveBeenCalledWith("/");
   });
 
   // 프로토타입 키는 안내 표에 없는데도 조회를 통과해, 객체가 그대로 렌더되면 화면이 죽습니다.
   it.each(["__proto__", "constructor", "toString", "없는코드"])("%s 는 로그인 오류 안내로 취급하지 않는다", (authError) => {
-    render(<LoginScreen authError={authError} />);
+    renderLogin(authError);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Continue with GitHub" })).toBeInTheDocument();
   });

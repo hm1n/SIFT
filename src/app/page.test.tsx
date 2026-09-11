@@ -3,6 +3,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthTransitionProvider } from "@/components/shell/auth-transition";
 import { GITHUB_SESSION_COOKIE } from "@/lib/github/auth-session";
 import Home from "./page";
 
@@ -13,8 +14,9 @@ vi.mock("next/headers", () => ({ cookies: async () => ({ has: (name: string) => 
 const routerMock = { push: vi.fn(), refresh: vi.fn(), replace: vi.fn() };
 vi.mock("next/navigation", () => ({ useRouter: () => routerMock }));
 
-function renderHome(searchParams: { auth_error?: string | string[] } = {}) {
-  return Home({ searchParams: Promise.resolve(searchParams) });
+/** layout이 감싸는 provider를 함께 둡니다. 로그인 화면은 provider 밖에서 그릴 수 없습니다. */
+async function renderHome(searchParams: { auth_error?: string | string[] } = {}) {
+  return <AuthTransitionProvider>{await Home({ searchParams: Promise.resolve(searchParams) })}</AuthTransitionProvider>;
 }
 
 beforeEach(() => cookieNames.clear());

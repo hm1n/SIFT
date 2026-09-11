@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist_Mono, Inter } from "next/font/google";
 import { cookies } from "next/headers";
+import { AuthTransitionProvider } from "@/components/shell/auth-transition";
 import { TopHeader } from "@/components/shell/top-header";
 import { GITHUB_SESSION_COOKIE } from "@/lib/github/auth-session";
 import "./globals.css";
@@ -37,8 +38,11 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         <link rel="stylesheet" href={PRETENDARD_CSS} />
       </head>
       <body>
-        <TopHeader isAuthenticated={cookieStore.has(GITHUB_SESSION_COOKIE)} />
-        {children}
+        {/* 헤더와 화면의 로그인 진입점이 같은 인증 중 상태를 보도록 둘을 함께 감쌉니다. */}
+        <AuthTransitionProvider>
+          <TopHeader isAuthenticated={cookieStore.has(GITHUB_SESSION_COOKIE)} />
+          {children}
+        </AuthTransitionProvider>
       </body>
     </html>
   );

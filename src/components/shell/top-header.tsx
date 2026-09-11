@@ -1,8 +1,7 @@
 import Link from "next/link";
-import { LOGIN_PATH } from "@/lib/github/auth-paths";
-import { ButtonLink } from "./button";
 import { AccountMenu } from "./account-menu";
-import { GitHubIcon, SiftMark } from "./sift-mark";
+import { LoginLink } from "./auth-transition";
+import { SiftMark } from "./sift-mark";
 import styles from "./top-header.module.css";
 
 export interface TopHeaderProps {
@@ -18,6 +17,7 @@ export interface TopHeaderProps {
 /**
  * 모든 화면 위에 놓이는 상단 헤더입니다. 로고 마크와 제품명, 그리고 로그인 전에는 로그인 버튼, 로그인 후에는 계정 메뉴를 그립니다.
  * 디자인 파일 `App.tsx`의 `TopHeader`를 옮겼고 계정 삭제 항목은 MVP 범위 밖이라 빼두었습니다.
+ * 로그인 링크는 로그인 화면의 버튼과 같은 `LoginLink`라 인증 중 상태를 함께 봅니다. `AuthTransitionProvider` 안에서만 그릴 수 있습니다.
  */
 export function TopHeader({ isAuthenticated, fetchImpl }: TopHeaderProps) {
   return (
@@ -29,10 +29,7 @@ export function TopHeader({ isAuthenticated, fetchImpl }: TopHeaderProps) {
       {isAuthenticated ? (
         <AccountMenu fetchImpl={fetchImpl} />
       ) : (
-        <ButtonLink variant="secondary" href={LOGIN_PATH}>
-          <GitHubIcon size={13} />
-          Log in with GitHub
-        </ButtonLink>
+        <LoginLink variant="secondary" iconSize={13}>Log in with GitHub</LoginLink>
       )}
     </header>
   );
