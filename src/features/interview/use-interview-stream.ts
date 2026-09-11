@@ -401,6 +401,11 @@ export function useInterviewStream({
     setIsLastQuestionTooLong(false);
   }, [flushNow, updateMessages]);
 
+  // 마지막 메시지가 "질문"이어야 한다는 조건은 없앴습니다. `onBeforeQuestion`이 유효한 다음
+  // 대상이 없다고 판단하면(설계 6-2절 6번) 새 질문 메시지 없이 상태만 `"done"`으로 돌아오는데,
+  // 그 조건이 남아 있으면 종료 전 보충·정정 답변을 남길 통로가 완전히 막힙니다(구현검토
+  // 2026-09-11 P1-4, R7). `answer` 메시지는 스트리밍 도중이 없어 `isStreaming` 검사만으로도
+  // 도착 중인 질문에 답을 얹는 것은 그대로 막습니다.
   const canSubmitAnswer =
     !isEnded &&
     snapshot !== undefined &&
@@ -408,7 +413,6 @@ export function useInterviewStream({
     error === null &&
     !isLastQuestionTooLong &&
     messages.length > 0 &&
-    messages[messages.length - 1].role === "question" &&
     !messages[messages.length - 1].isStreaming;
 
   // 제출 핸들러는 렌더 뒤의 이벤트에서 불리므로 effect로 옮긴 값이 최신입니다.

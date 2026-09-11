@@ -240,6 +240,9 @@ export function useExperienceInterview({
         return null;
       }
 
+      // 완료 대기 상태에서 받은 보충 답변(설계 6-3절)이 다시 물을 거리를 만들 수 있습니다. 값이
+      // 이미 false여도 다시 불러 안전합니다.
+      setIsReadyToFinish(false);
       progressRef.current = recordAsked(progressRef.current, next.block, next.element);
       const target: NonNullable<InterviewQuestionTarget> = { targetBlock: next.block, targetElement: next.element };
       answeredTargetRef.current = target;

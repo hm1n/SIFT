@@ -288,6 +288,42 @@ describe("useExperienceInterview", () => {
     expect(result.current.endReason).toBe("user");
   });
 
+  it("완료 대기 상태에서도 종료 전에는 보충 답변을 제출할 수 있다 (구현검토 P1-4, R7)", async () => {
+    const q1 = controllableResponse();
+    const fetchImpl = makeFetchImpl({
+      questionSources: [q1],
+      blockUpdateResponses: [
+        jsonResponse(
+          200,
+          blockUpdateBody({ evaluation: { problem: SUFFICIENT, alternatives: SUFFICIENT, action: SUFFICIENT, result: SUFFICIENT } })
+        ),
+        jsonResponse(200, blockUpdateBody({ evaluation: { problem: SUFFICIENT, alternatives: SUFFICIENT, action: SUFFICIENT, result: SUFFICIENT } })),
+      ],
+    });
+    const { result } = renderHook(() =>
+      useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    completeQuestion(q1, "문제 상황을 알려주세요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+    act(() => {
+      result.current.submitAnswer("모든 블록이 이 답변 하나로 충분해졌다고 가정합니다.");
+    });
+    await waitFor(() => expect(result.current.isReadyToFinish).toBe(true));
+    expect(result.current.isEnded).toBe(false);
+
+    // 마지막 메시지가 질문이 아니라 답변인데도 종료 전이라 보충 답변을 제출할 수 있어야 합니다.
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+    let accepted = false;
+    act(() => {
+      accepted = result.current.submitAnswer("사실 결과 확인 방법을 하나 더 적고 싶습니다.");
+    });
+    expect(accepted).toBe(true);
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3)); // 질문1, 블록갱신1, 블록갱신2(보충)
+    expect(result.current.isEnded).toBe(false);
+  });
+
   it("블록 갱신이 진행 중일 때 종료하면 그 호출을 끊고 미반영으로 등록한 뒤 한 번 더 반영을 시도한다 (구현검토 P1-2, R6)", async () => {
     const q1 = controllableResponse();
     const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
