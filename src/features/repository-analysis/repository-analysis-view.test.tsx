@@ -4,6 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExcludedCommit } from "@/features/experience-candidates/work-unit";
+import { SESSION_PATH } from "@/lib/github/auth-paths";
 import {
   analyzeRepository,
   generateCandidates,
@@ -169,36 +170,18 @@ describe("RepositoryAnalysisView Empty", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("세션이 없으면 로그인 진입점만 표시하고 분석하지 않는다", () => {
+  // 로그인 진입점과 auth_error 안내는 features/auth/login-screen.test.tsx로, 세션 유무에 따른 화면 분기는 app/page.test.tsx로 옮겼습니다.
+  it("세션이 없으면 분석 폼을 그리지 않고 분석하지 않는다", () => {
     render(<RepositoryAnalysisView hasSession={false} />);
-    expect(screen.getByRole("link", { name: "GitHub으로 로그인" })).toHaveAttribute("href", "/api/auth/github/login");
     expect(screen.queryByLabelText("Owner")).not.toBeInTheDocument();
     expect(analyzeMock).not.toHaveBeenCalled();
   });
 
-  it("서버가 다시 그려 hasSession이 false로 바뀌면 폼을 내리고 로그인 진입점을 표시한다", () => {
+  it("서버가 다시 그려 hasSession이 false로 바뀌면 폼을 내린다", () => {
     const { rerender } = render(<RepositoryAnalysisView hasSession={true} />);
     expect(screen.getByLabelText("Owner")).toBeInTheDocument();
     rerender(<RepositoryAnalysisView hasSession={false} />);
     expect(screen.queryByLabelText("Owner")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "GitHub으로 로그인" })).toBeInTheDocument();
-  });
-
-  it.each([
-    ["access_denied", "GitHub에서 권한 허용을 취소했습니다. 다시 로그인할 수 있습니다."],
-    ["state_mismatch", "로그인 요청을 확인하지 못했습니다. 처음부터 다시 로그인해야 합니다."],
-    ["exchange_failed", "GitHub 인증을 마치지 못했습니다. 잠시 후 다시 시도해 주세요."],
-    ["config_missing", "서버에 GitHub 로그인 설정이 없습니다. 서버 관리자가 설정을 완료해야 합니다."],
-  ])("%s 로그인 오류 안내를 표시한다", (authError, message) => {
-    render(<RepositoryAnalysisView hasSession={false} authError={authError} />);
-    expect(screen.getByRole("alert")).toHaveTextContent(message);
-  });
-
-  // 프로토타입 키는 안내 표에 없는데도 조회를 통과해, 객체가 그대로 렌더되면 화면이 죽습니다.
-  it.each(["__proto__", "constructor", "toString", "없는코드"])("%s 는 로그인 오류 안내로 취급하지 않는다", (authError) => {
-    render(<RepositoryAnalysisView hasSession={false} authError={authError} />);
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "GitHub으로 로그인" })).toBeInTheDocument();
   });
 });
 
@@ -336,10 +319,10 @@ describe("RepositoryAnalysisView Error", () => {
     await submitRepository();
     fireEvent.click(screen.getByRole("button", { name: "GitHub으로 다시 로그인" }));
     await waitFor(() => expect(routerMock.refresh).toHaveBeenCalledTimes(1));
-    expect(fetch).toHaveBeenLastCalledWith("/api/auth/session", { method: "DELETE" });
+    expect(fetch).toHaveBeenLastCalledWith(SESSION_PATH, { method: "DELETE" });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     rerender(<RepositoryAnalysisView hasSession={false} />);
-    expect(screen.getByRole("link", { name: "GitHub으로 로그인" })).toHaveAttribute("href", "/api/auth/github/login");
+    expect(screen.queryByLabelText("Owner")).not.toBeInTheDocument();
   });
 
   // 쿠키를 지우지 못해도 오류 화면은 내리고 서버에 다시 묻습니다. 쿠키가 남았다면 서버가 로그인 상태로 다시 그려 사용자가 알 수 있습니다.
@@ -370,7 +353,7 @@ describe("RepositoryAnalysisView Error", () => {
     await submitRepository();
     await waitFor(() => expect(screen.getByText("상태 머신을 구현했습니다.")).toBeInTheDocument());
     rerender(<RepositoryAnalysisView hasSession={false} />);
-    expect(screen.getByRole("link", { name: "GitHub으로 로그인" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Owner")).not.toBeInTheDocument();
     expect(screen.queryByText("상태 머신을 구현했습니다.")).not.toBeInTheDocument();
   });
 
@@ -396,7 +379,7 @@ describe("RepositoryAnalysisView Error", () => {
     finish!({ status: "error", error });
     await Promise.resolve();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "GitHub으로 로그인" })).toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
 });
