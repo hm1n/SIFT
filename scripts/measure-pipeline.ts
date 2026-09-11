@@ -49,7 +49,7 @@ import {
 } from "../src/features/experience-candidates/candidate-client";
 import { STAGE_A_MAX_SELECTION_BYTES } from "../src/features/experience-candidates/work-unit-selection";
 import { modelFacingUnitId } from "../src/features/experience-candidates/work-unit";
-import { syntheticCommitSha } from "./synthetic-unit-id";
+import { syntheticCommitSha, syntheticPullRequestUnitId } from "./synthetic-unit-id";
 import {
   buildStageBPayload,
   createStageBGenerate,
@@ -479,7 +479,7 @@ async function runStageA() {
             const representativeSha = syntheticCommitSha(index);
             const unitId = source.unitId.startsWith("commit:")
               ? `commit:${representativeSha}`
-              : `${source.unitId}-round${round}`;
+              : syntheticPullRequestUnitId(source.unitId, round);
             return {
               ...source,
               unitId,

@@ -13,3 +13,14 @@
 export function syntheticCommitSha(index: number): string {
   return `${index.toString(16).padStart(7, "0")}${"0".repeat(33)}`;
 }
+
+/**
+ * PR 단위 복제본의 합성 unitId입니다. 라우트 검증(`UNIT_ID_PATTERN`)과 시스템 프롬프트 둘 다
+ * `pr:숫자` 형식만 허용하므로, 라운드를 문자열 접미사로 붙이면(`pr:12-round1`) 이 스크립트가
+ * 재는 입력을 실제 요청으로 보낼 수 없고 모델이 접미사를 어떻게 다루는지에 따라 전수 응답 결과가
+ * 흔들립니다(Codex 리뷰, 이슈 #101). 라운드마다 번호에 오프셋을 더해 숫자 형식을 유지합니다.
+ */
+export function syntheticPullRequestUnitId(sourceUnitId: string, round: number): string {
+  const number = Number(sourceUnitId.slice("pr:".length));
+  return `pr:${number + round * 10_000}`;
+}
