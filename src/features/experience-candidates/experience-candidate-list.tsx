@@ -13,6 +13,7 @@ import {
   type ExcludedWorkUnit,
 } from "./work-unit-selection";
 import { WORK_UNIT_SIGNAL_COPY } from "./work-unit-score";
+import { modelFacingUnitId } from "./work-unit";
 import styles from "./experience-candidate-list.module.css";
 
 /**
@@ -167,7 +168,7 @@ export function ExperienceCandidateList({
 function unitLabel(unit: ExcludedWorkUnit<ReadonlyCommitDetail>["unit"]): string {
   return unit.kind === "pull_request"
     ? `PR #${unit.pullRequest.number}`
-    : `커밋 ${unit.unitId.slice("commit:".length, "commit:".length + 7)}`;
+    : `커밋 ${modelFacingUnitId(unit.unitId).slice("commit:".length)}`;
 }
 
 export function StageAExclusions({

@@ -1,5 +1,5 @@
 import type { CommitFileChange, CommitSummary } from "@/lib/github/types";
-import type { GroupableCommit, WorkUnit, WorkUnitKind } from "./work-unit";
+import { modelFacingUnitId, type GroupableCommit, type WorkUnit, type WorkUnitKind } from "./work-unit";
 
 /**
  * 요약에 남길 파일 경로 수입니다.
@@ -126,15 +126,14 @@ function foldFilePaths(paths: readonly string[]): string {
 
 /**
  * 요약 머리줄에서 판단 단위를 가리키는 라벨입니다. Pull Request 묶음은 `unitId`(`pr:번호`)를
- * 그대로 사람이 읽기 좋은 형태로 바꿉니다. 단일 커밋은 `unitId`(`commit:SHA`)에서 SHA 앞 7자리만
- * 보여줍니다. `stage-a.ts`의 `modelFacingUnitId`가 이 7자리를 모델이 그대로 베낄 수 있는
- * 식별자로 다시 씁니다. 두 함수가 같은 자리수(7)를 써야 모델이 읽은 문자열과 검증에 쓰는
- * 문자열이 어긋나지 않습니다.
+ * 그대로 사람이 읽기 좋은 형태로 바꿉니다. 단일 커밋은 `work-unit.ts`의 `modelFacingUnitId`로
+ * SHA 앞 7자리만 남겨 보여줍니다. 이 화면 머리줄이 모델이 실제로 읽는 문자열이기도 하므로
+ * (`renderWorkUnitSummary`), 자르는 자리수를 이 함수가 따로 정하지 않고 `modelFacingUnitId` 하나만
+ * 참조합니다.
  */
 function renderUnitLabel(summary: WorkUnitSummary): string {
   if (summary.kind === "pull_request") return `PR#${summary.unitId.slice("pr:".length)}`;
-  const COMMIT_PREFIX = "commit:";
-  return `커밋 ${summary.unitId.slice(COMMIT_PREFIX.length, COMMIT_PREFIX.length + 7)}`;
+  return `커밋 ${modelFacingUnitId(summary.unitId).slice("commit:".length)}`;
 }
 
 /**

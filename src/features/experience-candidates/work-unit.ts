@@ -126,3 +126,23 @@ export function groupCommitsIntoWorkUnits<TCommit extends GroupableCommit>(
     };
   });
 }
+
+const COMMIT_UNIT_PREFIX = "commit:";
+/** 단일 커밋 단위를 모델과 화면에 보일 때 실제로 남기는 SHA 자리수입니다. */
+const COMMIT_DISPLAY_SHA_LENGTH = 7;
+
+/**
+ * 모델과 화면이 단일 커밋 단위를 실제로 주고받는 형태로 자른 식별자입니다. Pull Request 단위는
+ * `unitId`와 이미 같습니다(`pr:12`). 단일 커밋 단위는 머리줄에 SHA 앞 7자리만 보이므로
+ * (`renderWorkUnitSummary`), 모델이 그대로 옮겨 적을 수 있는 것도 그 7자리뿐입니다.
+ *
+ * 자르는 자리를 여기 한 곳으로 모은 이유는, 프롬프트 머리줄을 만드는 곳과 모델 응답을 검증하는
+ * 곳이 각자 다른 상수로 잘랐을 때 둘이 어긋나면 응답 검증이 조용히 잘못된 커밋에 판정을 붙이기
+ * 때문입니다(Codex 리뷰, 이슈 #101). 두 종류 단위 사이에서 이 식별자가 우연히 같아지는
+ * 경우(SHA 앞 7자리 충돌)는 이 함수가 막지 않습니다. 호출부가 배치 안에서 유일한지 확인해야
+ * 합니다.
+ */
+export function modelFacingUnitId(unitId: string): string {
+  if (!unitId.startsWith(COMMIT_UNIT_PREFIX)) return unitId;
+  return unitId.slice(0, COMMIT_UNIT_PREFIX.length + COMMIT_DISPLAY_SHA_LENGTH);
+}

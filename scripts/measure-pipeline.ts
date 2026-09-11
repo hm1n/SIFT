@@ -48,6 +48,7 @@ import {
   toStageAUnits,
 } from "../src/features/experience-candidates/candidate-client";
 import { STAGE_A_MAX_SELECTION_BYTES } from "../src/features/experience-candidates/work-unit-selection";
+import { modelFacingUnitId } from "../src/features/experience-candidates/work-unit";
 import {
   buildStageBPayload,
   createStageBGenerate,
@@ -398,11 +399,9 @@ function instrumentedStageAGenerate(model: string | undefined): GenerateStageA {
     const returned = decisions.map((decision) => decision.unitId);
     const unique = new Set(returned);
     const expected = payload.units.length;
-    // 모델은 단일 커밋 단위에 대해 SHA 7자리로만 답합니다(`stage-a.ts`의
-    // `modelFacingUnitId`). 입력 쪽 식별자도 같은 형태로 바꿔야 비교가 맞습니다.
-    const modelFacingId = (unitId: string) =>
-      unitId.startsWith("commit:") ? `commit:${unitId.slice(7, 14)}` : unitId;
-    const inputIds = new Set(payload.units.map(({ unitId }) => modelFacingId(unitId)));
+    // 모델은 단일 커밋 단위에 대해 SHA 7자리로만 답합니다. 입력 쪽 식별자도 같은 형태로
+    // 바꿔야 비교가 맞습니다.
+    const inputIds = new Set(payload.units.map(({ unitId }) => modelFacingUnitId(unitId)));
     const missing = [...inputIds].filter((id) => !unique.has(id)).length;
     console.log(
       `[stage-a] 모델 응답 decision=${returned.length}/${expected} 고유=${unique.size} ` +
@@ -459,11 +458,21 @@ async function runStageA() {
             const source = stageAUnits[index % stageAUnits.length];
             const round = Math.floor(index / stageAUnits.length);
             if (round === 0) return source;
-            const unitId = `${source.unitId}-round${round}`;
+            const representativeSha = index.toString(16).padStart(40, "0");
+            /**
+             * 커밋 단위는 모델에게 `modelFacingUnitId`가 자른 SHA 앞 7자리만 보입니다. 원본
+             * unitId 뒤에 라운드 접미사만 붙이면 그 7자리는 라운드마다 그대로라 모든 복제본이
+             * 모델에게 완전히 같은 식별자로 보이고, 실제로는 한 곳으로 뭉개져 전수 응답 계약을
+             * 재는 이 실험 자체가 성립하지 않습니다(Codex 리뷰, 이슈 #101). 새로 붙인 대표 SHA로
+             * unitId 자체를 다시 만들어야 라운드마다 실제로 구별됩니다.
+             */
+            const unitId = source.unitId.startsWith("commit:")
+              ? `commit:${representativeSha}`
+              : `${source.unitId}-round${round}`;
             return {
               ...source,
               unitId,
-              representativeSha: index.toString(16).padStart(40, "0"),
+              representativeSha,
               summary: { ...source.summary, unitId },
             };
           });

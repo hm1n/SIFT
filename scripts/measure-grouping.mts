@@ -19,7 +19,6 @@ import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 
 import type { CommitDetail } from "../src/lib/github/types";
-import { groupCommitsIntoWorkUnits } from "../src/features/experience-candidates/work-unit";
 
 const [cachePath, ...rest] = process.argv.slice(2);
 if (!cachePath) {
@@ -103,19 +102,29 @@ class UnionFind {
 
 // ── 축 0. 기준선 ────────────────────────────────────────────────────────────
 
-/** 현재 프로덕션 규칙. PR 없는 커밋은 제외되므로 PR 저장소에서만 뜻이 있습니다. */
+/**
+ * 2026-09-11 이전 프로덕션 규칙을 그대로 재현한 기준선입니다. PR 없는 커밋은 묶지 않고
+ * 버리므로 PR 저장소에서만 뜻이 있습니다.
+ *
+ * 프로덕션의 `groupCommitsIntoWorkUnits`를 그대로 불러 쓰지 않고 여기서 직접 재현합니다.
+ * 이슈 #101로 그 함수가 PR 없는 커밋도 커밋 하나짜리 단위로 포함하도록 바뀌어, 그대로 부르면
+ * 이 기준선이 정의한 "PR 없으면 제외"라는 층 0 실험 설계와 달라집니다(Codex 리뷰). 이 기준선은
+ * 비교 대상이 되는 고정값이므로 프로덕션 규칙이 바뀌어도 값이 바뀌면 안 됩니다.
+ */
 const prBaseline: GroupingRule = (commits) => {
-  const units = groupCommitsIntoWorkUnits(
-    commits.map((commit) => ({
-      sha: commit.sha,
-      title: commit.title,
-      pullRequests:
-        commit.pullRequestNumber === null
-          ? []
-          : [{ number: commit.pullRequestNumber, title: "", state: "", baseBranch: "", headBranch: "" }],
-    }))
-  );
-  return units.map((unit) => unit.commits.map(({ sha }) => sha));
+  const groups = new Map<number, string[]>();
+  const order: number[] = [];
+  for (const commit of commits) {
+    if (commit.pullRequestNumber === null) continue;
+    const existing = groups.get(commit.pullRequestNumber);
+    if (existing === undefined) {
+      groups.set(commit.pullRequestNumber, [commit.sha]);
+      order.push(commit.pullRequestNumber);
+      continue;
+    }
+    existing.push(commit.sha);
+  }
+  return order.map((number) => groups.get(number)!);
 };
 
 // ── 축 1-c. 세션 경계 ───────────────────────────────────────────────────────

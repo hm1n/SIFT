@@ -23,6 +23,7 @@ import {
 } from "./llm-provider";
 import type { StageACandidate, StageACandidateOutput } from "./types";
 import { renderWorkUnitSummary, type WorkUnitSummary } from "./work-unit-summary";
+import { modelFacingUnitId } from "./work-unit";
 
 // 2026-09-01에 Groq `openai/gpt-oss-120b`에서 옮겼습니다. 확정 근거와 탈락 사유는
 // `llm-wiki/wiki/2026-09-01-네-경로-LLM-모델-확정.md`에 있습니다. 이 단계의 기준은 입력 PR 번호
@@ -249,21 +250,6 @@ export function renderStageAPrompt(payload: StageAPayload): string {
     .filter((section) => section !== "")
     .join("\n\n");
 }
-/**
- * 모델이 머리줄에서 그대로 베낄 수 있는 형태로 정규화한 식별자입니다. Pull Request 단위는
- * 내부 unitId와 이미 같습니다(`pr:12`). 단일 커밋 단위는 머리줄에 SHA 7자리만 보이므로
- * (`renderWorkUnitSummary`), 모델이 베낄 수 있는 것도 그 7자리뿐입니다. 40자 전체를 요구하면
- * 모델이 정확히 옮겨 적지 못할 위험이 있고(측정 전이라 확인되지 않음), 7자리는 이 서비스가
- * 다루는 저장소 규모(한 번의 판단에 최대 `STAGE_A_MAX_UNITS`개)에서 실질적으로 유일합니다.
- * 이 트레이드오프는 `llm-wiki`에 기록하고 2026-09-10 이후 프롬프트 실측으로 검증합니다.
- */
-function modelFacingUnitId(unit: Pick<StageAUnitInput, "unitId">): string {
-  const COMMIT_PREFIX = "commit:";
-  if (!unit.unitId.startsWith(COMMIT_PREFIX)) return unit.unitId;
-  return `${COMMIT_PREFIX}${unit.unitId.slice(COMMIT_PREFIX.length, COMMIT_PREFIX.length + 7)}`;
-}
-
-
 
 function mapLlmError(error: unknown): ExperienceCandidateOutputError {
   if (error instanceof ExperienceCandidateOutputError) return error;
@@ -454,6 +440,22 @@ export async function selectStageACandidates(
   timeoutMs = resolveLlmTimeoutMs(STAGE_A_TIMEOUT_MS)
 ): Promise<StageACandidateOutput> {
   const payload = buildStageAPayload(input);
+  /**
+   * 모델에 묻기 전에 먼저 막습니다. SHA 앞 7자리가 같은 두 단일 커밋이 한 배치에 들어오면
+   * 모델에게는 완전히 같은 머리줄로 보여 한 번만 응답하고, 아래 `shaByModelUnitId`가 뒤 항목의
+   * SHA로 조용히 덮어써 앞 항목이 실제로는 판단받지 못했는데도 판단받은 것처럼 넘어갑니다. 이
+   * 경로는 `unknown_sha`로 잡히지 않습니다 — 모델이 돌려준 식별자 자체는 배치 안에 실재하는
+   * 값이기 때문입니다(Codex 리뷰, 이슈 #101). 배치 크기(`STAGE_A_MAX_UNITS`)에서 충돌 확률은
+   * 낮지만(약 0.007%), 발생하면 아무 오류 없이 데이터가 잘못 붙으므로 모델을 부르기 전에
+   * 막습니다.
+   */
+  const modelFacingIds = input.units.map((unit) => modelFacingUnitId(unit.unitId));
+  if (new Set(modelFacingIds).size !== modelFacingIds.length) {
+    throw new ExperienceCandidateOutputError(
+      "schema_validation",
+      "SHA 앞 7자리가 같은 단일 커밋 판단 단위가 있어 모델에 안전하게 물어볼 수 없습니다."
+    );
+  }
   const abortController = new AbortController();
   const timeout = setTimeout(
     () => abortController.abort(new DOMException("Stage A timeout", "TimeoutError")),
@@ -471,7 +473,7 @@ export async function selectStageACandidates(
   // 모델은 머리줄 식별자로 답하지만 이 지점 이후로는 전부 대표 SHA로 옮깁니다. 뒤 단계와 오류
   // 보고가 커밋 SHA 기반이라 식별자를 두 종류로 들고 다니면 복구 경로가 갈라집니다.
   const shaByModelUnitId = new Map(
-    input.units.map((unit) => [modelFacingUnitId(unit), unit.representativeSha])
+    input.units.map((unit) => [modelFacingUnitId(unit.unitId), unit.representativeSha])
   );
   const returnedIds = output.decisions.map(({ unitId }) => unitId);
   const unknownIds = [
@@ -523,7 +525,7 @@ export async function selectStageACandidates(
     .filter((sha) => !candidateShas.has(sha));
   const returned = new Set(returnedIds);
   const missingShas = input.units
-    .filter((unit) => !returned.has(modelFacingUnitId(unit)))
+    .filter((unit) => !returned.has(modelFacingUnitId(unit.unitId)))
     .map(({ representativeSha }) => representativeSha);
   if (missingShas.length > 0) {
     throw new ExperienceCandidateOutputError(

@@ -171,6 +171,33 @@ describe("POST /api/candidates/stage-a", () => {
     expect(await response.json()).toMatchObject({ error: { kind: "invalid_request" } });
   });
 
+  it("summary.kind와 unitId 접두어가 어긋나면 LLM 호출 전에 422로 거부한다", async () => {
+    const tainted = unit(1, SHA);
+    const generate = vi.fn();
+    const response = await handleStageA(request({
+      units: [{ ...tainted, summary: { ...tainted.summary, kind: "commit" } }],
+      contributionItems: [],
+      candidateLimit: 1,
+    }), generate);
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ error: { kind: "invalid_request" } });
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("SHA 앞 7자리가 같은 두 단일 커밋 요청은 LLM 호출 전에 422로 거부한다", async () => {
+    const shaA = `abcdef1${"2".repeat(33)}`;
+    const shaB = `abcdef1${"3".repeat(33)}`;
+    const generate = vi.fn();
+    const response = await handleStageA(request({
+      units: [commitUnit(shaA), commitUnit(shaB)],
+      contributionItems: [],
+      candidateLimit: 1,
+    }), generate);
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ error: { kind: "invalid_request" } });
+    expect(generate).not.toHaveBeenCalled();
+  });
+
   it("잘못된 JSON, 입력 계약, 4.5MB 초과를 서로 다른 요청 오류로 거부한다", async () => {
     const malformed = request(body);
     Object.defineProperty(malformed, "text", { value: async () => "{" });

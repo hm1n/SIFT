@@ -207,6 +207,22 @@ describe("Stage A 후보 선별", () => {
     expect(output.unclassifiedShas).toEqual([]);
   });
 
+  it("SHA 앞 7자리가 같은 두 단일 커밋이 있으면 모델을 부르지 않고 거부한다", async () => {
+    const shaA = "abcdef1234567890abcdef1234567890abcdef12";
+    const shaB = `abcdef1${"0".repeat(33)}`;
+    const collidingInput: StageAInput = {
+      contributionItems: [],
+      candidateLimit: 2,
+      units: [commitUnit(shaA, "커밋 A"), commitUnit(shaB, "커밋 B")],
+    };
+    const generate = vi.fn();
+
+    await expect(
+      selectStageACandidates(collidingInput, generate)
+    ).rejects.toMatchObject({ kind: "schema_validation" });
+    expect(generate).not.toHaveBeenCalled();
+  });
+
   it("청크 쿼터를 넘긴 응답을 순서대로 절단하지 않고 전체 거부한다", async () => {
     const units = Array.from({ length: 4 }, (_, index) =>
       unit(index + 1, `sha-${index}`, "제목", ["feat: 작업"], ["src/a.ts"])

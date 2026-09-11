@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { groupCommitsIntoWorkUnits, type GroupableCommit, type WorkUnitPullRequest } from "./work-unit";
+import {
+  groupCommitsIntoWorkUnits,
+  modelFacingUnitId,
+  type GroupableCommit,
+  type WorkUnitPullRequest,
+} from "./work-unit";
 
 function pullRequest(number: number, title = `PR ${number}`): WorkUnitPullRequest {
   return { number, title, state: "closed", baseBranch: "develop", headBranch: `feature/${number}` };
@@ -143,5 +148,21 @@ describe("groupCommitsIntoWorkUnits", () => {
 
     expect(result[0].commits[0].additions).toBe(10);
     expect(result[0].commits[0].files).toEqual([{ path: "src/index.ts" }]);
+  });
+});
+
+describe("modelFacingUnitId", () => {
+  it("Pull Request 단위는 그대로 돌려준다", () => {
+    expect(modelFacingUnitId("pr:12")).toBe("pr:12");
+  });
+
+  it("단일 커밋 단위는 SHA 앞 7자리만 남긴다", () => {
+    expect(modelFacingUnitId(`commit:abcdef1${"2".repeat(33)}`)).toBe("commit:abcdef1");
+  });
+
+  it("SHA 앞 7자리가 같으면 뒤가 달라도 같은 값을 돌려준다", () => {
+    const a = modelFacingUnitId(`commit:abcdef1${"2".repeat(33)}`);
+    const b = modelFacingUnitId(`commit:abcdef1${"3".repeat(33)}`);
+    expect(a).toBe(b);
   });
 });

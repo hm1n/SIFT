@@ -18,6 +18,7 @@ import {
   type GenerateStageA,
   type StageAInput,
 } from "@/features/experience-candidates/stage-a";
+import { modelFacingUnitId } from "@/features/experience-candidates/work-unit";
 import { resolveLlmTimeoutMs } from "@/features/experience-candidates/llm-provider";
 
 export const runtime = "nodejs";
@@ -41,6 +42,10 @@ function isStageAInput(value: unknown): value is StageAInput {
       typeof summary.unitId === "string" &&
       UNIT_ID_PATTERN.test(summary.unitId) &&
       (summary.kind === "pull_request" || summary.kind === "commit") &&
+      // kind와 unitId 접두어가 어긋나면 renderUnitLabel이 엉뚱한 접두어 기준으로 잘라 깨진
+      // 라벨을 모델에 보내고, 실패도 여기서 막지 않으면 LLM 호출 한 번을 쓴 뒤에야 드러납니다
+      // (Codex 리뷰, 이슈 #101). 여기서 즉시 422로 거부합니다.
+      summary.kind === (summary.unitId.startsWith("pr:") ? "pull_request" : "commit") &&
       typeof summary.title === "string" &&
       isCount(summary.commitCount) &&
       (summary.commitCount as number) >= 1 &&
@@ -76,6 +81,14 @@ function isStageAInput(value: unknown): value is StageAInput {
   // 같은 묶음을 두 번 보내면 전수 응답 계약이 성립하지 않습니다.
   const unitIds = input.units.map(({ unitId }) => unitId);
   if (new Set(unitIds).size !== unitIds.length) return false;
+  /**
+   * `unitId`가 서로 달라도 모델에게 보이는 식별자(단일 커밋은 SHA 앞 7자리)는 같을 수 있습니다.
+   * 이 경우 모델은 두 항목을 구분하지 못해 하나로만 응답하고, 뒤 단계는 어느 커밋이 실제로
+   * 판단받았는지 조용히 잘못 판단합니다(Codex 리뷰, 이슈 #101). 모델을 부르기 전에 여기서
+   * 막습니다.
+   */
+  const modelFacingIds = input.units.map(({ unitId }) => modelFacingUnitId(unitId));
+  if (new Set(modelFacingIds).size !== modelFacingIds.length) return false;
   if (!Array.isArray(input.contributionItems)) return false;
   if (!input.contributionItems.every((item) => typeof item === "string" && item.length > 0)) {
     return false;
