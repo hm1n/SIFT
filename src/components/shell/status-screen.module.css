@@ -1,0 +1,61 @@
+.screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 48px 24px;
+  text-align: center;
+}
+
+.code {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+.symbol {
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+}
+
+.copy {
+  display: grid;
+  gap: 6px;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-foreground);
+}
+
+.sub {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-muted-foreground);
+  max-width: 420px;
+}
+
+.action {
+  margin-top: 8px;
+}
+
+@keyframes blink {
+  from { opacity: 1; }
+  to { opacity: 0.3; }
+}
+
+.loading .symbol {
+  animation: blink 0.9s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading .symbol { animation: none; }
+}

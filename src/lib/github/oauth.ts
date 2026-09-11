@@ -33,9 +33,14 @@ export function getGitHubOAuthConfig(requestUrl: string): GitHubOAuthConfig {
   return { clientId, clientSecret, redirectUri: process.env.GITHUB_OAUTH_REDIRECT_URI ?? new URL("/api/auth/github/callback", new URL(requestUrl).origin).toString() };
 }
 
+/**
+ * scope는 `read:user repo`입니다. `repo`는 OAuth App이 비공개 Repository를 읽을 수 있는 유일한 scope이고
+ * 쓰기 권한도 함께 줍니다. `read:user` 하나만 요청하던 이전 결정(PR #73)은 비공개 Repository를 지원하지
+ * 않기로 한 트레이드오프였습니다. PR #102 리뷰에서 지적된 뒤 `repo`로 넓히기로 다시 정했습니다.
+ */
 export function createGitHubAuthorizeUrl(config: GitHubOAuthConfig, state: string): string {
   const url = new URL(AUTHORIZE_URL);
-  url.search = new URLSearchParams({ client_id: config.clientId, redirect_uri: config.redirectUri, scope: "read:user", state }).toString();
+  url.search = new URLSearchParams({ client_id: config.clientId, redirect_uri: config.redirectUri, scope: "read:user repo", state }).toString();
   return url.toString();
 }
 

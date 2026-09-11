@@ -1,0 +1,300 @@
+/* Repository 선택 화면입니다. 디자인 파일 `App.tsx`의 `RepoSelectScreen`을 옮겼고 색과 라운드와 폰트는 globals.css 토큰만 씁니다. */
+.screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-card);
+}
+
+.header {
+  display: grid;
+  gap: 8px;
+  padding: 24px 32px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.eyebrow,
+.label {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+.eyebrow {
+  color: #a3a3a3;
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-foreground);
+}
+
+.body {
+  flex: 1;
+  padding: 24px 32px;
+}
+
+/* 목록과 기여 섹션이 같은 600px 열을 공유합니다(`contribution-context.md`). */
+.column {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+  display: grid;
+  gap: 24px;
+}
+
+.card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-muted);
+}
+
+.count {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  color: #a3a3a3;
+}
+
+.searchRow {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.search {
+  width: 100%;
+  padding: 12px 16px;
+  border: 0;
+  outline: none;
+  background: var(--color-card);
+  font: inherit;
+  font-size: 14px;
+  color: var(--color-foreground);
+  appearance: none;
+}
+
+.search::placeholder {
+  color: #a3a3a3;
+}
+
+.search::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.search:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--color-foreground);
+}
+
+.noMatch {
+  padding: 40px 16px;
+  text-align: center;
+  font-size: 12px;
+  color: #a3a3a3;
+}
+
+/* 행은 카드가 아니라 thin divider로 나눕니다(이슈 #95 Constraint). 마지막 행에는 선을 긋지 않습니다. */
+.rowWithDivider {
+  border-bottom: 1px solid var(--color-muted);
+}
+
+.row {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.row:hover {
+  background: #fafafa;
+}
+
+.row:focus-visible {
+  outline: 2px solid var(--color-foreground);
+  outline-offset: -2px;
+}
+
+.rowSelected,
+.rowSelected:hover {
+  background: var(--color-muted);
+}
+
+/* 라디오 기호 14px. 선택되면 검정으로 채우고 가운데 6px 흰 점을 둡니다. */
+.radio {
+  position: relative;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  border: 1px solid var(--color-scrollbar);
+  border-radius: 50%;
+}
+
+.radioSelected {
+  border-color: var(--color-foreground);
+  background: var(--color-foreground);
+}
+
+.radioSelected::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--color-primary-foreground);
+}
+
+.rowMain {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.rowName {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-foreground);
+  overflow-wrap: anywhere;
+}
+
+.rowOwner {
+  color: var(--color-muted-foreground);
+}
+
+.rowMeta,
+.rowUpdated {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  color: #a3a3a3;
+}
+
+.rowMeta {
+  white-space: pre-wrap;
+}
+
+.dot {
+  color: var(--color-scrollbar);
+}
+
+.rowUpdated {
+  flex-shrink: 0;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+/* 기여 섹션. 목록 카드와 20~24px 떨어진 별도 섹션이고 카드 안에 넣지 않습니다. */
+.contribution {
+  display: grid;
+  gap: 12px;
+  padding-top: 16px;
+}
+
+.contributionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.optional {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--color-scrollbar);
+}
+
+.contributionCopy {
+  font-family: var(--font-pretendard);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-muted-foreground);
+}
+
+.textareaFrame {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  transition: border-color 120ms ease;
+}
+
+.textareaFrame:hover {
+  border-color: var(--color-scrollbar);
+}
+
+.textareaFrame:focus-within {
+  border-color: #a3a3a3;
+}
+
+.textarea {
+  display: block;
+  width: 100%;
+  padding: 12px 16px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  resize: none;
+  font-family: var(--font-pretendard);
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--color-foreground);
+}
+
+.textarea::placeholder {
+  color: #a3a3a3;
+}
+
+/* 화면 안쪽 스크롤 대신 페이지가 스크롤하고 하단 바는 아래에 붙어 따라옵니다. */
+.footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 32px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-card);
+}
+
+.selection {
+  font-size: 12px;
+  color: #a3a3a3;
+  overflow-wrap: anywhere;
+}
+
+.arrow {
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 560px) {
+  .header,
+  .body,
+  .footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .row {
+    flex-wrap: wrap;
+  }
+
+  .rowUpdated {
+    width: 100%;
+    padding-left: 26px;
+  }
+}

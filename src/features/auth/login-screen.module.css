@@ -1,0 +1,84 @@
+/* 로그인 진입 화면입니다. 디자인 파일 `App.tsx`의 `LoginScreen`을 옮겼고 색과 라운드와 폰트는 globals.css 토큰만 씁니다. */
+.screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  background: var(--color-card);
+}
+
+.card {
+  width: 100%;
+  max-width: 384px;
+  display: grid;
+  gap: 40px;
+}
+
+.graphic {
+  display: flex;
+  justify-content: center;
+}
+
+/*
+ * 대표 pixel graphic 자리입니다. 그래픽은 #94 Non-goal이라 dashed 경계와 마크만 둡니다.
+ * 마크 색은 디자인의 neutral-300이고 토큰에서는 스크롤바 회색과 같은 값입니다.
+ */
+.placeholder {
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius);
+  color: var(--color-scrollbar);
+}
+
+.copy {
+  display: grid;
+  gap: 16px;
+  text-align: center;
+}
+
+.title {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.375;
+  letter-spacing: -0.025em;
+  color: var(--color-foreground);
+}
+
+.description {
+  font-size: 14px;
+  line-height: 1.625;
+  color: var(--color-muted-foreground);
+}
+
+.actions {
+  display: grid;
+  gap: 12px;
+}
+
+/* 헤더의 로그인 버튼보다 큰 primary 버튼입니다. 크기 변형은 이 화면에만 있어 Button에 size를 두지 않고 여기서 덮습니다. */
+.card .login {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 16px;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.terms {
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  letter-spacing: var(--label-tracking-wide);
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+@media (max-width: 560px) {
+  .screen { padding: 32px 16px; }
+}

@@ -1,6 +1,8 @@
 "use client";
 
-import { type FormEvent, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { SESSION_PATH } from "@/lib/github/auth-paths";
 import type { RepositoryRef } from "@/lib/github/types";
 import { ExperienceCandidateList, StageAExclusions } from "@/features/experience-candidates/experience-candidate-list";
 import {
@@ -14,19 +16,7 @@ import {
 import styles from "./repository-analysis.module.css";
 
 const INITIAL_STATE: AnalysisState = { status: "idle" };
-const LOGIN_PATH = "/api/auth/github/login";
 
-const AUTH_ERROR_COPY: Record<string, string> = {
-  access_denied: "GitHub에서 권한 허용을 취소했습니다. 다시 로그인할 수 있습니다.",
-  state_mismatch: "로그인 요청을 확인하지 못했습니다. 처음부터 다시 로그인해야 합니다.",
-  exchange_failed: "GitHub 인증을 마치지 못했습니다. 잠시 후 다시 시도해 주세요.",
-  config_missing: "서버에 GitHub 로그인 설정이 없습니다. 서버 관리자가 설정을 완료해야 합니다.",
-};
-
-// ponytail: 줄바꿈을 항목 경계로 고정합니다. 항목 안에 여러 줄 설명이 필요해질 때 구조화 입력으로 승격합니다.
-export function parseContributionItems(value: string) {
-  return value.split("\n").map((item) => item.trim()).filter(Boolean);
-}
 
 function loadingCopy(loading: LoadingPhase) {
   if (loading.step === "commits") {
@@ -76,53 +66,63 @@ function loadingCopy(loading: LoadingPhase) {
   };
 }
 
-export function RepositoryAnalysisView({ hasSession: initialHasSession, authError }: { hasSession: boolean; authError?: string }) {
-  const [owner, setOwner] = useState("");
-  const [repo, setRepo] = useState("");
-  const [contributionItems, setContributionItems] = useState("");
-  const [hasSession, setHasSession] = useState(initialHasSession);
-  const [analyzedRepository, setAnalyzedRepository] = useState<RepositoryRef | null>(null);
+export interface RepositoryAnalysisViewProps {
+  repository: RepositoryRef;
+  contributionItems: readonly string[];
+  /** 다른 Repository 선택입니다. 선택 화면으로 되돌아가는 일은 `RepositoryFlow`가 합니다. */
+  onSelectRepository: () => void;
+}
+
+/**
+ * 선택한 Repository의 분석 진행과 결과 화면입니다. 마운트되면 곧바로 `analyzeRepository`를 시작합니다.
+ * Repository와 기여 항목은 #95부터 선택 화면(`features/repository-selection`)이 정해 prop으로 넘기고, 이 화면은 입력을 들고 있지 않습니다.
+ *
+ * 세션 여부는 `page.tsx`가 쿠키로 갈라 세션이 없으면 이 화면을 통째로 내리므로 여기서 세션을 다시 보지 않습니다.
+ * 로그아웃 진입점은 둘입니다. 상단 헤더의 Sign out과 이 화면 오류 안내의 다시 로그인입니다. 둘 다 세션 삭제 뒤 라우터를 갱신해
+ * 서버가 헤더와 화면을 함께 다시 그립니다. 내려간 뒤 늦게 도착하는 결과는 실행 번호로 걸러냅니다.
+ */
+export function RepositoryAnalysisView({ repository, contributionItems, onSelectRepository }: RepositoryAnalysisViewProps) {
+  const router = useRouter();
   const [state, setState] = useState<AnalysisState>(INITIAL_STATE);
-  const ownerInput = useRef<HTMLInputElement>(null);
-  const loading = state.status === "loading";
+  // 진행 중인 분석의 실행 번호입니다. 초기화 뒤 늦게 도착한 결과가 화면에 다시 나타나지 않게 걸러냅니다.
+  const runRef = useRef(0);
+  // 개발 모드의 StrictMode는 effect를 두 번 실행합니다. 같은 분석을 두 번 시작하지 않게 한 번만 시작합니다.
+  const startedRef = useRef(false);
 
-  function analyze(repository: RepositoryRef) {
-    setAnalyzedRepository(repository);
-    return analyzeRepository(repository, parseContributionItems(contributionItems), setState);
+  useEffect(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    const run = ++runRef.current;
+    void analyzeRepository(repository, contributionItems, (next) => {
+      if (runRef.current === run) setState(next);
+    });
+  }, [repository, contributionItems]);
+
+  /** 이 실행이 아직 최신일 때만 상태를 반영합니다. */
+  function stateSinkFor(run: number) {
+    return (next: AnalysisState) => {
+      if (runRef.current === run) setState(next);
+    };
   }
 
-  function runAnalysis() {
-    const repository = { owner: owner.trim(), repo: repo.trim() };
-    if (hasSession) return analyze(repository);
-  }
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    runAnalysis();
+  function restart() {
+    runRef.current += 1;
+    return analyzeRepository(repository, contributionItems, stateSinkFor(runRef.current));
   }
 
   function retry() {
     if (state.status === "error" && state.retryPoint) {
-      setAnalyzedRepository(state.retryPoint.repository);
-      return generateCandidates(state.retryPoint, setState);
+      return generateCandidates(state.retryPoint, stateSinkFor(runRef.current));
     }
-    runAnalysis();
+    return restart();
   }
 
   async function reauthenticate() {
-    await fetch("/api/auth/session", { method: "DELETE" }).catch(() => undefined);
-    setHasSession(false);
-    setAnalyzedRepository(null);
+    // 삭제가 실패해도 진행합니다. 갱신된 헤더가 로그인 상태로 남으면 사용자가 알 수 있습니다.
+    await fetch(SESSION_PATH, { method: "DELETE" }).catch(() => undefined);
+    runRef.current += 1;
     setState(INITIAL_STATE);
-  }
-
-  function selectRepository() {
-    setOwner("");
-    setRepo("");
-    setContributionItems("");
-    setAnalyzedRepository(null);
-    setState(INITIAL_STATE);
-    requestAnimationFrame(() => ownerInput.current?.focus());
+    router.refresh();
   }
 
   return (
@@ -134,49 +134,13 @@ export function RepositoryAnalysisView({ hasSession: initialHasSession, authErro
       </header>
 
       <main className={styles.card}>
-        {authError && Object.hasOwn(AUTH_ERROR_COPY, authError) ? (
-          <section className={styles.state} role="alert" data-auth-error={authError}>
-            <h2>GitHub 로그인에 실패했습니다</h2>
-            <p>{AUTH_ERROR_COPY[authError]}</p>
-          </section>
-        ) : null}
-
-        {!hasSession ? (
-          <section className={styles.state} aria-live="polite" data-auth-state="login_required">
-            <h2>GitHub 로그인이 필요합니다</h2>
-            <p>Repository를 분석하려면 GitHub에 로그인해 주세요.</p>
-            <div className={styles.actions}>
-              <a className={styles.button} href={LOGIN_PATH}>GitHub으로 로그인</a>
-            </div>
-          </section>
-        ) : <form className={styles.form} onSubmit={handleSubmit}>
-          <div className={styles.repositoryFields}>
-            <label className={styles.field}>
-              Owner
-              <input ref={ownerInput} name="owner" value={owner} onChange={(event) => setOwner(event.target.value)} placeholder="octocat" autoComplete="off" disabled={loading} required />
-            </label>
-            <label className={styles.field}>
-              Repository
-              <input name="repository" value={repo} onChange={(event) => setRepo(event.target.value)} placeholder="hello-world" autoComplete="off" disabled={loading} required />
-            </label>
-          </div>
-          <label className={styles.field}>
-            본인 기여 항목 (선택)
-            <textarea name="contributionItems" value={contributionItems} onChange={(event) => setContributionItems(event.target.value)} placeholder={"푸시 알림 구현\n게시판 기능 구현"} autoComplete="off" disabled={loading} rows={4} />
-            <span className={styles.hint}>기억나는 기여를 한 줄에 하나씩 입력해 주세요. 비워두면 Repository 근거만으로 경험 후보를 찾습니다.</span>
-          </label>
-          <button className={styles.button} type="submit" disabled={loading}>
-            {loading ? "Repository 분석 중" : "Repository 분석 시작"}
-          </button>
-        </form>}
-
         {state.status === "loading" ? <LoadingState loading={state.loading} /> : null}
         {state.status === "empty" ? (
           <EmptyState
             kind={state.kind}
             reason={state.kind === "no_final_candidates" ? state.reason : undefined}
             stageASelection={state.stageASelection}
-            onSelectRepository={selectRepository}
+            onSelectRepository={onSelectRepository}
           />
         ) : null}
         {state.status === "error" ? (
@@ -185,16 +149,16 @@ export function RepositoryAnalysisView({ hasSession: initialHasSession, authErro
             retryLabel={state.retryPoint ? "후보 생성 다시 시도" : "전체 조회 다시 시도"}
             onRetry={retry}
             onReauthenticate={reauthenticate}
-            onSelectRepository={selectRepository}
+            onSelectRepository={onSelectRepository}
           />
         ) : null}
-        {state.status === "success" && analyzedRepository ? (
+        {state.status === "success" ? (
           <ExperienceCandidateList
-            repository={analyzedRepository}
+            repository={repository}
             data={state.data}
             candidates={state.candidates}
             stageASelection={state.stageASelection}
-            onSelectRepository={selectRepository}
+            onSelectRepository={onSelectRepository}
           />
         ) : null}
       </main>
