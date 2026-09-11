@@ -58,7 +58,7 @@ export function isLocalLlm(): boolean {
   return resolveLocalLlm() !== null;
 }
 
-function requireLocalModel(config: LocalLlmConfig, model: string | null, envName: string) {
+export function requireLocalModel(config: LocalLlmConfig, model: string | null, envName: string) {
   if (!model) {
     // 프로덕션 모델 ID를 로컬 엔드포인트에 그대로 보내면 404가 되고, 그 404는 `mapLlmError`에서
     // 모델 설정 오류로 뭉개져 원인이 환경변수 누락이라는 사실이 드러나지 않습니다.
