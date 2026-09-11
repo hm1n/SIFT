@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useRef, useState } from "react";
+import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/shell/button";
 import { StatusScreen } from "@/components/shell/status-screen";
 import { SESSION_PATH } from "@/lib/github/auth-paths";
@@ -55,6 +55,9 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
   const [query, setQuery] = useState("");
   const [contribution, setContribution] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // 방향키로 라디오 그룹을 오갈 때 다음 행에 실제 DOM 포커스를 옮기는 데 씁니다. 콜백 ref가 매 렌더 커밋마다
+  // 자기 인덱스 자리를 스스로 채우고, 행이 사라지면 React가 같은 콜백을 null로 불러 스스로 비웁니다.
+  const rowRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const labelId = useId();
   const copyId = useId();
 
@@ -139,6 +142,32 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
       );
   const selected = repositories.find((repository) => repository.id === selectedId) ?? null;
   const currentTime = now();
+  const selectedFilteredIndex = filtered.findIndex((repository) => repository.id === selectedId);
+
+  /**
+   * 표준 라디오 그룹 키보드 패턴입니다. 방향키가 선택과 DOM 포커스를 함께 다음 행으로 옮기고 양 끝에서 순환합니다.
+   * 선택이 없으면 첫 행만 tab 순서에 남기고(roving tabindex), 나머지는 tabIndex -1로 건너뜁니다.
+   */
+  function moveSelection(fromIndex: number, delta: number) {
+    if (filtered.length === 0) return;
+    const nextIndex = (fromIndex + delta + filtered.length) % filtered.length;
+    setSelectedId(filtered[nextIndex].id);
+    rowRefs.current[nextIndex]?.focus();
+  }
+
+  function handleRadioKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
+    if (event.key === "ArrowDown" || event.key === "ArrowRight") {
+      event.preventDefault();
+      moveSelection(index, 1);
+    } else if (event.key === "ArrowUp" || event.key === "ArrowLeft") {
+      event.preventDefault();
+      moveSelection(index, -1);
+    }
+  }
+
+  function isRowTabbable(index: number) {
+    return selectedFilteredIndex === -1 ? index === 0 : index === selectedFilteredIndex;
+  }
 
   return (
     <div className={styles.screen}>
@@ -175,11 +204,14 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
                   return (
                     <div key={repository.id} className={index < filtered.length - 1 ? styles.rowWithDivider : undefined}>
                       <button
+                        ref={(element) => { rowRefs.current[index] = element; }}
                         type="button"
                         role="radio"
                         aria-checked={isSelected}
+                        tabIndex={isRowTabbable(index) ? 0 : -1}
                         className={`${styles.row} ${isSelected ? styles.rowSelected : ""}`}
                         onClick={() => setSelectedId(repository.id)}
+                        onKeyDown={(event) => handleRadioKeyDown(event, index)}
                       >
                         <span className={`${styles.radio} ${isSelected ? styles.radioSelected : ""}`} aria-hidden="true" />
                         <span className={styles.rowMain}>
