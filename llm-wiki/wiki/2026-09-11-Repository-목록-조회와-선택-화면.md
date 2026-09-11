@@ -96,4 +96,5 @@ Error의 sub는 `rate_limit`이 "GitHub rate limit reached. Wait a moment and tr
 
 - 실제 GitHub 계정으로 목록을 받는 흐름은 OAuth 앱 설정이 이 워크트리에 없어 보지 않았습니다. Vercel 프리뷰에서 확인해야 합니다.
 - 조직 Repository는 `affiliation` 기본값(owner, collaborator, organization_member)대로 함께 옵니다. Organization 전환과 필터는 이슈 Non-goal입니다.
+- OAuth scope가 `read:user` 하나라 `/user/repos`는 공개 Repository만 돌려줍니다. 화면의 `PRIVATE` 표시와 `visibility` 필드는 scope가 넓어질 때를 위한 자리입니다. 결정은 `wiki/2026-09-10-디자인-개편-후속-backlog.md` 13번입니다.
 - 노션 기능 정의서에 owner·repo 직접 입력 방식이 남아 있는지 확인하지 않았습니다.
