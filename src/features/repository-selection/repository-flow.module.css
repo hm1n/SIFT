@@ -1,0 +1,12 @@
+/* 분석 화면의 자리입니다. 옛 `page.module.css`의 배치를 옮겼고 재배치는 #96이 합니다. */
+.analysis {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  padding: 72px 24px;
+  background: var(--color-background);
+}
+
+@media (max-width: 560px) {
+  .analysis { padding: 40px 16px; }
+}

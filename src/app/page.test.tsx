@@ -19,20 +19,29 @@ async function renderHome(searchParams: { auth_error?: string | string[] } = {})
   return <AuthTransitionProvider>{await Home({ searchParams: Promise.resolve(searchParams) })}</AuthTransitionProvider>;
 }
 
-beforeEach(() => cookieNames.clear());
-afterEach(cleanup);
+// 세션이 있으면 Repository 선택 화면이 목록을 조회합니다. 이 스위트는 화면 분기만 보므로 응답을 돌려주지 않습니다.
+beforeEach(() => {
+  cookieNames.clear();
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+});
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 describe("Home", () => {
-  it("세션 쿠키가 없으면 로그인 화면만 그리고 분석 폼을 그리지 않는다", async () => {
+  it("세션 쿠키가 없으면 로그인 화면만 그리고 Repository 목록을 조회하지 않는다", async () => {
     render(await renderHome());
     expect(screen.getByRole("link", { name: "Continue with GitHub" })).toBeInTheDocument();
-    expect(screen.queryByLabelText("Owner")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
   });
 
-  it("세션 쿠키가 있으면 분석 폼을 그리고 로그인 화면을 그리지 않는다", async () => {
+  it("세션 쿠키가 있으면 Repository 선택 흐름을 시작하고 로그인 화면을 그리지 않는다", async () => {
     cookieNames.add(GITHUB_SESSION_COOKIE);
     render(await renderHome());
-    expect(screen.getByLabelText("Owner")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading Repositories");
+    expect(fetch).toHaveBeenCalledWith("/api/github/repositories", undefined);
     expect(screen.queryByRole("link", { name: "Continue with GitHub" })).not.toBeInTheDocument();
   });
 
@@ -51,18 +60,18 @@ describe("Home", () => {
     cookieNames.add(GITHUB_SESSION_COOKIE);
     render(await renderHome({ auth_error: "access_denied" }));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Owner")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading Repositories");
   });
 
   // 로그아웃은 세션 삭제 뒤 router.refresh()로 서버가 이 페이지를 다시 실행하는 방식입니다. 그 결과가 화면을 바꿔야 합니다.
-  it("서버가 세션 없이 다시 그리면 분석 폼을 내리고 로그인 진입점을 표시한다", async () => {
+  it("서버가 세션 없이 다시 그리면 Repository 흐름을 내리고 로그인 진입점을 표시한다", async () => {
     cookieNames.add(GITHUB_SESSION_COOKIE);
     const { rerender } = render(await renderHome());
-    expect(screen.getByLabelText("Owner")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading Repositories");
 
     cookieNames.delete(GITHUB_SESSION_COOKIE);
     rerender(await renderHome());
-    expect(screen.queryByLabelText("Owner")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Continue with GitHub" })).toBeInTheDocument();
   });
 });
