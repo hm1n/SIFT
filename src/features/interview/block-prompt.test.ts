@@ -69,4 +69,15 @@ describe("블록 갱신 프롬프트", () => {
     expect(BLOCK_UPDATE_PROMPT_VARIANT).toBe("merged");
     expect(buildBlockUpdatePrompt(input).system).toBe(buildBlockUpdatePrompt({ ...input, variant: "merged" }).system);
   });
+
+  it("결과 블록의 정성적 확인은 수치가 없다는 이유만으로 not_done으로 낮추지 않는다 (구현검토 P2, 재실측으로 확인)", () => {
+    // 2026-09-11 재실측에서 recall 시나리오의 "개발 화면에서 눈으로 확인했다"는 관찰+확인 방법이
+    // 모두 있는 답변이 두 차례 독립 실행 모두 not_done으로 닫혔습니다. 이 문장이 빠지면 같은
+    // 회귀가 재발합니다.
+    const { system } = buildBlockUpdatePrompt({
+      snapshot: evidenceSnapshotFixture(), state: emptyExperienceBlockState(), history, targetBlock: "result", targetElement: "a", answerTurnId: "t1",
+    });
+    expect(system).toContain("결과 블록의 두 요소는 수치를 요구하지 않습니다");
+    expect(system).toContain("수치가 없다는 이유만으로 not_done으로 낮추지 않습니다");
+  });
 });
