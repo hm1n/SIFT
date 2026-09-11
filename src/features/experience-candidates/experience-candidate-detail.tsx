@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { CandidateDataOutput, ReadonlyCommitDetail, RepositoryRef } from "@/lib/github/types";
+import type { ReadonlyCommitDetail, RepositoryRef } from "@/lib/github/types";
 import type { EvidenceSnapshotFailureReason, ExperienceCandidateListItem } from "./types";
 import {
   AI_SELECTION_LABEL,
@@ -14,7 +14,8 @@ import styles from "./experience-candidate-detail.module.css";
 
 interface ExperienceCandidateDetailProps {
   repository: RepositoryRef;
-  data: CandidateDataOutput;
+  /** sha→커밋 조회용입니다. `ExperienceCandidateList`가 목록 행에도 쓰는 것을 그대로 받아, 여기서 다시 만들지 않습니다. */
+  commitsBySha: ReadonlyMap<string, ReadonlyCommitDetail>;
   item: ExperienceCandidateListItem;
   onBack: () => void;
   /** 이 경험을 인터뷰 대상으로 확정합니다. */
@@ -60,7 +61,7 @@ function evidenceEntry(sha: string, commit: ReadonlyCommitDetail | null, aiSelec
 
 export function ExperienceCandidateDetail({
   repository,
-  data,
+  commitsBySha,
   item,
   onBack,
   onConfirm,
@@ -69,7 +70,6 @@ export function ExperienceCandidateDetail({
 }: ExperienceCandidateDetailProps) {
   const [showAllEvidence, setShowAllEvidence] = useState(false);
   const { candidate, commit, normalizedRelatedShas } = item;
-  const commitsBySha = new Map(data.includedCommits.map((entry) => [entry.sha, entry]));
   const title = commit?.title ?? `커밋 색인 실패 · ${candidate.sha.slice(0, 7)}`;
   const commitCount = 1 + normalizedRelatedShas.length;
 

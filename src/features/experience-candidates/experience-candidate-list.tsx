@@ -134,7 +134,7 @@ export function ExperienceCandidateList({
           <ExperienceCandidateDetail
             key={selectedItem.candidate.sha}
             repository={repository}
-            data={data}
+            commitsBySha={commitsBySha}
             item={selectedItem}
             onBack={returnToCandidates}
             onConfirm={() => setSelection(confirmExperienceSelection(selectedItem, data, candidates))}

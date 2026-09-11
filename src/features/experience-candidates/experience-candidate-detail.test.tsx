@@ -55,7 +55,7 @@ function renderDetail(
   render(
     <ExperienceCandidateDetail
       repository={{ owner: "hm1n", repo: "demian" }}
-      data={dataOverride}
+      commitsBySha={new Map(dataOverride.includedCommits.map((entry) => [entry.sha, entry]))}
       item={{
         candidate: candidateOverride,
         commit: commitOverride,
@@ -152,7 +152,7 @@ describe("ExperienceCandidateDetail", () => {
     render(
       <ExperienceCandidateDetail
         repository={{ owner: "hm1n", repo: "demian" }}
-        data={data}
+        commitsBySha={new Map(data.includedCommits.map((entry) => [entry.sha, entry]))}
         item={{
           candidate,
           commit: representative,
@@ -183,7 +183,7 @@ describe("ExperienceCandidateDetail", () => {
     render(
       <ExperienceCandidateDetail
         repository={{ owner: "hm1n", repo: "demian" }}
-        data={data}
+        commitsBySha={new Map(data.includedCommits.map((entry) => [entry.sha, entry]))}
         item={{
           candidate,
           commit: representative,
