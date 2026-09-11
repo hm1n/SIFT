@@ -86,3 +86,9 @@ Empty와 Error는 이제 공용 `StatusScreen`(`@/components/shell/status-screen
 
 - 실제 브라우저에서 사용자 본인이 다시 확인하기로 했습니다(이 문서 작성 시점 기준 진행 중).
 - 커밋은 사용자 확인 이후로 미뤘습니다.
+
+## 8. PR #105 Codex 1차 리뷰 반영
+
+PR #105를 올린 뒤 Codex가 P2로 지적했습니다(프로젝트 판정은 P1: 기존 기능 regression). `AppShell` 도입으로 공용 `<header>`·`<main>`이 사라지면서 Loading·Empty·Error·Success 네 상태 전부 시맨틱 랜드마크와 접근 가능한 제목을 잃었습니다. Codex는 루트의 `<main>` 부재와 Empty·Error의 헤딩 부재를 지적했고, 재확인 과정에서 Success 상태가 `<h1>` 없이 곧바로 `<h2>`부터 시작하는 것도 같은 원인임을 확인했습니다.
+
+`StatusScreen`(#94·#95도 참조)과 `ExperienceCandidateList`(#97 담당)는 건드리지 않고 `RepositoryAnalysisView` 안에서만 고쳤습니다. 루트 엘리먼트를 `<main>`으로 바꾸고, Loading이 아닌 상태에는 시각적으로 숨긴 `<h1>{owner} / {name}</h1>`(`.visuallyHidden`)을 추가했습니다. Loading은 기존의 보이는 `<h1>`을 그대로 씁니다. 상태 4개 각각에 회귀 테스트를 추가했습니다. 테스트 1030개, lint, typecheck 통과.
