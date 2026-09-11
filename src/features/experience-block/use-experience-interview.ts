@@ -3,15 +3,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
 import type { BlockUpdateTurn } from "@/features/interview/block-prompt";
-import { INTERVIEW_MAX_TURNS, type InterviewHistoryMessage } from "@/features/interview/history";
+import {
+  INTERVIEW_LAST_OUTCOME_MAX_CONFLICTS,
+  INTERVIEW_LAST_OUTCOME_OBSERVATION_MAX_BYTES,
+  INTERVIEW_MAX_TURNS,
+  type InterviewHistoryMessage,
+  type InterviewLastOutcome,
+} from "@/features/interview/history";
 import {
   useInterviewStream,
+  type InterviewQuestionContinuation,
   type InterviewQuestionTarget,
   type InterviewStreamState,
 } from "@/features/interview/use-interview-stream";
 import { BlockUpdateFetchError, fetchBlockUpdate } from "./client";
 import { emptyInterviewProgress, recordAsked, recordResponse, selectNextTarget } from "./progress";
-import { emptyExperienceBlockState, type ExperienceBlockState } from "./types";
+import { emptyExperienceBlockState, type ExperienceBlockState, type TargetResponse } from "./types";
+import { serializedByteLength } from "@/features/experience-candidates/evidence-snapshot";
 
 /**
  * 이슈 #90 "턴 진행과 블록 전환, 열 턴 자동 종료"의 훅입니다. 설계는
@@ -25,6 +33,42 @@ import { emptyExperienceBlockState, type ExperienceBlockState } from "./types";
  */
 
 const FIRST_TARGET: NonNullable<InterviewQuestionTarget> = { targetBlock: "problem", targetElement: "a" };
+
+/** 코드 포인트 경계에서 잘라 `maxBytes` 안으로 맞춥니다. `question-generation.ts`의 `fitToBytes`와 같은 방식입니다. */
+function fitObservationToBytes(text: string, maxBytes: number): string {
+  let used = 0;
+  let fitted = "";
+  for (const character of text) {
+    const bytes = serializedByteLength(character);
+    if (used + bytes > maxBytes) break;
+    used += bytes;
+    fitted += character;
+  }
+  return fitted;
+}
+
+/**
+ * 직전 턴의 결과를 질문 생성에 실을 형태로 만듭니다. 눈에 띄는 결과가 없으면(반영 성공 +
+ * `provided` + 충돌 없음) `null`을 돌려줘 흔한 턴의 프롬프트가 커지지 않게 합니다(구현검토
+ * 2026-09-11 P1-5).
+ */
+function buildLastOutcome(
+  outcome: { readonly ok: boolean; readonly targetResponse: TargetResponse | null },
+  conflicts: ExperienceBlockState["conflicts"]
+): InterviewLastOutcome | null {
+  const boundedConflicts = conflicts
+    .slice(-INTERVIEW_LAST_OUTCOME_MAX_CONFLICTS)
+    .map((conflict) => ({
+      observation: fitObservationToBytes(conflict.observation, INTERVIEW_LAST_OUTCOME_OBSERVATION_MAX_BYTES),
+    }));
+  const noteworthy = !outcome.ok || boundedConflicts.length > 0 || (outcome.targetResponse !== null && outcome.targetResponse !== "provided");
+  if (!noteworthy) return null;
+  return {
+    blockUpdateFailed: !outcome.ok,
+    targetResponse: outcome.targetResponse,
+    conflicts: boundedConflicts,
+  };
+}
 
 export type ExperienceInterviewEndReason = "user" | "turn_limit";
 
@@ -149,7 +193,10 @@ export function useExperienceInterview({
    * 덮어쓰면 최신 상태가 옛 상태로 되돌아갈 수 있습니다(구현검토 2026-09-11 P1-3, R4).
    */
   const applyTurn = useCallback(
-    async (turn: BlockUpdateTurn, target: NonNullable<InterviewQuestionTarget>): Promise<void> => {
+    async (
+      turn: BlockUpdateTurn,
+      target: NonNullable<InterviewQuestionTarget>
+    ): Promise<{ readonly ok: boolean; readonly targetResponse: TargetResponse | null }> => {
       const current = optionsRef.current;
       blockUpdateAbortRef.current?.abort();
       const controller = new AbortController();
@@ -168,18 +215,20 @@ export function useExperienceInterview({
           fetchImpl: current.fetchImpl,
           signal: controller.signal,
         });
-        if (unmountedRef.current || callSeqRef.current !== callSeq) return;
+        if (unmountedRef.current || callSeqRef.current !== callSeq) return { ok: false, targetResponse: null };
         setBlockStateBoth(result.state);
         progressRef.current = recordResponse(progressRef.current, target.targetBlock, target.targetElement, result.targetResponse);
         unreflectedRef.current.delete(turn.turnId);
         syncUnreflectedTurnId();
+        return { ok: true, targetResponse: result.targetResponse };
       } catch (error) {
-        if (error instanceof DOMException && error.name === "AbortError") return;
-        if (unmountedRef.current || callSeqRef.current !== callSeq) return;
+        if (error instanceof DOMException && error.name === "AbortError") return { ok: false, targetResponse: null };
+        if (unmountedRef.current || callSeqRef.current !== callSeq) return { ok: false, targetResponse: null };
         // 갱신 실패만으로 같은 블록에 고정하지 않습니다. progress는 건드리지 않고 다음 단계에서
         // 이전 평가 그대로 이동 정책을 적용합니다.
         unreflectedRef.current.set(turn.turnId, { turn, target });
         syncUnreflectedTurnId();
+        return { ok: false, targetResponse: null };
       } finally {
         if (inFlightRef.current?.callSeq === callSeq) inFlightRef.current = null;
       }
@@ -203,18 +252,21 @@ export function useExperienceInterview({
    * 선택까지 마친 뒤 다음 질문의 대상을 돌려줍니다. `null`이면 질문을 요청하지 않습니다.
    */
   const onBeforeQuestion = useCallback(
-    async ({ history }: { history: readonly InterviewHistoryMessage[] }) => {
+    async ({ history }: { history: readonly InterviewHistoryMessage[] }): Promise<InterviewQuestionContinuation | null> => {
       const question = history.length >= 2 ? history[history.length - 2].text : "";
       const answer = history[history.length - 1].text;
       const turnId = `t${++turnSeqRef.current}`;
       const turn: BlockUpdateTurn = { turnId, question, answer };
       turnsRef.current = [...turnsRef.current, turn];
 
-      await applyTurn(turn, answeredTargetRef.current);
+      const outcome = await applyTurn(turn, answeredTargetRef.current);
       // 대기하는 동안 언마운트됐으면 다음 대상 계산도, 그에 딸린 상태 갱신도 하지 않습니다(구현검토
       // 2026-09-11 P1-3, R5). 호출부(`useInterviewStream`)의 이어지는 질문 요청은 그쪽 자신의
       // 언마운트 가드가 막습니다.
       if (unmountedRef.current) return null;
+      // targetBlock 밖 블록의 미해소 충돌도 함께 알립니다(다음 질문이 어느 블록을 겨냥하든, 그
+      // 충돌은 사용자 진술과 근거가 어긋난 지점이라는 사실 자체가 바뀌지 않으므로).
+      const lastOutcome = buildLastOutcome(outcome, blockStateRef.current.conflicts);
 
       const nextTurnsUsed = turnsUsedRef.current + 1;
       turnsUsedRef.current = nextTurnsUsed;
@@ -246,7 +298,7 @@ export function useExperienceInterview({
       progressRef.current = recordAsked(progressRef.current, next.block, next.element);
       const target: NonNullable<InterviewQuestionTarget> = { targetBlock: next.block, targetElement: next.element };
       answeredTargetRef.current = target;
-      return target;
+      return { target, lastOutcome };
     },
     [applyTurn]
   );

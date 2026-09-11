@@ -7,6 +7,7 @@ import {
   interviewHistoryItemBytes,
   trimInterviewHistory,
   type InterviewHistoryMessage,
+  type InterviewLastOutcome,
 } from "./history";
 import { runInterviewStream, type InterviewStreamStatus } from "./interview-stream-client";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
@@ -14,6 +15,15 @@ import type { BlockElement, BlockKind } from "@/features/experience-block/types"
 
 /** 질문이 겨냥하는 블록·요소입니다(이슈 #90). `null`은 대상 없는 일반 질문입니다. */
 export type InterviewQuestionTarget = { readonly targetBlock: BlockKind; readonly targetElement: BlockElement } | null;
+
+/**
+ * `onBeforeQuestion`이 다음 질문을 요청할 때 함께 실을 것입니다(이슈 #90, 구현검토 2026-09-11
+ * P1-5). `lastOutcome`은 눈에 띄는 결과가 있을 때만 호출부가 채웁니다.
+ */
+export interface InterviewQuestionContinuation {
+  readonly target: NonNullable<InterviewQuestionTarget>;
+  readonly lastOutcome: InterviewLastOutcome | null;
+}
 
 export type InterviewStreamPhase = "idle" | InterviewStreamStatus;
 
@@ -58,16 +68,17 @@ export interface UseInterviewStreamOptions {
    * 제출부터 질문 요청까지를 하나의 취소 가능한 작업으로 묶는다"). 블록 갱신 호출과 다음 질문 대상
    * 선택이 여기 들어갑니다.
    *
-   * 값을 돌려주면 그 대상으로 질문을 요청합니다. `null`을 돌려주면(더 물을 유효한 후보가 없음,
-   * 설계 6-2절 6번) 질문을 요청하지 않고 상태를 `"done"`으로 둡니다. 이 콜백은 실패를 던지지 않는
-   * 것을 전제합니다. 블록 갱신이 실패해도 질문은 그대로 요청해야 하므로(설계 9절), 실패 처리는
-   * 호출자가 안에서 끝내고 그래도 유효한 대상을 돌려줘야 합니다.
+   * 값을 돌려주면 그 대상(과, 있으면 직전 처리 결과)으로 질문을 요청합니다. `null`을
+   * 돌려주면(더 물을 유효한 후보가 없음, 설계 6-2절 6번) 질문을 요청하지 않고 상태를 `"done"`으로
+   * 둡니다. 이 콜백은 실패를 던지지 않는 것을 전제합니다. 블록 갱신이 실패해도 질문은 그대로
+   * 요청해야 하므로(설계 9절), 실패 처리는 호출자가 안에서 끝내고 그래도 유효한 대상을 돌려줘야
+   * 합니다.
    *
    * 없으면 이전 계약처럼 답변 제출과 동시에 대상 없는 질문을 요청합니다.
    */
   onBeforeQuestion?: (context: {
     readonly history: readonly InterviewHistoryMessage[];
-  }) => Promise<InterviewQuestionTarget | null>;
+  }) => Promise<InterviewQuestionContinuation | null>;
 }
 
 export interface InterviewStreamState {
@@ -203,6 +214,12 @@ export function useInterviewStream({
   // 다음 `start()` 호출이 실을 대상입니다. `submitAnswer`가 `onBeforeQuestion`에서 정해 두고
   // `start()`가 한 번 읽고 비웁니다. 첫 호출(이력 없음)에는 `initialTarget`을 그대로 씁니다.
   const pendingTargetRef = useRef<InterviewQuestionTarget>(initialTarget);
+  /**
+   * 다음 `start()` 호출이 함께 실을 직전 처리 결과입니다(이슈 #90, 구현검토 2026-09-11 P1-5).
+   * `pendingTargetRef`와 같은 자리에서 같은 방식으로 씁니다. `retry()`도 이 값을 그대로 읽으므로
+   * 재시도가 다른 맥락을 겨냥하는 일은 없습니다.
+   */
+  const pendingLastOutcomeRef = useRef<InterviewLastOutcome | null>(null);
   // `onBeforeQuestion` 진행 중에 새 제출이나 종료가 오면 그 결과를 버려야 합니다(이슈 #90 Approach
   // 4, "이전 작업의 늦은 응답은 반영하지 않는다"). 제출마다 값을 올려 이 응답이 최신 제출의
   // 것인지 확인합니다.
@@ -302,6 +319,9 @@ export function useInterviewStream({
       // 다른 블록을 겨냥하는 일은 없습니다.
       const target = pendingTargetRef.current;
       const targetFields = target === null ? {} : { targetBlock: target.targetBlock, targetElement: target.targetElement };
+      // 이력이 없는 첫 질문에는 직전 처리 결과가 있을 수 없습니다(구현검토 2026-09-11 P1-5).
+      const lastOutcome = pendingLastOutcomeRef.current;
+      const lastOutcomeFields = lastOutcome === null ? {} : { lastOutcome };
 
       const history = toHistory(messagesRef.current);
       if (history.length === 0) {
@@ -311,7 +331,7 @@ export function useInterviewStream({
       } else {
         const trimmed = trimInterviewHistory(history);
         setRemovedHistory(trimmed.removed);
-        body = JSON.stringify({ snapshot: current.snapshot, history: trimmed.history, ...targetFields });
+        body = JSON.stringify({ snapshot: current.snapshot, history: trimmed.history, ...targetFields, ...lastOutcomeFields });
       }
     }
 
@@ -449,14 +469,15 @@ export function useInterviewStream({
       // 이 사이 새 제출이나 종료가 오면 이 결과는 버립니다.
       const submissionId = ++submissionSeqRef.current;
       const historyForBeforeQuestion = toHistory(messagesRef.current);
-      void onBeforeQuestion({ history: historyForBeforeQuestion }).then((target) => {
+      void onBeforeQuestion({ history: historyForBeforeQuestion }).then((next) => {
         if (unmountedRef.current || isEndedRef.current || submissionSeqRef.current !== submissionId) return;
-        if (target === null) {
+        if (next === null) {
           // 유효한 질문 후보가 없습니다(설계 6-2절 6번). 질문을 억지로 만들지 않습니다.
           setStatus("done");
           return;
         }
-        pendingTargetRef.current = target;
+        pendingTargetRef.current = next.target;
+        pendingLastOutcomeRef.current = next.lastOutcome;
         start();
       });
       return true;

@@ -1,4 +1,5 @@
 import { serializedByteLength } from "@/features/experience-candidates/evidence-snapshot";
+import type { TargetResponse } from "@/features/experience-block/types";
 
 /**
  * 인터뷰 대화 이력입니다.
@@ -95,6 +96,47 @@ export function isWellFormedInterviewHistory(
       message.text.length > 0 && message.role === (index % 2 === 0 ? "question" : "answer")
   );
 }
+
+/**
+ * 이 하나에 실을 충돌 수의 상한입니다. 대화 이력처럼 무한히 쌓이지 않고 "아직 해소되지 않은"
+ * 것만 남으므로 크게 잡을 필요가 없습니다. 근거는 이슈 #90 구현검토(2026-09-11) P1-5입니다.
+ */
+export const INTERVIEW_LAST_OUTCOME_MAX_CONFLICTS = 3;
+
+/** 충돌 관찰 문장 하나의 UTF-8 바이트 상한입니다. `ClaimConflict.observation`을 그대로 싣습니다. */
+export const INTERVIEW_LAST_OUTCOME_OBSERVATION_MAX_BYTES = 240;
+
+/**
+ * 직전 턴의 블록 갱신 결과입니다(이슈 #90). 질문 생성 모델은 대화 원문만 보고 블록 갱신이
+ * 판단한 것(충돌 여부, 반영 성패, 답변 분류)을 전혀 알 수 없습니다. 그 판단을 여기 실어, 다음
+ * 질문이 이미 충돌났거나 반영되지 않은 전제 위에 서지 않게 합니다. 구현검토
+ * 2026-09-11 P1-5 근거는 `llm-wiki/output/2026-09-11-PAAR-경험블록-구현검토.md` 5절입니다.
+ *
+ * "눈에 띄는" 결과가 있을 때만 만들어 보냅니다(호출부 판단, `use-experience-interview.ts`). 정상
+ * 반영·`provided` 응답처럼 특별히 알릴 것이 없는 흔한 턴에는 이 필드 자체를 보내지 않아 프롬프트가
+ * 매턴 커지지 않습니다.
+ */
+export interface InterviewLastOutcome {
+  /** 직전 턴의 블록 갱신이 반영되지 못했는지입니다. 참이면 방금 답변이 아직 상태에 없을 수 있습니다. */
+  readonly blockUpdateFailed: boolean;
+  /** 반영에 성공했을 때만 있습니다. 실패하면 분류할 응답이 없으므로 `null`입니다. */
+  readonly targetResponse: TargetResponse | null;
+  /**
+   * 아직 해소되지 않은 충돌의 관찰 내용입니다(최대
+   * `INTERVIEW_LAST_OUTCOME_MAX_CONFLICTS`개, 문장마다 `INTERVIEW_LAST_OUTCOME_OBSERVATION_MAX_BYTES`
+   * 바이트까지). 사용자 진술과 근거가 어긋난 지점이라 다음 질문이 그 진술을 사실로 전제하면
+   * 안 됩니다.
+   */
+  readonly conflicts: readonly { readonly observation: string }[];
+}
+
+/**
+ * `lastOutcome`이 JSON 메시지로 실릴 때 차지할 수 있는 바이트의 상한입니다. 값을 손으로 고르지
+ * 않고 관찰 문장 최대 개수·바이트에서 유도합니다. 요청 본문 상한(`question-request.ts`)과 프롬프트
+ * 바이트 상한(`question-generation.ts`)이 함께 이 값을 씁니다.
+ */
+export const INTERVIEW_LAST_OUTCOME_MAX_BYTES =
+  INTERVIEW_LAST_OUTCOME_MAX_CONFLICTS * (INTERVIEW_LAST_OUTCOME_OBSERVATION_MAX_BYTES + 32) + 64;
 
 export interface TrimmedInterviewHistory {
   /** 상한 안으로 들어온 이력입니다. */

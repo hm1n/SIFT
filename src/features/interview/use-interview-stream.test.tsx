@@ -549,10 +549,10 @@ describe("useInterviewStream", () => {
       const first = controllableResponse();
       const second = controllableResponse();
       const fetchImpl = vi.fn().mockResolvedValueOnce(first.response).mockResolvedValueOnce(second.response);
-      let resolveBeforeQuestion!: (target: { targetBlock: "action"; targetElement: "b" }) => void;
+      let resolveBeforeQuestion!: (next: { target: { targetBlock: "action"; targetElement: "b" }; lastOutcome: null }) => void;
       const onBeforeQuestion = vi.fn(
         () =>
-          new Promise<{ targetBlock: "action"; targetElement: "b" } | null>((resolve) => {
+          new Promise<{ target: { targetBlock: "action"; targetElement: "b" }; lastOutcome: null } | null>((resolve) => {
             resolveBeforeQuestion = resolve;
           })
       );
@@ -576,7 +576,7 @@ describe("useInterviewStream", () => {
       // 블록 갱신이 끝나기 전에는 질문을 요청하지 않습니다.
       expect(fetchImpl).toHaveBeenCalledTimes(1);
 
-      act(() => resolveBeforeQuestion({ targetBlock: "action", targetElement: "b" }));
+      act(() => resolveBeforeQuestion({ target: { targetBlock: "action", targetElement: "b" }, lastOutcome: null }));
       await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
       expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual({
         snapshot,
@@ -588,6 +588,43 @@ describe("useInterviewStream", () => {
         targetElement: "b",
       });
     });
+    it("onBeforeQuestion이 준 lastOutcome을 다음 질문 요청 본문에 싣는다 (구현검토 P1-5)", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const fetchImpl = vi.fn().mockResolvedValueOnce(first.response).mockResolvedValueOnce(second.response);
+      const lastOutcome = {
+        blockUpdateFailed: false,
+        targetResponse: "not_done" as const,
+        conflicts: [{ observation: "근거는 fetch 기반 수신을 보여 줍니다." }],
+      };
+      const onBeforeQuestion = vi.fn(async () => ({
+        target: { targetBlock: "result" as const, targetElement: "b" as const },
+        lastOutcome,
+      }));
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, onBeforeQuestion, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+      act(() => {
+        result.current.submitAnswer("첫 답변");
+      });
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual({
+        snapshot,
+        history: [
+          { role: "question", text: "첫 질문" },
+          { role: "answer", text: "첫 답변" },
+        ],
+        targetBlock: "result",
+        targetElement: "b",
+        lastOutcome,
+      });
+    });
+
+
 
     it("onBeforeQuestion이 null을 돌려주면 질문을 요청하지 않고 done으로 둔다", async () => {
       const first = controllableResponse();
@@ -610,10 +647,10 @@ describe("useInterviewStream", () => {
     it("onBeforeQuestion 진행 중 종료하면 응답이 와도 질문을 요청하지 않는다", async () => {
       const first = controllableResponse();
       const fetchImpl = vi.fn().mockResolvedValueOnce(first.response);
-      let resolveBeforeQuestion!: (target: { targetBlock: "problem"; targetElement: "a" } | null) => void;
+      let resolveBeforeQuestion!: (next: { target: { targetBlock: "problem"; targetElement: "a" }; lastOutcome: null } | null) => void;
       const onBeforeQuestion = vi.fn(
         () =>
-          new Promise<{ targetBlock: "problem"; targetElement: "a" } | null>((resolve) => {
+          new Promise<{ target: { targetBlock: "problem"; targetElement: "a" }; lastOutcome: null } | null>((resolve) => {
             resolveBeforeQuestion = resolve;
           })
       );
@@ -630,7 +667,7 @@ describe("useInterviewStream", () => {
       act(() => {
         result.current.endInterview();
       });
-      act(() => resolveBeforeQuestion({ targetBlock: "problem", targetElement: "a" }));
+      act(() => resolveBeforeQuestion({ target: { targetBlock: "problem", targetElement: "a" }, lastOutcome: null }));
       await Promise.resolve();
 
       expect(fetchImpl).toHaveBeenCalledTimes(1);

@@ -173,6 +173,55 @@ describe("useExperienceInterview", () => {
     expect(result.current.blockState.evaluation.problem).toEqual(ASKABLE);
   });
 
+  it("블록 갱신 실패를 다음 질문 요청의 lastOutcome에 실어 보낸다 (구현검토 P1-5)", async () => {
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    const fetchImpl = makeFetchImpl({
+      questionSources: [q1, q2],
+      blockUpdateResponses: [jsonResponse(502, { error: { kind: "block_update_rejected", message: "검증 실패" } })],
+    });
+    const { result } = renderHook(() =>
+      useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    completeQuestion(q1, "문제 상황을 알려주세요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+    act(() => {
+      result.current.submitAnswer("화면이 비어 있었습니다.");
+    });
+
+    // 질문1, 블록갱신 실패, 질문2(블록 갱신 실패 사실을 lastOutcome에 실어 보냄).
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
+    const secondQuestionBody = callBody(fetchImpl.mock.calls[2] as [RequestInfo | URL, RequestInit?]);
+    expect(secondQuestionBody).toMatchObject({
+      lastOutcome: { blockUpdateFailed: true, targetResponse: null, conflicts: [] },
+    });
+  });
+
+  it("정상 반영에 provided 응답, 충돌 없는 흔한 턴은 다음 질문 요청에 lastOutcome을 싣지 않는다 (구현검토 P1-5)", async () => {
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    const fetchImpl = makeFetchImpl({
+      questionSources: [q1, q2],
+      blockUpdateResponses: [jsonResponse(200, blockUpdateBody({ targetResponse: "provided" }))],
+    });
+    const { result } = renderHook(() =>
+      useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    completeQuestion(q1, "문제 상황을 알려주세요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+    act(() => {
+      result.current.submitAnswer("화면이 비어 있었습니다.");
+    });
+
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
+    const secondQuestionBody = callBody(fetchImpl.mock.calls[2] as [RequestInfo | URL, RequestInit?]) as Record<string, unknown>;
+    expect(secondQuestionBody.lastOutcome).toBeUndefined();
+  });
+
   it("성공한 다음 턴이 앞서 실패한 턴의 미반영 표시를 지우지 않는다 (구현검토 P1-2, R3)", async () => {
     const q1 = controllableResponse();
     const q2 = controllableResponse();

@@ -188,13 +188,13 @@ export async function handleInterviewQuestionStream(
   if (!parsed.ok) {
     return errorResponse(parsed.kind, parsed.message, REQUEST_ERROR_STATUS[parsed.kind]);
   }
-  const { snapshot, history, targetBlock, targetElement } = parsed.body;
+  const { snapshot, history, targetBlock, targetElement, lastOutcome } = parsed.body;
 
   // 모델에 실제로 실리는 프롬프트를 서버에서 접어 보고 상한을 확인합니다. 스냅샷을 만드는 쪽에
   // 이미 상한이 있지만 이 route는 클라이언트가 보낸 값을 그대로 받으므로 여기서 한 번 더 봅니다.
   // Stage A route가 같은 이유로 같은 가드를 둡니다.
   const promptBytes = interviewQuestionPromptBytes(
-    buildInterviewQuestionPrompt(snapshot, { history, variant: options.variant, targetBlock, targetElement })
+    buildInterviewQuestionPrompt(snapshot, { history, variant: options.variant, targetBlock, targetElement, lastOutcome })
   );
   if (promptBytes > INTERVIEW_QUESTION_MAX_PROMPT_BYTES) {
     return invalidRequest("질문 근거가 한 번에 보낼 수 있는 크기를 넘었습니다.");
@@ -206,6 +206,7 @@ export async function handleInterviewQuestionStream(
       history,
       targetBlock,
       targetElement,
+      lastOutcome,
       signal: request.signal,
     });
     return new Response(createQuestionSseStream(question, { signal: request.signal }), {

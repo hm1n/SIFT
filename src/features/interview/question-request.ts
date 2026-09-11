@@ -2,9 +2,13 @@ import {
   INTERVIEW_HISTORY_ITEM_MAX_BYTES,
   INTERVIEW_HISTORY_MAX_BYTES,
   INTERVIEW_HISTORY_MAX_ITEMS,
+  INTERVIEW_LAST_OUTCOME_MAX_BYTES,
+  INTERVIEW_LAST_OUTCOME_MAX_CONFLICTS,
+  INTERVIEW_LAST_OUTCOME_OBSERVATION_MAX_BYTES,
   interviewHistoryItemBytes,
   isWellFormedInterviewHistory,
   type InterviewHistoryMessage,
+  type InterviewLastOutcome,
 } from "./history";
 import type {
   EvidenceSnapshotCommit,
@@ -12,7 +16,14 @@ import type {
   EvidenceVerifiability,
   ExperienceEvidenceSnapshot,
 } from "@/features/experience-candidates/types";
-import { isBlockElement, isBlockKind, type BlockElement, type BlockKind } from "@/features/experience-block/types";
+import {
+  isBlockElement,
+  isBlockKind,
+  TARGET_RESPONSES,
+  type BlockElement,
+  type BlockKind,
+} from "@/features/experience-block/types";
+import { serializedByteLength } from "@/features/experience-candidates/evidence-snapshot";
 
 /**
  * `POST /api/interview/stream`의 요청 본문입니다. 하위 이슈 B와 공유하는 계약이고 착수 전에
@@ -32,6 +43,11 @@ export interface InterviewStreamRequestBody {
    */
   readonly targetBlock?: BlockKind;
   readonly targetElement?: BlockElement;
+  /**
+   * 직전 턴의 블록 갱신 결과입니다(이슈 #90, 구현검토 2026-09-11 P1-5). 눈에 띄는 결과가 있을
+   * 때만 훅이 실어 보내는 선택 항목입니다. `history.ts`의 `InterviewLastOutcome` 참고.
+   */
+  readonly lastOutcome?: InterviewLastOutcome;
 }
 
 /**
@@ -63,7 +79,10 @@ export const SNAPSHOT_BODY_BYTES = 64 * 1024;
 export const INTERVIEW_STREAM_TARGET_META_BYTES = 128;
 
 export const MAX_INTERVIEW_STREAM_BODY_BYTES =
-  SNAPSHOT_BODY_BYTES + INTERVIEW_HISTORY_MAX_BYTES + INTERVIEW_STREAM_TARGET_META_BYTES;
+  SNAPSHOT_BODY_BYTES +
+  INTERVIEW_HISTORY_MAX_BYTES +
+  INTERVIEW_STREAM_TARGET_META_BYTES +
+  INTERVIEW_LAST_OUTCOME_MAX_BYTES;
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
 
@@ -181,6 +200,21 @@ function isHistoryMessage(value: unknown): value is InterviewHistoryMessage {
   return (value.role === "question" || value.role === "answer") && typeof value.text === "string";
 }
 
+function isLastOutcome(value: unknown): value is InterviewLastOutcome {
+  if (!isRecord(value)) return false;
+  if (typeof value.blockUpdateFailed !== "boolean") return false;
+  if (value.targetResponse !== null && !TARGET_RESPONSES.includes(value.targetResponse as (typeof TARGET_RESPONSES)[number])) {
+    return false;
+  }
+  if (!Array.isArray(value.conflicts) || value.conflicts.length > INTERVIEW_LAST_OUTCOME_MAX_CONFLICTS) return false;
+  return value.conflicts.every(
+    (conflict) =>
+      isRecord(conflict) &&
+      typeof conflict.observation === "string" &&
+      serializedByteLength(conflict.observation) <= INTERVIEW_LAST_OUTCOME_OBSERVATION_MAX_BYTES
+  );
+}
+
 /**
  * 요청 본문 파싱 결과입니다.
  *
@@ -258,6 +292,10 @@ export function parseInterviewStreamRequestBody(
     return { ok: false, kind: "invalid_request", message: "대상 블록이나 대상 요소가 올바르지 않습니다." };
   }
 
+  if (value.lastOutcome !== undefined && !isLastOutcome(value.lastOutcome)) {
+    return { ok: false, kind: "invalid_request", message: "직전 처리 결과 형식이 올바르지 않습니다." };
+  }
+
   return {
     ok: true,
     body: {
@@ -266,6 +304,7 @@ export function parseInterviewStreamRequestBody(
       ...(hasTargetBlock
         ? { targetBlock: value.targetBlock as BlockKind, targetElement: value.targetElement as BlockElement }
         : {}),
+      ...(value.lastOutcome !== undefined ? { lastOutcome: value.lastOutcome as InterviewLastOutcome } : {}),
     },
   };
 }
