@@ -101,4 +101,14 @@ PR #105를 올린 뒤 Codex가 P2로 지적했습니다(프로젝트 판정은 P
 
 **P2 (프로젝트 판정 동일): 후보 생성 계약 위반이 GitHub 오류로 표시됨.** `toCandidateGenerationError`가 `invalid_request`·`invalid_response`·`invalid_json`과 예기치 않은 예외를 전부 `kind: "server_error"`로 변환해, Stage A 응답 파싱 실패처럼 GitHub를 전혀 호출하지 않은 오류도 화면에 `ERROR / GITHUB`로 표시됐습니다. AGENTS.md 판별 기준 원칙(상태를 직접 나타내지 않는 대리 지표를 쓰지 않는다)을 그대로 위반하는 사례라 P2지만 같은 PR에서 반영했습니다. `CandidateGenerationErrorKind`에 `contract_violation`을 추가해 GitHub 조회 오류의 `server_error`와 분리했습니다. `errorStatusCode`는 이미 목록에 없는 kind를 일반 `ERROR`로 떨어뜨리므로 뷰 쪽은 코드를 바꾸지 않았습니다. 회귀 테스트 3건을 추가하고 기존 `server_error` 기대값 3곳을 갱신했습니다.
 
-테스트 1035개, lint, typecheck 통과. 재검증 라운드는 여기서 종료합니다.
+테스트 1035개, lint, typecheck 통과.
+
+## 10. PR #105 Codex 2차 재검증 반영
+
+2차 재검증에서 지적 1건이 새로 나왔습니다. 원래 #96 구현(`AppShell` 도입)에 있던 결함입니다.
+
+**P1: 인터뷰 중 사이드바 Change repository가 이탈 확인을 건너뜀.** 후보 확정 뒤 `InterviewScreen`은 자체 뒤로가기 버튼에만 "대화가 사라진다"는 확인을 둡니다. 이 확인은 `InterviewScreen` 로컬 상태(`isConfirmingBack`)라 `AppShell` 사이드바처럼 그 컴포넌트 밖에 있는 이탈 경로는 거치지 않습니다. `AppShell`을 배치하기 전에는 `InterviewScreen` 표시 중 이 화면에 닿을 다른 이탈 경로가 아예 없었으므로, 이 버그는 `AppShell` 배치가 새로 연 경로입니다.
+
+`ExperienceCandidateList`에 `onInterviewActiveChange` 콜백을 추가해 확정 상태가 바뀔 때마다 상위에 알리고, `RepositoryAnalysisView`가 이를 그대로 전달합니다. `RepositoryFlow`가 이 값을 받아 인터뷰가 활성 중이면 사이드바 Change repository와 분석 화면 안의 모든 "다른 Repository 선택"류 액션을 같은 `requestLeave` 함수로 묶어, 활성 중에는 확인 대화상자(`InterviewScreen`과 같은 문구·버튼 구성)를 먼저 띄우게 했습니다. `AppShell`의 컴포넌트 계약은 바꾸지 않았습니다. 회귀 테스트는 확정·복귀마다 콜백이 불리는지(`experience-selection.test.tsx`)와 사이드바 이탈 전체 경로(`repository-flow.test.tsx`, 선택 화면부터 인터뷰 확정, 사이드바 클릭, 확인·취소까지) 둘 다 추가했습니다.
+
+테스트 1038개, lint, typecheck 통과. 재검증 라운드는 여기서 종료합니다.
