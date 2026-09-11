@@ -138,6 +138,44 @@ export interface InterviewLastOutcome {
 export const INTERVIEW_LAST_OUTCOME_MAX_BYTES =
   INTERVIEW_LAST_OUTCOME_MAX_CONFLICTS * (INTERVIEW_LAST_OUTCOME_OBSERVATION_MAX_BYTES + 32) + 64;
 
+/** 코드 포인트 경계에서 잘라 `maxBytes` 안으로 맞춥니다. `question-generation.ts`의 `fitToBytes`와 같은 방식입니다. */
+function fitObservationToBytes(text: string, maxBytes: number): string {
+  let used = 0;
+  let fitted = "";
+  for (const character of text) {
+    const bytes = serializedByteLength(character);
+    if (used + bytes > maxBytes) break;
+    used += bytes;
+    fitted += character;
+  }
+  return fitted;
+}
+
+/**
+ * 직전 턴의 결과를 질문 생성에 실을 형태로 만듭니다. 눈에 띄는 결과가 없으면(반영 성공 +
+ * `provided` + 충돌 없음) `null`을 돌려줘 흔한 턴의 프롬프트가 커지지 않게 합니다(구현검토
+ * 2026-09-11 P1-5). `use-experience-interview.ts`와 측정 하네스(`block-update.measure.mts`)가
+ * 같은 함수를 씁니다 — 두 곳이 각자 판정을 다시 구현하면 운영 경로와 측정이 갈릴 위험이 있습니다
+ * (구현검토 P2, 8번 "실측 수치와 운영 경로의 대응이 맞지 않습니다").
+ */
+export function buildLastOutcome(
+  outcome: { readonly ok: boolean; readonly targetResponse: TargetResponse | null },
+  conflicts: readonly { readonly observation: string }[]
+): InterviewLastOutcome | null {
+  const boundedConflicts = conflicts
+    .slice(-INTERVIEW_LAST_OUTCOME_MAX_CONFLICTS)
+    .map((conflict) => ({
+      observation: fitObservationToBytes(conflict.observation, INTERVIEW_LAST_OUTCOME_OBSERVATION_MAX_BYTES),
+    }));
+  const noteworthy = !outcome.ok || boundedConflicts.length > 0 || (outcome.targetResponse !== null && outcome.targetResponse !== "provided");
+  if (!noteworthy) return null;
+  return {
+    blockUpdateFailed: !outcome.ok,
+    targetResponse: outcome.targetResponse,
+    conflicts: boundedConflicts,
+  };
+}
+
 export interface TrimmedInterviewHistory {
   /** 상한 안으로 들어온 이력입니다. */
   readonly history: readonly InterviewHistoryMessage[];
