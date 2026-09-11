@@ -21,6 +21,7 @@
 
 ## 최근 산출물
 
+- `wiki/2026-09-11-Repository-목록-조회와-선택-화면.md` : #95가 만든 `GET /api/github/repositories` 라우트의 응답·오류 계약, Repository 선택 화면의 상태 5개와 기여 항목 섹션, 분석 화면과의 연결
 - `wiki/2026-09-10-디자인-토큰과-공통-셸.md` : #93이 도입한 CSS 변수 토큰, 폰트 등록, TopHeader·AppShell·StatusScreen·버튼 3종의 계약
 - `wiki/2026-09-10-GitHub-로그인-진입-화면.md` : #94가 만든 로그인 진입 화면, AUTHENTICATING과 ERROR / AUTH 상태, 오류 종류별 영어 안내, 인증 경로 상수의 계약
 - `wiki/2026-09-10-디자인-개편-계획.md` : Figma 디자인 기반 UI 개편의 공통 결정, 하위 이슈 순서, 하지 않는 것, #91 충돌
