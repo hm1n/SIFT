@@ -10,7 +10,7 @@ import {
 } from "@/features/interview/history";
 import {
   useInterviewStream,
-  type InterviewQuestionContinuation,
+  type InterviewQuestionOutcome,
   type InterviewQuestionTarget,
   type InterviewStreamState,
 } from "@/features/interview/use-interview-stream";
@@ -210,10 +210,12 @@ export function useExperienceInterview({
 
   /**
    * `useInterviewStream`의 접합점입니다. 답변 하나가 확정될 때마다 불려, 블록 갱신 → 다음 대상
-   * 선택까지 마친 뒤 다음 질문의 대상을 돌려줍니다. `null`이면 질문을 요청하지 않습니다.
+   * 선택까지 마친 뒤 다음 질문의 대상을 돌려줍니다. `"stop"`·`"ready_to_finish"`이면 그 훅이
+   * 알아서 처리합니다(질문·답변 교대 계약을 지키는 것은 호출부 책임입니다, 구현검토 2026-09-11
+   * P1-4 재검증).
    */
   const onBeforeQuestion = useCallback(
-    async ({ history }: { history: readonly InterviewHistoryMessage[] }): Promise<InterviewQuestionContinuation | null> => {
+    async ({ history }: { history: readonly InterviewHistoryMessage[] }): Promise<InterviewQuestionOutcome> => {
       const question = history.length >= 2 ? history[history.length - 2].text : "";
       const answer = history[history.length - 1].text;
       const turnId = `t${++turnSeqRef.current}`;
@@ -224,7 +226,7 @@ export function useExperienceInterview({
       // 대기하는 동안 언마운트됐으면 다음 대상 계산도, 그에 딸린 상태 갱신도 하지 않습니다(구현검토
       // 2026-09-11 P1-3, R5). 호출부(`useInterviewStream`)의 이어지는 질문 요청은 그쪽 자신의
       // 언마운트 가드가 막습니다.
-      if (unmountedRef.current) return null;
+      if (unmountedRef.current) return { kind: "stop" };
       // targetBlock 밖 블록의 미해소 충돌도 함께 알립니다(다음 질문이 어느 블록을 겨냥하든, 그
       // 충돌은 사용자 진술과 근거가 어긋난 지점이라는 사실 자체가 바뀌지 않으므로).
       const lastOutcome = buildLastOutcome(outcome, blockStateRef.current.conflicts);
@@ -234,10 +236,10 @@ export function useExperienceInterview({
       setTurnsUsed(nextTurnsUsed);
 
       // 열 턴 자동 종료입니다. 모델의 sufficient 판정에는 종료 권한이 없고, 상한 도달만 자동
-      // 종료를 일으킵니다(설계 3절 Approach 3).
+      // 종료를 일으킵니다(설계 3절 Approach 3). 상한 도달은 완료 대기 안내 없이 그대로 멈춥니다.
       if (nextTurnsUsed >= INTERVIEW_MAX_TURNS) {
         setEndReason("turn_limit");
-        return null;
+        return { kind: "stop" };
       }
 
       const next = selectNextTarget({
@@ -250,7 +252,7 @@ export function useExperienceInterview({
       });
       if (next.kind === "done") {
         setIsReadyToFinish(true);
-        return null;
+        return { kind: "ready_to_finish" };
       }
 
       // 완료 대기 상태에서 받은 보충 답변(설계 6-3절)이 다시 물을 거리를 만들 수 있습니다. 값이
@@ -259,7 +261,7 @@ export function useExperienceInterview({
       progressRef.current = recordAsked(progressRef.current, next.block, next.element);
       const target: NonNullable<InterviewQuestionTarget> = { targetBlock: next.block, targetElement: next.element };
       answeredTargetRef.current = target;
-      return { target, lastOutcome };
+      return { kind: "ask", target, lastOutcome };
     },
     [applyTurn]
   );

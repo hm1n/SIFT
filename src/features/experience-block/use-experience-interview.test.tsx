@@ -362,7 +362,10 @@ describe("useExperienceInterview", () => {
     await waitFor(() => expect(result.current.isReadyToFinish).toBe(true));
     expect(result.current.isEnded).toBe(false);
 
-    // 마지막 메시지가 질문이 아니라 답변인데도 종료 전이라 보충 답변을 제출할 수 있어야 합니다.
+    // 완료 대기 안내가 "질문" 자리에 들어와야 보충 답변을 받아도 질문·답변 교대 계약이 깨지지
+    // 않습니다(구현검토 P1-4 1차 수정의 회귀, 재검증에서 발견). 답변만 이어 붙이면 다음 실제 질문
+    // 요청에서 서버가 이력 모양을 거절합니다.
+    await waitFor(() => expect(result.current.messages.at(-1)?.role).toBe("question"));
     await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
     let accepted = false;
     act(() => {
@@ -371,6 +374,9 @@ describe("useExperienceInterview", () => {
     expect(accepted).toBe(true);
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3)); // 질문1, 블록갱신1, 블록갱신2(보충)
     expect(result.current.isEnded).toBe(false);
+    // 여전히 완료 대기라 다시 완료 안내가 붙고, 그 뒤로도 보충 답변을 또 받을 수 있습니다.
+    await waitFor(() => expect(result.current.messages.at(-1)?.role).toBe("question"));
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
   });
 
   it("블록 갱신이 진행 중일 때 종료하면 그 호출을 끊고 미반영으로 등록한 뒤 한 번 더 반영을 시도한다 (구현검토 P1-2, R6)", async () => {

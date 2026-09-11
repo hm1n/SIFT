@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { INTERVIEW_HISTORY_ITEM_MAX_BYTES, INTERVIEW_HISTORY_MAX_ITEMS } from "./history";
 import { evidenceSnapshotFixture } from "./question-fixture";
 import { encodeSseEvent } from "./sse";
-import { useInterviewStream } from "./use-interview-stream";
+import { READY_TO_FINISH_PROMPT, useInterviewStream } from "./use-interview-stream";
 
 afterEach(cleanup);
 
@@ -549,10 +549,10 @@ describe("useInterviewStream", () => {
       const first = controllableResponse();
       const second = controllableResponse();
       const fetchImpl = vi.fn().mockResolvedValueOnce(first.response).mockResolvedValueOnce(second.response);
-      let resolveBeforeQuestion!: (next: { target: { targetBlock: "action"; targetElement: "b" }; lastOutcome: null }) => void;
+      let resolveBeforeQuestion!: (next: { kind: "ask"; target: { targetBlock: "action"; targetElement: "b" }; lastOutcome: null }) => void;
       const onBeforeQuestion = vi.fn(
         () =>
-          new Promise<{ target: { targetBlock: "action"; targetElement: "b" }; lastOutcome: null } | null>((resolve) => {
+          new Promise<{ kind: "ask"; target: { targetBlock: "action"; targetElement: "b" }; lastOutcome: null }>((resolve) => {
             resolveBeforeQuestion = resolve;
           })
       );
@@ -576,7 +576,7 @@ describe("useInterviewStream", () => {
       // 블록 갱신이 끝나기 전에는 질문을 요청하지 않습니다.
       expect(fetchImpl).toHaveBeenCalledTimes(1);
 
-      act(() => resolveBeforeQuestion({ target: { targetBlock: "action", targetElement: "b" }, lastOutcome: null }));
+      act(() => resolveBeforeQuestion({ kind: "ask", target: { targetBlock: "action", targetElement: "b" }, lastOutcome: null }));
       await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
       expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual({
         snapshot,
@@ -598,6 +598,7 @@ describe("useInterviewStream", () => {
         conflicts: [{ observation: "근거는 fetch 기반 수신을 보여 줍니다." }],
       };
       const onBeforeQuestion = vi.fn(async () => ({
+        kind: "ask" as const,
         target: { targetBlock: "result" as const, targetElement: "b" as const },
         lastOutcome,
       }));
@@ -626,10 +627,10 @@ describe("useInterviewStream", () => {
 
 
 
-    it("onBeforeQuestion이 null을 돌려주면 질문을 요청하지 않고 done으로 둔다", async () => {
+    it("onBeforeQuestion이 stop을 돌려주면 안내 없이 질문을 요청하지 않고 done으로 둡니다", async () => {
       const first = controllableResponse();
       const fetchImpl = vi.fn().mockResolvedValueOnce(first.response);
-      const onBeforeQuestion = vi.fn().mockResolvedValue(null);
+      const onBeforeQuestion = vi.fn().mockResolvedValue({ kind: "stop" as const });
       const { result } = renderHook(() =>
         useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, onBeforeQuestion, ...immediate })
       );
@@ -642,15 +643,65 @@ describe("useInterviewStream", () => {
       });
       await waitFor(() => expect(result.current.status).toBe("done"));
       expect(fetchImpl).toHaveBeenCalledTimes(1);
+      // stop은 안내 메시지를 넣지 않습니다. 마지막 메시지는 여전히 사용자 답변입니다.
+      expect(result.current.messages.at(-1)?.role).toBe("answer");
+    });
+
+    it("onBeforeQuestion이 ready_to_finish를 돌려주면 완료 대기 안내를 질문 자리에 넣고 보충 답변을 받는다 (구현검토 P1-4 재검증)", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const fetchImpl = vi.fn().mockResolvedValueOnce(first.response).mockResolvedValueOnce(second.response);
+      const onBeforeQuestion = vi
+        .fn()
+        .mockResolvedValueOnce({ kind: "ready_to_finish" as const })
+        .mockResolvedValueOnce({
+          kind: "ask" as const,
+          target: { targetBlock: "result" as const, targetElement: "a" as const },
+          lastOutcome: null,
+        });
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, onBeforeQuestion, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+      act(() => {
+        result.current.submitAnswer("답변");
+      });
+      // 완료 대기 안내가 "질문" 역할로 들어옵니다. 이것이 없으면 다음 답변이 답변 바로 뒤에 붙어 질문·답변 교대
+      // 계약이 깨집니다(이전 수정의 회귀, 재검증에서 발견).
+      await waitFor(() => expect(result.current.messages.at(-1)?.role).toBe("question"));
+      expect(result.current.messages.at(-1)?.text).toBe(READY_TO_FINISH_PROMPT);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+      act(() => {
+        expect(result.current.submitAnswer("보충 답변입니다.")).toBe(true);
+      });
+
+      // 보충 답변이 새 대상을 열어 실제 질문 요청이 나가면, 이력이 여전히 질문·답변·질문·답변으로 번갈아야 하고(서버가 거절하지 않아야 하고), lastOutcome도 그대로 실려야 합니다.
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual({
+        snapshot,
+        history: [
+          { role: "question", text: "첫 질문" },
+          { role: "answer", text: "답변" },
+          { role: "question", text: READY_TO_FINISH_PROMPT },
+          { role: "answer", text: "보충 답변입니다." },
+        ],
+        targetBlock: "result",
+        targetElement: "a",
+      });
     });
 
     it("onBeforeQuestion 진행 중 종료하면 응답이 와도 질문을 요청하지 않는다", async () => {
       const first = controllableResponse();
       const fetchImpl = vi.fn().mockResolvedValueOnce(first.response);
-      let resolveBeforeQuestion!: (next: { target: { targetBlock: "problem"; targetElement: "a" }; lastOutcome: null } | null) => void;
+      let resolveBeforeQuestion!: (next: { kind: "ask"; target: { targetBlock: "problem"; targetElement: "a" }; lastOutcome: null }) => void;
       const onBeforeQuestion = vi.fn(
         () =>
-          new Promise<{ target: { targetBlock: "problem"; targetElement: "a" }; lastOutcome: null } | null>((resolve) => {
+          new Promise<{ kind: "ask"; target: { targetBlock: "problem"; targetElement: "a" }; lastOutcome: null }>((resolve) => {
             resolveBeforeQuestion = resolve;
           })
       );
@@ -667,7 +718,7 @@ describe("useInterviewStream", () => {
       act(() => {
         result.current.endInterview();
       });
-      act(() => resolveBeforeQuestion({ target: { targetBlock: "problem", targetElement: "a" }, lastOutcome: null }));
+      act(() => resolveBeforeQuestion({ kind: "ask", target: { targetBlock: "problem", targetElement: "a" }, lastOutcome: null }));
       await Promise.resolve();
 
       expect(fetchImpl).toHaveBeenCalledTimes(1);
