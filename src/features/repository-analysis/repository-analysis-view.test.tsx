@@ -163,6 +163,23 @@ describe("RepositoryAnalysisView Loading", () => {
     expect(items.map((item) => item.getAttribute("data-state"))).toEqual(states);
   });
 
+  // PR #105 Codex 리뷰 P1: 완료·진행·대기 구분이 aria-hidden 기호와 CSS에만 있으면 스크린리더는
+  // 여섯 라벨을 구분 없이 나열합니다. 진행 중 항목에 aria-current를 두고 항목마다 상태 문구를 노출합니다.
+  it("진행 중 항목에만 aria-current=\"step\"을 표시한다", async () => {
+    mockState({ status: "loading", loading: { step: "deriving" } });
+    await renderAndAnalyze();
+    const items = screen.getAllByRole("listitem");
+    expect(items.map((item) => item.getAttribute("aria-current"))).toEqual([null, null, null, "step", null, null]);
+  });
+
+  it("항목마다 완료·진행·대기 상태를 텍스트로도 노출한다", async () => {
+    mockState({ status: "loading", loading: { step: "deriving" } });
+    await renderAndAnalyze();
+    expect(screen.getAllByText("Completed:")).toHaveLength(3);
+    expect(screen.getByText("In progress:")).toBeInTheDocument();
+    expect(screen.getAllByText("Pending:")).toHaveLength(2);
+  });
+
   it("상세 조회 단계는 n / total 진행률을 함께 표시한다", async () => {
     mockState({ status: "loading", loading: { step: "details", completed: 2, total: 5, phase: "commit_details" } });
     await renderAndAnalyze();
@@ -535,7 +552,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
 
   it("계약 위반 오류는 retryPoint 없이 전체 조회 재시도로 처음부터 입력을 다시 구성한다", async () => {
     const error: AnalysisError = {
-      kind: "server_error",
+      kind: "contract_violation",
       title: "후보 생성 요청이 서버 계약과 맞지 않았습니다",
       message: "같은 입력을 그대로 다시 보내지 않고 Repository 조회부터 다시 구성해 재시도합니다.",
       recovery: "retry",

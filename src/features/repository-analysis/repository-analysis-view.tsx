@@ -35,6 +35,18 @@ const CHECKLIST_STEPS = [
 
 type ChecklistKey = (typeof CHECKLIST_STEPS)[number]["key"];
 
+/**
+ * ✓·●·○ 기호는 `aria-hidden`이고 완료·진행·대기 구분이 `data-state`와 CSS에만 있어 스크린리더에는
+ * 여섯 항목의 라벨만 똑같이 나열됐습니다(PR #105 Codex 리뷰 P1). 항목마다 상태 문구를 시각적으로
+ * 숨겨 함께 두면 `checklistStatus`의 `aria-live="polite"`가 단계 전환마다 바뀌는 이 문구를 읽어,
+ * 기존 `LoadingState`가 `role="status"`로 현재 단계 제목을 알리던 것과 같은 효과를 냅니다.
+ */
+const CHECKLIST_STATUS_TEXT: Record<"done" | "active" | "pending", string> = {
+  done: "Completed:",
+  active: "In progress:",
+  pending: "Pending:",
+};
+
 function checklistKeyFor(loading: LoadingPhase): ChecklistKey {
   if (loading.step === "details") {
     return loading.phase === "repository_metadata" ? "repository_metadata" : "commit_details";
@@ -181,11 +193,19 @@ function LoadingChecklist({
                 ? `${loading.completed} / ${loading.total}`
                 : null;
             return (
-              <li key={step.key} className={styles.checklistItem} data-state={symbolState}>
+              <li
+                key={step.key}
+                className={styles.checklistItem}
+                data-state={symbolState}
+                aria-current={symbolState === "active" ? "step" : undefined}
+              >
                 <span className={styles.symbol} aria-hidden="true">
                   {symbolState === "done" ? "✓" : symbolState === "active" ? "●" : "○"}
                 </span>
-                <span className={styles.checklistLabel}>{step.label}</span>
+                <span className={styles.checklistLabel}>
+                  <span className={styles.visuallyHidden}>{CHECKLIST_STATUS_TEXT[symbolState]} </span>
+                  {step.label}
+                </span>
                 {progress ? <span className={styles.checklistProgress}>{progress}</span> : null}
               </li>
             );
