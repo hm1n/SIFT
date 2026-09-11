@@ -1,6 +1,13 @@
+import { jsonSchema, type JSONSchema7 } from "ai";
 import type { ExperienceEvidenceSnapshot } from "../experience-candidates/types";
 import { BLOCK_MAX_BYTES, BLOCK_MAX_STATEMENTS } from "../experience-block/reducer";
-import { BLOCK_PURPOSES, type BlockKind, type ExperienceBlockState } from "../experience-block/types";
+import {
+  BLOCK_KINDS,
+  BLOCK_PURPOSES,
+  type BlockKind,
+  type BlockUpdateOutput,
+  type ExperienceBlockState,
+} from "../experience-block/types";
 import {
   renderInterviewEvidencePrompt,
   type InterviewPromptVariant,
@@ -119,3 +126,92 @@ export function buildBlockUpdatePrompt({
     }),
   };
 }
+
+const BLOCK_UPDATE_SOURCE_JSON_SCHEMA: JSONSchema7 = {
+  type: "object",
+  additionalProperties: false,
+  required: ["source", "commitSha", "filePath"],
+  properties: {
+    source: { type: "string", enum: ["repository", "user"] },
+    commitSha: { type: ["string", "null"] },
+    filePath: { type: ["string", "null"] },
+  },
+};
+
+/**
+ * 블록 갱신 호출의 구조화 출력 스키마입니다. 이슈 #88 3차 실측(`.measurements/block-update-v5-claims`)에서
+ * 116건 호출에 실제로 쓴 스키마와 같은 모양입니다. `op`마다 쓰지 않는 필드는 null로 채우는 평평한
+ * 구조이고(각 op 종류를 나누는 discriminated union이 아님), `RULES`가 모델에게 이 모양을 직접
+ * 지시합니다. 필드 값의 의미(존재하는 커밋인지, 참조가 같은 블록인지 등)는 여기서 검증하지 않고
+ * `applyBlockUpdate`가 근거 스냅샷과 상태를 대조해 검증합니다.
+ */
+export const BLOCK_UPDATE_OUTPUT_JSON_SCHEMA: JSONSchema7 = {
+  type: "object",
+  additionalProperties: false,
+  required: ["ops", "display", "evaluation"],
+  properties: {
+    ops: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["op", "tempId", "claimId", "block", "text", "sources", "observation"],
+        properties: {
+          op: { type: "string", enum: ["add", "revise", "retract", "conflict"] },
+          tempId: { type: ["string", "null"] },
+          claimId: { type: ["string", "null"] },
+          block: { type: ["string", "null"], enum: [...BLOCK_KINDS, null] },
+          text: { type: ["string", "null"] },
+          sources: { type: ["array", "null"], items: BLOCK_UPDATE_SOURCE_JSON_SCHEMA },
+          observation: { type: ["string", "null"] },
+        },
+      },
+    },
+    display: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["block", "sentences"],
+        properties: {
+          block: { type: "string", enum: [...BLOCK_KINDS] },
+          sentences: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["text", "claimIds"],
+              properties: {
+                text: { type: "string" },
+                claimIds: { type: "array", items: { type: "string" } },
+              },
+            },
+          },
+        },
+      },
+    },
+    evaluation: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["block", "sufficient", "askable", "reason"],
+        properties: {
+          block: { type: "string", enum: [...BLOCK_KINDS] },
+          sufficient: { type: "boolean" },
+          askable: { type: "boolean" },
+          reason: {
+            type: "string",
+            enum: ["sufficient", "askable", "unknown", "not_done", "refused", "none"],
+          },
+        },
+      },
+    },
+  },
+};
+
+/**
+ * `generateObject`에 직접 전달하는 스키마입니다. 값 검증은 `applyBlockUpdate`가 맡으므로 `validate`
+ * 콜백을 따로 두지 않습니다(`experience-candidates/schema.ts`와 달리 이중 검증을 두지 않는 이유입니다).
+ */
+export const blockUpdateOutputSchema = jsonSchema<BlockUpdateOutput>(BLOCK_UPDATE_OUTPUT_JSON_SCHEMA);

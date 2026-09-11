@@ -53,7 +53,8 @@ export type BlockUpdateResult =
   | { readonly ok: false; readonly errors: readonly { kind: BlockUpdateRejection; detail: string }[] };
 
 const utf8 = new TextEncoder();
-function byteLength(text: string): number {
+/** route의 요청 사전 검증(`experience-block/request.ts`)도 같은 측정 방식을 씁니다. */
+export function byteLength(text: string): number {
   return utf8.encode(text).byteLength;
 }
 
