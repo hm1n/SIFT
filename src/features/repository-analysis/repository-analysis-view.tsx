@@ -64,6 +64,8 @@ export interface RepositoryAnalysisViewProps {
   contributionItems: readonly string[];
   /** 다른 Repository 선택입니다. 선택 화면으로 되돌아가는 일은 `RepositoryFlow`가 합니다. */
   onSelectRepository: () => void;
+  /** `ExperienceCandidateList`로 그대로 전달합니다. `RepositoryFlow`가 사이드바 이탈 확인에 씁니다. */
+  onInterviewActiveChange?: (active: boolean) => void;
 }
 
 /**
@@ -76,7 +78,7 @@ export interface RepositoryAnalysisViewProps {
  * 로그아웃 진입점은 둘입니다. 상단 헤더의 Sign out과 이 화면 오류 안내의 다시 로그인입니다. 둘 다 세션 삭제 뒤 라우터를 갱신해
  * 서버가 헤더와 화면을 함께 다시 그립니다. 내려간 뒤 늦게 도착하는 결과는 실행 번호로 걸러냅니다.
  */
-export function RepositoryAnalysisView({ repository, contributionItems, onSelectRepository }: RepositoryAnalysisViewProps) {
+export function RepositoryAnalysisView({ repository, contributionItems, onSelectRepository, onInterviewActiveChange }: RepositoryAnalysisViewProps) {
   const router = useRouter();
   const [state, setState] = useState<AnalysisState>(INITIAL_STATE);
   // 진행 중인 분석의 실행 번호입니다. 초기화 뒤 늦게 도착한 결과가 화면에 다시 나타나지 않게 걸러냅니다.
@@ -154,6 +156,7 @@ export function RepositoryAnalysisView({ repository, contributionItems, onSelect
             candidates={state.candidates}
             stageASelection={state.stageASelection}
             onSelectRepository={onSelectRepository}
+            onInterviewActiveChange={onInterviewActiveChange}
           />
         </div>
       ) : null}

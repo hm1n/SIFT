@@ -249,6 +249,40 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
     expect(screen.getByText(/일부 코드 변경 내역이 절단되거나 미포함/)).toBeInTheDocument();
   });
 
+  // PR #105 Codex 리뷰 P1: 인터뷰 활성 여부를 상위가 모르면 AppShell 사이드바의 Change repository가
+  // InterviewScreen의 이탈 확인을 건너뛰고 대화를 잃습니다. 확정·목록 복귀마다 상위에 알려야 합니다.
+  it("인터뷰를 확정하고 목록으로 돌아갈 때마다 onInterviewActiveChange를 부른다", () => {
+    const onInterviewActiveChange = vi.fn();
+    const data: CandidateDataOutput = {
+      allCommits: [commit("aaa", "재시도 큐 도입")],
+      includedCommits: [commit("aaa", "재시도 큐 도입")],
+      repository: { fileTree: [], treeTruncated: false, languages: {} },
+    };
+    const candidates: StageBCandidateResult = {
+      candidates: [candidate("aaa")],
+      insufficientCandidatesReason: "후보가 부족합니다.",
+      diffs: [],
+    };
+    render(
+      <ExperienceCandidateList
+        repository={{ owner: "hm1n", repo: "demian" }}
+        data={data}
+        candidates={candidates}
+        onSelectRepository={vi.fn()}
+        onInterviewActiveChange={onInterviewActiveChange}
+      />
+    );
+    expect(onInterviewActiveChange).toHaveBeenLastCalledWith(false);
+
+    fireEvent.click(screen.getByRole("button", { name: /재시도 큐 도입/ }));
+    fireEvent.click(screen.getByRole("button", { name: CONFIRM_LABEL }));
+    expect(onInterviewActiveChange).toHaveBeenLastCalledWith(true);
+
+    fireEvent.click(screen.getByRole("button", { name: BACK_LABEL }));
+    fireEvent.click(screen.getByRole("button", { name: "후보 목록으로 돌아가기" }));
+    expect(onInterviewActiveChange).toHaveBeenLastCalledWith(false);
+  });
+
   it("근거가 입력 상한을 넘으면 무엇이 부족한지 알린다", () => {
     renderList(
       [candidate("aaa")],
