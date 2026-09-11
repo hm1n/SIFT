@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { SESSION_PATH } from "@/lib/github/auth-paths";
 import type { RepositoryRef } from "@/lib/github/types";
 import { ExperienceCandidateList, StageAExclusions } from "@/features/experience-candidates/experience-candidate-list";
@@ -17,10 +17,6 @@ import styles from "./repository-analysis.module.css";
 
 const INITIAL_STATE: AnalysisState = { status: "idle" };
 
-// ponytail: 줄바꿈을 항목 경계로 고정합니다. 항목 안에 여러 줄 설명이 필요해질 때 구조화 입력으로 승격합니다.
-export function parseContributionItems(value: string) {
-  return value.split("\n").map((item) => item.trim()).filter(Boolean);
-}
 
 function loadingCopy(loading: LoadingPhase) {
   if (loading.step === "commits") {
@@ -70,44 +66,37 @@ function loadingCopy(loading: LoadingPhase) {
   };
 }
 
+export interface RepositoryAnalysisViewProps {
+  repository: RepositoryRef;
+  contributionItems: readonly string[];
+  /** 다른 Repository 선택입니다. 선택 화면으로 되돌아가는 일은 `RepositoryFlow`가 합니다. */
+  onSelectRepository: () => void;
+}
+
 /**
- * 세션 여부의 출처는 서버가 쿠키를 읽어 넘기는 `hasSession` prop 하나입니다. 화면이 따로 들고 있지 않습니다.
- * 로그아웃 진입점은 둘입니다. 상단 헤더의 Sign out과 이 화면 오류 안내의 다시 로그인입니다. 둘 다 세션 삭제 뒤
- * 라우터를 갱신해 서버가 헤더와 화면을 함께 다시 그리게 합니다. `page.tsx`는 세션이 없으면 이 화면 대신 로그인 화면을
- * 그리고, 이 화면이 세션 없는 prop을 받으면 분석 상태를 버립니다. 한쪽만 갱신하면 로그아웃 뒤에도 비공개 저장소의
- * 후보 목록이 남습니다. PR #99 리뷰 P1이 이 지점이었습니다. 로그인 안내 자체는 `features/auth/login-screen.tsx`에 있습니다.
+ * 선택한 Repository의 분석 진행과 결과 화면입니다. 마운트되면 곧바로 `analyzeRepository`를 시작합니다.
+ * Repository와 기여 항목은 #95부터 선택 화면(`features/repository-selection`)이 정해 prop으로 넘기고, 이 화면은 입력을 들고 있지 않습니다.
+ *
+ * 세션 여부는 `page.tsx`가 쿠키로 갈라 세션이 없으면 이 화면을 통째로 내리므로 여기서 세션을 다시 보지 않습니다.
+ * 로그아웃 진입점은 둘입니다. 상단 헤더의 Sign out과 이 화면 오류 안내의 다시 로그인입니다. 둘 다 세션 삭제 뒤 라우터를 갱신해
+ * 서버가 헤더와 화면을 함께 다시 그립니다. 내려간 뒤 늦게 도착하는 결과는 실행 번호로 걸러냅니다.
  */
-export function RepositoryAnalysisView({ hasSession }: { hasSession: boolean }) {
+export function RepositoryAnalysisView({ repository, contributionItems, onSelectRepository }: RepositoryAnalysisViewProps) {
   const router = useRouter();
-  const [owner, setOwner] = useState("");
-  const [repo, setRepo] = useState("");
-  const [contributionItems, setContributionItems] = useState("");
-  const [analyzedRepository, setAnalyzedRepository] = useState<RepositoryRef | null>(null);
   const [state, setState] = useState<AnalysisState>(INITIAL_STATE);
   // 진행 중인 분석의 실행 번호입니다. 초기화 뒤 늦게 도착한 결과가 화면에 다시 나타나지 않게 걸러냅니다.
   const runRef = useRef(0);
-  const ownerInput = useRef<HTMLInputElement>(null);
-  const loading = state.status === "loading";
+  // 개발 모드의 StrictMode는 effect를 두 번 실행합니다. 같은 분석을 두 번 시작하지 않게 한 번만 시작합니다.
+  const startedRef = useRef(false);
 
-  function resetAnalysis() {
-    runRef.current += 1;
-    setAnalyzedRepository(null);
-    setState(INITIAL_STATE);
-  }
-
-  // 세션이 사라지면 분석 상태를 버립니다. 렌더 중에 prop 변화를 감지해 상태를 비우고(effect의 setState는 lint가 막습니다),
-  // 실행 번호는 렌더 중에 ref를 만질 수 없어 effect에서 올립니다. 그 사이 도착하는 결과는 아래 렌더의 세션 게이트가 막습니다.
-  const [seenHasSession, setSeenHasSession] = useState(hasSession);
-  if (hasSession !== seenHasSession) {
-    setSeenHasSession(hasSession);
-    if (!hasSession) {
-      setAnalyzedRepository(null);
-      setState(INITIAL_STATE);
-    }
-  }
   useEffect(() => {
-    if (!hasSession) runRef.current += 1;
-  }, [hasSession]);
+    if (startedRef.current) return;
+    startedRef.current = true;
+    const run = ++runRef.current;
+    void analyzeRepository(repository, contributionItems, (next) => {
+      if (runRef.current === run) setState(next);
+    });
+  }, [repository, contributionItems]);
 
   /** 이 실행이 아직 최신일 때만 상태를 반영합니다. */
   function stateSinkFor(run: number) {
@@ -116,42 +105,24 @@ export function RepositoryAnalysisView({ hasSession }: { hasSession: boolean }) 
     };
   }
 
-  function analyze(repository: RepositoryRef) {
-    setAnalyzedRepository(repository);
-    return analyzeRepository(repository, parseContributionItems(contributionItems), stateSinkFor(runRef.current));
-  }
-
-  function runAnalysis() {
-    const repository = { owner: owner.trim(), repo: repo.trim() };
-    if (hasSession) return analyze(repository);
-  }
-
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    runAnalysis();
+  function restart() {
+    runRef.current += 1;
+    return analyzeRepository(repository, contributionItems, stateSinkFor(runRef.current));
   }
 
   function retry() {
     if (state.status === "error" && state.retryPoint) {
-      setAnalyzedRepository(state.retryPoint.repository);
       return generateCandidates(state.retryPoint, stateSinkFor(runRef.current));
     }
-    runAnalysis();
+    return restart();
   }
 
   async function reauthenticate() {
     // 삭제가 실패해도 진행합니다. 갱신된 헤더가 로그인 상태로 남으면 사용자가 알 수 있습니다.
     await fetch(SESSION_PATH, { method: "DELETE" }).catch(() => undefined);
-    resetAnalysis();
+    runRef.current += 1;
+    setState(INITIAL_STATE);
     router.refresh();
-  }
-
-  function selectRepository() {
-    setOwner("");
-    setRepo("");
-    setContributionItems("");
-    resetAnalysis();
-    requestAnimationFrame(() => ownerInput.current?.focus());
   }
 
   return (
@@ -163,52 +134,31 @@ export function RepositoryAnalysisView({ hasSession }: { hasSession: boolean }) 
       </header>
 
       <main className={styles.card}>
-        {hasSession ? <form className={styles.form} onSubmit={handleSubmit}>
-          <div className={styles.repositoryFields}>
-            <label className={styles.field}>
-              Owner
-              <input ref={ownerInput} name="owner" value={owner} onChange={(event) => setOwner(event.target.value)} placeholder="octocat" autoComplete="off" disabled={loading} required />
-            </label>
-            <label className={styles.field}>
-              Repository
-              <input name="repository" value={repo} onChange={(event) => setRepo(event.target.value)} placeholder="hello-world" autoComplete="off" disabled={loading} required />
-            </label>
-          </div>
-          <label className={styles.field}>
-            본인 기여 항목 (선택)
-            <textarea name="contributionItems" value={contributionItems} onChange={(event) => setContributionItems(event.target.value)} placeholder={"푸시 알림 구현\n게시판 기능 구현"} autoComplete="off" disabled={loading} rows={4} />
-            <span className={styles.hint}>기억나는 기여를 한 줄에 하나씩 입력해 주세요. 비워두면 Repository 근거만으로 경험 후보를 찾습니다.</span>
-          </label>
-          <button className={styles.button} type="submit" disabled={loading}>
-            {loading ? "Repository 분석 중" : "Repository 분석 시작"}
-          </button>
-        </form> : null}
-
-        {hasSession && state.status === "loading" ? <LoadingState loading={state.loading} /> : null}
-        {hasSession && state.status === "empty" ? (
+        {state.status === "loading" ? <LoadingState loading={state.loading} /> : null}
+        {state.status === "empty" ? (
           <EmptyState
             kind={state.kind}
             reason={state.kind === "no_final_candidates" ? state.reason : undefined}
             stageASelection={state.stageASelection}
-            onSelectRepository={selectRepository}
+            onSelectRepository={onSelectRepository}
           />
         ) : null}
-        {hasSession && state.status === "error" ? (
+        {state.status === "error" ? (
           <ErrorState
             error={state.error}
             retryLabel={state.retryPoint ? "후보 생성 다시 시도" : "전체 조회 다시 시도"}
             onRetry={retry}
             onReauthenticate={reauthenticate}
-            onSelectRepository={selectRepository}
+            onSelectRepository={onSelectRepository}
           />
         ) : null}
-        {hasSession && state.status === "success" && analyzedRepository ? (
+        {state.status === "success" ? (
           <ExperienceCandidateList
-            repository={analyzedRepository}
+            repository={repository}
             data={state.data}
             candidates={state.candidates}
             stageASelection={state.stageASelection}
-            onSelectRepository={selectRepository}
+            onSelectRepository={onSelectRepository}
           />
         ) : null}
       </main>

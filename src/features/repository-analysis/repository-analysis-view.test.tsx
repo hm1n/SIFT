@@ -15,7 +15,7 @@ import {
   type CandidateRetryPoint,
   type StageASelectionState,
 } from "./repository-analysis";
-import { parseContributionItems, RepositoryAnalysisView } from "./repository-analysis-view";
+import { RepositoryAnalysisView } from "./repository-analysis-view";
 
 
 function commit(sha: string, title: string): ReadonlyCommitDetail {
@@ -42,15 +42,17 @@ vi.mock("./repository-analysis", async (importOriginal) => {
   return { ...original, analyzeRepository: vi.fn(), generateCandidates: vi.fn() };
 });
 
-/** 라우터 갱신은 서버가 prop을 다시 넘기는 일이므로, 테스트가 그 뒤에 세션 없는 prop으로 다시 그립니다. */
 const routerMock = { push: vi.fn(), refresh: vi.fn() };
 vi.mock("next/navigation", () => ({ useRouter: () => routerMock }));
 
 const analyzeMock = vi.mocked(analyzeRepository);
 const generateMock = vi.mocked(generateCandidates);
 
+const REPOSITORY = { owner: "octocat", repo: "hello-world" };
+const onSelectRepository = vi.fn();
+
 const RETRY_POINT: CandidateRetryPoint = {
-  repository: { owner: "octocat", repo: "hello-world" },
+  repository: REPOSITORY,
   contributionItems: [],
   data: { allCommits: [], includedCommits: [], repository: { fileTree: [], treeTruncated: false, languages: {} } },
 };
@@ -62,15 +64,17 @@ const EMPTY_STAGE_A_SELECTION: StageASelectionState = {
   unjudgedShas: [],
 };
 
-function fillRepository() {
-  fireEvent.change(screen.getByLabelText("Owner"), { target: { value: "octocat" } });
-  fireEvent.change(screen.getByLabelText("Repository"), { target: { value: "hello-world" } });
+/** Repository와 기여 항목은 선택 화면이 prop으로 넘기고, 화면은 마운트되자마자 분석을 시작합니다. */
+function renderView(contributionItems: readonly string[] = []) {
+  return render(
+    <RepositoryAnalysisView repository={REPOSITORY} contributionItems={contributionItems} onSelectRepository={onSelectRepository} />
+  );
 }
 
-async function submitRepository() {
-  fillRepository();
-  fireEvent.click(screen.getByRole("button", { name: "Repository 분석 시작" }));
+async function renderAndAnalyze(contributionItems: readonly string[] = []) {
+  const view = renderView(contributionItems);
   await waitFor(() => expect(analyzeMock).toHaveBeenCalled());
+  return view;
 }
 
 function mockState(state: AnalysisState) {
@@ -81,16 +85,34 @@ beforeEach(() => {
   analyzeMock.mockReset();
   generateMock.mockReset();
   routerMock.refresh.mockReset();
+  onSelectRepository.mockReset();
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 204 })));
-  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
-    callback(0);
-    return 0;
-  });
 });
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+});
+
+describe("RepositoryAnalysisView 시작", () => {
+  it("마운트되면 받은 Repository와 기여 항목으로 분석을 한 번 시작한다", async () => {
+    await renderAndAnalyze(["푸시 알림 구현", "게시판 기능 구현"]);
+    expect(analyzeMock).toHaveBeenCalledTimes(1);
+    expect(analyzeMock).toHaveBeenCalledWith(REPOSITORY, ["푸시 알림 구현", "게시판 기능 구현"], expect.any(Function));
+  });
+
+  it("Owner·Repository 입력 폼과 기여 항목 입력을 그리지 않는다", async () => {
+    await renderAndAnalyze();
+    expect(screen.queryByLabelText("Owner")).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("다시 그려도 분석을 다시 시작하지 않는다", async () => {
+    const { rerender } = await renderAndAnalyze();
+    rerender(<RepositoryAnalysisView repository={REPOSITORY} contributionItems={[]} onSelectRepository={onSelectRepository} />);
+    await Promise.resolve();
+    expect(analyzeMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("RepositoryAnalysisView Loading", () => {
@@ -102,8 +124,7 @@ describe("RepositoryAnalysisView Loading", () => {
     [{ status: "loading", loading: { step: "stage_b" } }, "5·6단계", "diff·PR 근거를 수집하고 최종 후보를 판단하고 있습니다"],
   ] as const)("각 단계의 %s 상태를 구분해 표시한다", async (state, step, copy) => {
     mockState(state);
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
     expect(screen.getByRole("status")).toHaveTextContent(step);
     expect(screen.getByRole("status")).toHaveTextContent(copy);
   });
@@ -112,51 +133,11 @@ describe("RepositoryAnalysisView Loading", () => {
   // 때까지 0에 멈춰 있어 실제와 달랐습니다(2026-09-02 브라우저 실측에서 5~6초 동안 관측).
   it("stage_a는 판단한 개수 대신 한 번에 보낸 묶음 수를 알린다", async () => {
     mockState({ status: "loading", loading: { step: "stage_a", total: 67 } });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
     expect(screen.getByRole("status")).toHaveTextContent(
       "67개 묶음을 한 번의 요청으로 판단하고 있습니다. 중간 진행률은 알 수 없습니다."
     );
     expect(screen.getByRole("status")).not.toHaveTextContent("판단했고");
-  });
-});
-
-describe("RepositoryAnalysisView 기여 항목", () => {
-  it.each([
-    ["푸시 알림 구현\n게시판 기능 구현", ["푸시 알림 구현", "게시판 기능 구현"]],
-    ["", []],
-    ["  푸시 알림 구현  \n\n  ", ["푸시 알림 구현"]],
-  ])("입력 있음·없음·일부 상태를 줄 단위 목록으로 파싱한다", (value, expected) => {
-    expect(parseContributionItems(value)).toEqual(expected);
-  });
-
-  it("기여 항목을 줄 단위 목록으로 파싱해 분석 파이프라인에 전달한다", async () => {
-    render(<RepositoryAnalysisView hasSession={true} />);
-    fireEvent.change(screen.getByLabelText(/^본인 기여 항목/), { target: { value: "푸시 알림 구현\n게시판 기능 구현" } });
-    await submitRepository();
-    expect(analyzeMock).toHaveBeenCalledWith(
-      { owner: "octocat", repo: "hello-world" },
-      ["푸시 알림 구현", "게시판 기능 구현"],
-      expect.any(Function)
-    );
-  });
-
-  it("오류 후 수정한 기여 항목을 재시도해도 현재 입력값을 유지한다", async () => {
-    mockState({ status: "error", error: { kind: "network", title: "네트워크 실패", message: "연결 확인", recovery: "retry" } });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
-    fireEvent.change(screen.getByLabelText(/^본인 기여 항목/), { target: { value: "게시판 기능 구현" } });
-    fireEvent.click(screen.getByRole("button", { name: "전체 조회 다시 시도" }));
-    expect(screen.getByLabelText(/^본인 기여 항목/)).toHaveValue("게시판 기능 구현");
-  });
-
-  it("다른 Repository를 선택하면 이전 Repository의 기여 항목을 지운다", async () => {
-    mockState({ status: "empty", kind: "no_commits" });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    fireEvent.change(screen.getByLabelText(/^본인 기여 항목/), { target: { value: "푸시 알림 구현" } });
-    await submitRepository();
-    fireEvent.click(screen.getByRole("button", { name: "다른 Repository 선택" }));
-    expect(screen.getByLabelText(/^본인 기여 항목/)).toHaveValue("");
   });
 });
 
@@ -168,38 +149,18 @@ describe("RepositoryAnalysisView Empty", () => {
     ["no_stage_a_candidates", "설명할 만한 경험 후보를 찾지 못했습니다"],
   ] as const)("%s를 별도 안내로 표시한다", async (kind, title) => {
     mockState({ status: "empty", kind });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
     expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "다른 Repository 선택" })).toBeInTheDocument();
   });
 
-  it("다른 Repository를 선택하면 이미 만든 인증 세션을 재사용한다", async () => {
+  it("다른 Repository 선택은 세션을 지우지 않고 onSelectRepository를 부른다", async () => {
     mockState({ status: "empty", kind: "no_commits" });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
     fireEvent.click(screen.getByRole("button", { name: "다른 Repository 선택" }));
-    fireEvent.change(screen.getByLabelText("Owner"), { target: { value: "hm1n" } });
-    fireEvent.change(screen.getByLabelText("Repository"), { target: { value: "demian" } });
-    fireEvent.click(screen.getByRole("button", { name: "Repository 분석 시작" }));
-
-    await waitFor(() => expect(analyzeMock).toHaveBeenCalledTimes(2));
-    expect(analyzeMock.mock.calls[1][0]).toEqual({ owner: "hm1n", repo: "demian" });
+    expect(onSelectRepository).toHaveBeenCalledTimes(1);
     expect(fetch).not.toHaveBeenCalled();
-  });
-
-  // 로그인 진입점과 auth_error 안내는 features/auth/login-screen.test.tsx로, 세션 유무에 따른 화면 분기는 app/page.test.tsx로 옮겼습니다.
-  it("세션이 없으면 분석 폼을 그리지 않고 분석하지 않는다", () => {
-    render(<RepositoryAnalysisView hasSession={false} />);
-    expect(screen.queryByLabelText("Owner")).not.toBeInTheDocument();
-    expect(analyzeMock).not.toHaveBeenCalled();
-  });
-
-  it("서버가 다시 그려 hasSession이 false로 바뀌면 폼을 내린다", () => {
-    const { rerender } = render(<RepositoryAnalysisView hasSession={true} />);
-    expect(screen.getByLabelText("Owner")).toBeInTheDocument();
-    rerender(<RepositoryAnalysisView hasSession={false} />);
-    expect(screen.queryByLabelText("Owner")).not.toBeInTheDocument();
+    expect(routerMock.refresh).not.toHaveBeenCalled();
   });
 });
 
@@ -219,8 +180,7 @@ describe("RepositoryAnalysisView Empty의 Stage A 제외 표시", () => {
         unjudgedShas: [],
       },
     });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
 
     expect(screen.getByRole("heading", { name: "1차 선별에서 제외된 항목" })).toBeInTheDocument();
     expect(screen.getByText("저장소가 커서 전체 1묶음 중 0묶음만 판단했습니다")).toBeInTheDocument();
@@ -228,16 +188,14 @@ describe("RepositoryAnalysisView Empty의 Stage A 제외 표시", () => {
 
   it("제외 0건이면 제외 섹션이 렌더되지 않는다", async () => {
     mockState({ status: "empty", kind: "no_stage_a_candidates", stageASelection: EMPTY_STAGE_A_SELECTION });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
 
     expect(screen.queryByRole("heading", { name: "1차 선별에서 제외된 항목" })).not.toBeInTheDocument();
   });
 
   it("Stage A 전에 나는 빈 상태는 stageASelection이 없어도 지금과 똑같이 동작한다", async () => {
     mockState({ status: "empty", kind: "no_commits" });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
 
     expect(screen.queryByRole("heading", { name: "1차 선별에서 제외된 항목" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "분석할 커밋이 없습니다" })).toBeInTheDocument();
@@ -250,8 +208,7 @@ describe("RepositoryAnalysisView Empty의 Stage A 제외 표시", () => {
       reason: "실제 diff 근거로 설명할 수 있는 커밋이 없습니다.",
       stageASelection: { ...EMPTY_STAGE_A_SELECTION, unjudgedShas: ["deadbeef00112233"] },
     });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
 
     expect(screen.getByText("모델이 판단하지 못한 묶음 1건")).toBeInTheDocument();
     expect(screen.getByText("deadbee")).toBeInTheDocument();
@@ -268,8 +225,7 @@ describe("RepositoryAnalysisView Empty의 Stage A 제외 표시", () => {
         unjudgedShas: [],
       },
     });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
 
     const heading = screen.getByRole("heading", { name: "설명할 만한 경험 후보를 찾지 못했습니다" });
     expect(heading.closest("section")).toHaveAttribute("aria-live", "polite");
@@ -286,8 +242,7 @@ describe("RepositoryAnalysisView Empty의 Stage A 제외 표시", () => {
         unjudgedShas: [],
       },
     });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
 
     const summaryText = "저장소가 커서 전체 1묶음 중 0묶음만 판단했습니다";
     const details = screen.getByText(summaryText).closest("details");
@@ -311,69 +266,52 @@ describe("RepositoryAnalysisView Error", () => {
 
   it.each(errors)("%s 오류에 맞는 안내와 복구 버튼을 표시한다", async (error, action) => {
     mockState({ status: "error", error });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
     expect(screen.getByRole("alert")).toHaveAttribute("data-error-kind", error.kind);
     expect(screen.getByRole("alert")).toHaveTextContent(error.message);
     expect(screen.getByRole("button", { name: action })).toBeInTheDocument();
   });
 
-  it("네트워크·서버 오류의 재시도 버튼은 같은 Repository를 전체 재조회한다", async () => {
+  it("네트워크·서버 오류의 재시도 버튼은 같은 Repository와 기여 항목으로 전체 재조회한다", async () => {
     const error: AnalysisError = { kind: "network", title: "네트워크 실패", message: "연결 확인", recovery: "retry" };
     mockState({ status: "error", error });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze(["푸시 알림 구현"]);
     fireEvent.click(screen.getByRole("button", { name: "전체 조회 다시 시도" }));
     await waitFor(() => expect(analyzeMock).toHaveBeenCalledTimes(2));
-    expect(analyzeMock.mock.calls[1][0]).toEqual({ owner: "octocat", repo: "hello-world" });
+    expect(analyzeMock.mock.calls[1][0]).toEqual(REPOSITORY);
+    expect(analyzeMock.mock.calls[1][1]).toEqual(["푸시 알림 구현"]);
+  });
+
+  it("Repository 다시 선택은 onSelectRepository를 부른다", async () => {
+    mockState({ status: "error", error: { kind: "repo_not_found", title: "미존재", message: "이름 확인", recovery: "select_repository" } });
+    await renderAndAnalyze();
+    fireEvent.click(screen.getByRole("button", { name: "Repository 다시 선택" }));
+    expect(onSelectRepository).toHaveBeenCalledTimes(1);
   });
 
   it("인증 재진행을 선택하면 세션을 삭제하고 라우터를 갱신해 헤더와 화면이 함께 로그인 전 상태가 된다", async () => {
     const error: AnalysisError = { kind: "auth_revoked", title: "인증 취소", message: "인증 필요", recovery: "reauthenticate" };
     mockState({ status: "error", error });
-    const { rerender } = render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
     fireEvent.click(screen.getByRole("button", { name: "GitHub으로 다시 로그인" }));
     await waitFor(() => expect(routerMock.refresh).toHaveBeenCalledTimes(1));
     expect(fetch).toHaveBeenLastCalledWith(SESSION_PATH, { method: "DELETE" });
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    rerender(<RepositoryAnalysisView hasSession={false} />);
-    expect(screen.queryByLabelText("Owner")).not.toBeInTheDocument();
   });
 
   // 쿠키를 지우지 못해도 오류 화면은 내리고 서버에 다시 묻습니다. 쿠키가 남았다면 서버가 로그인 상태로 다시 그려 사용자가 알 수 있습니다.
   it("세션 삭제 요청이 실패해도 분석 상태를 버리고 라우터를 갱신한다", async () => {
     const error: AnalysisError = { kind: "auth_revoked", title: "인증 취소", message: "인증 필요", recovery: "reauthenticate" };
     mockState({ status: "error", error });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
     vi.mocked(fetch).mockRejectedValueOnce(new Error("offline"));
     fireEvent.click(screen.getByRole("button", { name: "GitHub으로 다시 로그인" }));
     await waitFor(() => expect(routerMock.refresh).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  // 상단 헤더의 Sign out은 이 화면을 거치지 않고 서버가 prop만 바꿉니다. 그래도 완료된 결과가 남으면 안 됩니다.
-  it("헤더 Sign out으로 세션이 사라지면 완료된 후보 목록을 버린다", async () => {
-    mockState({
-      status: "success",
-      data: RETRY_POINT.data,
-      candidates: {
-        candidates: [{ sha: "a1b2c3d4e5", relatedShas: [], evidence: "상태 머신을 구현했습니다.", citedFilePaths: [], source: "automatic_recommendation" }],
-        insufficientCandidatesReason: null,
-        diffs: [],
-      },
-      stageASelection: EMPTY_STAGE_A_SELECTION,
-    });
-    const { rerender } = render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
-    await waitFor(() => expect(screen.getByText("상태 머신을 구현했습니다.")).toBeInTheDocument());
-    rerender(<RepositoryAnalysisView hasSession={false} />);
-    expect(screen.queryByLabelText("Owner")).not.toBeInTheDocument();
-    expect(screen.queryByText("상태 머신을 구현했습니다.")).not.toBeInTheDocument();
-  });
-
-  it("분석 진행 중 세션이 사라지면 늦게 도착한 결과를 화면에 올리지 않는다", async () => {
+  // 세션이 사라지면 page.tsx가 이 화면을 통째로 내립니다. 그 뒤 도착하는 결과는 화면에 오르지 않아야 합니다.
+  it("화면이 내려간 뒤 늦게 도착한 결과는 무시된다", async () => {
     let finish: ((state: AnalysisState) => void) | undefined;
     analyzeMock.mockImplementation((_repo, _items, onStateChange) => {
       onStateChange({ status: "loading", loading: { step: "commits" } });
@@ -384,13 +322,10 @@ describe("RepositoryAnalysisView Error", () => {
         };
       });
     });
-    const { rerender } = render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    const { unmount } = await renderAndAnalyze();
     expect(screen.getByRole("status")).toBeInTheDocument();
 
-    rerender(<RepositoryAnalysisView hasSession={false} />);
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
-
+    unmount();
     const error: AnalysisError = { kind: "auth_revoked", title: "인증 취소", message: "인증 필요", recovery: "reauthenticate" };
     finish!({ status: "error", error });
     await Promise.resolve();
@@ -398,13 +333,32 @@ describe("RepositoryAnalysisView Error", () => {
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
+  // 다시 로그인을 누른 뒤 서버가 화면을 바꾸기 전에 도착한 결과도 실행 번호로 걸러냅니다.
+  it("인증 재진행 뒤 늦게 도착한 결과는 화면에 올리지 않는다", async () => {
+    let finish: ((state: AnalysisState) => void) | undefined;
+    analyzeMock.mockImplementation((_repo, _items, onStateChange) => {
+      onStateChange({ status: "error", error: { kind: "auth_revoked", title: "인증 취소", message: "인증 필요", recovery: "reauthenticate" } });
+      return new Promise<void>((resolve) => {
+        finish = (state) => {
+          onStateChange(state);
+          resolve();
+        };
+      });
+    });
+    await renderAndAnalyze();
+    fireEvent.click(screen.getByRole("button", { name: "GitHub으로 다시 로그인" }));
+    await waitFor(() => expect(routerMock.refresh).toHaveBeenCalledTimes(1));
+
+    finish!({ status: "loading", loading: { step: "commits" } });
+    await Promise.resolve();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
 });
 
 describe("RepositoryAnalysisView 후보 생성 상태", () => {
   it("최종 후보 0개 Empty에 서버가 보낸 부족 사유와 기준 유지 안내를 함께 표시한다", async () => {
     mockState({ status: "empty", kind: "no_final_candidates", reason: "실제 diff 근거로 설명할 수 있는 커밋이 없습니다." });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
 
     expect(screen.getByRole("heading", { name: "최종 경험 후보를 만들지 못했습니다" })).toBeInTheDocument();
     expect(screen.getByText("실제 diff 근거로 설명할 수 있는 커밋이 없습니다.")).toBeInTheDocument();
@@ -428,8 +382,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
       },
       stageASelection: EMPTY_STAGE_A_SELECTION,
     });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
 
     expect(screen.getByText(/경험 후보 2개를 선정했습니다/)).toBeInTheDocument();
     expect(screen.getByText(/나머지 커밋은 diff 근거가 부족합니다/)).toBeInTheDocument();
@@ -439,7 +392,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
     expect(screen.getByText("상태 머신을 구현했습니다.")).toBeInTheDocument();
   });
 
-  it("입력 필드를 수정해도 상세 링크는 분석한 Repository를 유지한다", async () => {
+  it("상세 링크는 분석한 Repository를 가리킨다", async () => {
     const sha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     mockState({
       status: "success",
@@ -451,11 +404,8 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
       },
       stageASelection: EMPTY_STAGE_A_SELECTION,
     });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
 
-    fireEvent.change(screen.getByLabelText("Owner"), { target: { value: "wrong-owner" } });
-    fireEvent.change(screen.getByLabelText("Repository"), { target: { value: "wrong-repo" } });
     fireEvent.click(screen.getByRole("button", { name: /커밋 색인 실패 · aaaaaaa/ }));
 
     expect(screen.getByRole("link", { name: "대표 커밋 aaaaaaa" })).toHaveAttribute(
@@ -480,8 +430,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
       },
       stageASelection: EMPTY_STAGE_A_SELECTION,
     });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
 
     expect(screen.getByText(/경험 후보 3개를 선정했습니다/)).toBeInTheDocument();
     expect(screen.queryByText(/후보를 3개 채우지 않은 이유/)).not.toBeInTheDocument();
@@ -493,8 +442,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
     [{ kind: "llm_hallucination_rejected", title: "실제 Repository 근거와 맞지 않는 판단을 거부했습니다", message: "버림", recovery: "retry" }],
   ] as AnalysisError[][])("후보 생성 오류 %s에 후보 생성 재시도 버튼을 표시한다", async (error) => {
     mockState({ status: "error", error, retryPoint: RETRY_POINT });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
 
     expect(screen.getByRole("alert")).toHaveAttribute("data-error-kind", error.kind);
     expect(screen.getByRole("button", { name: "후보 생성 다시 시도" })).toBeInTheDocument();
@@ -503,8 +451,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
   it("retryPoint가 있는 오류의 재시도는 전체 재조회 대신 실패한 단계부터 다시 시작한다", async () => {
     const error: AnalysisError = { kind: "llm_call_failure", title: "실패", message: "재시도", recovery: "retry" };
     mockState({ status: "error", error, retryPoint: RETRY_POINT });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
 
     fireEvent.click(screen.getByRole("button", { name: "후보 생성 다시 시도" }));
 
@@ -521,8 +468,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
       recovery: "reauthenticate",
     };
     mockState({ status: "error", error, retryPoint: RETRY_POINT });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
 
     expect(screen.getByRole("alert")).toHaveAttribute("data-error-kind", "diff_refetch_failure");
     expect(screen.getByRole("button", { name: "GitHub으로 다시 로그인" })).toBeInTheDocument();
@@ -536,8 +482,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
       recovery: "select_repository",
     };
     mockState({ status: "error", error, retryPoint: RETRY_POINT });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
 
     expect(screen.getByRole("button", { name: "Repository 다시 선택" })).toBeInTheDocument();
   });
@@ -550,8 +495,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
       recovery: "retry",
     };
     mockState({ status: "error", error });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
 
     fireEvent.click(screen.getByRole("button", { name: "전체 조회 다시 시도" }));
 
@@ -568,8 +512,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
       recovery: "reauthenticate",
     };
     mockState({ status: "error", error, retryPoint: RETRY_POINT });
-    render(<RepositoryAnalysisView hasSession={true} />);
-    await submitRepository();
+    await renderAndAnalyze();
 
     fireEvent.click(screen.getByRole("button", { name: "GitHub으로 다시 로그인" }));
     await waitFor(() => expect(routerMock.refresh).toHaveBeenCalledTimes(1));
