@@ -172,7 +172,7 @@ describe("Stage A 후보 선별", () => {
     expect(payload.units[0]).toEqual({
       unitId: "pr:1",
       summary: [
-        "PR#1 인증 구현 [1커밋 1일 +20-2 1파일]",
+        "pr:1 인증 구현 [1커밋 1일 +20-2 1파일]",
         "  feat: 인증 구현",
         "  src/{auth.ts}",
       ].join("\n"),
@@ -205,6 +205,42 @@ describe("Stage A 후보 선별", () => {
       { sha: fullSha, source: "automatic_recommendation", contributionItem: null },
     ]);
     expect(output.unclassifiedShas).toEqual([]);
+  });
+
+  /**
+   * 이슈 #107 회귀입니다. 머리줄 표기와 응답 식별자가 서로 달랐을 때 `gemini-3.1-flash-lite`는
+   * 표기를 되돌리는 대신 머리줄을 그대로 복사했습니다. 지금은 둘이 같으므로 옛 표기는 입력
+   * 집합에 없는 식별자입니다.
+   *
+   * `PR#1`을 관대하게 받아주는 방식은 택하지 않습니다. 같은 관대함이 단일 커밋 단위의 잘린
+   * 식별자(`commit:82`)까지 받게 만들어 잘못된 커밋에 판정이 붙습니다. 아래 테스트와 한 쌍으로
+   * 정확히 일치할 때만 받는다는 계약을 고정합니다.
+   */
+  it("모델이 옛 머리줄 표기로 답하면 미지 식별자로 거부한다", async () => {
+    await expect(selectStageACandidates(input, async () => ({ decisions: [
+      { unitId: "PR#1", contributionItem: null, recommended: false },
+      { unitId: "PR#2", contributionItem: null, recommended: false },
+      { unitId: "PR#3", contributionItem: null, recommended: false },
+    ] }))).rejects.toMatchObject({
+      kind: "unknown_sha",
+      unknownShas: ["PR#1", "PR#2", "PR#3"],
+    });
+  });
+
+  /** 잘린 SHA는 어느 커밋을 가리키는지 확정할 수 없으므로 접두 일치로 받지 않습니다(이슈 #107). */
+  it("모델이 SHA를 7자리보다 짧게 잘라 답하면 미지 식별자로 거부한다", async () => {
+    const fullSha = "82dbaa1" + "c".repeat(33);
+    const truncatedInput: StageAInput = {
+      contributionItems: [],
+      candidateLimit: 2,
+      units: [commitUnit(fullSha, "직접 푸시한 변경")],
+    };
+
+    await expect(
+      selectStageACandidates(truncatedInput, async () => ({
+        decisions: [{ unitId: "commit:82", contributionItem: null, recommended: true }],
+      }))
+    ).rejects.toMatchObject({ kind: "unknown_sha", unknownShas: ["commit:82"] });
   });
 
   it("SHA 앞 7자리가 같은 두 단일 커밋이 있으면 모델을 부르지 않고 거부한다", async () => {
@@ -446,7 +482,7 @@ describe("로컬 전용 입력 범위 안내", () => {
 
     const call = await capturedCall();
 
-    expect(call.system).toContain("판단 대상은 각 묶음 첫 줄의 'PR#번호' 또는 '커밋 SHA7자리'뿐입니다");
+    expect(call.system).toContain("판단 대상은 각 묶음 첫 줄의 'pr:번호' 또는 'commit:SHA7자리'뿐입니다");
     expect(call.temperature).toBe(0);
     // 프로덕션 지시는 그대로 남아 있어야 합니다.
     expect(call.system).toContain("decisions 배열은 입력에 있는 판단 단위 전부를");

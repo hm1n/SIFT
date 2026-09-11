@@ -371,7 +371,7 @@ function localInputScopeHint(): string {
   return [
     "",
     "",
-    "판단 대상은 각 묶음 첫 줄의 'PR#번호' 또는 '커밋 SHA7자리'뿐입니다. 커밋 제목 안에 적힌 다른 " +
+    "판단 대상은 각 묶음 첫 줄의 'pr:번호' 또는 'commit:SHA7자리'뿐입니다. 커밋 제목 안에 적힌 다른 " +
       "PR 번호나 SHA는 판단 대상이 아니므로 decisions에 넣지 마세요. decisions의 길이는 입력 묶음 " +
       "수와 정확히 같아야 합니다.",
   ].join("\n");
@@ -411,9 +411,9 @@ export function createStageAGenerate(
        * 결과여야 하므로 하한을 제거합니다. 전후 측정은 `llm-wiki/raw`에 기록합니다.
        */
       system:
-        `Pull Request 단위 작업 묶음 또는 단일 커밋 판단 단위를 보고 개발 경험 후보를 선별하세요. 각 묶음은 'PR#번호 제목 [커밋수 기간 증감 파일수]' 또는 '커밋 SHA7자리 제목 [커밋수 기간 증감 파일수]' 한 줄로 시작합니다. Pull Request 단위는 커밋 제목 목록이 뒤따르고, 두 종류 모두 변경량 상위 파일 경로가 뒤따를 수 있습니다.
+        `Pull Request 단위 작업 묶음 또는 단일 커밋 판단 단위를 보고 개발 경험 후보를 선별하세요. 각 묶음은 'pr:번호 제목 [커밋수 기간 증감 파일수]' 또는 'commit:SHA7자리 제목 [커밋수 기간 증감 파일수]' 한 줄로 시작합니다. Pull Request 단위는 커밋 제목 목록이 뒤따르고, 두 종류 모두 변경량 상위 파일 경로가 뒤따를 수 있습니다.
 
-가장 중요한 규칙입니다. decisions 배열은 입력에 있는 판단 단위 전부를 하나도 빠뜨리지 않고 각각 정확히 한 번 담아야 합니다. 입력 묶음이 N개면 decisions도 반드시 N개입니다. 추천하지 않는 묶음도 반드시 담습니다. 각 판정의 unitId는 그 묶음 머리줄의 식별자를 그대로 옮겨 답합니다. 'PR#'로 시작하면 'pr:번호' 형식으로(예: 'PR#12' → 'pr:12'), '커밋'으로 시작하면 'commit:SHA7자리' 형식으로(예: '커밋 abc1234' → 'commit:abc1234') 씁니다.
+가장 중요한 규칙입니다. decisions 배열은 입력에 있는 판단 단위 전부를 하나도 빠뜨리지 않고 각각 정확히 한 번 담아야 합니다. 입력 묶음이 N개면 decisions도 반드시 N개입니다. 추천하지 않는 묶음도 반드시 담습니다. 각 판정의 unitId는 그 묶음 머리줄 맨 앞의 식별자를 한 글자도 바꾸지 말고 그대로 옮겨 씁니다. 머리줄이 'pr:12'로 시작하면 unitId도 'pr:12'이고, 'commit:abc1234'로 시작하면 unitId도 'commit:abc1234'입니다. 형식을 바꾸거나 SHA를 줄여 쓰지 마세요.
 
 각 묶음의 판정은 이렇게 씁니다. 기여 항목과 명확히 맞으면 contributionItem을 목록의 원문 그대로 씁니다. 어느 항목에도 맞지 않지만 설명할 가치가 있으면 contributionItem을 null로 두고 recommended를 true로 합니다. 그 밖에는 contributionItem을 '${UNCLASSIFIED_LABEL}'로 두고 recommended를 false로 합니다.
 

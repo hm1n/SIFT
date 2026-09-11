@@ -8,7 +8,7 @@ import {
   summarizeWorkUnit,
   type SummarizableCommit,
 } from "./work-unit-summary";
-import type { WorkUnit } from "./work-unit";
+import { modelFacingUnitId, type WorkUnit } from "./work-unit";
 
 function commit(overrides: Partial<SummarizableCommit> = {}): SummarizableCommit {
   return {
@@ -234,7 +234,7 @@ describe("renderWorkUnitSummary", () => {
 
     expect(text).toBe(
       [
-        "PR#113 PWA 알림 구현 [2커밋 2일 +105-23 2파일]",
+        "pr:113 PWA 알림 구현 [2커밋 2일 +105-23 2파일]",
         "  feat: 알림 저장 / fix: 아이콘 경로",
         "  src/{a.ts,b.ts}",
       ].join("\n")
@@ -317,7 +317,7 @@ describe("renderWorkUnitSummary", () => {
     expect(text.split("\n")[2]).toBe("  only.ts");
   });
 
-  it("단일 커밋 단위는 SHA 7자리 라벨로 두 줄만 만들고 커밋 제목 줄을 생략한다", () => {
+  it("단일 커밋 단위는 SHA 7자리 식별자로 두 줄만 만들고 커밋 제목 줄을 생략한다", () => {
     const target = commit({
       sha: "abcdef1234567890abcdef1234567890abcdef12",
       title: "직접 푸시한 변경",
@@ -330,8 +330,26 @@ describe("renderWorkUnitSummary", () => {
 
     expect(text.split("\n")).toHaveLength(2);
     expect(text).toBe(
-      ["커밋 abcdef1 직접 푸시한 변경 [1커밋 1일 +12-3 1파일]", "  src/{only.ts}"].join("\n")
+      ["commit:abcdef1 직접 푸시한 변경 [1커밋 1일 +12-3 1파일]", "  src/{only.ts}"].join("\n")
     );
+  });
+
+  /**
+   * 머리줄 맨 앞의 식별자는 모델이 unitId로 되돌려줘야 하는 문자열과 글자 하나까지 같아야
+   * 합니다. 둘이 어긋나면 프롬프트가 모델에게 표기 변환을 요구하게 되는데,
+   * `gemini-3.1-flash-lite`는 변환 대신 머리줄을 그대로 복사해 응답 전량이 `unknown_sha`가
+   * 됐습니다(이슈 #107).
+   */
+  it("두 종류 단위 모두 머리줄 맨 앞이 모델 응답 식별자와 같은 문자열이다", () => {
+    const targets = [
+      unit([commit()], 74, "결제 연동"),
+      singleCommitUnit(commit({ sha: "82dbaa1" + "c".repeat(33) })),
+    ];
+
+    for (const target of targets) {
+      const header = renderWorkUnitSummary(summarizeWorkUnit(target)).split("\n")[0];
+      expect(header.split(" ")[0]).toBe(modelFacingUnitId(target.unitId));
+    }
   });
 });
 
@@ -343,8 +361,8 @@ describe("renderWorkUnitSummaries", () => {
     ]);
 
     expect(text.split("\n")).toHaveLength(6);
-    expect(text.startsWith("PR#30 A ")).toBe(true);
-    expect(text).toContain("\nPR#4 B ");
+    expect(text.startsWith("pr:30 A ")).toBe(true);
+    expect(text).toContain("\npr:4 B ");
   });
 
   it("묶음이 없으면 빈 문자열을 만든다", () => {
