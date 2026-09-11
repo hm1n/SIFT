@@ -29,8 +29,18 @@ export interface ElementProgress {
   /** 이 요소를 겨냥한 질문을 보낸 횟수입니다. */
   readonly askedCount: number;
   /**
+   * 이 요소에서 처음 `unknown`을 받았을 때의 `askedCount`입니다. 아직 `unknown`을 받은 적이
+   * 없으면 `null`입니다. `reaskUsed` 판정의 기준점이고, `askedCount`(총 질문 횟수)와 분리해 둬야
+   * "provided로 답한 요소를 나중에 다시 물었을 때 첫 unknown에 바로 소진되는" 오작동을 막을 수
+   * 있습니다(구현검토 2026-09-11 P1-1).
+   */
+  readonly firstUnknownAskedCount: number | null;
+  /**
    * `unknown` 응답 뒤 재질문을 이미 썼는지입니다. 6-1절: "기억나지 않는다는 답변 뒤에는 다른
    * 단서가 있을 때 같은 부족 요소에 최대 1회 다시 묻습니다." 참이면 이 요소는 더 묻지 않습니다.
+   *
+   * "다른 단서가 있을 때"라는 조건은 이 계약에 신호가 없어 판정하지 않습니다. 재질문이 실제로
+   * 제시되면(같은 요소를 다시 물으면) 그 응답이 무엇이든 예산을 소진한 것으로 봅니다.
    */
   readonly reaskUsed: boolean;
 }
@@ -50,7 +60,7 @@ export interface BlockProgress {
 
 export type InterviewProgress = Readonly<Record<BlockKind, BlockProgress>>;
 
-const EMPTY_ELEMENT_PROGRESS: ElementProgress = { askedCount: 0, reaskUsed: false };
+const EMPTY_ELEMENT_PROGRESS: ElementProgress = { askedCount: 0, firstUnknownAskedCount: null, reaskUsed: false };
 
 export function emptyInterviewProgress(): InterviewProgress {
   return Object.fromEntries(
@@ -81,9 +91,12 @@ export function recordAsked(progress: InterviewProgress, block: BlockKind, eleme
 /**
  * 답변의 `targetResponse`를 반영합니다.
  *
- * `unknown`이 두 번째로 오면(첫 `unknown` 뒤 이미 한 번 다시 물은 것이므로) 재질문을 썼다고
- * 기록해 이 요소를 닫습니다. `unanswered`는 `unknown`과 구분해 재질문 예산을 쓰지 않습니다
- * (질문과 무관한 답변으로 부족 요소가 거짓으로 닫히는 것을 막습니다).
+ * 처음 `unknown`을 받으면 그 시점의 `askedCount`를 `firstUnknownAskedCount`로 남겨 둡니다. 그
+ * 뒤로 이 요소에 다시 질문이 나가(`askedCount`가 오르고) `recordResponse`가 다시 불리면, 이번
+ * 응답이 무엇이든(다시 `unknown`이든, 무관한 답이든) 재질문을 이미 제시한 것이므로 예산을
+ * 소진합니다. `askedCount`(총 질문 횟수)로 직접 판정하지 않는 이유는, 그러면 `provided`로 답한
+ * 요소를 나중에 다시 물었을 때 그 첫 `unknown`만으로 곧장 소진 처리되기 때문입니다(구현검토
+ * 2026-09-11 P1-1, R1).
  */
 export function recordResponse(
   progress: InterviewProgress,
@@ -93,15 +106,21 @@ export function recordResponse(
 ): InterviewProgress {
   const blockProgress = progress[block];
   const elementProgress = blockProgress.elements[element];
+  const firstUnknownAskedCount =
+    elementProgress.firstUnknownAskedCount ?? (response === "unknown" ? elementProgress.askedCount : null);
   const reaskUsed =
     elementProgress.reaskUsed ||
-    (response === "unknown" && elementProgress.askedCount >= PROGRESS_CONFIG.maxAsksAfterUnknown);
+    (firstUnknownAskedCount !== null &&
+      elementProgress.askedCount - firstUnknownAskedCount >= PROGRESS_CONFIG.maxAsksAfterUnknown - 1);
   return {
     ...progress,
     [block]: {
       ...blockProgress,
       refused: blockProgress.refused || response === "refused",
-      elements: { ...blockProgress.elements, [element]: { ...elementProgress, reaskUsed } },
+      elements: {
+        ...blockProgress.elements,
+        [element]: { ...elementProgress, firstUnknownAskedCount, reaskUsed },
+      },
     },
   };
 }

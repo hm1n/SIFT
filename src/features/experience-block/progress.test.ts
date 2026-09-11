@@ -13,11 +13,12 @@ const NONE_LEFT: BlockEvaluation = { sufficient: false, askable: false, reason: 
 describe("recordAsked·recordResponse", () => {
   it("빈 진행 상태는 네 블록 모두 미방문이고 두 요소 모두 0회다", () => {
     const progress = emptyInterviewProgress();
+    const emptyElement = { askedCount: 0, firstUnknownAskedCount: null, reaskUsed: false };
     for (const block of BLOCK_KINDS) {
       expect(progress[block]).toEqual({
         visited: false,
         refused: false,
-        elements: { a: { askedCount: 0, reaskUsed: false }, b: { askedCount: 0, reaskUsed: false } },
+        elements: { a: emptyElement, b: emptyElement },
       });
     }
   });
@@ -40,6 +41,22 @@ describe("recordAsked·recordResponse", () => {
     progress = recordResponse(progress, "problem", "a", "unknown");
     expect(progress.problem.elements.a.reaskUsed).toBe(true); // 두 번째 unknown으로 예산을 다 썼습니다.
     expect(progress.problem.elements.b.reaskUsed).toBe(false); // 다른 요소는 영향받지 않습니다.
+  });
+
+  it("provided로 답한 요소를 다시 물었을 때 첫 unknown만으로는 소진되지 않는다 (구현검토 P1-1, R1)", () => {
+    let progress = recordAsked(emptyInterviewProgress(), "problem", "a");
+    progress = recordResponse(progress, "problem", "a", "provided");
+    progress = recordAsked(progress, "problem", "a"); // 다른 이유로 같은 요소를 한 번 더 묻습니다.
+    progress = recordResponse(progress, "problem", "a", "unknown");
+    expect(progress.problem.elements.a.reaskUsed).toBe(false);
+  });
+
+  it("unknown 뒤 재질문이 나가면 그 응답이 무엇이든 예산을 소진한다 (구현검토 P1-1, R2)", () => {
+    let progress = recordAsked(emptyInterviewProgress(), "problem", "a");
+    progress = recordResponse(progress, "problem", "a", "unknown");
+    progress = recordAsked(progress, "problem", "a"); // 재질문을 실제로 보냈습니다.
+    progress = recordResponse(progress, "problem", "a", "unanswered"); // 응답은 무관해도 예산은 소진됩니다.
+    expect(progress.problem.elements.a.reaskUsed).toBe(true);
   });
 
   it("unanswered는 unknown과 구분되어 재질문 예산을 쓰지 않는다", () => {
