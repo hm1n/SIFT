@@ -99,6 +99,48 @@ describe("RepositoryAnalysisView 시작", () => {
   });
 });
 
+// Codex 리뷰 P1: AppShell 도입으로 공용 header·main이 사라지면서 네 상태 전부 랜드마크와 접근 가능한
+// 제목을 잃었습니다. 상태마다 하나씩 회귀 테스트를 둡니다.
+describe("RepositoryAnalysisView 시맨틱 구조", () => {
+  it("Loading은 main 랜드마크 안에 보이는 h1을 둔다", async () => {
+    mockState({ status: "loading", loading: { step: "commits" } });
+    await renderAndAnalyze();
+    const main = screen.getByRole("main");
+    expect(main).toContainElement(screen.getByRole("heading", { level: 1, name: "octocat / hello-world" }));
+  });
+
+  it("Empty는 main 랜드마크 안에 스크린리더 전용 h1을 둔다", async () => {
+    mockState({ status: "empty", kind: "no_commits" });
+    await renderAndAnalyze();
+    const main = screen.getByRole("main");
+    expect(main).toContainElement(screen.getByRole("heading", { level: 1, name: "octocat / hello-world" }));
+  });
+
+  it("Error는 main 랜드마크 안에 스크린리더 전용 h1을 둔다", async () => {
+    mockState({ status: "error", error: { kind: "network", title: "네트워크 실패", message: "연결 확인", recovery: "retry" } });
+    await renderAndAnalyze();
+    const main = screen.getByRole("main");
+    expect(main).toContainElement(screen.getByRole("heading", { level: 1, name: "octocat / hello-world" }));
+  });
+
+  it("Success는 main 랜드마크 안에 h1을 두어 후보 목록의 h2보다 앞선 제목을 보존한다", async () => {
+    mockState({
+      status: "success",
+      data: RETRY_POINT.data,
+      candidates: {
+        candidates: [{ sha: "sha-a-40", relatedShas: [], evidence: "근거입니다.", citedFilePaths: [], source: "automatic_recommendation" }],
+        insufficientCandidatesReason: "하나뿐입니다.",
+        diffs: [],
+      },
+      stageASelection: EMPTY_STAGE_A_SELECTION,
+    });
+    await renderAndAnalyze();
+    const main = screen.getByRole("main");
+    expect(main).toContainElement(screen.getByRole("heading", { level: 1, name: "octocat / hello-world" }));
+    expect(screen.getByRole("heading", { level: 2 })).toBeInTheDocument();
+  });
+});
+
 describe("RepositoryAnalysisView Loading", () => {
   it("헤더에 owner·name과 visibility·language를 표시한다", async () => {
     mockState({ status: "loading", loading: { step: "commits" } });

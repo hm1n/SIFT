@@ -12,6 +12,21 @@
   background: var(--color-card);
 }
 
+/* Loading이 아닌 상태(Empty·Error·Success)의 접근 가능한 h1입니다. StatusScreen과
+   ExperienceCandidateList는 h1을 그리지 않아 화면 제목이 없어지므로, 시각적으로는 숨기고
+   스크린리더에만 읽히는 제목을 유지합니다. */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* Loading 전용 레이아웃입니다. Empty·Error는 공용 StatusScreen을 씁니다. */
 .loadingScreen {
   flex: 1;

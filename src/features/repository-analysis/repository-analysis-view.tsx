@@ -109,7 +109,13 @@ export function RepositoryAnalysisView({ repository, contributionItems, onSelect
   }
 
   return (
-    <div className={styles.screen}>
+    <main className={styles.screen}>
+      {/* Loading은 보이는 h1(LoadingChecklist 안)을 갖지만 Empty·Error·Success는 StatusScreen과
+          ExperienceCandidateList가 h1을 그리지 않습니다. 시각적으로는 숨기되 스크린리더가 상태와 무관하게
+          이 화면이 어느 Repository의 분석인지 읽을 수 있도록 h1을 하나 유지합니다. */}
+      {state.status !== "loading" ? (
+        <h1 className={styles.visuallyHidden}>{repository.owner} / {repository.name}</h1>
+      ) : null}
       {state.status === "loading" ? <LoadingChecklist repository={repository} loading={state.loading} onSelectRepository={onSelectRepository} /> : null}
       {state.status === "empty" ? (
         <EmptyState
@@ -139,7 +145,7 @@ export function RepositoryAnalysisView({ repository, contributionItems, onSelect
           />
         </div>
       ) : null}
-    </div>
+    </main>
   );
 }
 
