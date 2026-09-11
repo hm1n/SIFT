@@ -105,7 +105,7 @@ class UnionFind {
 
 /** 현재 프로덕션 규칙. PR 없는 커밋은 제외되므로 PR 저장소에서만 뜻이 있습니다. */
 const prBaseline: GroupingRule = (commits) => {
-  const grouping = groupCommitsIntoWorkUnits(
+  const units = groupCommitsIntoWorkUnits(
     commits.map((commit) => ({
       sha: commit.sha,
       title: commit.title,
@@ -115,7 +115,7 @@ const prBaseline: GroupingRule = (commits) => {
           : [{ number: commit.pullRequestNumber, title: "", state: "", baseBranch: "", headBranch: "" }],
     }))
   );
-  return grouping.units.map((unit) => unit.commits.map(({ sha }) => sha));
+  return units.map((unit) => unit.commits.map(({ sha }) => sha));
 };
 
 // ── 축 1-c. 세션 경계 ───────────────────────────────────────────────────────

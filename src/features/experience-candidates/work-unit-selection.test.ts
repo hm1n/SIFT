@@ -29,7 +29,9 @@ function commit(overrides: Partial<ScorableCommit> = {}): ScorableCommit {
 
 function unit(number: number, commits: readonly ScorableCommit[]): WorkUnit<ScorableCommit> {
   return {
-    pullRequestNumber: number,
+    kind: "pull_request",
+    unitId: `pr:${number}`,
+    title: `제목 ${number}`,
     pullRequest: { number, title: `제목 ${number}`, state: "closed", baseBranch: "develop", headBranch: "f" },
     commits,
   };
@@ -58,8 +60,8 @@ describe("selectWorkUnitsForStageA", () => {
     const units = [scoredUnit(1, 0), scoredUnit(2, 2), scoredUnit(3, 1)];
     const selection = selectWorkUnitsForStageA(units, 400);
 
-    expect(selection.selected.map(({ unit: item }) => item.pullRequestNumber)).toEqual([2]);
-    expect(selection.excluded.map(({ unit: item }) => item.pullRequestNumber)).toEqual([3, 1]);
+    expect(selection.selected.map(({ unit: item }) => item.unitId)).toEqual(["pr:2"]);
+    expect(selection.excluded.map(({ unit: item }) => item.unitId)).toEqual(["pr:3", "pr:1"]);
     expect(selection.excluded.every(({ reason }) => reason === "over_input_budget")).toBe(true);
     expect(selection.thresholdScore).toBe(2);
   });
@@ -70,9 +72,9 @@ describe("selectWorkUnitsForStageA", () => {
 
     expect(selection.selected.length + selection.excluded.length).toBe(units.length);
     const seen = [...selection.selected, ...selection.excluded]
-      .map(({ unit: item }) => item.pullRequestNumber)
+      .map(({ unit: item }) => item.unitId)
       .sort();
-    expect(seen).toEqual([1, 2, 3, 4]);
+    expect(seen).toEqual(["pr:1", "pr:2", "pr:3", "pr:4"]);
   });
 
   it("같은 점수 무리는 예산에 다 들어갈 때만 넣는다", () => {
@@ -82,7 +84,7 @@ describe("selectWorkUnitsForStageA", () => {
     const tight = selectWorkUnitsForStageA(units, full.bytes - 1);
 
     expect(full.selected).toHaveLength(3);
-    expect(tight.selected.map(({ unit: item }) => item.pullRequestNumber)).toEqual([1]);
+    expect(tight.selected.map(({ unit: item }) => item.unitId)).toEqual(["pr:1"]);
     expect(tight.excluded).toHaveLength(2);
   });
 
@@ -116,7 +118,7 @@ describe("selectWorkUnitsForStageA", () => {
     expect(selection.excluded).toHaveLength(2);
     expect(selection.excluded.every(({ reason }) => reason === "over_byte_budget")).toBe(true);
     // 되살리며 excluded에서 지우던 회귀가 있었으므로 둘 다 그대로 남아 있는지 확인합니다.
-    expect(selection.excluded.map(({ unit: item }) => item.pullRequestNumber).sort()).toEqual([1, 2]);
+    expect(selection.excluded.map(({ unit: item }) => item.unitId).sort()).toEqual(["pr:1", "pr:2"]);
     expect(selection.thresholdScore).toBe(0);
     expect(selection.bytes).toBe(0);
   });
@@ -127,8 +129,8 @@ describe("selectWorkUnitsForStageA", () => {
     const budget = unitBytes(lowScore);
     const selection = selectWorkUnitsForStageA([highScore, lowScore], budget);
 
-    expect(selection.selected.map(({ unit: item }) => item.pullRequestNumber)).toEqual([2]);
-    expect(selection.excluded.map(({ unit: item }) => item.pullRequestNumber)).toEqual([1]);
+    expect(selection.selected.map(({ unit: item }) => item.unitId)).toEqual(["pr:2"]);
+    expect(selection.excluded.map(({ unit: item }) => item.unitId)).toEqual(["pr:1"]);
     expect(selection.excluded[0].reason).toBe("over_byte_budget");
   });
 
@@ -149,7 +151,7 @@ describe("selectWorkUnitsForStageA", () => {
     const units = [scoredUnit(1, 0), scoredUnit(2, 2), scoredUnit(3, 1)];
     const selection = selectWorkUnitsForStageA(units, 400);
 
-    const excludedThree = selection.excluded.find(({ unit: item }) => item.pullRequestNumber === 3);
+    const excludedThree = selection.excluded.find(({ unit: item }) => item.unitId === "pr:3");
     expect(excludedThree?.signals).toEqual(["many_commits"]);
   });
 });
