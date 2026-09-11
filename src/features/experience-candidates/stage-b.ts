@@ -7,7 +7,6 @@ import {
 } from "./errors";
 import {
   createStageBModel,
-  isLocalLlm,
   judgmentSamplingOptions,
   LLM_MAX_RETRIES,
   resolveLlmTimeoutMs,
@@ -15,7 +14,11 @@ import {
   toLlmUsageSample,
   type LlmUsageSink,
 } from "./llm-provider";
-import { assertCandidateEvidence, experienceCandidateOutputSchema, validateExperienceCandidateOutput } from "./schema";
+import {
+  assertCandidateEvidence,
+  createExperienceCandidateOutputSchema,
+  validateExperienceCandidateOutput,
+} from "./schema";
 import type { ExperienceCandidateOutput, StageACandidate } from "./types";
 import type { CommitDetail } from "@/lib/github/types";
 
@@ -46,6 +49,24 @@ export const STAGE_B_MODEL = "gemini-3.5-flash-lite";
  * 예산을 다 써서 11개가 diff 없이 판단됐고, `buildStageBPayload`의 균등 배분으로 해소했습니다.
  */
 export const STAGE_B_MAX_INPUT_COMMITS = 30;
+/**
+ * Stage B 최종 후보 개수의 안전 상한입니다. 호출마다 쓰는 실제 상한은 입력 판단 단위 수와 이 값
+ * 중 작은 쪽입니다.
+ *
+ * 상한이 3으로 고정되어 있던 동안에는 입력 판단 단위가 1~2개인 저장소에서 출력 계약을 만족시킬
+ * 방법이 없었습니다. `hm1n/CAREER-CAMP-TIL`(2묶음)과 `hm1n/programmers-badge-v1`(1묶음)이 매번
+ * `schema_validation`으로 실패했습니다(이슈 #108).
+ *
+ * 20으로 정한 근거는 두 가지입니다. 클라이언트가 Stage A 후보에 이미 걸고 있는 하드 상한이
+ * `INITIAL_STAGE_A_CANDIDATE_LIMIT`(20)이므로 같은 값으로 맞추면 두 상한이 어긋나지 않습니다.
+ * 그리고 `allocateCommitQuota`는 묶음 수가 `STAGE_B_MAX_INPUT_COMMITS`(30) 이상이면 뒤 묶음에
+ * quota 0을 줘서 근거 없이 넘기므로, 20은 그 경계 아래입니다.
+ *
+ * 상한을 올리는 것이 하한을 만드는 것은 아닙니다. 근거가 없으면 후보를 적게 고르는 쪽이 정상이고,
+ * 프롬프트도 개수를 채우지 말라고 지시합니다. 지금은 `STAGE_A_CANDIDATE_QUOTA`(5)가 실질 천장이라
+ * 이 값에 실제로 닿지 않습니다.
+ */
+export const STAGE_B_MAX_CANDIDATES = 20;
 // 이슈 #19 실측으로 확정: 파일별 patch는 중앙 1,257자, p90 5,235자, 최대 44,013자였고
 // 4,000자는 279개 파일 중 40개(14%)만 절단합니다.
 export const STAGE_B_MAX_PATCH_CHARS = 4_000;
@@ -56,7 +77,17 @@ export const STAGE_B_TOTAL_BUDGET_MS = 55_000;
 // 완주하지 못할 가능성이 높아, 관측된 최대 성공 시간을 담을 수 있는 20초로 올립니다.
 export const STAGE_B_MIN_LLM_BUDGET_MS = 20_000;
 
-export type GenerateStageB = (payload: unknown, abortSignal: AbortSignal) => Promise<unknown>;
+/**
+ * `buildStageBPayload`가 만드는 모델 입력입니다. 구조를 그 함수 한 곳에서만 정하도록 추론에
+ * 맡깁니다. `createStageBGenerate`가 `candidateLimit`을 읽어 출력 스키마와 프롬프트에 함께
+ * 반영하므로, 페이로드를 `unknown`으로 두면 그 값을 꺼낼 때마다 단언이 필요합니다.
+ */
+export type StageBPayload = ReturnType<typeof buildStageBPayload>;
+
+export type GenerateStageB = (
+  payload: StageBPayload,
+  abortSignal: AbortSignal
+) => Promise<unknown>;
 
 /**
  * patch 예산을 후보별로 균등 배분합니다. 선착순으로 나눠주면 앞쪽 후보가 예산을 다 써서 뒤쪽
@@ -163,7 +194,11 @@ export function buildStageBPayload(commits: readonly CommitDetail[], candidates:
     workUnits[groupIndex].commits.push(payloadCommits[index]);
   });
 
-  return { workUnits };
+  /**
+   * 후보 개수 상한을 입력과 함께 실어 보냅니다. Stage A의 `candidateLimit`과 같은 방식입니다.
+   * 상한을 페이로드에 두면 출력 스키마와 프롬프트 문장, 응답 검증이 모두 한 값을 봅니다.
+   */
+  return { workUnits, candidateLimit: Math.min(workUnits.length, STAGE_B_MAX_CANDIDATES) };
 }
 
 function mapLlmError(error: unknown): ExperienceCandidateOutputError {
@@ -276,24 +311,25 @@ function mapLlmError(error: unknown): ExperienceCandidateOutputError {
 }
 
 /**
- * 로컬 모델에만 붙이는 출력 계약 안내입니다. 프로덕션 프롬프트는 그대로 둡니다.
+ * 출력 계약을 문장으로 알려주는 시스템 프롬프트입니다.
  *
- * `validateExperienceCandidateOutput`은 후보가 3개 미만이면 `insufficientCandidatesReason`을
- * 요구하지만 프로덕션 시스템 프롬프트는 그 규칙을 말하지 않습니다. Gemini는 스키마만 보고
- * 지켰고, 로컬 모델은 2026-08-25 실측에서 `qwen2.5:7b`와 `llama3.1:8b` 모두 이 규칙을 어겨
- * 같은 `schema_validation`으로 끝났습니다.
+ * 2026-08-25까지 이 문장은 `isLocalLlm()`일 때만 붙었습니다. Gemini는 스키마만 보고 계약을 지켰고
+ * 로컬 모델(`qwen2.5:7b`, `llama3.1:8b`)만 어겼기 때문입니다. 그러나 판단 단위가 1~2개인 저장소가
+ * 들어오면서 Gemini도 부족 사유를 채우지 않아 `schema_validation`으로 실패했습니다. 제공자에 따라
+ * 계약을 알려주거나 숨기면 어느 쪽이 진짜 계약인지 코드에서 읽을 수 없으므로 갈래를 없앴습니다
+ * (이슈 #108).
  */
-const LOCAL_OUTPUT_CONTRACT_HINT_TEXT =
-  "후보를 3개 미만으로 고르면 insufficientCandidatesReason에 부족한 이유를 반드시 채우세요. " +
-  "후보가 정확히 3개면 insufficientCandidatesReason은 null이어야 합니다. " +
-  "sha와 relatedShas는 입력 workUnits 안의 commits[].sha 값을 그대로 복사하세요. relatedShas에는 " +
-  "대표 커밋과 같은 workUnits 항목에 있는 sha만 넣고, 넣을 것이 없으면 빈 배열로 두세요. " +
-  "citedFilePaths는 그 후보에 속한 커밋의 files[].path 값을 그대로 복사하세요. 입력에 없는 경로를 " +
-  "기억이나 추측으로 쓰지 마세요. ";
-
-function localOutputContractHint(): string {
-  // 모듈 최상단에서 한 번 계산하면 환경변수를 나중에 바꾼 실행과 테스트가 낡은 값을 봅니다.
-  return isLocalLlm() ? LOCAL_OUTPUT_CONTRACT_HINT_TEXT : "";
+function outputContractText(candidateLimit: number): string {
+  return (
+    `sha와 relatedShas는 입력 workUnits 안의 commits[].sha 값을 그대로 복사하세요. relatedShas에는 ` +
+    "대표 커밋과 같은 workUnits 항목에 있는 sha만 넣고, 넣을 것이 없으면 빈 배열로 두세요. " +
+    "pullRequest가 null인 workUnits 항목을 고르면 relatedShas는 반드시 빈 배열입니다. " +
+    "citedFilePaths는 그 후보에 속한 커밋의 files[].path 값을 그대로 복사하세요. 입력에 없는 경로를 " +
+    "기억이나 추측으로 쓰지 마세요. " +
+    "후보를 하나도 고르지 못하면 insufficientCandidatesReason에 그 이유를 반드시 채우세요. " +
+    `후보를 하나 이상 골랐으면 insufficientCandidatesReason은 null이어도 됩니다. ${candidateLimit}개보다 ` +
+    "적게 골랐고 설명할 이유가 있으면 그 이유를 적으세요. "
+  );
 }
 
 /**
@@ -306,18 +342,17 @@ export function createStageBGenerate(
   onUsage?: LlmUsageSink
 ): GenerateStageB {
   return async (payload, abortSignal) => {
+    const { candidateLimit } = payload;
     const { object, usage } = await generateObject({
       model: createStageBModel(model),
-      schema: experienceCandidateOutputSchema,
+      schema: createExperienceCandidateOutputSchema(candidateLimit),
       system:
-        localOutputContractHint() +
-        "실제 diff와 PR 소속만 근거로 최대 3개의 개발 경험 후보를 고르세요. " +
-        "입력 commits는 Pull Request 단위 묶음(workUnits)으로 그룹돼 있습니다. 최종 후보 3개는 " +
-        "서로 다른 workUnits 항목에서 하나씩만 고르세요. 같은 workUnits 항목에서 대표 커밋을 " +
-        "둘 이상 최종 후보로 고르지 마세요. " +
-        "관련 커밋은 대표 커밋과 같은 PR에 속한 입력 SHA만 사용하세요. " +
-        "억지로 3개를 채우지 말고, evidence에는 대표 선정 이유와 관련 커밋이 근거가 되는 이유를 함께 쓰세요. " +
-        "citedFilePaths는 제공된 diff 경로만 사용하세요. " +
+        outputContractText(candidateLimit) +
+        `실제 diff와 PR 소속만 근거로 최대 ${candidateLimit}개의 개발 경험 후보를 고르세요. ` +
+        "입력 commits는 판단 단위 묶음(workUnits)으로 그룹돼 있습니다. 최종 후보는 서로 다른 " +
+        "workUnits 항목에서 하나씩만 고르세요. 같은 workUnits 항목에서 대표 커밋을 둘 이상 최종 " +
+        "후보로 고르지 마세요. " +
+        `억지로 ${candidateLimit}개를 채우지 말고, evidence에는 대표 선정 이유와 관련 커밋이 근거가 되는 이유를 함께 쓰세요. ` +
         "절단 표시가 있으면 전체 diff를 본 것으로 단정하지 마세요. 한국어로 답하세요.",
       prompt: JSON.stringify(payload),
       abortSignal,
@@ -362,7 +397,7 @@ function dedupeCandidatesByWorkUnit(
     throw new Error("Stage B 최종 후보 정리 후 후보가 모두 사라졌습니다.");
   }
 
-  // 모델이 이미 부족 사유를 준 경우(원래 3개 미만)라도 정리 사유로 덮어씁니다. 정리가 최종
+  // 모델이 이미 부족 사유를 준 경우라도 정리 사유로 덮어씁니다. 정리가 최종
   // 개수를 바꾼 직접 원인이므로, 정리를 언급하지 않는 기존 사유를 남기면 화면 설명이 실제
   // 결과와 어긋납니다.
   return {
@@ -385,10 +420,30 @@ export async function selectStageBCandidates(
     timeoutMs
   );
   try {
-    const output = validateExperienceCandidateOutput(await generate(payload, controller.signal));
+    /**
+     * 응답 검증에서는 입력 커밋 수를 상한으로 씁니다. 판단 단위 수를 여기서 바로 적용하면, 모델이
+     * 같은 묶음에서 둘 이상을 고른 응답이 `dedupeCandidatesByWorkUnit`에 닿기 전에 502로 거부됩니다.
+     * 같은 묶음 중복은 조작이 아니라 실제 커밋 중 고른 결과이므로 거부하지 않고 정리한다는 결정을
+     * 유지해야 합니다(핸드오프 2-1).
+     *
+     * 대표 SHA는 서로 달라야 하고 모두 입력 커밋이어야 하므로 입력 커밋 수가 자연스러운 상한입니다.
+     * 판단 단위 상한은 정리가 끝난 뒤에 적용합니다.
+     */
+    const output = validateExperienceCandidateOutput(
+      await generate(payload, controller.signal),
+      commits.length
+    );
     // ponytail: 인용은 입력 diff 경로로 제한합니다. 이슈 #32가 전체 트리 근거를 요구하면 fileTree를 입력에 추가합니다.
     assertCandidateEvidence(output, { commits, fileTree: [] });
     const deduped = dedupeCandidatesByWorkUnit(output, commits);
+    // 정리 뒤에도 상한을 넘으면 `STAGE_B_MAX_CANDIDATES`에 걸린 것입니다. 판단 단위 수가 상한보다
+    // 작을 때는 정리 결과가 그 수를 넘을 수 없으므로 이 분기에 닿지 않습니다.
+    if (deduped.candidates.length > payload.candidateLimit) {
+      throw new ExperienceCandidateOutputError(
+        "schema_validation",
+        `Stage B 최종 후보는 ${payload.candidateLimit}개를 넘을 수 없습니다.`
+      );
+    }
     const sources = new Map(candidates.map(({ sha, source }) => [sha, source]));
     return {
       ...deduped,
