@@ -87,9 +87,9 @@ describe("getGitHubOAuthConfig", () => {
 });
 
 describe("createGitHubAuthorizeUrl", () => {
-  it("asks GitHub for the read:user scope only", () => {
+  it("asks GitHub for read:user and repo scopes", () => {
     const url = new URL(createGitHubAuthorizeUrl(config, "state-value"));
-    expect(url.searchParams.get("scope")).toBe("read:user");
+    expect(url.searchParams.get("scope")).toBe("read:user repo");
     expect(url.searchParams.get("redirect_uri")).toBe(config.redirectUri);
     expect(url.searchParams.get("state")).toBe("state-value");
   });

@@ -7,6 +7,17 @@ export interface GitHubAuth extends RepositoryRef {
   token: string;
 }
 
+/** 목록 조회 라우트가 돌려주는 Repository 한 건입니다. `AppShell`의 `ShellRepository`와 필드 이름을 맞춰 그대로 넘길 수 있게 합니다. */
+export interface RepositorySummary {
+  id: number;
+  owner: string;
+  name: string;
+  visibility: "public" | "private";
+  language: string | null;
+  /** 마지막 push 시각(ISO 8601)입니다. GitHub가 값을 주지 않으면 null입니다. */
+  pushedAt: string | null;
+}
+
 export interface CommitSummary {
   sha: string;
   title: string;
