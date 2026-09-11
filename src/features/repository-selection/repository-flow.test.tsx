@@ -105,7 +105,7 @@ describe("RepositoryFlow 인터뷰 중 이탈 확인", () => {
     fireEvent.click(await screen.findByRole("radio", { name: /hello-world/ }));
     fireEvent.click(screen.getByRole("button", { name: /Analyze/ }));
     fireEvent.click(await screen.findByRole("button", { name: /재시도 큐 도입/ }));
-    fireEvent.click(screen.getByRole("button", { name: "이 경험으로 인터뷰 시작" }));
+    fireEvent.click(screen.getByRole("button", { name: /Start interview/ }));
     await screen.findByText("AI 인터뷰");
   }
 

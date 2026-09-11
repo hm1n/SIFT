@@ -1,34 +1,36 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CandidateDataOutput, ReadonlyCommitDetail } from "@/lib/github/types";
-import type { ExperienceCandidate, StageBCandidateResult } from "./types";
+import type { ExperienceCandidate } from "./types";
 import { ExperienceCandidateDetail } from "./experience-candidate-detail";
 
-const representative: ReadonlyCommitDetail = {
-  sha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-  title: "후보 상세 구현",
+const commit = (
+  sha: string,
+  title: string,
+  date: string,
+  pullRequests: ReadonlyCommitDetail["pullRequests"] = []
+): ReadonlyCommitDetail => ({
+  sha,
+  title,
   author: "octocat",
-  date: "2026-08-24T00:00:00Z",
+  date,
   parentCount: 1,
-  message: "후보 상세 구현",
-  additions: 12,
-  deletions: 3,
-  changedFiles: 2,
-  files: [
-    { path: "src/detail.tsx", status: "modified", additions: 10, deletions: 2, changes: 12 },
-    { path: "src/missing.ts", status: "added", additions: 2, deletions: 0, changes: 2 },
-  ],
-  pullRequests: [{ number: 46, title: "후보 상세", state: "open", url: "https://example.com/pr/46", baseBranch: "develop", headBranch: "feature" }],
-};
+  message: title,
+  additions: 10,
+  deletions: 2,
+  changedFiles: 1,
+  files: [{ path: "src/detail.tsx", status: "modified", additions: 10, deletions: 2, changes: 12 }],
+  pullRequests,
+});
 
-const related: ReadonlyCommitDetail = {
-  ...representative,
-  sha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-  title: "관련 근거 추가",
-};
+const representative = commit("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "후보 상세 구현", "2026-08-01T00:00:00Z", [
+  { number: 46, title: "후보 상세", state: "open", url: "https://example.com/pr/46", baseBranch: "develop", headBranch: "feature" },
+]);
+
+const related = commit("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "관련 근거 추가", "2026-09-01T00:00:00Z");
 
 const candidate: ExperienceCandidate = {
   sha: representative.sha,
@@ -45,25 +47,26 @@ const data: CandidateDataOutput = {
 };
 
 function renderDetail(
-  candidates: StageBCandidateResult,
-  candidateData: CandidateDataOutput = data,
-  commit: ReadonlyCommitDetail = representative
+  candidateOverride: ExperienceCandidate = candidate,
+  commitOverride: ReadonlyCommitDetail | null = representative,
+  dataOverride: CandidateDataOutput = data,
+  selectionError?: Parameters<typeof ExperienceCandidateDetail>[0]["selectionError"]
 ) {
-  const selectedCandidate = candidates.candidates[0];
   render(
     <ExperienceCandidateDetail
       repository={{ owner: "hm1n", repo: "demian" }}
-      data={candidateData}
-      candidates={candidates}
+      data={dataOverride}
       item={{
-        candidate: selectedCandidate,
-        commit,
+        candidate: candidateOverride,
+        commit: commitOverride,
         origin: "repository",
-        normalizedRelatedShas: [...new Set(selectedCandidate.relatedShas.filter((sha) => sha !== selectedCandidate.sha))],
-        normalizedCitedFilePaths: [...new Set(selectedCandidate.citedFilePaths)],
+        normalizedRelatedShas: [...new Set(candidateOverride.relatedShas.filter((sha) => sha !== candidateOverride.sha))],
+        normalizedCitedFilePaths: [...new Set(candidateOverride.citedFilePaths)],
       }}
       onBack={vi.fn()}
       onConfirm={vi.fn()}
+      onSelectRepository={vi.fn()}
+      selectionError={selectionError}
     />
   );
 }
@@ -71,131 +74,135 @@ function renderDetail(
 afterEach(cleanup);
 
 describe("ExperienceCandidateDetail", () => {
-  it("완전한 파일 목록과 절단·미포함 diff를 함께 표시한다", () => {
-    renderDetail({
-      candidates: [candidate],
-      insufficientCandidatesReason: "하나뿐입니다.",
-      diffs: [{
-        sha: representative.sha,
-        files: [{ path: "src/detail.tsx", status: "modified", additions: 10, deletions: 2, changes: 12, patch: "@@ -1 +1 @@\n-old\n+new", patchTruncated: true }],
-      }],
-    });
+  it("제목과 유도한 커밋 수·기간을 메타데이터로 표시한다", () => {
+    renderDetail();
 
-    expect(screen.getByText("변경 파일 2개")).toBeInTheDocument();
-    expect(screen.getByText("src/missing.ts")).toBeInTheDocument();
-    expect(screen.getByText("diff 미포함")).toBeInTheDocument();
-    expect(screen.getAllByText("diff 절단")).toHaveLength(2);
-    expect(screen.getByText(/일부 diff가 예산에 맞게 절단/)).toBeInTheDocument();
-    expect(screen.getByText(/\+new/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "후보 상세 구현" })).toBeInTheDocument();
+    expect(screen.getAllByText("2 commits").length).toBeGreaterThan(0);
+    expect(screen.getByText("Aug 2026 – Sep 2026")).toBeInTheDocument();
   });
 
-  it("patch가 없는 예산 절단 파일도 일반 미포함과 구분해 표시한다", () => {
-    const exhaustedCommit: ReadonlyCommitDetail = {
-      ...representative,
-      changedFiles: 1,
-      files: [{ path: "src/exhausted.ts", status: "modified", additions: 0, deletions: 1, changes: 1 }],
-    };
-    renderDetail(
-      {
-        candidates: [candidate],
-        insufficientCandidatesReason: "하나뿐입니다.",
-        diffs: [{
-          sha: representative.sha,
-          files: [{ path: "src/exhausted.ts", status: "modified", additions: 0, deletions: 1, changes: 1, patchTruncated: true }],
-        }],
-      },
-      { ...data, includedCommits: [exhaustedCommit, related] },
-      exhaustedCommit
-    );
+  it("관련 커밋이 없으면 기간을 대표 커밋 한 달로 표시한다", () => {
+    renderDetail({ ...candidate, relatedShas: [] });
 
-    expect(screen.getAllByText("diff 절단")).toHaveLength(2);
-    expect(screen.queryByText("diff 미포함")).not.toBeInTheDocument();
-    expect(screen.getByText("patch 예산이 소진되어 diff 본문이 미포함되었습니다.")).toBeInTheDocument();
+    expect(screen.getAllByText("1 commits").length).toBeGreaterThan(0);
+    expect(screen.getByText("Aug 2026")).toBeInTheDocument();
   });
 
-  it("관련 커밋을 상한 없이 제목·SHA·PR 번호와 링크로 표시한다", () => {
-    renderDetail({
-      candidates: [{ ...candidate, relatedShas: [related.sha, related.sha, representative.sha] }],
-      insufficientCandidatesReason: "하나뿐입니다.",
-      diffs: [],
-    });
+  it("Why worth discussing에 evidence 문장과 확인 불가 안내, 스키마 공백 안내를 함께 둔다", () => {
+    renderDetail();
 
-    expect(screen.getByRole("heading", { name: "관련 커밋 1개" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "관련 근거 추가" })).toHaveAttribute(
-      "href",
-      `https://github.com/hm1n/demian/commit/${related.sha}`
-    );
-    expect(screen.getByText("bbbbbbb")).toBeInTheDocument();
-    expect(screen.getAllByText("PR #46")).toHaveLength(1);
-    expect(screen.queryByRole("link", { name: "후보 상세 구현" })).not.toBeInTheDocument();
+    expect(screen.getByText("Why worth discussing")).toBeInTheDocument();
+    expect(screen.getByText("상세 근거를 표시합니다.")).toBeInTheDocument();
+    expect(screen.getByText("Unverifiable · AI-written interpretation")).toBeInTheDocument();
+    expect(screen.getAllByText("No corresponding data in the Repository schema to display this.").length).toBeGreaterThan(0);
   });
 
-  it("evidence 문장은 확인 불가로, 파일·diff·관련 커밋·PR 정보는 확인 가능으로 구분해 안내한다", () => {
-    renderDetail({
-      candidates: [candidate],
-      insufficientCandidatesReason: "하나뿐입니다.",
-      diffs: [],
-    });
+  it("Technical topics는 스키마에 대응 값이 없어 스키마 공백 안내만 표시한다", () => {
+    renderDetail();
 
-    expect(screen.getByText("확인 불가 · AI가 작성한 해석입니다")).toBeInTheDocument();
+    expect(screen.getByText("Technical topics")).toBeInTheDocument();
+  });
+
+  it("Repository evidence 목록에 대표 커밋은 Verified로, 관련 커밋은 AI-selected로 표시한다", () => {
+    renderDetail();
+
+    expect(screen.getByText("Repository evidence")).toBeInTheDocument();
+    expect(screen.getByText("VERIFIED FROM REPOSITORY")).toBeInTheDocument();
+
+    const representativeRow = screen.getByRole("link", { name: "후보 상세 구현" }).closest("li");
+    expect(representativeRow).toHaveTextContent("Verified");
+    expect(representativeRow).toHaveTextContent("PR #46");
+
+    const relatedRow = screen.getByRole("link", { name: "관련 근거 추가" }).closest("li");
+    expect(relatedRow).toHaveTextContent("AI-selected");
+  });
+
+  it("관련 커밋이 있으면 AI 선택 안내를 표시하고 없으면 표시하지 않는다", () => {
+    renderDetail();
     expect(
-      screen.getByText(
-        "확인 가능 · 변경 파일, 코드 변경 내역, PR 정보는 Repository 응답 값이고, 관련 커밋은 대표 커밋과 같은 PR에 속한다는 관계까지 확인됩니다"
-      )
+      screen.getByText(/Confirmed only as belonging to the same PR as the representative commit/)
     ).toBeInTheDocument();
-  });
 
-  it("관련 커밋 목록이 있으면 AI가 고른 결과이고 PR 소속 관계까지만 확인됨을 안내한다", () => {
-    renderDetail({
-      candidates: [candidate],
-      insufficientCandidatesReason: "하나뿐입니다.",
-      diffs: [],
-    });
-
+    cleanup();
+    renderDetail({ ...candidate, relatedShas: [] });
     expect(
-      screen.getByText(
-        "AI 선택 · 대표 커밋과 같은 PR에 속한다는 관계까지만 확인되고, 근거로서 관련 있다는 판단은 확인 불가입니다"
-      )
-    ).toBeInTheDocument();
-  });
-
-  it("관련 커밋이 없으면 AI 선택 안내를 표시하지 않는다", () => {
-    renderDetail({
-      candidates: [{ ...candidate, relatedShas: [] }],
-      insufficientCandidatesReason: "하나뿐입니다.",
-      diffs: [],
-    });
-
-    expect(
-      screen.queryByText(/대표 커밋과 같은 PR에 속한다는 관계까지만 확인되고/)
+      screen.queryByText(/Confirmed only as belonging to the same PR as the representative commit/)
     ).not.toBeInTheDocument();
   });
 
-  it("Repository로 확인할 수 없는 고정 목록을 항상 표시한다", () => {
-    renderDetail({
-      candidates: [candidate],
-      insufficientCandidatesReason: "하나뿐입니다.",
-      diffs: [],
-    });
+  it("근거 항목이 3개를 넘으면 접어 두고 View all로 펼친다", () => {
+    const relatedShas = ["1", "2", "3"].map((suffix) => suffix.padStart(40, "c"));
+    const manyData: CandidateDataOutput = {
+      allCommits: [representative, related, ...relatedShas.map((sha, index) => commit(sha, `관련 커밋 ${index}`, "2026-08-05T00:00:00Z"))],
+      includedCommits: [representative, related, ...relatedShas.map((sha, index) => commit(sha, `관련 커밋 ${index}`, "2026-08-05T00:00:00Z"))],
+      repository: { fileTree: [], treeTruncated: false, languages: {} },
+    };
+    renderDetail({ ...candidate, relatedShas: [related.sha, ...relatedShas] }, representative, manyData);
 
-    expect(screen.getByRole("heading", { name: "Repository로 확인할 수 없는 항목" })).toBeInTheDocument();
-    expect(screen.getByText("성능 개선 폭")).toBeInTheDocument();
-    expect(screen.getByText("사용자 영향")).toBeInTheDocument();
-    expect(screen.getByText("다른 대안과의 비교")).toBeInTheDocument();
-    expect(screen.getByText("협업·논의 배경")).toBeInTheDocument();
-    expect(screen.getByText("커밋 메시지에 적힌 수치·비교·의도가 실제로 그러했는지")).toBeInTheDocument();
+    expect(screen.queryByText("관련 커밋 2")).not.toBeInTheDocument();
+    const toggle = screen.getByRole("button", { name: /View all 5 commits/ });
+    fireEvent.click(toggle);
+    expect(screen.getByText("관련 커밋 2")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show less" })).toBeInTheDocument();
   });
 
-  it("관련 커밋과 diff가 없으면 안내하되 파일 목록과 PR 정보는 유지한다", () => {
-    renderDetail({
-      candidates: [{ ...candidate, relatedShas: [] }],
-      insufficientCandidatesReason: "하나뿐입니다.",
-      diffs: [],
-    });
+  it("footer 왼쪽에 다른 Repository 선택 버튼을 표시하고 클릭하면 onSelectRepository를 부른다", () => {
+    const onSelectRepository = vi.fn();
+    render(
+      <ExperienceCandidateDetail
+        repository={{ owner: "hm1n", repo: "demian" }}
+        data={data}
+        item={{
+          candidate,
+          commit: representative,
+          origin: "repository",
+          normalizedRelatedShas: [related.sha],
+          normalizedCitedFilePaths: candidate.citedFilePaths,
+        }}
+        onBack={vi.fn()}
+        onConfirm={vi.fn()}
+        onSelectRepository={onSelectRepository}
+      />
+    );
 
-    expect(screen.getByText("표시할 코드 변경 내역이 없습니다")).toBeInTheDocument();
-    expect(screen.getByText("관련 커밋이 없습니다.")).toBeInTheDocument();
-    expect(screen.getByText("src/detail.tsx")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "PR #46 · 후보 상세" })).toHaveAttribute("href", "https://example.com/pr/46");
+    fireEvent.click(screen.getByRole("button", { name: "Choose a different repository" }));
+    expect(onSelectRepository).toHaveBeenCalledTimes(1);
+  });
+
+  it("대표 커밋을 커밋 색인에서 찾지 못하면 계약 파손을 드러내고 커밋 수만 유도한다", () => {
+    renderDetail(candidate, null);
+
+    expect(screen.getByRole("heading", { name: `커밋 색인 실패 · ${candidate.sha.slice(0, 7)}` })).toBeInTheDocument();
+    expect(screen.getByText("Representative commit not found in the commit index.")).toBeInTheDocument();
+    expect(screen.getAllByText("2 commits").length).toBeGreaterThan(0);
+  });
+
+  it("확정 실패 안내가 있으면 인터뷰 시작 대신 실패 이유를 보여주고 뒤로가기로 onBack을 부른다", () => {
+    const onBack = vi.fn();
+    render(
+      <ExperienceCandidateDetail
+        repository={{ owner: "hm1n", repo: "demian" }}
+        data={data}
+        item={{
+          candidate,
+          commit: representative,
+          origin: "repository",
+          normalizedRelatedShas: [related.sha],
+          normalizedCitedFilePaths: candidate.citedFilePaths,
+        }}
+        onBack={onBack}
+        onConfirm={vi.fn()}
+        onSelectRepository={vi.fn()}
+        selectionError="no_repository_evidence"
+      />
+    );
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveAttribute("data-selection-error", "no_repository_evidence");
+    expect(screen.getByRole("button", { name: /Start interview/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "← Back to candidates" }));
+    expect(onBack).toHaveBeenCalledTimes(1);
   });
 });

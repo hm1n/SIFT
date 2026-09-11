@@ -53,16 +53,16 @@ describe("InterviewEvidencePanel", () => {
     );
 
     const changedFiles = screen.getByText(/대표 커밋 변경 파일 1개/, { selector: "li" });
-    expect(changedFiles).toHaveTextContent("확인 가능");
-    expect(changedFiles).not.toHaveTextContent("AI 선택");
+    expect(changedFiles).toHaveTextContent("Verified");
+    expect(changedFiles).not.toHaveTextContent("AI-selected");
 
     const related = screen.getByText(/관련 커밋 1개/, { selector: "li" });
-    expect(related).toHaveTextContent("AI 선택");
-    expect(related).not.toHaveTextContent("확인 가능");
+    expect(related).toHaveTextContent("AI-selected");
+    expect(related).not.toHaveTextContent("Verified");
 
     const cited = screen.getByText(/인용 파일 1개/, { selector: "li" });
-    expect(cited).toHaveTextContent("AI 선택");
-    expect(cited).not.toHaveTextContent("확인 가능");
+    expect(cited).toHaveTextContent("AI-selected");
+    expect(cited).not.toHaveTextContent("Verified");
   });
 
   it("관련 커밋 목록에 관련성 판단이 확인 불가라는 안내를 함께 둔다", () => {
@@ -73,7 +73,7 @@ describe("InterviewEvidencePanel", () => {
     );
 
     expect(
-      screen.getByText(/대표 커밋과 같은 PR에 속한다는 관계까지만 확인되고/)
+      screen.getByText(/Confirmed only as belonging to the same PR as the representative commit/)
     ).toBeInTheDocument();
   });
 
@@ -84,12 +84,12 @@ describe("InterviewEvidencePanel", () => {
       />
     );
 
-    // 대표 커밋은 `확인 가능`, 관련 커밋은 `AI 선택`입니다. 같은 `verified`라도 AI가 고른 값이면
-    // `확인 가능` 태그를 씌우지 않습니다.
+    // 대표 커밋은 `Verified`, 관련 커밋은 `AI-selected`입니다. 같은 `verified`라도 AI가 고른 값이면
+    // `Verified` 태그를 씌우지 않습니다.
     expect(screen.getByText(/커밋 SHA, 제목, 메시지, 변경 파일, patch 본문은/)).toHaveTextContent(
-      "확인 가능"
+      "Verified"
     );
-    expect(screen.getByText(/같은 PR 소속 관계까지만 확인됩니다/)).toHaveTextContent("AI 선택");
+    expect(screen.getByText(/같은 PR 소속 관계까지만 확인됩니다/)).toHaveTextContent("AI-selected");
   });
 
   it("근거는 기본으로 접혀 있다", () => {
@@ -103,8 +103,8 @@ describe("InterviewEvidencePanel", () => {
     render(<InterviewEvidencePanel snapshot={snapshot()} />);
 
     const summary = screen.getByText(/커밋과 코드 변경 내역 1건 보기/);
-    expect(summary).toHaveAccessibleDescription(/확인 가능/);
-    expect(summary).toHaveAccessibleDescription(/확인 불가 · AI가 작성한 해석입니다/);
+    expect(summary).toHaveAccessibleDescription(/Verified/);
+    expect(summary).toHaveAccessibleDescription(/Unverifiable · AI-written interpretation/);
   });
 
   it("스냅샷 상한 절단을 알린다", () => {

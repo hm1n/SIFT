@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { EvidenceOrigin, ExperienceCandidateListItem, StageBCandidateResult } from "./types";
+import type { ExperienceCandidateListItem, StageBCandidateResult } from "./types";
 import type { CandidateDataOutput, ReadonlyCommitDetail } from "@/lib/github/types";
 import type { RepositoryRef } from "@/lib/github/types";
-import { AI_SELECTION_LABEL, EVIDENCE_VERIFIABILITY_NOTICE, VERIFIABILITY_LABEL } from "./evidence-verifiability";
+import { VERIFIABILITY_LABEL } from "./evidence-verifiability";
+import { deriveCandidatePeriod } from "./candidate-period";
 import { ExperienceCandidateDetail } from "./experience-candidate-detail";
 import { InterviewScreen } from "@/features/interview/interview-screen";
 import { confirmExperienceSelection, type ExperienceSelectionState } from "./experience-selection";
@@ -28,10 +29,6 @@ export interface StageASelectionDisplay {
   readonly selectedUnitCount: number;
   readonly unjudgedShas: readonly string[];
 }
-
-const EVIDENCE_ORIGIN_LABEL: Record<EvidenceOrigin, string> = {
-  repository: "출처: Repository",
-};
 
 export function createExperienceCandidateListItems(
   data: CandidateDataOutput,
@@ -70,89 +67,83 @@ export function ExperienceCandidateList({
   onSelectRepository,
   onInterviewActiveChange,
 }: ExperienceCandidateListProps) {
-  const [selectedSha, setSelectedSha] = useState<string | null>(null);
+  const items = useMemo(() => createExperienceCandidateListItems(data, candidates), [data, candidates]);
+  // 목록 행과 상세 양쪽이 관련 커밋의 date를 봐야 해서 여기서 한 번만 모읍니다.
+  const commitsBySha = useMemo(() => new Map(data.includedCommits.map((commit) => [commit.sha, commit])), [data]);
+  // master-detail 배치라 항상 한 후보가 선택돼 있습니다. 디자인의 `useState(CANDIDATES[0])`과 같습니다.
+  const [selectedSha, setSelectedSha] = useState<string | null>(() => items[0]?.candidate.sha ?? null);
   // 확정 상태는 `AnalysisState`가 아니라 후보 기능 안에 둡니다. 이유는 `experience-selection.ts`에 있습니다.
   const [selection, setSelection] = useState<ExperienceSelectionState>({ status: "idle" });
   useEffect(() => {
     onInterviewActiveChange?.(selection.status === "confirmed");
   }, [selection.status, onInterviewActiveChange]);
-  const items = useMemo(() => createExperienceCandidateListItems(data, candidates), [data, candidates]);
   const selectedItem = items.find(({ candidate }) => candidate.sha === selectedSha);
 
-  // 목록으로 돌아갈 때 확정 상태를 비웁니다. 다른 경험을 다시 확정하면 그 값이 이전 확정을 교체합니다.
-  function backToList() {
-    setSelectedSha(null);
+  // 인터뷰에서 돌아오거나 확정 실패 안내를 닫을 때 씁니다. 선택한 후보는 그대로 두고 확정 상태만
+  // 비웁니다. master-detail에서는 목록이 항상 보이므로 선택 자체를 비울 필요가 없습니다.
+  function returnToCandidates() {
     setSelection({ status: "idle" });
   }
 
   if (selection.status === "confirmed") {
-    return <InterviewScreen snapshot={selection.snapshot} onBack={backToList} />;
-  }
-
-  if (selectedItem) {
-    return (
-      <ExperienceCandidateDetail
-        repository={repository}
-        data={data}
-        candidates={candidates}
-        item={selectedItem}
-        onBack={backToList}
-        onConfirm={() => setSelection(confirmExperienceSelection(selectedItem, data, candidates))}
-        selectionError={selection.status === "error" ? selection.reason : undefined}
-      />
-    );
+    return <InterviewScreen snapshot={selection.snapshot} onBack={returnToCandidates} />;
   }
 
   return (
     <section className={styles.state} aria-live="polite">
-      <h2>경험 후보를 준비했습니다</h2>
-      <p>{`실제 diff와 PR 소속을 근거로 경험 후보 ${candidates.candidates.length}개를 선정했습니다.`}</p>
-      {candidates.insufficientCandidatesReason ? (
-        <p className={styles.insufficientReason}>
-          <strong>후보를 3개 채우지 않은 이유</strong>
-          {candidates.insufficientCandidatesReason} 기준을 완화하거나 후보를 임의로 채우지 않습니다.
-        </p>
-      ) : null}
-      <ul className={styles.candidateList}>
-        {items.map(({ candidate, commit, origin, normalizedRelatedShas, normalizedCitedFilePaths }) => {
-          const indexedTitle = commit?.title ?? `커밋 색인 실패 · ${candidate.sha.slice(0, 7)}`;
-          return (
-            <li key={candidate.sha}>
-              <button
-                type="button"
-                aria-label={`${indexedTitle} · ${EVIDENCE_ORIGIN_LABEL[origin]}`}
-                aria-describedby={`candidate-evidence-${candidate.sha}`}
-                onClick={() => setSelectedSha(candidate.sha)}
-              >
-                <span className={styles.title}>{indexedTitle}</span>
-                <span id={`candidate-evidence-${candidate.sha}`} className={styles.evidenceGroup}>
-                  <span className={styles.badges}>
-                    <span>{candidate.source === "contribution_match" ? "기여 항목 일치" : "자동 추천"}</span>
-                    <span>{EVIDENCE_ORIGIN_LABEL[origin]}</span>
-                  </span>
-                  <span className={styles.evidence}>{candidate.evidence}</span>
-                  <span className={styles.evidenceNotice}>{EVIDENCE_VERIFIABILITY_NOTICE}</span>
-                  <span className={styles.metrics}>
-                    <span className={styles.aiSelectionTag}>{AI_SELECTION_LABEL}</span>
-                    <span>인용 파일 {normalizedCitedFilePaths.length}개</span>
-                    <span>관련 커밋 {normalizedRelatedShas.length}개</span>
-                    <span className={styles.verifiedTag}>{VERIFIABILITY_LABEL.verified}</span>
-                    {commit === null ? <span>커밋 색인 실패</span> : commit.pullRequests.length === 0 ? (
-                      <span>PR 정보 없음</span>
-                    ) : commit.pullRequests.map((pullRequest) => <span key={pullRequest.number}>PR #{pullRequest.number}</span>)}
-                  </span>
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-      <div className={styles.summary}>
-        <div><strong>{data.allCommits.length}</strong><span>전체 커밋</span></div>
-        <div><strong>{data.includedCommits.length}</strong><span>상세 조회 커밋</span></div>
+      <div className={styles.layout}>
+        <div className={styles.listPanel}>
+          <p className={styles.eyebrow}>Candidates</p>
+          <p className={styles.listSubtitle}>{`${candidates.candidates.length} experiences found`}</p>
+          {candidates.insufficientCandidatesReason ? (
+            <p className={styles.insufficientReason}>
+              <strong>후보를 3개 채우지 않은 이유</strong>
+              {candidates.insufficientCandidatesReason} 기준을 완화하거나 후보를 임의로 채우지 않습니다.
+            </p>
+          ) : null}
+          <ul className={styles.candidateList} aria-label="Candidates">
+            {items.map(({ candidate, commit, normalizedRelatedShas }) => {
+              const indexedTitle = commit?.title ?? `커밋 색인 실패 · ${candidate.sha.slice(0, 7)}`;
+              const selected = candidate.sha === selectedSha;
+              const commitCount = 1 + normalizedRelatedShas.length;
+              const relatedDates = normalizedRelatedShas
+                .map((sha) => commitsBySha.get(sha)?.date)
+                .filter((date): date is string => date !== undefined);
+              const period = deriveCandidatePeriod(commit ? [commit.date, ...relatedDates] : relatedDates);
+              return (
+                <li key={candidate.sha}>
+                  <button
+                    type="button"
+                    className={selected ? styles.selectedRow : styles.row}
+                    aria-current={selected ? "true" : undefined}
+                    aria-label={indexedTitle}
+                    onClick={() => setSelectedSha(candidate.sha)}
+                  >
+                    <span className={styles.title}>{indexedTitle}</span>
+                    <span className={styles.rowMeta}>
+                      <span>{`${commitCount} commits`}</span>
+                      {period ? <span>{period.start}</span> : null}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+        {selectedItem ? (
+          <ExperienceCandidateDetail
+            key={selectedItem.candidate.sha}
+            repository={repository}
+            data={data}
+            item={selectedItem}
+            onBack={returnToCandidates}
+            onConfirm={() => setSelection(confirmExperienceSelection(selectedItem, data, candidates))}
+            onSelectRepository={onSelectRepository}
+            selectionError={selection.status === "error" ? selection.reason : undefined}
+          />
+        ) : null}
       </div>
       {stageASelection ? <StageAExclusions {...stageASelection} /> : null}
-      <button className={styles.secondaryButton} type="button" onClick={onSelectRepository}>다른 Repository 선택</button>
     </section>
   );
 }
