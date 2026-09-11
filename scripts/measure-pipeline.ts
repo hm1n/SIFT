@@ -49,6 +49,7 @@ import {
 } from "../src/features/experience-candidates/candidate-client";
 import { STAGE_A_MAX_SELECTION_BYTES } from "../src/features/experience-candidates/work-unit-selection";
 import { modelFacingUnitId } from "../src/features/experience-candidates/work-unit";
+import { syntheticCommitSha } from "./synthetic-unit-id";
 import {
   buildStageBPayload,
   createStageBGenerate,
@@ -321,13 +322,22 @@ async function runDetails() {
   const elapsed = ms() - startedAt;
   const after = await coreRateLimit();
 
-  console.log(`[details] 순차 조회 커밋=${details.length} 총 소요=${round(elapsed)}ms 커밋당 평균=${round(elapsed / (details.length || 1))}ms`);
-  if (durations.length > 0) distribution("[details] 커밋별 조회 소요(ms)", durations);
+  /**
+   * `--cache`를 쓰면 캐시가 맞으면 디스크만 읽고, 캐시가 비어 있으면 `--concurrency`만큼
+   * 병렬로 조회합니다. 두 경우 모두 실제 단일 스레드 순차 네트워크 조회가 아니므로, 이 시간을
+   * "순차 조회 소요"로 보고하고 그대로 프로덕션 예산으로 환산하면 근거 없이 낙관적인(캐시 적중
+   * 시 거의 0에 가까운) 숫자가 나갑니다(Codex 리뷰, 이슈 #101). `--cache` 없이 부른, 보장된
+   * 단일 스레드 순차 조회에서만 이 두 줄을 보고합니다.
+   */
+  if (cachePath === undefined) {
+    console.log(`[details] 순차 조회 커밋=${details.length} 총 소요=${round(elapsed)}ms 커밋당 평균=${round(elapsed / (details.length || 1))}ms`);
+    if (durations.length > 0) distribution("[details] 커밋별 조회 소요(ms)", durations);
+    // 이 줄은 프로덕션 예산 환산이 목적이라 로컬 축소값이 아니라 상수를 씁니다.
+    console.log(
+      `[details] 커밋 ${STAGE_B_MAX_INPUT_COMMITS}개 순차 환산=${round((elapsed / (details.length || 1)) * STAGE_B_MAX_INPUT_COMMITS)}ms`
+    );
+  }
   console.log(`[details] core rate limit 소비=${consumed(before, after)} 잔량=${after.remaining}/${after.limit}`);
-  // 이 줄은 프로덕션 예산 환산이 목적이라 로컬 축소값이 아니라 상수를 씁니다.
-  console.log(
-    `[details] 커밋 ${STAGE_B_MAX_INPUT_COMMITS}개 순차 환산=${round((elapsed / (details.length || 1)) * STAGE_B_MAX_INPUT_COMMITS)}ms`
-  );
   reportDetailShape(details);
   reportPayloadSizes(details);
 }
@@ -458,14 +468,15 @@ async function runStageA() {
             const source = stageAUnits[index % stageAUnits.length];
             const round = Math.floor(index / stageAUnits.length);
             if (round === 0) return source;
-            const representativeSha = index.toString(16).padStart(40, "0");
             /**
              * 커밋 단위는 모델에게 `modelFacingUnitId`가 자른 SHA 앞 7자리만 보입니다. 원본
              * unitId 뒤에 라운드 접미사만 붙이면 그 7자리는 라운드마다 그대로라 모든 복제본이
              * 모델에게 완전히 같은 식별자로 보이고, 실제로는 한 곳으로 뭉개져 전수 응답 계약을
              * 재는 이 실험 자체가 성립하지 않습니다(Codex 리뷰, 이슈 #101). 새로 붙인 대표 SHA로
-             * unitId 자체를 다시 만들어야 라운드마다 실제로 구별됩니다.
+             * unitId 자체를 다시 만들어야 라운드마다 실제로 구별됩니다. `syntheticCommitSha`가
+             * index마다 다른 SHA 앞 7자리를 보장합니다.
              */
+            const representativeSha = syntheticCommitSha(index);
             const unitId = source.unitId.startsWith("commit:")
               ? `commit:${representativeSha}`
               : `${source.unitId}-round${round}`;

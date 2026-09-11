@@ -19,6 +19,7 @@ import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 
 import type { CommitDetail } from "../src/lib/github/types";
+import { toGroupingCommit, type GroupingCommit } from "./grouping-commit";
 
 const [cachePath, ...rest] = process.argv.slice(2);
 if (!cachePath) {
@@ -32,40 +33,8 @@ const option = (name: string) =>
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
-/** 묶기에 쓰는 필드만 고릅니다. patch는 쓰지 않습니다. */
-interface GroupingCommit {
-  readonly sha: string;
-  readonly title: string;
-  readonly message: string;
-  readonly time: number;
-  readonly paths: readonly string[];
-  readonly dirs: readonly string[];
-  readonly pullRequestNumber: number | null;
-}
-
 /** 묶음은 SHA 배열입니다. 방식은 입력 순서(시간 오름차순)를 바꾸지 않습니다. */
 type GroupingRule = (commits: readonly GroupingCommit[]) => readonly string[][];
-
-function toGroupingCommit(detail: CommitDetail): GroupingCommit {
-  const paths = detail.files.map(({ path }) => path);
-  return {
-    sha: detail.sha,
-    title: detail.title,
-    message: detail.message,
-    time: new Date(detail.date).getTime(),
-    paths,
-    dirs: [...new Set(paths.map(dirOf))],
-    pullRequestNumber: detail.pullRequests.reduce<number | null>(
-      (min, { number }) => (min === null || number < min ? number : min),
-      null
-    ),
-  };
-}
-
-function dirOf(path: string) {
-  const index = path.lastIndexOf("/");
-  return index === -1 ? "." : path.slice(0, index);
-}
 
 function overlaps(a: readonly string[], b: readonly string[]) {
   const set = new Set(a);
@@ -351,7 +320,11 @@ function dumpGroups(groups: readonly string[][], bySha: Map<string, GroupingComm
 // ── 실행 ────────────────────────────────────────────────────────────────────
 
 const details = JSON.parse(readFileSync(cachePath, "utf8")) as CommitDetail[];
-const commits = details.map(toGroupingCommit).sort((a, b) => a.time - b.time);
+const converted = details.map(toGroupingCommit);
+const commits = converted
+  .filter((commit): commit is GroupingCommit => commit !== null)
+  .sort((a, b) => a.time - b.time);
+const missingDateCount = converted.length - commits.length;
 const bySha = new Map(commits.map((commit) => [commit.sha, commit]));
 const withPr = commits.filter((commit) => commit.pullRequestNumber !== null).length;
 const hasPr = withPr > 0;
@@ -362,6 +335,9 @@ console.log(`## ${basename(cachePath, ".json")}`);
 console.log(
   `커밋 ${commits.length}개(블랙리스트 통과분), PR 소속 ${withPr}개, PR ${prCount}개, 기간 ${spanDays}일`
 );
+if (missingDateCount > 0) {
+  console.log(`작성자 날짜가 없는 커밋 ${missingDateCount}개를 그룹핑 대상에서 제외했습니다.`);
+}
 console.log("");
 
 const selected = option("rules")?.split(",") ?? Object.keys(RULES);
