@@ -1,8 +1,8 @@
 # 경험 후보 master-detail 화면 개편
 
-이슈 #97이 만든 경험 후보 화면의 현재 계약입니다. 배경은 `wiki/2026-09-10-디자인-개편-계획.md`에, 구현 경위는 `raw/2026-09-11-경험후보-master-detail-화면-개편-session-log.md`(1차 구현)와 `raw/2026-09-11-경험후보-master-detail-디자인우선-재작업-session-log.md`(디자인 우선 재작업)에 있습니다. 확인 가능·불가 구분의 원본 계약은 `wiki/2026-08-24-확인가능불가-구분-계약.md`이고, 앞 단계인 분석 진행 화면 개편은 `wiki/2026-09-11-Repository-분석-진행-화면-개편.md`에 있습니다.
+이슈 #97이 만든 경험 후보 화면의 현재 계약입니다. 배경은 `wiki/2026-09-10-디자인-개편-계획.md`에, 구현 경위는 `raw/2026-09-11-경험후보-master-detail-화면-개편-session-log.md`(1차 구현), `raw/2026-09-11-경험후보-master-detail-디자인우선-재작업-session-log.md`(디자인 우선 재작업), `raw/2026-09-11-경험후보-master-detail-화면-다듬기-session-log.md`(PR #111 올리기 전 브라우저 확인 중 다듬기)에 있습니다. 확인 가능·불가 구분의 원본 계약은 `wiki/2026-08-24-확인가능불가-구분-계약.md`이고, 앞 단계인 분석 진행 화면 개편은 `wiki/2026-09-11-Repository-분석-진행-화면-개편.md`에 있습니다.
 
-확인 날짜는 2026-09-11입니다. 이 문서는 1차 구현 뒤 사용자가 브라우저에서 실물 화면을 보고 "참고한 Figma 디자인과 전혀 다르다"고 지적해 디자인 우선으로 다시 작업한 결과까지 반영합니다. 1차 구현은 master-detail *배치*만 디자인대로 바꾸고 목록 행·타이포그래피·번역 범위는 기존 UI를 그대로 유지했었는데, 그 판단이 잘못이었습니다.
+확인 날짜는 2026-09-11입니다. 이 문서는 1차 구현 뒤 사용자가 브라우저에서 실물 화면을 보고 "참고한 Figma 디자인과 전혀 다르다"고 지적해 디자인 우선으로 다시 작업한 결과, 그리고 그 뒤 사용자가 실 Repository로 브라우저에서 직접 확인하며 요청한 다듬기 결과까지 반영합니다. 1차 구현은 master-detail *배치*만 디자인대로 바꾸고 목록 행·타이포그래피·번역 범위는 기존 UI를 그대로 유지했었는데, 그 판단이 잘못이었습니다.
 
 ## 1. 배치
 
@@ -32,7 +32,7 @@
 
 이 결정이 안전한 이유는 `interview-evidence-panel.tsx`가 대표·관련 커밋의 diff·파일·PR 정보를 이미 전부 보여주기 때문입니다. 인터뷰 확정 뒤 도달하는 화면에서 깊은 근거가 그대로 남으므로, 후보 화면에서는 요약만 보여줘도 diff 수준 근거가 사라지지 않습니다.
 
-항목 단위 확인 가능·AI 선택 구분은 유지합니다. 대표 커밋 항목은 `Verified`, 관련 커밋 항목은 `AI-selected`입니다. 확인 불가 고정 목록(`REPOSITORY_UNVERIFIABLE_ITEMS`, 이슈 #58 원칙)은 디자인에는 없지만 그대로 별도 섹션으로 남겼습니다.
+항목 단위 확인 가능·AI 선택 구분은 유지합니다. 대표 커밋 항목은 `Verified`, 관련 커밋 항목은 `AI-selected`입니다. 확인 불가 고정 목록(`REPOSITORY_UNVERIFIABLE_ITEMS`, 이슈 #58 원칙)은 디자인에는 없어 별도 섹션으로 뒀었지만, PR #111을 올리기 전 사용자가 실 Repository로 화면을 확인하며 화면에서 완전히 빼 달라고 요청해 지웠습니다(11절).
 
 디자인의 상세 헤더에는 대표 커밋 SHA로 가는 링크가 없습니다(App.tsx 594~598행). 1차 구현이 헤더에 별도로 넣었던 "대표 커밋 {sha7}" 링크는 Repository evidence 목록의 첫 항목이 이미 같은 URL로 링크하고 있어 중복이라 뺐습니다.
 
@@ -46,7 +46,7 @@
 - 확인 불가 헤딩("What can't be confirmed from the Repository"), 스키마 공백 안내문, 커밋 색인 실패 안내("Representative commit not found in the commit index.")
 - `EXPERIENCE_SELECTION_ERROR_COPY`(`experience-selection.ts`)의 title·message 3종
 - 인터뷰 시작 버튼("Start interview →"), 확정 실패 시 뒤로가기 버튼("← Back to candidates")
-- "다른 Repository 선택" → "Choose a different repository"(다른 Empty/Error 상태와 이미 같은 라벨), 요약 통계 라벨("Total commits", "Commits reviewed in detail")
+- "다른 Repository 선택" → "Choose a different repository"(다른 Empty/Error 상태와 이미 같은 라벨). 이 버튼은 이후 상세 푸터로 옮겨졌습니다(11절)
 
 한국어로 남긴 것(전부 Stage A/B 서버 생성 콘텐츠 성격):
 - `candidates.insufficientCandidatesReason`을 감싸는 "후보를 3개 채우지 않은 이유" 문단. 서버가 주는 사유 문장 자체가 한국어라 주변만 영어로 바꾸면 문장이 섞여 더 어색합니다.
@@ -74,7 +74,19 @@
 - 임시 라우트(`src/app/debug-candidates-97/`)에 고정 fixture로 화면을 실제로 렌더해 Playwright로 넓은 화면·좁은 화면(480px) 스크린샷을 확인했습니다. 목록 행이 디자인처럼 세 줄로 줄었는지, 선택 전환이 되는지, 상세 헤더/푸터가 고정되고 본문만 스크롤되는지 확인했습니다. 임시 라우트와 스크린샷 스크립트는 모두 삭제했습니다.
 - 실제 GitHub 데이터·실제 로그인 화면으로의 확인은 사용자가 별도로 진행 중입니다.
 
-## 10. 확인 필요
+## 10. 화면 다듬기 — PR #111 올리기 전 실 Repository 확인 중 반영
 
-- 실제 브라우저에서 로그인 뒤 실제 Repository로 다시 확인해야 합니다.
+디자인 우선 재작업을 커밋하지 않은 채 사용자가 실 Repository(로그인된 실제 GitHub 계정)로 화면을 열어 브라우저 요소 검사기로 직접 짚어가며 다듬음을 요청했습니다. 경위는 `raw/2026-09-11-경험후보-master-detail-화면-다듬기-session-log.md`에 있습니다.
+
+- **목록 행 사이 간격**: `li + li` 구분선(디자인에는 있던 border)을 지워 달라는 요청에 따라 지웠고, 이어서 `candidateList`가 `display: grid`의 기본 `align-content: stretch` 때문에 후보 수가 적을 때(3개뿐인데 패널은 640px) 각 행 아래에 불필요한 여백이 생기던 1차 구현 이전부터의 문제를 `align-content: start`로 함께 고쳤습니다.
+- **행 상하 패딩**: 14px → 20px로 늘렸습니다(사용자가 최종 값을 직접 지정).
+- **"What can't be confirmed from the Repository" 고정 목록 제거**: 상세에서 완전히 뺐습니다. 이슈 #58·#47·#97이 정한 Constraint("확인 가능 여부 표시를 제거하거나 색으로만 표시하지 않는다")가 가리키는 것은 커밋별 `Verified`/`AI-selected` **태그**이고, 이 고정 목록은 그 태그를 보완하는 별도 안내 섹션이라 판단해 태그는 그대로 두고 이 섹션만 지웠습니다.
+- **목록 하단 요약 타일 제거**: "Total commits"/"Commits reviewed in detail" 두 타일을 지웠습니다. 디자인에도 없는 요소였습니다.
+- **"Choose a different repository" 버튼 이동**: 목록 하단에서 상세 푸터 왼쪽으로 옮겼습니다. `ExperienceCandidateDetail`에 `onSelectRepository` prop을 새로 받아, "Start interview"와 같은 크기·모양(높이 40px, 아이콘 간격)에 테두리 있는 muted 색을 입혀 primary 버튼보다 낮은 위계로 보이게 했습니다. 후보가 0개면 이 화면 자체가 렌더되지 않아(별도 Empty 상태) 상세가 항상 렌더되므로 이 버튼도 항상 보입니다.
+- **확인 가능·불가 설명 문단 3곳의 시각적 제거**: `verifiedNotice`("Verified · Changed files...")와 `aiSelectionNotice`("AI-selected · Confirmed only...")를 화면에서 없애 달라는 요청을 받았습니다. `verifiedNotice`는 "Start interview" 버튼의 `aria-describedby`가 가리키는 대상이라(이슈 #47 PR #52 1차 리뷰 P1과 같은 종류의 문제) 완전히 지우면 스크린리더가 이 설명을 듣지 못하게 됩니다. 사용자에게 이 tension을 설명하고 확인받은 뒤, 표준 visually-hidden 패턴(`position: absolute; width/height: 1px; clip: rect(0,0,0,0)` 등)으로 DOM·`aria-describedby` 연결은 유지하고 화면에서만 숨기기로 했습니다. 같은 처리를 "Why worth discussing" 섹션의 `evidenceNotice`("Unverifiable · AI-written interpretation")에도 적용했습니다. 이 셋과 달리 "Why worth discussing"의 스키마 공백 안내문 중복분은 `aria-describedby` 연결이 없어 완전히 지웠습니다("Technical topics"의 스키마 공백 안내문은 그대로 남습니다).
+- **여백 추가**: "Why worth discussing" evidence 문단과 "Technical topics" 스키마 공백 안내에 각 32px, "Repository evidence" 섹션 전체에 40px 하단 여백을 추가했습니다. `.body p { margin: 0 }`가 타입 선택자+클래스라 단순 클래스 하나로는 우선순위가 낮아 적용되지 않아, `.body .evidenceText`처럼 클래스를 겹쳐 우선순위를 올려야 했습니다.
+
+## 11. 확인 필요
+
 - 기여 항목 일치/자동 추천 출처 라벨을 화면에서 완전히 뺀 것이 맞는 선택인지는 확인 필요입니다. 데이터·타입은 남겨 뒤, 필요해지면 상세 패널 등 다른 자리에 다시 넣을 수 있습니다.
+- 확인 불가 고정 목록을 뺀 자리(목록 하단 요약 타일 포함)를 다른 화면(온보딩, 도움말 등)에 노출할지는 정하지 않았습니다.
