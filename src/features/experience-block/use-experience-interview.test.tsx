@@ -205,6 +205,55 @@ describe("useExperienceInterview", () => {
     expect(result.current.unreflectedTurnId).toBe("t1");
   });
 
+  it("겹쳐 재처리한 늦은 응답이 그 뒤 턴이 이미 반영한 더 새 상태를 되돌리지 않는다 (구현검토 P1-3, R4)", async () => {
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    const questionSources = [q1, q2];
+    let questionIndex = 0;
+    let blockUpdateCalls = 0;
+    let resolveDelayedRetry!: (value: unknown) => void;
+    const delayedRetryJson = new Promise<unknown>((resolve) => {
+      resolveDelayedRetry = resolve;
+    });
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === QUESTION_URL) return questionSources[questionIndex++].response;
+      if (url === BLOCK_UPDATE_URL) {
+        blockUpdateCalls += 1;
+        if (blockUpdateCalls === 1) return jsonResponse(502, { error: { kind: "block_update_rejected", message: "검증 실패" } }); // t1, 실패
+        if (blockUpdateCalls === 2) return { ok: true, status: 200, json: () => delayedRetryJson } as unknown as Response; // t1 재처리, 응답 지연
+        return jsonResponse(200, { state: { ...emptyExperienceBlockState(), version: 2 }, affectedBlocks: [], targetResponse: "provided" }); // t2, 즉시 성공
+      }
+      throw new Error(`unexpected url: ${url}`);
+    });
+    const { result } = renderHook(() =>
+      useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    completeQuestion(q1, "질문1");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+    act(() => result.current.submitAnswer("t1 답변"));
+    await waitFor(() => expect(result.current.unreflectedTurnId).toBe("t1"));
+
+    completeQuestion(q2, "질문2");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+    // t1 재처리를 걸어 둡니다(응답은 아직 오지 않습니다).
+    act(() => result.current.retryUnreflectedBlockUpdate());
+    await waitFor(() => expect(blockUpdateCalls).toBe(2));
+
+    // t2를 제출합니다. t1 재처리보다 먼저 응답이 와서 상태가 버전 2로 갑니다.
+    act(() => result.current.submitAnswer("t2 답변"));
+    await waitFor(() => expect(result.current.blockState.version).toBe(2));
+
+    // 이제 t1의 지연된 재처리 응답(버전 1, 더 낡은 상태)이 도착합니다. 반영되면 안 됩니다.
+    await act(async () => {
+      resolveDelayedRetry({ state: { ...emptyExperienceBlockState(), version: 1 }, affectedBlocks: [], targetResponse: "provided" });
+      await delayedRetryJson;
+    });
+    expect(result.current.blockState.version).toBe(2);
+  });
+
   it("유효한 질문 후보가 없으면 질문을 만들지 않고 완료 대기 상태로 둔다. 사용자가 종료해야 실제로 끝난다", async () => {
     const q1 = controllableResponse();
     const fetchImpl = makeFetchImpl({
@@ -275,6 +324,45 @@ describe("useExperienceInterview", () => {
     expect(result.current.isEnded).toBe(true);
     // 원래 호출과 종료 시점의 재시도, 둘 다 나갑니다. 끊긴 자리에서 다음 "질문" 요청은 나오지 않습니다.
     expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+
+  it("언마운트하면 진행 중이던 블록 갱신을 끊고 그 뒤 응답이 와도 다음 질문을 요청하지 않는다 (구현검토 P1-3, R5)", async () => {
+    const q1 = controllableResponse();
+    let blockUpdateSignal: AbortSignal | undefined;
+    let resolveBlockUpdate!: (value: Response) => void;
+    const blockUpdatePromise = new Promise<Response>((resolve) => {
+      resolveBlockUpdate = resolve;
+    });
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = String(input);
+      if (url === QUESTION_URL) return q1.response;
+      if (url === BLOCK_UPDATE_URL) {
+        blockUpdateSignal = init?.signal ?? undefined;
+        return blockUpdatePromise;
+      }
+      throw new Error(`unexpected url: ${url}`);
+    });
+    const { result, unmount } = renderHook(() =>
+      useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    completeQuestion(q1, "질문1");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+    act(() => result.current.submitAnswer("t1 답변"));
+    await waitFor(() => expect(blockUpdateSignal).toBeDefined());
+
+    const callsBeforeUnmount = fetchImpl.mock.calls.length;
+    unmount();
+
+    // 언마운트 뒤에야 블록 갱신이 응답합니다(정상 응답이며 abort로 인한 거절이 아닙니다).
+    await act(async () => {
+      resolveBlockUpdate(jsonResponse(200, blockUpdateBody()));
+      await blockUpdatePromise;
+    });
+
+    expect(blockUpdateSignal?.aborted).toBe(true);
+    // 언마운트 뒤에는 다음 질문을 요청하지 않습니다.
+    expect(fetchImpl).toHaveBeenCalledTimes(callsBeforeUnmount);
   });
 
   it("열 턴을 채우면 사용자 조작 없이 자동으로 종료하고 사유를 turn_limit으로 남긴다", async () => {

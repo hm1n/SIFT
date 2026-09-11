@@ -107,6 +107,18 @@ export function useExperienceInterview({
   const inFlightRef = useRef<(PendingTurn & { readonly callSeq: number }) | null>(null);
   const callSeqRef = useRef(0);
   const blockUpdateAbortRef = useRef<AbortController | null>(null);
+  /**
+   * 언마운트됐는지입니다. 이 훅이 사라진 뒤에도 `applyTurn`이나 `onBeforeQuestion`의 이어지는
+   * 작업이 상태를 계속 바꾸는 것을 막습니다(구현검토 2026-09-11 P1-3, R5). `useInterviewStream`
+   * 쪽의 이어지는 질문 요청은 그 훅 자신의 언마운트 가드가 막습니다.
+   */
+  const unmountedRef = useRef(false);
+  useEffect(() => {
+    return () => {
+      unmountedRef.current = true;
+      blockUpdateAbortRef.current?.abort();
+    };
+  }, []);
 
   /** `unreflectedRef`가 바뀐 뒤 노출용 상태를 맞춥니다. 가장 오래된(먼저 실패한) 턴을 보여 줍니다. */
   const syncUnreflectedTurnId = useCallback(() => {
@@ -129,6 +141,12 @@ export function useExperienceInterview({
    * 겹쳐 들어온 경우) 아무 기록도 남기지 않고 조용히 돌아갑니다. 그 턴을 미반영으로 기록할지는
    * 취소한 쪽(주로 `endInterview`)이 `inFlightRef`를 보고 직접 판단합니다. 그래야 "종료가 끊은
    * 진행 중이던 호출"과 "이 함수 자신이 이전 호출을 끊은 것"을 헷갈리지 않습니다.
+   *
+   * 응답이 도착하면(성공이든 실패든) `callSeq`가 그 시점의 "가장 최근에 시작한 호출"과 같은지
+   * 봅니다. 다르면 그 사이 다른 호출(주로 겹쳐 들어온 재처리)이 이미 새로 시작된 것이므로 이
+   * 응답은 낡은 것으로 보고 아무것도 반영하지 않습니다. 응답 도착 순서가 요청 순서와 같다고
+   * 보장할 수 없어(느린 재처리 응답이 그 뒤에 시작한 다음 턴의 응답보다 늦게 와도), 버전을 그냥
+   * 덮어쓰면 최신 상태가 옛 상태로 되돌아갈 수 있습니다(구현검토 2026-09-11 P1-3, R4).
    */
   const applyTurn = useCallback(
     async (turn: BlockUpdateTurn, target: NonNullable<InterviewQuestionTarget>): Promise<void> => {
@@ -150,12 +168,14 @@ export function useExperienceInterview({
           fetchImpl: current.fetchImpl,
           signal: controller.signal,
         });
+        if (unmountedRef.current || callSeqRef.current !== callSeq) return;
         setBlockStateBoth(result.state);
         progressRef.current = recordResponse(progressRef.current, target.targetBlock, target.targetElement, result.targetResponse);
         unreflectedRef.current.delete(turn.turnId);
         syncUnreflectedTurnId();
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return;
+        if (unmountedRef.current || callSeqRef.current !== callSeq) return;
         // 갱신 실패만으로 같은 블록에 고정하지 않습니다. progress는 건드리지 않고 다음 단계에서
         // 이전 평가 그대로 이동 정책을 적용합니다.
         unreflectedRef.current.set(turn.turnId, { turn, target });
@@ -191,6 +211,10 @@ export function useExperienceInterview({
       turnsRef.current = [...turnsRef.current, turn];
 
       await applyTurn(turn, answeredTargetRef.current);
+      // 대기하는 동안 언마운트됐으면 다음 대상 계산도, 그에 딸린 상태 갱신도 하지 않습니다(구현검토
+      // 2026-09-11 P1-3, R5). 호출부(`useInterviewStream`)의 이어지는 질문 요청은 그쪽 자신의
+      // 언마운트 가드가 막습니다.
+      if (unmountedRef.current) return null;
 
       const nextTurnsUsed = turnsUsedRef.current + 1;
       turnsUsedRef.current = nextTurnsUsed;

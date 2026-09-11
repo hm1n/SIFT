@@ -192,6 +192,14 @@ export function useInterviewStream({
   const frameRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const lastSeqRef = useRef(0);
+  /**
+   * 언마운트됐는지입니다. `onBeforeQuestion`은 이 훅이 사라진 뒤에도 끝날 수 있는데(그 안의
+   * 블록 갱신은 자신의 언마운트 가드로 멈추지만, 이 콜백 자체는 그 훅이 던지지 않는 한 계속
+   * 기다려집니다), 이미 내려간 화면에서 다음 질문 `start()`를 부르면 안 됩니다(구현검토
+   * 2026-09-11 P1-3, R5). `isEndedRef`로는 이 경우를 잡지 못합니다. 언마운트는 종료가 아니고
+   * `submissionSeqRef` 비교도 새 제출이 없으면 그대로 통과하기 때문입니다.
+   */
+  const unmountedRef = useRef(false);
   // 다음 `start()` 호출이 실을 대상입니다. `submitAnswer`가 `onBeforeQuestion`에서 정해 두고
   // `start()`가 한 번 읽고 비웁니다. 첫 호출(이력 없음)에는 `initialTarget`을 그대로 씁니다.
   const pendingTargetRef = useRef<InterviewQuestionTarget>(initialTarget);
@@ -438,7 +446,7 @@ export function useInterviewStream({
       const submissionId = ++submissionSeqRef.current;
       const historyForBeforeQuestion = toHistory(messagesRef.current);
       void onBeforeQuestion({ history: historyForBeforeQuestion }).then((target) => {
-        if (isEndedRef.current || submissionSeqRef.current !== submissionId) return;
+        if (unmountedRef.current || isEndedRef.current || submissionSeqRef.current !== submissionId) return;
         if (target === null) {
           // 유효한 질문 후보가 없습니다(설계 6-2절 6번). 질문을 억지로 만들지 않습니다.
           setStatus("done");
@@ -459,6 +467,14 @@ export function useInterviewStream({
       cancelScheduledFrame();
     };
   }, [autoStart, cancelScheduledFrame, start]);
+
+  // 진짜 언마운트만 잡습니다. 빈 의존성 배열이라 위 effect처럼 `start`가 바뀔 때마다 다시 돌지
+  // 않습니다. 같이 두면 재실행마다 "언마운트됨"으로 잘못 표시합니다.
+  useEffect(() => {
+    return () => {
+      unmountedRef.current = true;
+    };
+  }, []);
 
   return {
     messages,
