@@ -19,13 +19,15 @@ import { createInterviewQuestionModel } from "../../experience-candidates/llm-pr
 import { EVIDENCE_SNAPSHOT_MAX_INPUT_TOKENS } from "../../experience-candidates/evidence-snapshot";
 import type { ExperienceEvidenceSnapshot } from "../../experience-candidates/types";
 import { applyBlockUpdate } from "../../experience-block/reducer";
-import { BLOCK_KINDS, emptyExperienceBlockState, type BlockElement, type BlockKind, type ExperienceBlockState } from "../../experience-block/types";
+import { BLOCK_KINDS, emptyExperienceBlockState, type BlockElement, type BlockKind, type BlockUpdateOutput,
+  type ExperienceBlockState, type TargetResponse } from "../../experience-block/types";
 import { buildBlockUpdatePrompt, BLOCK_MAX_OUTPUT_TOKENS, BLOCK_UPDATE_MODEL, BLOCK_UPDATE_REASONING_EFFORT,
   type BlockUpdateTurn } from "../block-prompt";
 import { buildInterviewQuestionPrompt, toInterviewQuestionMessages, INTERVIEW_QUESTION_MODEL,
   INTERVIEW_QUESTION_MAX_OUTPUT_TOKENS, INTERVIEW_QUESTION_TOTAL_TIMEOUT_MS,
   INTERVIEW_QUESTION_FIRST_CHUNK_TIMEOUT_MS } from "../question-generation";
-import { interviewHistoryItemBytes, trimInterviewHistory, INTERVIEW_HISTORY_ITEM_MAX_BYTES, type InterviewHistoryMessage } from "../history";
+import { buildLastOutcome, interviewHistoryItemBytes, trimInterviewHistory, INTERVIEW_HISTORY_ITEM_MAX_BYTES,
+  type InterviewHistoryMessage, type InterviewLastOutcome } from "../history";
 import { renderInterviewEvidencePrompt, type InterviewPromptVariant } from "../question-prompt";
 
 const args = process.argv.slice(2);
@@ -256,8 +258,10 @@ async function update(model: string, prompt: ReturnType<typeof buildBlockUpdateP
     limits: Object.fromEntries([...response.headers].filter(([k]) => k.startsWith("x-ratelimit") || k === "retry-after")) };
 }
 
-async function nextQuestion(snapshot: ExperienceEvidenceSnapshot, history: InterviewHistoryMessage[]) {
-  const prompt = buildInterviewQuestionPrompt(snapshot, { history: trimInterviewHistory(history).history });
+async function nextQuestion(snapshot: ExperienceEvidenceSnapshot, history: InterviewHistoryMessage[],
+  target?: { targetBlock: BlockKind; targetElement: BlockElement }, lastOutcome?: InterviewLastOutcome | null) {
+  const prompt = buildInterviewQuestionPrompt(snapshot, { history: trimInterviewHistory(history).history,
+    targetBlock: target?.targetBlock, targetElement: target?.targetElement, lastOutcome: lastOutcome ?? undefined });
   const started = performance.now();
   let firstMs: number | null = null;
   let text = "";
@@ -302,13 +306,19 @@ writeFileSync(join(out, "manifest.json"), JSON.stringify({ created: new Date().t
 if (selected.some(s => s.snapshot === "injected")) writeFileSync(join(out, "evidence-injected.md"), renderInterviewEvidencePrompt(injectedSnapshot), { flag: "wx" });
 
 let spentUpper = 0;
+let blockSpent = 0;
+let questionSpent = 0;
 let failures = 0;
 let rejections = 0;
 for (const variant of variants) for (const model of models) for (const scenario of selected) {
   const snapshot = scenario.snapshot === "injected" ? injectedSnapshot : baseSnapshot;
   let state = seedState(scenario, snapshot);
   const history: BlockUpdateTurn[] = [...(scenario.seed?.history ?? [])];
-  for (const turn of scenario.turns) {
+  for (let turnIndex = 0; turnIndex < scenario.turns.length; turnIndex++) {
+    const turn = scenario.turns[turnIndex];
+    // 실제 운영 경로와 같은 모양으로 다음 질문을 부릅니다(구현검토 2026-09-11 P2, 8번 "실측과 운영 경로의 대응이 맞지 않음"). 다음 시나리오 턴이 겨냥하는 targetBlock·targetElement를 다음 질문의 focus로 씁니다. 마지막 턴이면(다음 시나리오 턴 없음) focus 없이 부릅니다.
+    const nextTurn = scenario.turns[turnIndex + 1];
+    const nextTarget = nextTurn ? { targetBlock: nextTurn.targetBlock, targetElement: nextTurn.targetElement ?? "a" as BlockElement } : undefined;
     assert(spentUpper + .04 <= budget, "측정 예산 중단");
     history.push({ turnId: turn.turnId, question: turn.question, answer: turn.answer });
     const prompt = buildBlockUpdatePrompt({ snapshot, state, history, targetBlock: turn.targetBlock, targetElement: turn.targetElement ?? "a", answerTurnId: turn.turnId, variant });
@@ -322,16 +332,22 @@ for (const variant of variants) for (const model of models) for (const scenario 
       let blockCall!: Awaited<ReturnType<typeof update>>;
       let blockMs = 0;
       const attempts: unknown[] = [];
+      let finalOutcome: { ok: boolean; targetResponse: TargetResponse | null } = { ok: false, targetResponse: null };
       for (let attempt = 1; attempt <= 2; attempt++) {
         const attemptStarted = performance.now();
         blockCall = await update(model, prompt);
         blockMs += performance.now() - attemptStarted;
-        spentUpper += blockCall.cost ?? (blockCall.usage ? (blockCall.usage.input * .25 + blockCall.usage.output * 1.2) / 1e6 : .02);
+        const attemptCost = blockCall.cost ?? (blockCall.usage ? (blockCall.usage.input * .25 + blockCall.usage.output * 1.2) / 1e6 : .02);
+        spentUpper += attemptCost; blockSpent += attemptCost;
         const output = parseJson(blockCall.text);
         const applied = applyBlockUpdate(state, output, { snapshot, turnId: turn.turnId, targetBlock: turn.targetBlock });
         attempts.push({ attempt, blockCall, output, applied: applied.ok ? { ok: true, affectedBlocks: applied.affectedBlocks, warnings: applied.warnings } : applied });
         record = { ...record, blockCall, output, applied: attempts[attempts.length - 1], attempts, blockMs };
-        if (applied.ok) { state = applied.state; break; }
+        if (applied.ok) {
+          state = applied.state;
+          finalOutcome = { ok: true, targetResponse: (output as BlockUpdateOutput).targetResponse ?? null };
+          break;
+        }
         rejections++;
       }
       record.stateAfter = state;
@@ -339,8 +355,12 @@ for (const variant of variants) for (const model of models) for (const scenario 
       if (withQuestion) {
         const questionHistory = history.flatMap(h => [{ role: "question" as const, text: h.question }, { role: "answer" as const, text: h.answer }]);
         const beforeQuestion = performance.now() - started;
-        const question = await nextQuestion(snapshot, questionHistory);
-        spentUpper += question.cost ?? .02;
+        const lastOutcome = buildLastOutcome(finalOutcome, state.conflicts);
+        record.lastOutcome = lastOutcome;
+        record.nextFocus = nextTarget ?? null;
+        const question = await nextQuestion(snapshot, questionHistory, nextTarget, lastOutcome);
+        const qCost = question.cost ?? .02;
+        spentUpper += qCost; questionSpent += qCost;
         record.question = question;
         record.answerToFirstMs = question.firstMs === null ? null : beforeQuestion + question.firstMs;
         assert(question.firstMs !== null && question.finish === "stop", "incomplete_question");
@@ -353,11 +373,11 @@ for (const variant of variants) for (const model of models) for (const scenario 
     }
     writeFileSync(join(out, `${id}.json`), JSON.stringify(record, null, 2), { flag: "wx" });
     const applied = (record.applied as { applied?: { ok: boolean } } | undefined)?.applied;
-    console.log(`${id} block=${Math.round(Number(record.blockMs ?? 0))}ms first=${Math.round(Number(record.answerToFirstMs ?? 0))}ms applied=${applied?.ok} failure=${record.failure} spentUpper=$${spentUpper.toFixed(4)}`);
+    console.log(`${id} block=${Math.round(Number(record.blockMs ?? 0))}ms first=${Math.round(Number(record.answerToFirstMs ?? 0))}ms applied=${applied?.ok} lastOutcome=${record.lastOutcome ? "yes" : "no"} failure=${record.failure} spentUpper=$${spentUpper.toFixed(4)}`);
     if (typeof record.failure === "string" && /^http_(400|401|403|404|409|422|429)$/.test(record.failure)) {
       throw new MeasurementError("preflight_failed", `설정/권한/사용량 오류로 반복 호출을 중단합니다: ${record.failure}`);
     }
   }
 }
-console.log(JSON.stringify({ failures, rejections, spentUpper, firstChunkReferenceMs: INTERVIEW_QUESTION_FIRST_CHUNK_TIMEOUT_MS }));
+console.log(JSON.stringify({ failures, rejections, spentUpper, blockSpent, questionSpent, firstChunkReferenceMs: INTERVIEW_QUESTION_FIRST_CHUNK_TIMEOUT_MS }));
 if (failures) process.exitCode = 1;
