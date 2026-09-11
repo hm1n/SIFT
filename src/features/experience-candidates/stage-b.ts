@@ -318,14 +318,23 @@ function mapLlmError(error: unknown): ExperienceCandidateOutputError {
  * 들어오면서 Gemini도 부족 사유를 채우지 않아 `schema_validation`으로 실패했습니다. 제공자에 따라
  * 계약을 알려주거나 숨기면 어느 쪽이 진짜 계약인지 코드에서 읽을 수 없으므로 갈래를 없앴습니다
  * (이슈 #108).
+ *
+ * 문장은 `assertCandidateEvidence`의 판정과 한 줄씩 대응시킵니다. 처음에는 "그 후보에 속한 커밋의
+ * files[].path를 복사하라"고 뭉뚱그려 썼는데, 모델이 "그 후보에 속한 커밋"을 묶음 전체로 읽고
+ * relatedShas를 비운 채 묶음의 다른 커밋 파일을 인용했습니다. 검증은 대표 커밋과 relatedShas에
+ * 적힌 커밋의 파일만 허용하므로 `hm1n/SIFT` 6회 중 5회가 `unknown_file_path`와 `unrelated_sha`로
+ * 실패했습니다. 같은 입력에서 변경 전 프롬프트는 3회 모두 성공했습니다. 인용하려면 그 커밋을
+ * relatedShas에 먼저 넣어야 한다는 관계를 문장에 적어야 합니다.
  */
 function outputContractText(candidateLimit: number): string {
   return (
-    `sha와 relatedShas는 입력 workUnits 안의 commits[].sha 값을 그대로 복사하세요. relatedShas에는 ` +
-    "대표 커밋과 같은 workUnits 항목에 있는 sha만 넣고, 넣을 것이 없으면 빈 배열로 두세요. " +
+    "sha에는 고른 workUnits 항목의 commits[].sha 중 하나를 그대로 씁니다. " +
+    "relatedShas에는 그 sha와 같은 workUnits 항목 안에 있는 다른 sha만 넣습니다. 다른 항목의 sha를 " +
+    "넣으면 응답 전체가 거부됩니다. 넣을 것이 없으면 빈 배열입니다. " +
     "pullRequest가 null인 workUnits 항목을 고르면 relatedShas는 반드시 빈 배열입니다. " +
-    "citedFilePaths는 그 후보에 속한 커밋의 files[].path 값을 그대로 복사하세요. 입력에 없는 경로를 " +
-    "기억이나 추측으로 쓰지 마세요. " +
+    "citedFilePaths에는 sha와 relatedShas에 적은 커밋의 files[].path만 넣습니다. 같은 workUnits " +
+    "항목이라도 relatedShas에 적지 않은 커밋의 경로를 인용하면 응답 전체가 거부되므로, 인용할 경로가 " +
+    "있는 커밋은 relatedShas에 먼저 넣으세요. 입력에 없는 경로를 기억이나 추측으로 쓰지 마세요. " +
     "후보를 하나도 고르지 못하면 insufficientCandidatesReason에 그 이유를 반드시 채우세요. " +
     `후보를 하나 이상 골랐으면 insufficientCandidatesReason은 null이어도 됩니다. ${candidateLimit}개보다 ` +
     "적게 골랐고 설명할 이유가 있으면 그 이유를 적으세요. "
@@ -346,13 +355,15 @@ export function createStageBGenerate(
     const { object, usage } = await generateObject({
       model: createStageBModel(model),
       schema: createExperienceCandidateOutputSchema(candidateLimit),
+      // 과제 문장을 먼저 두고 출력 계약을 뒤에 붙입니다. 변경 전 프로덕션 프롬프트도 과제 문장으로
+      // 시작했고, 그 순서에서 `hm1n/SIFT` 3회가 모두 성공했습니다.
       system:
-        outputContractText(candidateLimit) +
         `실제 diff와 PR 소속만 근거로 최대 ${candidateLimit}개의 개발 경험 후보를 고르세요. ` +
         "입력 commits는 판단 단위 묶음(workUnits)으로 그룹돼 있습니다. 최종 후보는 서로 다른 " +
         "workUnits 항목에서 하나씩만 고르세요. 같은 workUnits 항목에서 대표 커밋을 둘 이상 최종 " +
         "후보로 고르지 마세요. " +
         `억지로 ${candidateLimit}개를 채우지 말고, evidence에는 대표 선정 이유와 관련 커밋이 근거가 되는 이유를 함께 쓰세요. ` +
+        outputContractText(candidateLimit) +
         "절단 표시가 있으면 전체 diff를 본 것으로 단정하지 마세요. 한국어로 답하세요.",
       prompt: JSON.stringify(payload),
       abortSignal,
