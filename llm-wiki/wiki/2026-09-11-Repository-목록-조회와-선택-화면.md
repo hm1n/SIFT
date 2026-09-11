@@ -68,6 +68,7 @@ Error의 sub는 `rate_limit`이 "GitHub rate limit reached. Wait a moment and tr
 - 카드 헤더는 `REPOSITORIES`와 전체 개수입니다. 개수는 검색과 무관하게 전체입니다.
 - 검색은 이미 받은 목록을 `owner`와 `name`에 대해 대소문자 구분 없이 부분 일치로 거릅니다. 서버를 다시 부르지 않습니다.
 - 행은 `role="radiogroup"` 안의 `role="radio"` 버튼입니다. 14px 라디오 기호, `owner / name`, mono 소형 라벨로 `language · PRIVATE`, 오른쪽에 `UPDATED nD AGO`입니다. 언어가 null이면 언어를, 공개 Repository면 `PRIVATE`를 생략합니다. `pushedAt`이 null이면 UPDATED 라벨을 생략합니다.
+- 방향키로 행을 오갑니다. ArrowDown·ArrowRight는 다음 행, ArrowUp·ArrowLeft는 이전 행으로 선택과 DOM 포커스를 함께 옮기고 양 끝에서 순환합니다. roving tabindex라 선택 전에는 첫 행만, 선택 뒤에는 선택된 행만 Tab 순서에 남습니다.
 - 선택은 하나입니다. 검색으로 선택한 행이 가려져도 선택은 유지되어 하단 바에 남습니다.
 - 하단 바는 `position: sticky`로 아래에 붙고 왼쪽에 `owner / name` 또는 "No repository selected", 오른쪽에 primary `Analyze →`입니다. 선택 전에는 disabled(opacity 0.3)입니다.
 
@@ -96,7 +97,12 @@ Error의 sub는 `rate_limit`이 "GitHub rate limit reached. Wait a moment and tr
 - 3100번 포트 dev 서버에서 Playwright headless Chromium으로 목록 라우트를 대체해 상태 5개와 검색, 선택, textarea 확장(93px에서 160px 상한까지, 줄이면 93px), Analyze 뒤 분석 화면 진입과 "Repository 다시 선택" 복귀를 확인했습니다. 400px 폭에서 가로 스크롤이 없습니다.
 - Pretendard 로드를 재서 자체 호스팅 여부를 판단했습니다. 결과와 결정은 `wiki/2026-09-10-디자인-개편-후속-backlog.md` 7번입니다.
 
-## 6. 확인 필요
+## 6. 알려진 한계
+
+- `RepositorySummary.visibility`는 `public`과 `private` 둘로만 나눕니다. GitHub Enterprise Cloud의 internal Repository는 `public`으로 잘못 표시됩니다. 이 서비스는 GHEC 조직 전용 기능을 다루지 않아 P2로 분리했습니다. `wiki/2026-09-10-디자인-개편-후속-backlog.md` 14번입니다.
+- `fetchUserRepositories`는 두 번째 이후 페이지에서 어떤 오류든 이미 모은 목록을 버립니다. 회귀 테스트는 있지만 오류 객체에 부분 목록을 담지는 않습니다. `wiki/2026-09-10-디자인-개편-후속-backlog.md` 15번입니다.
+
+## 7. 확인 필요
 
 - 실제 GitHub 계정으로 목록을 받는 흐름은 OAuth 앱 설정이 이 워크트리에 없어 보지 않았습니다. Vercel 프리뷰에서 확인해야 합니다.
 - 조직 Repository는 `affiliation` 기본값(owner, collaborator, organization_member)대로 함께 옵니다. Organization 전환과 필터는 이슈 Non-goal입니다.
