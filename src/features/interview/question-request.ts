@@ -33,7 +33,7 @@ export interface InterviewStreamRequestBody {
  * 않는 이유는 입력의 성격이 다르기 때문입니다. Stage A는 저장소 전체 커밋 요약을 받고 이 route는
  * 이미 상한이 걸린 스냅샷 하나만 받습니다.
  */
-const SNAPSHOT_BODY_BYTES = 64 * 1024;
+export const SNAPSHOT_BODY_BYTES = 64 * 1024;
 
 /**
  * 요청 본문 상한입니다.

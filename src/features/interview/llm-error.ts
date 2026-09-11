@@ -1,4 +1,4 @@
-import { APICallError, LoadAPIKeyError, RetryError } from "ai";
+import { APICallError, LoadAPIKeyError, NoObjectGeneratedError, RetryError } from "ai";
 import {
   ExperienceCandidateOutputError,
   isAuthFailureResponseBody,
@@ -17,6 +17,10 @@ import {
  * 파일 경계 밖(`src/features/experience-candidates/`)이라 옮기지 못했고, 통합은 후속 항목으로
  * 남겼습니다. 사본을 늘리는 대신 이 파일을 인터뷰 기능의 단일 지점으로 두어 꼬리 질문이 같은
  * 함수를 쓰게 합니다.
+ *
+ * 블록 갱신 경로(이슈 #89)도 이 함수를 씁니다. 그 경로는 `generateObject`로 구조화 출력을 받으므로
+ * `NoObjectGeneratedError`(스키마 불일치) 분류가 필요합니다. 첫 질문 생성은 자유 텍스트 스트리밍이라
+ * 이 분류에 걸리지 않습니다.
  */
 export function mapInterviewLlmError(
   error: unknown,
@@ -26,6 +30,13 @@ export function mapInterviewLlmError(
   // SDK가 재시도한 실패는 `RetryError`로 감싸져 옵니다. `RetryError`는 `APICallError`가 아니므로
   // 벗기지 않으면 429·413 같은 한도가 전부 llm_failure로 뭉개집니다.
   if (RetryError.isInstance(error)) return mapInterviewLlmError(error.lastError, context);
+  if (NoObjectGeneratedError.isInstance(error)) {
+    return new ExperienceCandidateOutputError(
+      "schema_validation",
+      `${context} 구조화 응답이 출력 스키마와 일치하지 않습니다.`,
+      { cause: error }
+    );
+  }
   if (LoadAPIKeyError.isInstance(error)) {
     return new ExperienceCandidateOutputError(
       "llm_configuration",
