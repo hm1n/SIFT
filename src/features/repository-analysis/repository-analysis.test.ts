@@ -147,11 +147,11 @@ describe("analyzeRepository", () => {
 
 describe("toAnalysisError", () => {
   it.each([
-    ["rate_limit", "GitHub API 호출 한도에 도달했습니다", "retry"],
-    ["auth_revoked", "GitHub에 다시 로그인해 주세요", "reauthenticate"],
-    ["repo_not_found", "Repository를 찾을 수 없습니다", "select_repository"],
-    ["network", "GitHub에 연결하지 못했습니다", "retry"],
-    ["server_error", "GitHub 데이터를 불러오지 못했습니다", "retry"],
+    ["rate_limit", "GitHub API rate limit reached.", "retry"],
+    ["auth_revoked", "Please log in to GitHub again.", "reauthenticate"],
+    ["repo_not_found", "Repository not found.", "select_repository"],
+    ["network", "Couldn't connect to GitHub.", "retry"],
+    ["server_error", "Couldn't load data from GitHub.", "retry"],
   ] as const)("%s 오류를 고유 안내와 복구 동작으로 변환한다", (kind, title, recovery) => {
     expect(toAnalysisError(new GitHubFetchError(kind, "failed"), { step: "commits" })).toMatchObject({
       kind,
@@ -172,7 +172,7 @@ describe("toAnalysisError", () => {
       total: 3,
       recovery: "retry",
     });
-    expect(toAnalysisError(error, { step: "details", total: 3 }).message).toContain("3개 중 1개");
+    expect(toAnalysisError(error, { step: "details", total: 3 }).message).toContain("1 of 3");
   });
 
   it("인증 취소가 원인인 partial_failure는 인증 재진행으로 복구한다", () => {
@@ -194,8 +194,8 @@ describe("toAnalysisError", () => {
       causeKind: "repo_not_found",
       recovery: "select_repository",
     });
-    expect(result.message).not.toContain("전체 조회를 다시 시도합니다");
-    expect(result.message).toContain("복구를 마치면 처음부터 다시 조회합니다");
+    expect(result.message).not.toContain("Retry the full fetch");
+    expect(result.message).toContain("Recovery restarts the fetch from the beginning");
   });
 });
 

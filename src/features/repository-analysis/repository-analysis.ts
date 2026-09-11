@@ -153,32 +153,32 @@ function errorCopy(kind: Exclude<GitHubFetchErrorKind, "partial_failure">) {
   switch (kind) {
     case "rate_limit":
       return {
-        title: "GitHub API 호출 한도에 도달했습니다",
-        message: "호출 한도가 회복된 뒤 전체 조회를 다시 시도해 주세요.",
+        title: "GitHub API rate limit reached.",
+        message: "Wait for the limit to reset, then retry the full fetch.",
         recovery: "retry" as const,
       };
     case "auth_revoked":
       return {
-        title: "GitHub에 다시 로그인해 주세요",
-        message: "로그인이 만료되었거나 접근 권한이 취소되었습니다. 다시 로그인한 뒤 조회를 재개할 수 있습니다.",
+        title: "Please log in to GitHub again.",
+        message: "Your session has expired or access was revoked. Log in again to resume the fetch.",
         recovery: "reauthenticate" as const,
       };
     case "repo_not_found":
       return {
-        title: "Repository를 찾을 수 없습니다",
-        message: "Repository가 삭제되었거나 이름이 변경되었는지, 현재 인증으로 접근할 수 있는지 확인해 주세요.",
+        title: "Repository not found.",
+        message: "Check whether the repository was deleted or renamed, and whether your current authentication can access it.",
         recovery: "select_repository" as const,
       };
     case "network":
       return {
-        title: "GitHub에 연결하지 못했습니다",
-        message: "네트워크 연결을 확인한 뒤 전체 조회를 다시 시도해 주세요.",
+        title: "Couldn't connect to GitHub.",
+        message: "Check your network connection, then retry the full fetch.",
         recovery: "retry" as const,
       };
     case "server_error":
       return {
-        title: "GitHub 데이터를 불러오지 못했습니다",
-        message: "GitHub 서버 문제일 수 있습니다. 잠시 후 전체 조회를 다시 시도해 주세요.",
+        title: "Couldn't load data from GitHub.",
+        message: "This may be a GitHub server issue. Wait a moment, then retry the full fetch.",
         recovery: "retry" as const,
       };
   }
@@ -197,15 +197,15 @@ export function toAnalysisError(error: unknown, context: FailureContext): Analys
   const causeKind = underlyingKind(error);
   const range =
     context.step === "details" && context.total !== undefined
-      ? `상세 조회 대상 ${context.total}개 중 ${completed}개를 수집한 뒤 실패했습니다.`
-      : `전체 커밋 중 ${completed}개를 수집한 뒤 실패했습니다.`;
-  const causeGuidance = causeKind ? ` 원래 실패 원인: ${errorCopy(causeKind).title}.` : "";
+      ? `Failed after collecting ${completed} of ${context.total} items during detail fetch.`
+      : `Failed after collecting ${completed} commits.`;
+  const causeGuidance = causeKind ? ` Original failure cause: ${errorCopy(causeKind).title}` : "";
 
   return {
     kind: "partial_failure",
     ...(causeKind === undefined ? {} : { causeKind }),
-    title: "일부 Repository 데이터만 수집했습니다",
-    message: `${range}${causeGuidance} 중복이나 누락을 피하기 위해 부분 결과는 이어 쓰지 않습니다. 복구를 마치면 처음부터 다시 조회합니다.`,
+    title: "Only part of the repository data was collected.",
+    message: `${range}${causeGuidance} Partial results aren't reused to avoid duplicates or omissions. Recovery restarts the fetch from the beginning.`,
     recovery: causeKind ? errorCopy(causeKind).recovery : "retry",
     completed,
     ...(context.total === undefined ? {} : { total: context.total }),

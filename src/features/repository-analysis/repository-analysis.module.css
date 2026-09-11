@@ -1,40 +1,156 @@
-.shell { width: min(760px, 100%); display: grid; gap: 24px; }
-.header { display: grid; gap: 10px; }
-.eyebrow { color: #5b52d6; font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.header h1 { color: #171721; font-size: clamp(30px, 6vw, 48px); letter-spacing: -.04em; line-height: 1.08; }
-.header p:last-child { color: #62626e; font-size: 16px; line-height: 1.65; }
-.card { background: #fff; border: 1px solid #e8e7ed; border-radius: 18px; box-shadow: 0 18px 50px rgba(31, 28, 55, .08); padding: clamp(20px, 5vw, 32px); }
-.form, .state { display: grid; gap: 18px; }
-.repositoryFields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.field { display: grid; gap: 8px; color: #383743; font-size: 14px; font-weight: 650; }
-.field input, .field textarea { width: 100%; border: 1px solid #d7d5df; border-radius: 10px; color: #171721; background: #fff; font: inherit; font-weight: 450; padding: 12px 14px; outline: none; }
-.field textarea { resize: vertical; }
-.field input:focus, .field textarea:focus { border-color: #6d63e8; box-shadow: 0 0 0 3px rgba(109, 99, 232, .14); }
-.field input:disabled, .field textarea:disabled { background: #f4f3f7; color: #777580; }
-.hint { color: #74727d; font-size: 12px; font-weight: 450; line-height: 1.5; }
-.button, .secondaryButton { min-height: 44px; border-radius: 10px; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
-.button { display: inline-flex; align-items: center; justify-content: center; border: 1px solid #5b52d6; background: #5b52d6; color: #fff; text-decoration: none; }
-.button:hover:not(:disabled) { background: #4d44c5; }
-.button:disabled { cursor: wait; opacity: .65; }
-.secondaryButton { border: 1px solid #d7d5df; background: #fff; color: #34333d; }
-.state { gap: 12px; margin-top: 24px; border-top: 1px solid #ecebf0; padding-top: 24px; }
-.state h2 { color: #1f1e28; font-size: 20px; letter-spacing: -.02em; }
-.state p { color: #696773; font-size: 14px; line-height: 1.65; }
-.step { color: #5b52d6; font-size: 13px; font-weight: 750; }
-.progressTrack { width: 100%; height: 8px; overflow: hidden; border-radius: 999px; background: #ebeaf0; }
-.progressBar { height: 100%; border-radius: inherit; background: #6d63e8; transition: width 180ms ease; }
-.indeterminate { width: 38%; animation: loading 1.2s ease-in-out infinite alternate; }
-.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
-.candidateList { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
-.candidateList li { display: grid; gap: 6px; border: 1px solid #ecebf0; border-radius: 12px; padding: 14px 16px; }
-.candidateList strong { color: #282632; font-size: 14px; font-family: ui-monospace, monospace; }
-.candidateList span { color: #5b52d6; font-size: 12px; font-weight: 700; }
-.candidateList p { color: #696773; font-size: 14px; line-height: 1.6; }
-.summary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-.metric { border-radius: 12px; background: #f5f4fa; padding: 16px; }
-.metric strong, .metric span { display: block; }
-.metric strong { color: #282632; font-size: 24px; }
-.metric span { margin-top: 4px; color: #777580; font-size: 12px; }
-@keyframes loading { from { transform: translateX(-8%); } to { transform: translateX(172%); } }
-@media (max-width: 560px) { .repositoryFields, .summary { grid-template-columns: 1fr; } .button, .secondaryButton { width: 100%; } }
-@media (prefers-reduced-motion: reduce) { .indeterminate { animation: none; } .progressBar { transition: none; } }
+/*
+ * Repository 분석 화면입니다. #96부터 `AppShell` 콘텐츠 영역 안에서 그려지므로 별도의 떠 있는 카드
+ * 대신 AppShell의 사이드바와 나란히 놓이는 전체 폭 패널로 그립니다. 색과 라운드와 폰트는 `globals.css`
+ * 토큰만 씁니다(디자인 개편 공통 결정).
+ */
+.screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--color-card);
+}
+
+/* Loading 전용 레이아웃입니다. Empty·Error는 공용 StatusScreen을 씁니다. */
+.loadingScreen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.header {
+  display: grid;
+  gap: 6px;
+  padding: 24px 32px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+.header h1 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-foreground);
+}
+
+.meta {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  letter-spacing: var(--label-tracking-wide);
+  color: var(--color-muted-foreground);
+}
+
+.checklistStatus {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 32px;
+}
+
+.checklist {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  max-width: 360px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.checklistItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.symbol {
+  flex-shrink: 0;
+  width: 16px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  text-align: center;
+  color: var(--color-scrollbar);
+}
+
+.checklistItem[data-state="done"] .symbol,
+.checklistItem[data-state="active"] .symbol {
+  color: var(--color-foreground);
+}
+
+.checklistLabel {
+  flex: 1;
+  font-size: 14px;
+  color: var(--color-scrollbar);
+}
+
+.checklistItem[data-state="done"] .checklistLabel,
+.checklistItem[data-state="active"] .checklistLabel {
+  color: var(--color-foreground);
+}
+
+.checklistProgress {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  color: var(--color-muted-foreground);
+}
+
+.footer {
+  padding: 12px 32px;
+  border-top: 1px solid var(--color-border);
+}
+
+.changeRepository {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+}
+
+.changeRepository:hover,
+.changeRepository:focus-visible {
+  color: var(--color-foreground);
+  outline: none;
+}
+
+/* Empty 상태입니다. StatusScreen이 상태 메시지를 그리고, 이 컨테이너는 그 아래에 StageAExclusions가
+   붙을 자리를 마련합니다(형제 배치, StatusScreen 계약은 바꾸지 않습니다). */
+.stateStack {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.exclusionsPad {
+  padding: 0 32px 32px;
+}
+
+/* Success 상태입니다. ExperienceCandidateList는 자체 패딩이 없어 여기서 좌우 여백을 줍니다. */
+.content {
+  flex: 1;
+  min-height: 0;
+  padding: 24px 32px 32px;
+}
+
+@media (max-width: 560px) {
+  .header,
+  .checklistStatus,
+  .footer,
+  .exclusionsPad,
+  .content {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}

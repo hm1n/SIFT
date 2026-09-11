@@ -42,7 +42,7 @@ describe("RepositoryFlow", () => {
 
     await waitFor(() => expect(analyzeMock).toHaveBeenCalledWith({ owner: "octocat", repo: "hello-world" }, ["푸시 알림 구현"], expect.any(Function)));
     expect(screen.queryByRole("heading", { name: "Choose a repository to analyze." })).not.toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "분석할 커밋이 없습니다" })).toBeInTheDocument();
+    expect(screen.getByText("No commits found to analyze.")).toBeInTheDocument();
   });
 
   it("다른 Repository 선택은 목록을 다시 조회해 선택 화면으로 돌아간다", async () => {
@@ -50,7 +50,7 @@ describe("RepositoryFlow", () => {
     render(<RepositoryFlow />);
     fireEvent.click(await screen.findByRole("radio", { name: /hello-world/ }));
     fireEvent.click(screen.getByRole("button", { name: /Analyze/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "다른 Repository 선택" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Choose a different repository" }));
 
     await screen.findByRole("heading", { name: "Choose a repository to analyze." });
     expect(fetch).toHaveBeenCalledTimes(2);
