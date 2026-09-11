@@ -3,7 +3,7 @@ import { serializedByteLength } from "@/features/experience-candidates/evidence-
 import type { BlockUpdateTurn } from "@/features/interview/block-prompt";
 import { INTERVIEW_HISTORY_ITEM_MAX_BYTES, INTERVIEW_MAX_TURNS } from "@/features/interview/history";
 import { isExperienceEvidenceSnapshot, SNAPSHOT_BODY_BYTES } from "@/features/interview/question-request";
-import { byteLength, CLAIMS_STATE_MAX_BYTES } from "./reducer";
+import { byteLength, CLAIMS_STATE_MAX_BYTES, evidenceIndex } from "./reducer";
 import {
   BLOCK_KINDS,
   isBlockKind,
@@ -76,14 +76,21 @@ function isBlockUpdateTurn(value: unknown): value is BlockUpdateTurn {
   );
 }
 
-function isClaimSource(value: unknown): value is ClaimSource {
+/**
+ * `commits`는 스냅샷에서 뽑은 커밋→파일 인덱스입니다(`reducer.ts`의 `evidenceIndex`와 같은 형식).
+ * `state.claims`는 클라이언트가 보관하다 돌려보낸 값이라 신뢰할 수 없고, 여기서 대조하지 않으면
+ * 스냅샷에 없는 커밋을 인용한 "저장소 출처" 주장이 검증 없이 그대로 화면에 표시될 수 있습니다.
+ */
+function isClaimSource(
+  value: unknown,
+  commits: ReadonlyMap<string, ReadonlySet<string>>
+): value is ClaimSource {
   if (!isRecord(value)) return false;
   if (value.source === "user") return true;
-  return (
-    value.source === "repository" &&
-    typeof value.commitSha === "string" &&
-    (value.filePath === null || typeof value.filePath === "string")
-  );
+  if (value.source !== "repository" || typeof value.commitSha !== "string") return false;
+  const files = commits.get(value.commitSha);
+  if (!files) return false;
+  return value.filePath === null || (typeof value.filePath === "string" && files.has(value.filePath));
 }
 
 const CLAIM_STATUSES: readonly ClaimStatus[] = ["active", "retracted", "conflicted"];
@@ -96,7 +103,10 @@ const PROGRESS_REASONS: readonly ProgressReason[] = [
   "none",
 ];
 
-function isClaim(value: unknown): value is Claim {
+function isClaim(
+  value: unknown,
+  commits: ReadonlyMap<string, ReadonlySet<string>>
+): value is Claim {
   return (
     isRecord(value) &&
     isNonEmptyString(value.id) &&
@@ -104,7 +114,7 @@ function isClaim(value: unknown): value is Claim {
     isNonEmptyString(value.text) &&
     Array.isArray(value.sources) &&
     value.sources.length > 0 &&
-    value.sources.every(isClaimSource) &&
+    value.sources.every((source) => isClaimSource(source, commits)) &&
     typeof value.status === "string" &&
     CLAIM_STATUSES.includes(value.status as ClaimStatus) &&
     isNonEmptyString(value.turnId)
@@ -144,27 +154,67 @@ function isBlockEvaluation(value: unknown): value is BlockEvaluation {
  *  `state.display[block]`류 접근에서 어긋납니다. */
 function isBlockRecord<T>(
   value: unknown,
-  isItem: (item: unknown) => item is T
+  isItem: (item: unknown, block: BlockKind) => item is T
 ): value is Readonly<Record<BlockKind, T>> {
   if (!isRecord(value)) return false;
   const keys = Object.keys(value);
   return (
     keys.length === BLOCK_KINDS.length &&
-    BLOCK_KINDS.every((block) => Object.hasOwn(value, block) && isItem(value[block]))
+    BLOCK_KINDS.every((block) => Object.hasOwn(value, block) && isItem(value[block], block))
   );
 }
 
-function isExperienceBlockState(value: unknown): value is ExperienceBlockState {
+/** 서버가 부여하는 확정 ID의 형식입니다(`c` 뒤에 정수, `reducer.ts` `applyBlockUpdate` 참고). */
+const CLAIM_ID_PATTERN = /^c(\d+)$/;
+
+function isExperienceBlockState(
+  value: unknown,
+  commits: ReadonlyMap<string, ReadonlySet<string>>
+): value is ExperienceBlockState {
   if (!isRecord(value)) return false;
   if (!isNonNegativeInt(value.version)) return false;
   if (!Number.isInteger(value.nextClaimSeq) || (value.nextClaimSeq as number) < 1) return false;
-  if (!Array.isArray(value.claims) || !value.claims.every(isClaim)) return false;
+  if (!Array.isArray(value.claims) || !value.claims.every((claim) => isClaim(claim, commits))) {
+    return false;
+  }
+  const claims = value.claims as readonly Claim[];
+
+  // 주장 ID는 서버가 `c<정수>`로 부여하고 세션 안에서 증가합니다. 중복되거나 `nextClaimSeq`가
+  // 이미 쓰인 번호 이하이면, 다음 add 연산이 배정하는 ID가 기존 주장과 충돌해 리듀서의 Map이
+  // 조용히 덮어씁니다.
+  const seenIds = new Set<string>();
+  let maxUsedSeq = 0;
+  for (const claim of claims) {
+    if (seenIds.has(claim.id)) return false;
+    seenIds.add(claim.id);
+    const match = CLAIM_ID_PATTERN.exec(claim.id);
+    if (match) maxUsedSeq = Math.max(maxUsedSeq, Number(match[1]));
+  }
+  if ((value.nextClaimSeq as number) <= maxUsedSeq) return false;
+
   if (!Array.isArray(value.conflicts) || !value.conflicts.every(isClaimConflict)) return false;
+
+  // 표시 문장이 실재하지 않거나 철회·충돌된 주장을 참조하면, 그 문장의 `text`는 검증 없이 그대로
+  // 응답에 실립니다(`markDisplay`는 존재하지 않는 참조를 조용히 걸러낼 뿐 문장 자체는 지우지
+  // 않습니다). 조작된 요청이 지어낸 문장을 "검증된 표시"처럼 돌려받는 경로를 막습니다.
+  const activeClaimIdsByBlock = new Map<BlockKind, ReadonlySet<string>>();
+  for (const block of BLOCK_KINDS) {
+    activeClaimIdsByBlock.set(
+      block,
+      new Set(claims.filter((claim) => claim.block === block && claim.status === "active").map((c) => c.id))
+    );
+  }
+
   if (
     !isBlockRecord(
       value.display,
-      (item): item is readonly DisplaySentence[] =>
-        Array.isArray(item) && item.every(isDisplaySentence)
+      (item, block): item is readonly DisplaySentence[] =>
+        Array.isArray(item) &&
+        item.every(
+          (sentence) =>
+            isDisplaySentence(sentence) &&
+            sentence.claimIds.every((id) => activeClaimIdsByBlock.get(block)!.has(id))
+        )
     )
   ) {
     return false;
@@ -197,11 +247,12 @@ export function parseExperienceBlockRequestBody(value: unknown): ExperienceBlock
   if (!isRecord(value) || !isExperienceEvidenceSnapshot(value.snapshot)) {
     return { ok: false, kind: "invalid_request", message: "근거 스냅샷 형식이 올바르지 않습니다." };
   }
+  const commits = evidenceIndex(value.snapshot);
   if (!Array.isArray(value.history) || !value.history.every(isBlockUpdateTurn)) {
     return { ok: false, kind: "invalid_request", message: "대화 이력 형식이 올바르지 않습니다." };
   }
   const history = value.history as readonly BlockUpdateTurn[];
-  if (!isExperienceBlockState(value.state)) {
+  if (!isExperienceBlockState(value.state, commits)) {
     return { ok: false, kind: "invalid_request", message: "주장 상태 형식이 올바르지 않습니다." };
   }
   if (!isBlockKind(value.targetBlock)) {

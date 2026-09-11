@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
+import {
+  evidenceSnapshotFixture,
+  FIXTURE_REPRESENTATIVE_SHA,
+} from "@/features/interview/question-fixture";
 import { INTERVIEW_HISTORY_ITEM_MAX_BYTES } from "@/features/interview/history";
 import { CLAIMS_STATE_MAX_BYTES } from "./reducer";
 import { emptyExperienceBlockState, type Claim, type ExperienceBlockState } from "./types";
@@ -108,9 +111,111 @@ describe("parseExperienceBlockRequestBody", () => {
       status: "active",
       turnId: "t1",
     };
-    const state: ExperienceBlockState = { ...emptyExperienceBlockState(), claims: [claim] };
+    const state: ExperienceBlockState = {
+      ...emptyExperienceBlockState(),
+      nextClaimSeq: 2,
+      claims: [claim],
+    };
     const result = parseExperienceBlockRequestBody(validBody({ state }));
 
     expect(result).toMatchObject({ ok: false, kind: "claims_too_large" });
+  });
+
+  // 아래 다섯 개는 Codex 리뷰(PR #104)가 지적한 "클라이언트가 보낸 state의 내부 무결성 미검증"
+  // 묶음의 회귀 테스트입니다. `state`는 클라이언트가 보관하다 돌려보낸 값이라 신뢰할 수 없고,
+  // 여기서 막지 않으면 검증된 적 없는 정보가 검증된 것처럼 화면에 표시될 수 있습니다.
+
+  it("주장 ID가 중복되면 invalid_request로 거절한다", () => {
+    const duplicate: Claim = {
+      id: "c1",
+      block: "problem",
+      text: "문장1",
+      sources: [{ source: "user" }],
+      status: "active",
+      turnId: "t1",
+    };
+    const state: ExperienceBlockState = {
+      ...emptyExperienceBlockState(),
+      nextClaimSeq: 2,
+      claims: [duplicate, { ...duplicate, block: "action", text: "문장2" }],
+    };
+
+    const result = parseExperienceBlockRequestBody(validBody({ state }));
+
+    expect(result).toMatchObject({ ok: false, kind: "invalid_request" });
+  });
+
+  it("nextClaimSeq가 이미 쓰인 주장 ID 이하이면 invalid_request로 거절한다", () => {
+    // 다음 add 연산이 배정하는 ID(`c${nextClaimSeq}`)가 기존 주장과 충돌하면 리듀서의 Map이
+    // 조용히 덮어씁니다.
+    const claim: Claim = {
+      id: "c3",
+      block: "problem",
+      text: "문장",
+      sources: [{ source: "user" }],
+      status: "active",
+      turnId: "t1",
+    };
+    const state: ExperienceBlockState = {
+      ...emptyExperienceBlockState(),
+      nextClaimSeq: 3,
+      claims: [claim],
+    };
+
+    const result = parseExperienceBlockRequestBody(validBody({ state }));
+
+    expect(result).toMatchObject({ ok: false, kind: "invalid_request" });
+  });
+
+  it("저장소 출처의 커밋이 스냅샷에 없으면 invalid_request로 거절한다", () => {
+    const claim: Claim = {
+      id: "c1",
+      block: "problem",
+      text: "문장",
+      sources: [{ source: "repository", commitSha: "f".repeat(40), filePath: null }],
+      status: "active",
+      turnId: "t1",
+    };
+    const state: ExperienceBlockState = {
+      ...emptyExperienceBlockState(),
+      nextClaimSeq: 2,
+      claims: [claim],
+    };
+
+    const result = parseExperienceBlockRequestBody(validBody({ state }));
+
+    expect(result).toMatchObject({ ok: false, kind: "invalid_request" });
+  });
+
+  it("저장소 출처가 스냅샷에 실재하면 받아들인다", () => {
+    const claim: Claim = {
+      id: "c1",
+      block: "problem",
+      text: "문장",
+      sources: [{ source: "repository", commitSha: FIXTURE_REPRESENTATIVE_SHA, filePath: null }],
+      status: "active",
+      turnId: "t1",
+    };
+    const state: ExperienceBlockState = {
+      ...emptyExperienceBlockState(),
+      nextClaimSeq: 2,
+      claims: [claim],
+    };
+
+    const result = parseExperienceBlockRequestBody(validBody({ state }));
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("표시 문장이 존재하지 않는 주장을 참조하면 invalid_request로 거절한다", () => {
+    const state = emptyExperienceBlockState();
+    const state2: ExperienceBlockState = {
+      ...state,
+      display: { ...state.display, problem: [{ text: "지어낸 문장", claimIds: ["없는-id"] }] },
+    };
+
+    const result = parseExperienceBlockRequestBody(validBody({ state: state2 }));
+
+    expect(result).toMatchObject({ ok: false, kind: "invalid_request" });
   });
 });

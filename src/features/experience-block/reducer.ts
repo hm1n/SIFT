@@ -62,7 +62,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function evidenceIndex(snapshot: ExperienceEvidenceSnapshot) {
+/** route의 요청 사전 검증(`experience-block/request.ts`)도 같은 방식으로 저장소 출처를 대조합니다. */
+export function evidenceIndex(snapshot: ExperienceEvidenceSnapshot) {
   const commits = new Map<string, ReadonlySet<string>>();
   for (const commit of [snapshot.representativeCommit, ...snapshot.relatedCommits]) {
     commits.set(commit.sha, new Set(commit.files.map((file) => file.path)));
