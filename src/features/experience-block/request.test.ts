@@ -23,6 +23,7 @@ function validBody(overrides: Record<string, unknown> = {}) {
     history: [turn("t1")],
     state: emptyExperienceBlockState(),
     targetBlock: "problem",
+    targetElement: "a",
     answerTurnId: "t1",
     ...overrides,
   };
@@ -45,6 +46,12 @@ describe("parseExperienceBlockRequestBody", () => {
 
   it("targetBlock이 네 블록 중 하나가 아니면 invalid_request로 거절한다", () => {
     const result = parseExperienceBlockRequestBody(validBody({ targetBlock: "unknown" }));
+
+    expect(result).toMatchObject({ ok: false, kind: "invalid_request" });
+  });
+
+  it("targetElement가 a·b 중 하나가 아니면 invalid_request로 거절한다", () => {
+    const result = parseExperienceBlockRequestBody(validBody({ targetElement: "c" }));
 
     expect(result).toMatchObject({ ok: false, kind: "invalid_request" });
   });

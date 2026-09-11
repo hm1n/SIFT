@@ -12,6 +12,7 @@ import type {
   EvidenceVerifiability,
   ExperienceEvidenceSnapshot,
 } from "@/features/experience-candidates/types";
+import { isBlockElement, isBlockKind, type BlockElement, type BlockKind } from "@/features/experience-block/types";
 
 /**
  * `POST /api/interview/stream`의 요청 본문입니다. 하위 이슈 B와 공유하는 계약이고 착수 전에
@@ -23,6 +24,14 @@ import type {
 export interface InterviewStreamRequestBody {
   readonly snapshot: ExperienceEvidenceSnapshot;
   readonly history: readonly InterviewHistoryMessage[];
+  /**
+   * 이번 질문이 겨냥할 블록과 요소입니다(이슈 #90). 훅이 6절 "다음 질문 선택" 로직으로 정해 보내고,
+   * 이 route는 프롬프트의 `focus`에 실어 모델에게 초점을 알리는 데만 씁니다. 이력이 없는 첫 질문도
+   * 겨냥할 대상이 있으므로(문제 블록의 첫 요소) 이력 유무와 무관하게 선택 항목입니다. 없으면 이전
+   * 계약처럼 대상 없는 일반 질문을 만듭니다.
+   */
+  readonly targetBlock?: BlockKind;
+  readonly targetElement?: BlockElement;
 }
 
 /**
@@ -47,7 +56,14 @@ export const SNAPSHOT_BODY_BYTES = 64 * 1024;
  * 첫 질문 요청은 그대로 통과합니다. 이력 몫은 `INTERVIEW_MAX_TURNS`에서 유도되므로 지원할 턴 수를
  * 바꾸면 이 값이 따라옵니다.
  */
-export const MAX_INTERVIEW_STREAM_BODY_BYTES = SNAPSHOT_BODY_BYTES + INTERVIEW_HISTORY_MAX_BYTES;
+/**
+ * `targetBlock`·`targetElement`와 JSON 구조 오버헤드를 위한 여유입니다. 이슈 #90에서 더했습니다.
+ * `experience-block/request.ts`의 `EXPERIENCE_BLOCK_REQUEST_META_BYTES`와 같은 성격입니다.
+ */
+export const INTERVIEW_STREAM_TARGET_META_BYTES = 128;
+
+export const MAX_INTERVIEW_STREAM_BODY_BYTES =
+  SNAPSHOT_BODY_BYTES + INTERVIEW_HISTORY_MAX_BYTES + INTERVIEW_STREAM_TARGET_META_BYTES;
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
 
@@ -229,5 +245,27 @@ export function parseInterviewStreamRequestBody(
     };
   }
 
-  return { ok: true, body: { snapshot: value.snapshot, history } };
+  const hasTargetBlock = value.targetBlock !== undefined;
+  const hasTargetElement = value.targetElement !== undefined;
+  if (hasTargetBlock !== hasTargetElement) {
+    return {
+      ok: false,
+      kind: "invalid_request",
+      message: "대상 블록과 대상 요소는 함께 있거나 함께 없어야 합니다.",
+    };
+  }
+  if (hasTargetBlock && (!isBlockKind(value.targetBlock) || !isBlockElement(value.targetElement))) {
+    return { ok: false, kind: "invalid_request", message: "대상 블록이나 대상 요소가 올바르지 않습니다." };
+  }
+
+  return {
+    ok: true,
+    body: {
+      snapshot: value.snapshot,
+      history,
+      ...(hasTargetBlock
+        ? { targetBlock: value.targetBlock as BlockKind, targetElement: value.targetElement as BlockElement }
+        : {}),
+    },
+  };
 }

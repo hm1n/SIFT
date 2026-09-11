@@ -10,6 +10,10 @@ import {
 } from "./history";
 import { runInterviewStream, type InterviewStreamStatus } from "./interview-stream-client";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
+import type { BlockElement, BlockKind } from "@/features/experience-block/types";
+
+/** 질문이 겨냥하는 블록·요소입니다(이슈 #90). `null`은 대상 없는 일반 질문입니다. */
+export type InterviewQuestionTarget = { readonly targetBlock: BlockKind; readonly targetElement: BlockElement } | null;
 
 export type InterviewStreamPhase = "idle" | InterviewStreamStatus;
 
@@ -43,6 +47,27 @@ export interface UseInterviewStreamOptions {
   /** 테스트에서 프레임 스케줄러를 대체하기 위한 통로입니다. */
   scheduleFrame?: (callback: () => void) => number;
   cancelFrame?: (handle: number) => void;
+  /**
+   * 첫 질문이 겨냥할 블록·요소입니다(이슈 #90). 이력이 없는 첫 `start()` 호출에만 씁니다. 첫
+   * 질문의 대상은 항상 problem.a로 정해져 있어(설계 6절) 비동기 계산이 필요 없으므로 값을 그대로
+   * 받습니다.
+   */
+  initialTarget?: InterviewQuestionTarget;
+  /**
+   * 답변 제출 뒤, 질문을 요청하기 전에 끼워 넣을 비동기 작업입니다(이슈 #90 Approach 4, "답변
+   * 제출부터 질문 요청까지를 하나의 취소 가능한 작업으로 묶는다"). 블록 갱신 호출과 다음 질문 대상
+   * 선택이 여기 들어갑니다.
+   *
+   * 값을 돌려주면 그 대상으로 질문을 요청합니다. `null`을 돌려주면(더 물을 유효한 후보가 없음,
+   * 설계 6-2절 6번) 질문을 요청하지 않고 상태를 `"done"`으로 둡니다. 이 콜백은 실패를 던지지 않는
+   * 것을 전제합니다. 블록 갱신이 실패해도 질문은 그대로 요청해야 하므로(설계 9절), 실패 처리는
+   * 호출자가 안에서 끝내고 그래도 유효한 대상을 돌려줘야 합니다.
+   *
+   * 없으면 이전 계약처럼 답변 제출과 동시에 대상 없는 질문을 요청합니다.
+   */
+  onBeforeQuestion?: (context: {
+    readonly history: readonly InterviewHistoryMessage[];
+  }) => Promise<InterviewQuestionTarget | null>;
 }
 
 export interface InterviewStreamState {
@@ -143,6 +168,8 @@ export function useInterviewStream({
   sleep,
   scheduleFrame = defaultScheduleFrame,
   cancelFrame = defaultCancelFrame,
+  initialTarget = null,
+  onBeforeQuestion,
 }: UseInterviewStreamOptions): InterviewStreamState {
   const [messages, setMessages] = useState<readonly InterviewStreamMessage[]>([]);
   const [status, setStatus] = useState<InterviewStreamPhase>("idle");
@@ -165,6 +192,13 @@ export function useInterviewStream({
   const frameRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const lastSeqRef = useRef(0);
+  // 다음 `start()` 호출이 실을 대상입니다. `submitAnswer`가 `onBeforeQuestion`에서 정해 두고
+  // `start()`가 한 번 읽고 비웁니다. 첫 호출(이력 없음)에는 `initialTarget`을 그대로 씁니다.
+  const pendingTargetRef = useRef<InterviewQuestionTarget>(initialTarget);
+  // `onBeforeQuestion` 진행 중에 새 제출이나 종료가 오면 그 결과를 버려야 합니다(이슈 #90 Approach
+  // 4, "이전 작업의 늦은 응답은 반영하지 않는다"). 제출마다 값을 올려 이 응답이 최신 제출의
+  // 것인지 확인합니다.
+  const submissionSeqRef = useRef(0);
   const optionsRef = useRef({
     url,
     snapshot,
@@ -173,11 +207,12 @@ export function useInterviewStream({
     sleep,
     scheduleFrame,
     cancelFrame,
+    onBeforeQuestion,
   });
   // 실행 중인 스트림이 최신 옵션을 보게 하되 옵션이 바뀔 때마다 스트림을 다시 시작하지는
   // 않습니다. ref 갱신은 렌더 도중이 아니라 렌더가 끝난 뒤에 합니다.
   useEffect(() => {
-    optionsRef.current = { url, snapshot, fetchImpl, retryDelaysMs, sleep, scheduleFrame, cancelFrame };
+    optionsRef.current = { url, snapshot, fetchImpl, retryDelaysMs, sleep, scheduleFrame, cancelFrame, onBeforeQuestion };
   });
 
   const updateMessages = useCallback(
@@ -254,15 +289,21 @@ export function useInterviewStream({
       cancelScheduledFrame();
       setReceivedSeq(0);
 
+      // 이번 요청이 겨냥할 대상입니다. `submitAnswer`의 `onBeforeQuestion`이 정해 두거나(꼬리
+      // 질문), `initialTarget`에서 왔습니다(첫 질문). `retry`도 같은 값을 그대로 읽으므로 재시도가
+      // 다른 블록을 겨냥하는 일은 없습니다.
+      const target = pendingTargetRef.current;
+      const targetFields = target === null ? {} : { targetBlock: target.targetBlock, targetElement: target.targetElement };
+
       const history = toHistory(messagesRef.current);
       if (history.length === 0) {
-        // 첫 질문입니다. 이슈 #76 이전과 같은 본문을 보냅니다.
+        // 첫 질문입니다. 이슈 #76 이전과 같은 본문을 보냅니다(대상이 없을 때).
         setRemovedHistory([]);
-        body = JSON.stringify({ snapshot: current.snapshot });
+        body = JSON.stringify({ snapshot: current.snapshot, ...targetFields });
       } else {
         const trimmed = trimInterviewHistory(history);
         setRemovedHistory(trimmed.removed);
-        body = JSON.stringify({ snapshot: current.snapshot, history: trimmed.history });
+        body = JSON.stringify({ snapshot: current.snapshot, history: trimmed.history, ...targetFields });
       }
     }
 
@@ -387,7 +428,25 @@ export function useInterviewStream({
         return [...previous, { id: `message-${messageCountRef.current}`, ...answer, isStreaming: false }];
       });
       setStatus("connecting");
-      start();
+      const onBeforeQuestion = optionsRef.current.onBeforeQuestion;
+      if (onBeforeQuestion === undefined) {
+        start();
+        return true;
+      }
+      // 답변 제출부터 질문 요청까지를 하나의 취소 가능한 작업으로 묶습니다(이슈 #90 Approach 4).
+      // 이 사이 새 제출이나 종료가 오면 이 결과는 버립니다.
+      const submissionId = ++submissionSeqRef.current;
+      const historyForBeforeQuestion = toHistory(messagesRef.current);
+      void onBeforeQuestion({ history: historyForBeforeQuestion }).then((target) => {
+        if (isEndedRef.current || submissionSeqRef.current !== submissionId) return;
+        if (target === null) {
+          // 유효한 질문 후보가 없습니다(설계 6-2절 6번). 질문을 억지로 만들지 않습니다.
+          setStatus("done");
+          return;
+        }
+        pendingTargetRef.current = target;
+        start();
+      });
       return true;
     },
     [start, updateMessages]

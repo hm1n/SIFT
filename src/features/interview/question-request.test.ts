@@ -10,6 +10,7 @@ import {
   INTERVIEW_HISTORY_MAX_ITEMS,
 } from "./history";
 import {
+  INTERVIEW_STREAM_TARGET_META_BYTES,
   MAX_INTERVIEW_STREAM_BODY_BYTES,
   isExperienceEvidenceSnapshot,
   parseInterviewStreamRequestBody,
@@ -181,13 +182,57 @@ describe("parseInterviewStreamRequestBody", () => {
 
     expect(parsed).toMatchObject({ ok: false, kind: "history_too_large" });
   });
+
+  it("targetBlock·targetElement가 없으면 대상 없는 일반 질문 요청으로 받아들인다", () => {
+    const parsed = parseInterviewStreamRequestBody({ snapshot: evidenceSnapshotFixture() });
+
+    expect(parsed.ok && parsed.body.targetBlock).toBeUndefined();
+  });
+
+  it("targetBlock과 targetElement를 함께 받으면 그대로 담는다", () => {
+    const parsed = parseInterviewStreamRequestBody({
+      snapshot: evidenceSnapshotFixture(),
+      targetBlock: "problem",
+      targetElement: "b",
+    });
+
+    expect(parsed).toMatchObject({ ok: true, body: { targetBlock: "problem", targetElement: "b" } });
+  });
+
+  it("targetBlock과 targetElement 중 하나만 있으면 invalid_request로 거절한다", () => {
+    expect(
+      parseInterviewStreamRequestBody({ snapshot: evidenceSnapshotFixture(), targetBlock: "problem" })
+    ).toMatchObject({ ok: false, kind: "invalid_request" });
+    expect(
+      parseInterviewStreamRequestBody({ snapshot: evidenceSnapshotFixture(), targetElement: "a" })
+    ).toMatchObject({ ok: false, kind: "invalid_request" });
+  });
+
+  it("targetBlock이나 targetElement 값이 올바르지 않으면 invalid_request로 거절한다", () => {
+    expect(
+      parseInterviewStreamRequestBody({
+        snapshot: evidenceSnapshotFixture(),
+        targetBlock: "unknown",
+        targetElement: "a",
+      })
+    ).toMatchObject({ ok: false, kind: "invalid_request" });
+    expect(
+      parseInterviewStreamRequestBody({
+        snapshot: evidenceSnapshotFixture(),
+        targetBlock: "problem",
+        targetElement: "c",
+      })
+    ).toMatchObject({ ok: false, kind: "invalid_request" });
+  });
 });
 
 describe("MAX_INTERVIEW_STREAM_BODY_BYTES", () => {
-  it("근거 몫에 이력 몫을 더한 값이다", () => {
+  it("근거 몫에 이력 몫과 대상 메타 몫을 더한 값이다", () => {
     // 근거 몫을 그대로 두고 더하기만 하므로 첫 질문 요청의 통과 여부가 바뀌지 않습니다.
     expect(MAX_INTERVIEW_STREAM_BODY_BYTES).toBe(
-      64 * 1024 + INTERVIEW_HISTORY_MAX_ITEMS * INTERVIEW_HISTORY_ITEM_MAX_BYTES
+      64 * 1024 +
+        INTERVIEW_HISTORY_MAX_ITEMS * INTERVIEW_HISTORY_ITEM_MAX_BYTES +
+        INTERVIEW_STREAM_TARGET_META_BYTES
     );
   });
 });
