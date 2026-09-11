@@ -15,6 +15,7 @@ import {
   STAGE_A_MAX_PROMPT_BYTES,
   STAGE_A_MAX_REQUEST_BYTES,
   STAGE_A_MAX_UNITS,
+  type StageAUnitInput,
 } from "./stage-a";
 import type { StageACandidate } from "./types";
 import type { ReadonlyCommitDetail } from "@/lib/github/types";
@@ -57,7 +58,7 @@ async function expectRequestError(promise: Promise<unknown>, expected: Partial<C
 }
 
 type StageARequestBody = {
-  units: { pullRequestNumber: number; representativeSha: string }[];
+  units: { unitId: string; representativeSha: string }[];
   candidateLimit: number;
 };
 
@@ -114,11 +115,10 @@ afterEach(() => {
 
 describe("toStageAUnits", () => {
   it("PR 묶음으로 접고 patch와 커밋 본문을 남기지 않는다", () => {
-    const { units, excludedCommits } = toStageAUnits([COMMIT]);
+    const { units } = toStageAUnits([COMMIT]);
 
-    expect(excludedCommits).toEqual([]);
     expect(units).toHaveLength(1);
-    expect(units[0].pullRequestNumber).toBe(7);
+    expect(units[0].unitId).toBe("pr:7");
     expect(units[0].representativeSha).toBe("sha-1");
     expect(JSON.stringify(units)).not.toContain("patch");
     expect(JSON.stringify(units)).not.toContain("\\n");
@@ -147,13 +147,12 @@ describe("toStageAUnits", () => {
     expect(bytes).toBeLessThanOrEqual(STAGE_A_MAX_PROMPT_BYTES);
   });
 
-  it("PR에 속하지 않은 커밋을 사유와 함께 제외한다", () => {
-    const { units, excludedCommits } = toStageAUnits([{ ...COMMIT, pullRequests: [] }]);
+  it("PR에 속하지 않은 커밋은 커밋 하나짜리 단위가 된다", () => {
+    const { units } = toStageAUnits([{ ...COMMIT, pullRequests: [] }]);
 
-    expect(units).toEqual([]);
-    expect(excludedCommits).toEqual([
-      { sha: "sha-1", title: COMMIT.title, reason: "no_pull_request" },
-    ]);
+    expect(units).toHaveLength(1);
+    expect(units[0].unitId).toBe("commit:sha-1");
+    expect(units[0].representativeSha).toBe("sha-1");
   });
 });
 
@@ -230,27 +229,64 @@ describe("expandCandidatesToCommits", () => {
 
     expect(expanded).toEqual([]);
   });
+
+  /**
+   * PR 없는 저장소를 지원하는 이번 변경의 핵심 계약입니다. PR 묶음과 단일 커밋이 섞인 저장소에서
+   * 두 종류 모두 판단 단위가 되고, 후보로 뽑히면 서로 다른 후보의 커밋으로 중복 없이 펼쳐져야
+   * 합니다.
+   */
+  it("PR 묶음과 PR 없는 커밋이 섞인 저장소에서 두 종류 모두 판단 단위가 되고 중복 없이 펼쳐진다", () => {
+    const prCommits = unitCommits(1, 3);
+    const standaloneCommit: ReadonlyCommitDetail = {
+      ...COMMIT,
+      sha: "standalone-1",
+      pullRequests: [],
+    };
+    const { workUnits, units } = toStageAUnits([...prCommits, standaloneCommit]);
+
+    expect(units.map(({ unitId }) => unitId).sort()).toEqual(["commit:standalone-1", "pr:1"]);
+    const prUnit = units.find(({ unitId }) => unitId === "pr:1")!;
+    const commitUnit = units.find(({ unitId }) => unitId === "commit:standalone-1")!;
+
+    // 가짜 Stage A 출력입니다. 두 단위 모두 각자 다른 후보로 추천됩니다.
+    const candidates = [
+      { sha: prUnit.representativeSha, source: "automatic_recommendation" as const, contributionItem: null },
+      { sha: commitUnit.representativeSha, source: "automatic_recommendation" as const, contributionItem: null },
+    ];
+
+    const expanded = expandCandidatesToCommits(candidates, workUnits, 30);
+
+    // PR 묶음은 커밋 3개로 펼쳐지고, 단일 커밋 단위는 자기 자신 하나로 펼쳐집니다. 합쳐서 4개이고
+    // 어떤 커밋도 두 번 나타나지 않습니다.
+    expect(expanded).toHaveLength(4);
+    expect(new Set(expanded.map(({ sha }) => sha)).size).toBe(4);
+    expect(expanded.some(({ sha }) => sha === "standalone-1")).toBe(true);
+    expect(prCommits.every(({ sha }) => expanded.some((c) => c.sha === sha))).toBe(true);
+  });
 });
 
 describe("fetchStageACandidatesFromApi", () => {
-  // 청크 루프가 지고 있던 계약입니다. 묶음이 0개면 청크가 0개라 요청이 한 번도 나가지 않았습니다.
-  // 루프를 걷어낸 뒤 빈 배열이 candidateLimit 0과 함께 그대로 나갔고, 라우트가 두 조건을 각각
-  // 422 invalid_request로 거절해 no_stage_a_candidates 빈 상태가 오류 화면으로 바뀌었습니다.
-  it("분석 대상 커밋 전부가 Pull Request에 속하지 않으면 요청하지 않고 빈 결과를 돌려준다", async () => {
+  it("PR에 속하지 않은 커밋도 커밋 하나짜리 단위로 후보 요청에 포함된다", async () => {
     const withoutPullRequest: ReadonlyCommitDetail = { ...COMMIT, pullRequests: [] };
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({
+      candidates: [{ sha: withoutPullRequest.sha, source: "automatic_recommendation", contributionItem: null }],
+      unclassifiedShas: [],
+      unjudgedShas: [],
+    }));
 
     const output = await fetchStageACandidatesFromApi([withoutPullRequest], []);
 
-    expect(fetch).not.toHaveBeenCalled();
-    expect(output.candidates).toEqual([]);
-    expect(output.selectedUnitCount).toBe(0);
-    // 화면이 이유를 말할 값은 그대로 실어 보냅니다. 조용히 버리면 사용자가 자기 커밋이 왜
-    // 안 보이는지 알 수 없습니다.
-    expect(output.excludedCommits.map(({ sha }) => sha)).toEqual(["sha-1"]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(output.selectedUnitCount).toBe(1);
+    expect(output.candidates).toEqual([
+      { sha: withoutPullRequest.sha, source: "automatic_recommendation", contributionItem: null },
+    ]);
   });
 
-  // 빈 묶음이 나오는 두 번째 경로입니다. 첫 번째와 달리 excludedUnits가 채워지므로 화면이 그리는
-  // 블록도 다릅니다. 제목만으로 선별 예산을 혼자 넘는 묶음을 만들어 그 경로를 밟습니다.
+  // 청크 루프가 지고 있던 계약입니다. 묶음이 0개면 청크가 0개라 요청이 한 번도 나가지 않았습니다.
+  // 루프를 걷어낸 뒤 빈 배열이 candidateLimit 0과 함께 그대로 나갔고, 라우트가 두 조건을 각각
+  // 422 invalid_request로 거절해 no_stage_a_candidates 빈 상태가 오류 화면으로 바뀌었습니다.
+  // 제목만으로 선별 예산을 혼자 넘는 묶음을 만들어 그 경로를 밟습니다.
   it("묶음이 혼자 바이트 상한을 넘어 하나도 선별되지 않으면 요청하지 않는다", async () => {
     const oversized: ReadonlyCommitDetail = {
       ...COMMIT,
@@ -278,7 +314,6 @@ describe("fetchStageACandidatesFromApi", () => {
       candidates: output.candidates,
       unclassifiedShas: output.unclassifiedShas,
       unjudgedShas: [],
-      excludedCommits: [],
       excludedUnits: [],
       thresholdScore: 0,
       selectedUnitCount: 1,
@@ -358,10 +393,10 @@ describe("fetchStageACandidatesFromApi", () => {
    */
   it("개수 상한을 넘는 저장소는 상위 묶음만 한 번에 보내고 나머지를 사유와 함께 남긴다", async () => {
     const commits = manyUnits(STAGE_A_MAX_UNITS + 5);
-    const sent: number[] = [];
+    const sent: string[] = [];
     vi.mocked(fetch).mockImplementation(async (_url, init) => {
       const request = parseRequest(init);
-      sent.push(...request.units.map(({ pullRequestNumber }) => pullRequestNumber));
+      sent.push(...request.units.map(({ unitId }) => unitId));
       const selected = request.units.slice(0, request.candidateLimit);
       return jsonResponse({
         candidates: selected.map(({ representativeSha }) => ({
@@ -487,12 +522,13 @@ describe("fetchStageACandidatesFromApi", () => {
  * 조용히 보내 서버가 422로 거부하게 두는 대신 바로 실패시키는 것이 이 함수의 일입니다.
  */
 describe("assertStageARequestWithinLimits", () => {
-  const oversizedUnit = {
-    pullRequestNumber: 1,
+  const oversizedUnit: StageAUnitInput = {
+    unitId: "pr:1",
     representativeSha: "sha-1",
     summary: {
-      pullRequestNumber: 1,
-      pullRequestTitle: "x".repeat(STAGE_A_MAX_PROMPT_BYTES + 1),
+      unitId: "pr:1",
+      kind: "pull_request",
+      title: "x".repeat(STAGE_A_MAX_PROMPT_BYTES + 1),
       commitCount: 1,
       spanDays: 1,
       additions: 1,
@@ -519,9 +555,9 @@ describe("assertStageARequestWithinLimits", () => {
     // 마지막 방어선입니다.
     const units = Array.from({ length: STAGE_A_MAX_UNITS + 1 }, (_, index) => ({
       ...oversizedUnit,
-      pullRequestNumber: index + 1,
+      unitId: `pr:${index + 1}`,
       representativeSha: `sha-${index}`,
-      summary: { ...oversizedUnit.summary, pullRequestNumber: index + 1, pullRequestTitle: "PR" },
+      summary: { ...oversizedUnit.summary, unitId: `pr:${index + 1}` },
     }));
 
     expect(() => assertStageARequestWithinLimits(units, [])).toThrow(CandidateRequestError);
@@ -550,12 +586,13 @@ describe("assertStageARequestWithinLimits", () => {
     // 쌍 하나가 프롬프트에서 2바이트, JSON에서 4바이트입니다.
     const pair = [String.fromCharCode(34), String.fromCharCode(92)].join("");
     const escaped = pair.repeat(Math.floor((STAGE_A_MAX_REQUEST_BYTES + 200) / 4));
-    const unit = {
-      pullRequestNumber: 3,
+    const unit: StageAUnitInput = {
+      unitId: "pr:3",
       representativeSha: "sha-escaped",
       summary: {
-        pullRequestNumber: 3,
-        pullRequestTitle: "PR",
+        unitId: "pr:3",
+        kind: "pull_request",
+        title: "PR",
         commitCount: 1,
         spanDays: 1,
         additions: 1,

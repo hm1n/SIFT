@@ -29,9 +29,21 @@ function unit(
   title = "알림 기능 구현"
 ): WorkUnit<SummarizableCommit> {
   return {
-    pullRequestNumber: number,
+    kind: "pull_request",
+    unitId: `pr:${number}`,
+    title,
     pullRequest: { number, title, state: "closed", baseBranch: "develop", headBranch: "feature" },
     commits,
+  };
+}
+
+/** PR에 속하지 않은 커밋 하나짜리 판단 단위입니다. */
+function singleCommitUnit(target: SummarizableCommit): WorkUnit<SummarizableCommit> {
+  return {
+    kind: "commit",
+    unitId: `commit:${target.sha}`,
+    title: target.title,
+    commits: [target],
   };
 }
 
@@ -181,6 +193,16 @@ describe("summarizeWorkUnit", () => {
     expect(summary.topFilePaths).toEqual([]);
     expect(summary.changedFilePathCount).toBe(0);
   });
+
+  it("단일 커밋 단위는 unitId·kind·title을 커밋에서 그대로 물려받는다", () => {
+    const target = commit({ sha: "abcdef1234567890abcdef1234567890abcdef12", title: "직접 푸시" });
+    const summary = summarizeWorkUnit(singleCommitUnit(target));
+
+    expect(summary.kind).toBe("commit");
+    expect(summary.unitId).toBe(`commit:${target.sha}`);
+    expect(summary.title).toBe("직접 푸시");
+    expect(summary.commitCount).toBe(1);
+  });
 });
 
 describe("renderWorkUnitSummary", () => {
@@ -293,6 +315,23 @@ describe("renderWorkUnitSummary", () => {
     );
 
     expect(text.split("\n")[2]).toBe("  only.ts");
+  });
+
+  it("단일 커밋 단위는 SHA 7자리 라벨로 두 줄만 만들고 커밋 제목 줄을 생략한다", () => {
+    const target = commit({
+      sha: "abcdef1234567890abcdef1234567890abcdef12",
+      title: "직접 푸시한 변경",
+      additions: 12,
+      deletions: 3,
+      files: [{ path: "src/only.ts", changes: 15 }],
+    });
+
+    const text = renderWorkUnitSummary(summarizeWorkUnit(singleCommitUnit(target)));
+
+    expect(text.split("\n")).toHaveLength(2);
+    expect(text).toBe(
+      ["커밋 abcdef1 직접 푸시한 변경 [1커밋 1일 +12-3 1파일]", "  src/{only.ts}"].join("\n")
+    );
   });
 });
 

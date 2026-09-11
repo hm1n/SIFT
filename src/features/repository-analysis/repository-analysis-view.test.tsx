@@ -3,7 +3,9 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ExcludedCommit } from "@/features/experience-candidates/work-unit";
+import type { WorkUnit } from "@/features/experience-candidates/work-unit";
+import type { ExcludedWorkUnit } from "@/features/experience-candidates/work-unit-selection";
+import type { ReadonlyCommitDetail } from "@/lib/github/types";
 import { SESSION_PATH } from "@/lib/github/auth-paths";
 import {
   analyzeRepository,
@@ -16,7 +18,24 @@ import {
 import { RepositoryAnalysisView } from "./repository-analysis-view";
 
 
-const excludedCommit = (sha: string, title: string): ExcludedCommit => ({ sha, title, reason: "no_pull_request" });
+function commit(sha: string, title: string): ReadonlyCommitDetail {
+  return {
+    sha, title, author: "octocat", date: "2026-08-24T00:00:00Z", parentCount: 1,
+    message: title, additions: 1, deletions: 0, changedFiles: 1, files: [], pullRequests: [],
+  };
+}
+
+/** 점수 컷에서 밀린 PR 묶음 하나입니다. 화면 배선만 확인하는 스위트라 세부 신호는 두지 않습니다. */
+function excludedPullRequestUnit(number: number): ExcludedWorkUnit<ReadonlyCommitDetail> {
+  const unit: WorkUnit<ReadonlyCommitDetail> = {
+    kind: "pull_request",
+    unitId: `pr:${number}`,
+    title: "잡무 PR",
+    pullRequest: { number, title: "잡무 PR", state: "closed", baseBranch: "develop", headBranch: "f" },
+    commits: [commit(`sha-${number}`, "잡무 PR")],
+  };
+  return { unit, score: 1, reason: "over_input_budget", signals: [] };
+}
 
 vi.mock("./repository-analysis", async (importOriginal) => {
   const original = await importOriginal<typeof import("./repository-analysis")>();
@@ -41,7 +60,6 @@ const RETRY_POINT: CandidateRetryPoint = {
 };
 /** 이 화면 안내 스위트는 Stage A 선별 표시 자체가 아니라 후보 목록 표시를 검증하므로 빈 값을 씁니다. */
 const EMPTY_STAGE_A_SELECTION: StageASelectionState = {
-  excludedCommits: [],
   excludedUnits: [],
   thresholdScore: 0,
   selectedUnitCount: 0,
@@ -236,8 +254,7 @@ describe("RepositoryAnalysisView Empty의 Stage A 제외 표시", () => {
       status: "empty",
       kind: "no_stage_a_candidates",
       stageASelection: {
-        excludedCommits: [excludedCommit("abcdef1234567", "잡무 커밋")],
-        excludedUnits: [],
+        excludedUnits: [excludedPullRequestUnit(1)],
         thresholdScore: 3,
         selectedUnitCount: 0,
         unjudgedShas: [],
@@ -246,7 +263,7 @@ describe("RepositoryAnalysisView Empty의 Stage A 제외 표시", () => {
     await renderAndAnalyze();
 
     expect(screen.getByRole("heading", { name: "1차 선별에서 제외된 항목" })).toBeInTheDocument();
-    expect(screen.getByText("Pull Request에 속하지 않아 제외한 커밋 1건")).toBeInTheDocument();
+    expect(screen.getByText("저장소가 커서 전체 1묶음 중 0묶음만 판단했습니다")).toBeInTheDocument();
   });
 
   it("제외 0건이면 제외 섹션이 렌더되지 않는다", async () => {
@@ -282,8 +299,7 @@ describe("RepositoryAnalysisView Empty의 Stage A 제외 표시", () => {
       status: "empty",
       kind: "no_stage_a_candidates",
       stageASelection: {
-        excludedCommits: [excludedCommit("abcdef1234567", "잡무 커밋")],
-        excludedUnits: [],
+        excludedUnits: [excludedPullRequestUnit(1)],
         thresholdScore: 3,
         selectedUnitCount: 0,
         unjudgedShas: [],
@@ -300,8 +316,7 @@ describe("RepositoryAnalysisView Empty의 Stage A 제외 표시", () => {
       status: "empty",
       kind: "no_stage_a_candidates",
       stageASelection: {
-        excludedCommits: [excludedCommit("abcdef1234567", "잡무 커밋")],
-        excludedUnits: [],
+        excludedUnits: [excludedPullRequestUnit(1)],
         thresholdScore: 3,
         selectedUnitCount: 0,
         unjudgedShas: [],
@@ -309,11 +324,12 @@ describe("RepositoryAnalysisView Empty의 Stage A 제외 표시", () => {
     });
     await renderAndAnalyze();
 
-    const details = screen.getByText("Pull Request에 속하지 않아 제외한 커밋 1건").closest("details");
+    const summaryText = "저장소가 커서 전체 1묶음 중 0묶음만 판단했습니다";
+    const details = screen.getByText(summaryText).closest("details");
     expect(details).not.toHaveAttribute("open");
-    fireEvent.click(screen.getByText("Pull Request에 속하지 않아 제외한 커밋 1건"));
+    fireEvent.click(screen.getByText(summaryText));
     expect(details).toHaveAttribute("open");
-    fireEvent.click(screen.getByText("Pull Request에 속하지 않아 제외한 커밋 1건"));
+    fireEvent.click(screen.getByText(summaryText));
     expect(details).not.toHaveAttribute("open");
   });
 });

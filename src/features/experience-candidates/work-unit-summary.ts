@@ -1,5 +1,5 @@
 import type { CommitFileChange, CommitSummary } from "@/lib/github/types";
-import type { GroupableCommit, WorkUnit } from "./work-unit";
+import { modelFacingUnitId, type GroupableCommit, type WorkUnit, type WorkUnitKind } from "./work-unit";
 
 /**
  * 요약에 남길 파일 경로 수입니다.
@@ -25,8 +25,10 @@ export interface SummarizableCommit extends GroupableCommit {
  * 둡니다. 텍스트만 두면 화면이 숫자를 다시 계산하게 되고 두 곳이 어긋납니다.
  */
 export interface WorkUnitSummary {
-  readonly pullRequestNumber: number;
-  readonly pullRequestTitle: string;
+  readonly unitId: string;
+  readonly kind: WorkUnitKind;
+  /** Pull Request 묶음은 PR 제목, 단일 커밋은 그 커밋의 제목입니다. */
+  readonly title: string;
   readonly commitCount: number;
   /** 첫 커밋과 마지막 커밋 사이 일수입니다. 하루 안에 끝난 작업도 1로 둡니다. */
   readonly spanDays: number;
@@ -81,8 +83,9 @@ export function summarizeWorkUnit(unit: WorkUnit<SummarizableCommit>): WorkUnitS
   }
 
   return {
-    pullRequestNumber: unit.pullRequestNumber,
-    pullRequestTitle: unit.pullRequest.title,
+    unitId: unit.unitId,
+    kind: unit.kind,
+    title: unit.title,
     commitCount: unit.commits.length,
     spanDays: calculateSpanDays(unit.commits),
     additions: unit.commits.reduce((sum, { additions }) => sum + additions, 0),
@@ -122,6 +125,18 @@ function foldFilePaths(paths: readonly string[]): string {
 }
 
 /**
+ * 요약 머리줄에서 판단 단위를 가리키는 라벨입니다. Pull Request 묶음은 `unitId`(`pr:번호`)를
+ * 그대로 사람이 읽기 좋은 형태로 바꿉니다. 단일 커밋은 `work-unit.ts`의 `modelFacingUnitId`로
+ * SHA 앞 7자리만 남겨 보여줍니다. 이 화면 머리줄이 모델이 실제로 읽는 문자열이기도 하므로
+ * (`renderWorkUnitSummary`), 자르는 자리수를 이 함수가 따로 정하지 않고 `modelFacingUnitId` 하나만
+ * 참조합니다.
+ */
+function renderUnitLabel(summary: WorkUnitSummary): string {
+  if (summary.kind === "pull_request") return `PR#${summary.unitId.slice("pr:".length)}`;
+  return `커밋 ${modelFacingUnitId(summary.unitId).slice("commit:".length)}`;
+}
+
+/**
  * 요약을 Stage A 입력 문자열로 만듭니다.
  *
  * JSON이 아니라 줄 형식인 이유는 실측 때문입니다. 커밋 단위 JSON 페이로드에서 중괄호와 따옴표
@@ -136,15 +151,19 @@ function foldFilePaths(paths: readonly string[]): string {
  *
  * Pull Request 제목의 대괄호 라벨도 그대로 둡니다. `demian`은 19개 중 4종뿐이라 중복이지만
  * `andbread`는 64개 중 57종이어서 저장소마다 다른 정보를 담습니다.
+ *
+ * 단일 커밋 묶음은 커밋 제목 줄을 생략합니다. 커밋이 하나뿐이라 머리줄의 제목과 완전히
+ * 같은 문장을 한 번 더 반복하는 것이라 정보가 없습니다.
  */
 export function renderWorkUnitSummary(summary: WorkUnitSummary): string {
   const remaining = summary.changedFilePathCount - summary.topFilePaths.length;
   const paths = foldFilePaths(summary.topFilePaths) + (remaining > 0 ? ` +${remaining}` : "");
-  return [
-    `PR#${summary.pullRequestNumber} ${summary.pullRequestTitle} [${summary.commitCount}커밋 ${summary.spanDays}일 +${summary.additions}-${summary.deletions} ${summary.changedFilePathCount}파일]`,
-    `  ${summary.commitTitles.join(" / ")}`,
-    `  ${paths}`,
-  ].join("\n");
+  const header = `${renderUnitLabel(summary)} ${summary.title} [${summary.commitCount}커밋 ${summary.spanDays}일 +${summary.additions}-${summary.deletions} ${summary.changedFilePathCount}파일]`;
+  const lines =
+    summary.kind === "pull_request"
+      ? [header, `  ${summary.commitTitles.join(" / ")}`, `  ${paths}`]
+      : [header, `  ${paths}`];
+  return lines.join("\n");
 }
 
 /**

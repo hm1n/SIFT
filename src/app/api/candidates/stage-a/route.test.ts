@@ -3,6 +3,7 @@ import {
   renderStageAPrompt,
   STAGE_A_MAX_PROMPT_BYTES,
   STAGE_A_MAX_UNITS,
+  type StageAUnitInput,
 } from "@/features/experience-candidates/stage-a";
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,18 +15,41 @@ import {
 import { ExperienceCandidateOutputError } from "@/features/experience-candidates/errors";
 import { handleStageA, MAX_STAGE_A_BODY_BYTES } from "./route";
 
-function unit(pullRequestNumber: number, representativeSha: string) {
+function unit(number: number, representativeSha: string): StageAUnitInput {
+  const unitId = `pr:${number}`;
   return {
-    pullRequestNumber,
+    unitId,
     representativeSha,
     summary: {
-      pullRequestNumber,
-      pullRequestTitle: "경량 입력",
+      unitId,
+      kind: "pull_request",
+      title: "경량 입력",
       commitCount: 1,
       spanDays: 1,
       additions: 1,
       deletions: 0,
       commitTitles: ["feat: 경량 입력"],
+      changedFilePathCount: 1,
+      topFilePaths: ["src/a.ts"],
+    },
+  };
+}
+
+/** PR에 속하지 않은 커밋 하나짜리 단위입니다. `sha`는 40자 SHA를 가정합니다. */
+function commitUnit(sha: string): StageAUnitInput {
+  const unitId = `commit:${sha}`;
+  return {
+    unitId,
+    representativeSha: sha,
+    summary: {
+      unitId,
+      kind: "commit",
+      title: "직접 푸시한 변경",
+      commitCount: 1,
+      spanDays: 1,
+      additions: 1,
+      deletions: 0,
+      commitTitles: ["직접 푸시한 변경"],
       changedFilePathCount: 1,
       topFilePaths: ["src/a.ts"],
     },
@@ -44,13 +68,15 @@ const body = { units: [unit(1, SHA)], contributionItems: [], candidateLimit: 1 }
  * `fillerLength`바이트가 늘어나게 합니다. 고정 오버헤드(Korean 라벨 등)는
  * `promptBytesFor(0, ...)`로 실측해 역산합니다.
  */
-function fillerUnit(pullRequestNumber: number, representativeSha: string, fillerLength: number) {
+function fillerUnit(number: number, representativeSha: string, fillerLength: number): StageAUnitInput {
+  const unitId = `pr:${number}`;
   return {
-    pullRequestNumber,
+    unitId,
     representativeSha,
     summary: {
-      pullRequestNumber,
-      pullRequestTitle: "t",
+      unitId,
+      kind: "pull_request",
+      title: "t",
       commitCount: 1,
       spanDays: 1,
       additions: 1,
@@ -111,12 +137,65 @@ describe("POST /api/candidates/stage-a", () => {
 
   it("성공 응답은 Stage A 계약만 반환한다", async () => {
     const response = await handleStageA(request(body), async () => ({
-      decisions: [{ pullRequestNumber: 1, contributionItem: null, recommended: false }],
+      decisions: [{ unitId: "pr:1", contributionItem: null, recommended: false }],
     }));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       candidates: [], unclassifiedShas: [SHA], unjudgedShas: [],
     });
+  });
+
+  it("PR에 속하지 않은 단일 커밋 단위도 정상 처리된다", async () => {
+    const response = await handleStageA(
+      request({ units: [commitUnit(SHA)], contributionItems: [], candidateLimit: 1 }),
+      async () => ({
+        decisions: [{ unitId: "commit:aaaaaaa", contributionItem: null, recommended: true }],
+      })
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      candidates: [{ sha: SHA, source: "automatic_recommendation", contributionItem: null }],
+      unclassifiedShas: [],
+      unjudgedShas: [],
+    });
+  });
+
+  it("단일 커밋 단위의 unitId가 대표 SHA와 어긋나면 계약 위반 422로 거부한다", async () => {
+    const mismatched = commitUnit(SHA);
+    const response = await handleStageA(request({
+      units: [{ ...mismatched, representativeSha: SHA_2 }],
+      contributionItems: [],
+      candidateLimit: 1,
+    }));
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ error: { kind: "invalid_request" } });
+  });
+
+  it("summary.kind와 unitId 접두어가 어긋나면 LLM 호출 전에 422로 거부한다", async () => {
+    const tainted = unit(1, SHA);
+    const generate = vi.fn();
+    const response = await handleStageA(request({
+      units: [{ ...tainted, summary: { ...tainted.summary, kind: "commit" } }],
+      contributionItems: [],
+      candidateLimit: 1,
+    }), generate);
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ error: { kind: "invalid_request" } });
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("SHA 앞 7자리가 같은 두 단일 커밋 요청은 LLM 호출 전에 422로 거부한다", async () => {
+    const shaA = `abcdef1${"2".repeat(33)}`;
+    const shaB = `abcdef1${"3".repeat(33)}`;
+    const generate = vi.fn();
+    const response = await handleStageA(request({
+      units: [commitUnit(shaA), commitUnit(shaB)],
+      contributionItems: [],
+      candidateLimit: 1,
+    }), generate);
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ error: { kind: "invalid_request" } });
+    expect(generate).not.toHaveBeenCalled();
   });
 
   it("잘못된 JSON, 입력 계약, 4.5MB 초과를 서로 다른 요청 오류로 거부한다", async () => {
@@ -186,7 +265,7 @@ describe("POST /api/candidates/stage-a", () => {
 
     const response = await handleStageA(request({
       units: [fillerUnit(1, SHA, fillerLength)], contributionItems, candidateLimit: 1,
-    }), async () => ({ decisions: [{ pullRequestNumber: 1, contributionItem: null, recommended: false }] }));
+    }), async () => ({ decisions: [{ unitId: "pr:1", contributionItem: null, recommended: false }] }));
 
     expect(response.status).toBe(200);
   });
@@ -211,7 +290,7 @@ describe("POST /api/candidates/stage-a", () => {
 
     const passResponse = await handleStageA(request({
       units: [fillerUnit(1, SHA, passFiller)], contributionItems: [], candidateLimit: 1,
-    }), async () => ({ decisions: [{ pullRequestNumber: 1, contributionItem: null, recommended: false }] }));
+    }), async () => ({ decisions: [{ unitId: "pr:1", contributionItem: null, recommended: false }] }));
     const failResponse = await handleStageA(request({
       units: [fillerUnit(1, SHA, failFiller)], contributionItems: [], candidateLimit: 1,
     }), vi.fn());
@@ -224,7 +303,7 @@ describe("POST /api/candidates/stage-a", () => {
     let received: unknown;
     const response = await handleStageA(request(body), async (payload) => {
       received = payload;
-      return { decisions: [{ pullRequestNumber: 1, contributionItem: null, recommended: false }] };
+      return { decisions: [{ unitId: "pr:1", contributionItem: null, recommended: false }] };
     });
     expect(response.status).toBe(200);
     expect(JSON.stringify(received)).not.toContain("patch");
@@ -258,10 +337,10 @@ describe("POST /api/candidates/stage-a", () => {
   it("누락된 묶음만 최대 2회 축소 재호출해 전수 계약을 복구한다", async () => {
     const generate = vi.fn()
       .mockResolvedValueOnce({ decisions: [
-        { pullRequestNumber: 1, contributionItem: null, recommended: false },
+        { unitId: "pr:1", contributionItem: null, recommended: false },
       ] })
       .mockResolvedValueOnce({ decisions: [
-        { pullRequestNumber: 2, contributionItem: null, recommended: false },
+        { unitId: "pr:2", contributionItem: null, recommended: false },
       ] });
 
     const response = await handleStageA(request({
@@ -271,8 +350,8 @@ describe("POST /api/candidates/stage-a", () => {
     expect(response.status).toBe(200);
     expect(generate).toHaveBeenCalledTimes(2);
     expect(generate.mock.calls[1][0].units.map(
-      ({ pullRequestNumber }: { pullRequestNumber: number }) => pullRequestNumber
-    )).toEqual([2]);
+      ({ unitId }: { unitId: string }) => unitId
+    )).toEqual(["pr:2"]);
     expect(await response.json()).toMatchObject({ unclassifiedShas: [SHA, SHA_2] });
   });
 
@@ -285,10 +364,10 @@ describe("POST /api/candidates/stage-a", () => {
       candidateLimit: 1,
     };
     const generate = vi.fn()
-      .mockResolvedValueOnce({ decisions: [{ pullRequestNumber: 1, contributionItem: null, recommended: true }] })
+      .mockResolvedValueOnce({ decisions: [{ unitId: "pr:1", contributionItem: null, recommended: true }] })
       .mockResolvedValue({ decisions: [
-        { pullRequestNumber: 2, contributionItem: null, recommended: true },
-        { pullRequestNumber: 3, contributionItem: null, recommended: true },
+        { unitId: "pr:2", contributionItem: null, recommended: true },
+        { unitId: "pr:3", contributionItem: null, recommended: true },
       ] });
 
     const response = await handleStageA(request(threeUnits), generate);
@@ -311,9 +390,9 @@ describe("POST /api/candidates/stage-a", () => {
       candidateLimit: 1,
     };
     const generate = vi.fn()
-      .mockResolvedValueOnce({ decisions: [{ pullRequestNumber: 1, contributionItem: null, recommended: true }] })
+      .mockResolvedValueOnce({ decisions: [{ unitId: "pr:1", contributionItem: null, recommended: true }] })
       .mockResolvedValue({ decisions: [
-        { pullRequestNumber: 2, contributionItem: "결제 연동", recommended: true },
+        { unitId: "pr:2", contributionItem: "결제 연동", recommended: true },
       ] });
 
     const response = await handleStageA(request(twoUnits), generate);
@@ -334,7 +413,7 @@ describe("POST /api/candidates/stage-a", () => {
       candidateLimit: 2,
     };
     const generate = vi.fn()
-      .mockResolvedValueOnce({ decisions: [{ pullRequestNumber: 1, contributionItem: null, recommended: true }] })
+      .mockResolvedValueOnce({ decisions: [{ unitId: "pr:1", contributionItem: null, recommended: true }] })
       .mockRejectedValue(new ExperienceCandidateOutputError("llm_request", "LLM이 요청을 거부했습니다."));
 
     const response = await handleStageA(request(twoUnits), generate);
@@ -359,7 +438,7 @@ describe("POST /api/candidates/stage-a", () => {
       candidateLimit: 2,
     };
     const generate = vi.fn().mockResolvedValue({
-      decisions: [{ pullRequestNumber: 1, contributionItem: null, recommended: true }],
+      decisions: [{ unitId: "pr:1", contributionItem: null, recommended: true }],
     });
 
     // 예산을 최소 LLM 예산보다 작게 줍니다. 첫 호출은 끝나지만 복구는 시작하지 않아야 합니다.

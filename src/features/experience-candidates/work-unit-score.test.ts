@@ -30,7 +30,9 @@ function commit(overrides: Partial<ScorableCommit> = {}): ScorableCommit {
 
 function unit(commits: readonly ScorableCommit[], number = 7): WorkUnit<ScorableCommit> {
   return {
-    pullRequestNumber: number,
+    kind: "pull_request",
+    unitId: `pr:${number}`,
+    title: "제목",
     pullRequest: { number, title: "제목", state: "closed", baseBranch: "develop", headBranch: "f" },
     commits,
   };
@@ -58,10 +60,10 @@ describe("scoreWorkUnit", () => {
     expect(result.signals).toEqual(["many_commits"]);
   });
 
-  it("PR 번호를 그대로 남긴다", () => {
+  it("unitId를 그대로 남긴다", () => {
     const target = unit([commit()], 113);
 
-    expect(scoreWorkUnit(target, summarizeWorkUnit(target)).pullRequestNumber).toBe(113);
+    expect(scoreWorkUnit(target, summarizeWorkUnit(target)).unitId).toBe("pr:113");
   });
 
   it.each([

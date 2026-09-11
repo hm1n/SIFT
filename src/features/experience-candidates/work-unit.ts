@@ -16,44 +16,47 @@ export interface GroupableCommit {
   readonly pullRequests: readonly WorkUnitPullRequest[];
 }
 
-/**
- * 경험 판단의 단위입니다. Stage A는 커밋이 아니라 이 단위를 판단합니다.
- *
- * 커밋 단위 판단이 성립하지 않는 이유는 실측으로 확인했습니다. 어떤 Pull Request는 커밋 18개
- * 중 8개가 파일명 대소문자 변경이어서 개별 커밋은 전부 잡무로 보이지만, 묶으면 배포 실패를
- * 하루 만에 해결한 경험이 됩니다. 근거는
- * `llm-wiki/wiki/2026-08-24-경험-판단단위-PR-묶음-전환-검토.md`에 있습니다.
- */
-export interface WorkUnit<TCommit extends GroupableCommit = GroupableCommit> {
-  readonly pullRequestNumber: number;
-  readonly pullRequest: WorkUnitPullRequest;
+export type WorkUnitKind = "pull_request" | "commit";
+
+interface WorkUnitBase<TCommit extends GroupableCommit> {
+  /**
+   * 판단 단위 하나를 가리키는 식별자입니다. Pull Request 묶음은 `pr:번호`, 단일 커밋은
+   * `commit:SHA`입니다. `stage-b.ts`의 `resolveWorkUnitKey`가 이미 쓰던 형식을 그대로 물려받아
+   * Stage A와 Stage B가 같은 식별자를 공유합니다.
+   */
+  readonly unitId: string;
+  /** Pull Request 묶음은 PR 제목, 단일 커밋은 그 커밋의 제목입니다. */
+  readonly title: string;
   /** 입력 순서를 유지합니다. 최소 1개입니다. */
   readonly commits: readonly TCommit[];
 }
 
+export interface PullRequestWorkUnit<TCommit extends GroupableCommit = GroupableCommit>
+  extends WorkUnitBase<TCommit> {
+  readonly kind: "pull_request";
+  readonly pullRequest: WorkUnitPullRequest;
+}
+
+export interface CommitWorkUnit<TCommit extends GroupableCommit = GroupableCommit>
+  extends WorkUnitBase<TCommit> {
+  readonly kind: "commit";
+}
+
 /**
- * 판단 대상에서 빠진 이유입니다. 지금은 한 가지뿐이지만 union 타입으로 둡니다. 나중에 사유가
- * 늘어날 때 `Record`로 강제되는 문구 대응을 빠뜨리지 않기 위해서입니다.
+ * 경험 판단의 단위입니다. Stage A는 커밋이 아니라 이 단위를 판단합니다.
+ *
+ * Pull Request에 속한 커밋은 그 Pull Request 전체를 판단 단위로 묶습니다. 어떤 Pull Request는
+ * 커밋 18개 중 8개가 파일명 대소문자 변경이어서 개별 커밋은 전부 잡무로 보이지만, 묶으면 배포
+ * 실패를 하루 만에 해결한 경험이 됩니다. 근거는
+ * `llm-wiki/wiki/2026-08-24-경험-판단단위-PR-묶음-전환-검토.md`에 있습니다.
+ *
+ * Pull Request에 속하지 않은 커밋은 커밋 하나를 판단 단위로 삼습니다. 시간 간격이나 파일 겹침
+ * 같은 대체 묶음 규칙은 저장소마다 다른 조정값이 필요해 서비스 규칙으로 채택하지 않았습니다.
+ * 근거는 `llm-wiki/wiki/2026-09-10-PR-없는-저장소-커밋-묶음-방식-실험.md` 6절에 있습니다.
  */
-export type WorkUnitExclusionReason = "no_pull_request";
-
-export interface ExcludedCommit {
-  readonly sha: string;
-  readonly title: string;
-  readonly reason: WorkUnitExclusionReason;
-}
-
-export interface WorkUnitGrouping<TCommit extends GroupableCommit = GroupableCommit> {
-  readonly units: readonly WorkUnit<TCommit>[];
-  /** 조용히 버리지 않기 위해 남깁니다. 화면이 건수와 사유를 표시합니다. */
-  readonly excludedCommits: readonly ExcludedCommit[];
-}
-
-/** 제외 사유를 사용자에게 보여 줄 문구입니다. 사유가 늘면 `Record`가 누락을 컴파일 오류로 잡습니다. */
-export const WORK_UNIT_EXCLUSION_COPY: Record<WorkUnitExclusionReason, string> = {
-  no_pull_request:
-    "Pull Request에 속하지 않아 어떤 작업의 일부인지 복원할 수 없습니다. 커밋 하나만으로는 설명할 경험을 판단하기 어려워 대상에서 제외했습니다.",
-};
+export type WorkUnit<TCommit extends GroupableCommit = GroupableCommit> =
+  | PullRequestWorkUnit<TCommit>
+  | CommitWorkUnit<TCommit>;
 
 /**
  * 커밋이 여러 Pull Request에 속할 때 가장 작은 번호를 고릅니다.
@@ -79,47 +82,67 @@ function resolvePullRequest(commit: GroupableCommit): WorkUnitPullRequest | null
 }
 
 /**
- * 커밋을 Pull Request 단위 작업 묶음으로 바꿉니다. LLM과 네트워크를 쓰지 않는 순수 함수입니다.
+ * 커밋을 판단 단위로 바꿉니다. LLM과 네트워크를 쓰지 않는 순수 함수입니다.
  *
- * 묶음 순서는 각 Pull Request 번호가 입력에서 처음 나타난 순서입니다. 번호 순으로 정렬하지
- * 않는 이유는 호출자가 넘긴 커밋 순서(현재는 최신 순)를 묶음 수준에서도 유지하기 위해서입니다.
- * 점수 정렬은 별도 단계가 맡습니다.
+ * Pull Request에 속한 커밋은 같은 Pull Request끼리 묶고, 속하지 않은 커밋은 커밋 하나가 곧
+ * 판단 단위가 됩니다. 어느 커밋도 조용히 빠지지 않습니다.
  *
- * Pull Request에 속하지 않은 커밋은 대체 묶음 규칙을 적용하지 않고 제외합니다. 실측에서
- * `andbread`는 319개 전부가, `demian`은 83개 중 81개가 Pull Request에 묶여 있어 제외되는
- * 비중이 작습니다. 대체 규칙은 커밋 가중 순도가 최대 77퍼센트에 그쳤습니다.
+ * 단위 순서는 각 식별자가 입력에서 처음 나타난 순서입니다. 번호 순으로 정렬하지 않는 이유는
+ * 호출자가 넘긴 커밋 순서(현재는 최신 순)를 단위 수준에서도 유지하기 위해서입니다. 점수 정렬은
+ * 별도 단계가 맡습니다.
  */
 export function groupCommitsIntoWorkUnits<TCommit extends GroupableCommit>(
   commits: readonly TCommit[]
-): WorkUnitGrouping<TCommit> {
-  const unitsByNumber = new Map<number, { pullRequest: WorkUnitPullRequest; commits: TCommit[] }>();
-  const order: number[] = [];
-  const excludedCommits: ExcludedCommit[] = [];
+): readonly WorkUnit<TCommit>[] {
+  const unitsById = new Map<
+    string,
+    { pullRequest: WorkUnitPullRequest | null; commits: TCommit[] }
+  >();
+  const order: string[] = [];
 
   for (const commit of commits) {
     const pullRequest = resolvePullRequest(commit);
-    if (pullRequest === null) {
-      excludedCommits.push({ sha: commit.sha, title: commit.title, reason: "no_pull_request" });
-      continue;
-    }
-    const existing = unitsByNumber.get(pullRequest.number);
+    const unitId = pullRequest ? `pr:${pullRequest.number}` : `commit:${commit.sha}`;
+    const existing = unitsById.get(unitId);
     if (existing === undefined) {
-      unitsByNumber.set(pullRequest.number, { pullRequest, commits: [commit] });
-      order.push(pullRequest.number);
+      unitsById.set(unitId, { pullRequest, commits: [commit] });
+      order.push(unitId);
       continue;
     }
     existing.commits.push(commit);
   }
 
-  return {
-    units: order.map((number) => {
-      const unit = unitsByNumber.get(number)!;
-      return {
-        pullRequestNumber: number,
-        pullRequest: unit.pullRequest,
-        commits: unit.commits,
-      };
-    }),
-    excludedCommits,
-  };
+  return order.map((unitId): WorkUnit<TCommit> => {
+    const { pullRequest, commits: unitCommits } = unitsById.get(unitId)!;
+    if (pullRequest === null) {
+      return { kind: "commit", unitId, title: unitCommits[0].title, commits: unitCommits };
+    }
+    return {
+      kind: "pull_request",
+      unitId,
+      title: pullRequest.title,
+      pullRequest,
+      commits: unitCommits,
+    };
+  });
+}
+
+const COMMIT_UNIT_PREFIX = "commit:";
+/** 단일 커밋 단위를 모델과 화면에 보일 때 실제로 남기는 SHA 자리수입니다. */
+const COMMIT_DISPLAY_SHA_LENGTH = 7;
+
+/**
+ * 모델과 화면이 단일 커밋 단위를 실제로 주고받는 형태로 자른 식별자입니다. Pull Request 단위는
+ * `unitId`와 이미 같습니다(`pr:12`). 단일 커밋 단위는 머리줄에 SHA 앞 7자리만 보이므로
+ * (`renderWorkUnitSummary`), 모델이 그대로 옮겨 적을 수 있는 것도 그 7자리뿐입니다.
+ *
+ * 자르는 자리를 여기 한 곳으로 모은 이유는, 프롬프트 머리줄을 만드는 곳과 모델 응답을 검증하는
+ * 곳이 각자 다른 상수로 잘랐을 때 둘이 어긋나면 응답 검증이 조용히 잘못된 커밋에 판정을 붙이기
+ * 때문입니다(Codex 리뷰, 이슈 #101). 두 종류 단위 사이에서 이 식별자가 우연히 같아지는
+ * 경우(SHA 앞 7자리 충돌)는 이 함수가 막지 않습니다. 호출부가 배치 안에서 유일한지 확인해야
+ * 합니다.
+ */
+export function modelFacingUnitId(unitId: string): string {
+  if (!unitId.startsWith(COMMIT_UNIT_PREFIX)) return unitId;
+  return unitId.slice(0, COMMIT_UNIT_PREFIX.length + COMMIT_DISPLAY_SHA_LENGTH);
 }

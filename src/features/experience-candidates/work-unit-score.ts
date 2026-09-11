@@ -26,7 +26,7 @@ export type WorkUnitSignal =
 
 /** 묶음을 접을지 판단하는 화면과 정렬이 같은 값을 쓰도록 사유를 함께 남깁니다. */
 export interface WorkUnitScore {
-  readonly pullRequestNumber: number;
+  readonly unitId: string;
   /** 발화한 신호 수입니다. 신호마다 가중치를 두지 않습니다. */
   readonly score: number;
   /** `WorkUnitSignal` 선언 순서로 정렬해 반환합니다. */
@@ -141,7 +141,7 @@ export function scoreWorkUnit(
   if (summary.spanDays >= LONG_SPAN_DAYS_THRESHOLD) fired.push("long_span");
   if (summary.changedFilePathCount >= MANY_FILES_THRESHOLD) fired.push("many_files");
 
-  return { pullRequestNumber: unit.pullRequestNumber, score: fired.length, signals: fired };
+  return { unitId: unit.unitId, score: fired.length, signals: fired };
 }
 
 /**

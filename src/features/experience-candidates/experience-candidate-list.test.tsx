@@ -10,7 +10,6 @@ import {
   ExperienceCandidateList,
   type StageASelectionDisplay,
 } from "./experience-candidate-list";
-import type { ExcludedCommit } from "./work-unit";
 import type { ExcludedWorkUnit } from "./work-unit-selection";
 import type { WorkUnit } from "./work-unit";
 
@@ -37,13 +36,23 @@ const candidate = (sha: string, overrides: Partial<ExperienceCandidate> = {}): E
   ...overrides,
 });
 
-const excludedCommit = (sha: string, title: string): ExcludedCommit => ({ sha, title, reason: "no_pull_request" });
-
 function workUnit(number: number): WorkUnit<ReadonlyCommitDetail> {
   return {
-    pullRequestNumber: number,
+    kind: "pull_request",
+    unitId: `pr:${number}`,
+    title: `묶음 제목 ${number}`,
     pullRequest: { number, title: `묶음 제목 ${number}`, state: "closed", baseBranch: "develop", headBranch: `f-${number}` },
     commits: [commit(`sha-unit-${number}`, `묶음 제목 ${number}`)],
+  };
+}
+
+/** PR에 속하지 않은 커밋 하나짜리 단위입니다. */
+function commitWorkUnit(sha: string, title: string): WorkUnit<ReadonlyCommitDetail> {
+  return {
+    kind: "commit",
+    unitId: `commit:${sha}`,
+    title,
+    commits: [commit(sha, title)],
   };
 }
 
@@ -215,7 +224,6 @@ describe("ExperienceCandidateList", () => {
 });
 
 const EMPTY_SELECTION: StageASelectionDisplay = {
-  excludedCommits: [],
   excludedUnits: [],
   thresholdScore: 0,
   selectedUnitCount: 0,
@@ -259,28 +267,23 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
     expect(screen.getByText("선택 없이 렌더")).toBeInTheDocument();
   });
 
-  it("PR 없는 커밋 건수와 사유를 표시하고 펼치면 SHA 7자와 제목을 보여준다", () => {
+  it("단일 커밋 단위는 PR 번호 대신 SHA 7자리로 라벨을 표시한다", () => {
+    const sha = "abcdef1234567890abcdef1234567890abcdef12";
     renderListWithSelection({
       ...EMPTY_SELECTION,
-      excludedCommits: [excludedCommit("abcdef1234567", "잡무 커밋"), excludedCommit("0123456789abcdef", "오타 수정")],
-    });
-
-    expect(screen.getByText("Pull Request에 속하지 않아 제외한 커밋 2건")).toBeInTheDocument();
-    expect(screen.getByText(/커밋 하나만으로는 설명할 경험을 판단하기 어려워/)).toBeInTheDocument();
-    expect(screen.getByText("abcdef1")).toBeInTheDocument();
-    expect(screen.getByText("잡무 커밋")).toBeInTheDocument();
-    expect(screen.getByText("0123456")).toBeInTheDocument();
-  });
-
-  it("PR 없는 커밋이 0건이면 그 구획을 렌더하지 않는다", () => {
-    renderListWithSelection({
-      ...EMPTY_SELECTION,
-      excludedUnits: [excludedUnit(1, 1, "over_input_budget")],
       thresholdScore: 1,
       selectedUnitCount: 0,
+      excludedUnits: [{
+        unit: commitWorkUnit(sha, "직접 푸시한 변경"),
+        score: 1,
+        reason: "over_input_budget",
+        signals: [],
+      }],
     });
 
-    expect(screen.queryByText(/제외한 커밋/)).not.toBeInTheDocument();
+    expect(screen.getByText("커밋 abcdef1")).toBeInTheDocument();
+    expect(screen.getByText("직접 푸시한 변경")).toBeInTheDocument();
+    expect(screen.queryByText(/PR #/)).not.toBeInTheDocument();
   });
 
   it("점수 컷에서 밀린 묶음을 점수 내림차순으로 보여주고 PR·제목·점수·신호를 표시한다", () => {
@@ -295,11 +298,15 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
     });
 
     // 점수에 합격선이 있다는 뜻으로 읽히던 문구를 고쳤습니다. 실제 방아쇠는 입력 상한이므로
-    // 전체 대비 몇 묶음을 판단했는지 말합니다. 점수 경계는 본문에 남깁니다.
+    // 전체 대비 몇 묶음을 판단했는지만 말하고, 선별 방식은 별도 문장으로 설명합니다. 선택이
+    // 개별 항목 단위 예산 검사로 바뀌면서(2026-09-11) 단일 점수 경계로는 더 이상 설명하지
+    // 않습니다.
     expect(
-      screen.getByText("저장소가 커서 전체 12묶음 중 점수 상위 10묶음만 판단했습니다")
+      screen.getByText("저장소가 커서 전체 12묶음 중 10묶음만 판단했습니다")
     ).toBeInTheDocument();
-    expect(screen.getByText(/이번 판단의 점수 경계는 3점이었습니다/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/분석 가능한 분량 안에서 점수순으로 선택했고, 같은 점수에서는 최신 커밋을 우선했습니다\./)
+    ).toBeInTheDocument();
     expect(screen.getByText("PR #2")).toBeInTheDocument();
     expect(screen.getByText("PR #1")).toBeInTheDocument();
     expect(screen.getByText("2점 · 휴리스틱")).toBeInTheDocument();
@@ -323,7 +330,7 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
     });
 
     expect(
-      screen.getByText("저장소가 커서 전체 12묶음 중 점수 상위 10묶음만 판단했습니다")
+      screen.getByText("저장소가 커서 전체 12묶음 중 10묶음만 판단했습니다")
     ).toBeInTheDocument();
     expect(screen.getByText("한 번에 보낼 수 있는 분량을 넘어 1묶음을 제외했습니다")).toBeInTheDocument();
   });
@@ -353,17 +360,17 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
   it("제외 구획은 키보드로 펼치고 접을 수 있고 펼침 상태가 details의 open 속성으로 드러난다", () => {
     renderListWithSelection({
       ...EMPTY_SELECTION,
-      excludedCommits: [excludedCommit("abcdef1234567", "잡무 커밋")],
+      unjudgedShas: ["deadbeef00112233"],
     });
 
-    const details = screen.getByText("Pull Request에 속하지 않아 제외한 커밋 1건").closest("details");
+    const details = screen.getByText("모델이 판단하지 못한 묶음 1건").closest("details");
     expect(details).not.toBeNull();
     expect(details).not.toHaveAttribute("open");
 
-    fireEvent.click(screen.getByText("Pull Request에 속하지 않아 제외한 커밋 1건"));
+    fireEvent.click(screen.getByText("모델이 판단하지 못한 묶음 1건"));
     expect(details).toHaveAttribute("open");
 
-    fireEvent.click(screen.getByText("Pull Request에 속하지 않아 제외한 커밋 1건"));
+    fireEvent.click(screen.getByText("모델이 판단하지 못한 묶음 1건"));
     expect(details).not.toHaveAttribute("open");
   });
 
@@ -376,7 +383,7 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
       excludedUnits: many,
     });
 
-    const summaryText = "저장소가 커서 전체 66묶음 중 점수 상위 10묶음만 판단했습니다";
+    const summaryText = "저장소가 커서 전체 66묶음 중 10묶음만 판단했습니다";
     expect(screen.getByText(summaryText)).toBeInTheDocument();
     const details = screen.getByText(summaryText).closest("details");
     const list = details?.querySelector("ul");

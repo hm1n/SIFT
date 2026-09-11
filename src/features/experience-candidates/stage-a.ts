@@ -23,6 +23,7 @@ import {
 } from "./llm-provider";
 import type { StageACandidate, StageACandidateOutput } from "./types";
 import { renderWorkUnitSummary, type WorkUnitSummary } from "./work-unit-summary";
+import { modelFacingUnitId } from "./work-unit";
 
 // 2026-09-01에 Groq `openai/gpt-oss-120b`에서 옮겼습니다. 확정 근거와 탈락 사유는
 // `llm-wiki/wiki/2026-09-01-네-경로-LLM-모델-확정.md`에 있습니다. 이 단계의 기준은 입력 PR 번호
@@ -121,12 +122,12 @@ export const STAGE_A_CANDIDATE_QUOTA = 5;
 /**
  * Stage A가 판단하는 단위입니다.
  *
- * `representativeSha`는 이 묶음을 뒤 단계에서 가리키는 식별자입니다. 모델은 PR 번호로
+ * `representativeSha`는 이 묶음을 뒤 단계에서 가리키는 식별자입니다. 모델은 머리줄 식별자로
  * 답하지만 후보 출력과 오류 보고는 SHA를 그대로 씁니다. Stage B와 화면이 커밋 SHA 기반이라
- * 식별자를 PR 번호로 바꾸면 파급이 큽니다.
+ * 식별자를 그 형태로 바꾸면 파급이 큽니다.
  */
 export interface StageAUnitInput {
-  readonly pullRequestNumber: number;
+  readonly unitId: string;
   readonly representativeSha: string;
   readonly summary: WorkUnitSummary;
 }
@@ -139,7 +140,7 @@ export interface StageAInput {
 }
 
 interface StageADecision {
-  readonly pullRequestNumber: number;
+  readonly unitId: string;
   readonly contributionItem: string | null;
   readonly recommended: boolean;
 }
@@ -150,7 +151,7 @@ interface StageAStructuredOutput {
 
 /** 모델에 실제로 보내는 형태입니다. 묶음은 이미 문자열로 접혀 있습니다. */
 export interface StageAPayload {
-  readonly units: readonly { readonly pullRequestNumber: number; readonly summary: string }[];
+  readonly units: readonly { readonly unitId: string; readonly summary: string }[];
   readonly contributionItems: readonly string[];
   readonly candidateLimit: number;
 }
@@ -170,9 +171,9 @@ const structuredOutputSchema = jsonSchema<StageAStructuredOutput>({
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["pullRequestNumber", "contributionItem", "recommended"],
+        required: ["unitId", "contributionItem", "recommended"],
         properties: {
-          pullRequestNumber: { type: "integer" },
+          unitId: { type: "string", minLength: 1 },
           contributionItem: { anyOf: [{ type: "string", minLength: 1 }, { type: "null" }] },
           recommended: { type: "boolean" },
         },
@@ -188,11 +189,12 @@ function validateStructuredOutput(value: unknown): StageAStructuredOutput {
     !Array.isArray((value as { decisions?: unknown }).decisions) ||
     (value as { decisions: unknown[] }).decisions.some((decision) => {
       if (typeof decision !== "object" || decision === null) return true;
-      const { pullRequestNumber, contributionItem, recommended } =
+      const { unitId, contributionItem, recommended } =
         decision as Partial<StageADecision>;
       return (
         Object.keys(decision).length !== 3 ||
-        !Number.isInteger(pullRequestNumber) ||
+        typeof unitId !== "string" ||
+        unitId.length === 0 ||
         (contributionItem !== null &&
           (typeof contributionItem !== "string" || contributionItem.length === 0)) ||
         typeof recommended !== "boolean"
@@ -216,7 +218,7 @@ function validateStructuredOutput(value: unknown): StageAStructuredOutput {
 export function buildStageAPayload(input: StageAInput): StageAPayload {
   return {
     units: input.units.map((unit) => ({
-      pullRequestNumber: unit.pullRequestNumber,
+      unitId: unit.unitId,
       summary: renderWorkUnitSummary(unit.summary),
     })),
     contributionItems: [...input.contributionItems],
@@ -369,9 +371,9 @@ function localInputScopeHint(): string {
   return [
     "",
     "",
-    "판단 대상은 각 묶음 첫 줄의 'PR#번호'뿐입니다. 커밋 제목 안에 적힌 다른 PR 번호는 " +
-      "판단 대상이 아니므로 decisions에 넣지 마세요. decisions의 길이는 입력 묶음 수와 정확히 " +
-      "같아야 합니다.",
+    "판단 대상은 각 묶음 첫 줄의 'PR#번호' 또는 '커밋 SHA7자리'뿐입니다. 커밋 제목 안에 적힌 다른 " +
+      "PR 번호나 SHA는 판단 대상이 아니므로 decisions에 넣지 마세요. decisions의 길이는 입력 묶음 " +
+      "수와 정확히 같아야 합니다.",
   ].join("\n");
 }
 
@@ -404,18 +406,18 @@ export function createStageAGenerate(
        * 그 모델에 맞춰져 있었습니다.
        *
        * 하한을 넣은 뒤 같은 입력에서 `gemini-3.5-flash-lite`가 5회 모두 5개,
-       * `gemini-3.1-flash-lite`가 7회 모두 3개 이상을 골랐고 0개는 사라졌습니다. 로컬 전용 문구를
-       * 프로덕션으로 올리는 방식은 효과가 없어 되돌렸습니다. 측정은
-       * `llm-wiki/raw/2026-09-01-Stage-A-후보-선정-분산-측정.md`에 있습니다.
+       * `gemini-3.1-flash-lite`가 7회 모두 3개 이상을 골랐고 0개는 사라졌습니다. 그러나 판단
+       * 단위를 PR 묶음과 단일 커밋으로 넓힌 이슈 #101에서는 근거 없는 입력의 후보 0개가 정상
+       * 결과여야 하므로 하한을 제거합니다. 전후 측정은 `llm-wiki/raw`에 기록합니다.
        */
       system:
-        `Pull Request 단위 작업 묶음을 보고 개발 경험 후보를 선별하세요. 각 묶음은 'PR#번호 제목 [커밋수 기간 증감 파일수]'와 커밋 제목 목록, 변경량 상위 파일 경로로 이뤄집니다.
+        `Pull Request 단위 작업 묶음 또는 단일 커밋 판단 단위를 보고 개발 경험 후보를 선별하세요. 각 묶음은 'PR#번호 제목 [커밋수 기간 증감 파일수]' 또는 '커밋 SHA7자리 제목 [커밋수 기간 증감 파일수]' 한 줄로 시작합니다. Pull Request 단위는 커밋 제목 목록이 뒤따르고, 두 종류 모두 변경량 상위 파일 경로가 뒤따를 수 있습니다.
 
-가장 중요한 규칙입니다. decisions 배열은 입력에 있는 PR 번호 전부를 하나도 빠뜨리지 않고 각각 정확히 한 번 담아야 합니다. 입력 묶음이 N개면 decisions도 반드시 N개입니다. 추천하지 않는 묶음도 반드시 담습니다.
+가장 중요한 규칙입니다. decisions 배열은 입력에 있는 판단 단위 전부를 하나도 빠뜨리지 않고 각각 정확히 한 번 담아야 합니다. 입력 묶음이 N개면 decisions도 반드시 N개입니다. 추천하지 않는 묶음도 반드시 담습니다. 각 판정의 unitId는 그 묶음 머리줄의 식별자를 그대로 옮겨 답합니다. 'PR#'로 시작하면 'pr:번호' 형식으로(예: 'PR#12' → 'pr:12'), '커밋'으로 시작하면 'commit:SHA7자리' 형식으로(예: '커밋 abc1234' → 'commit:abc1234') 씁니다.
 
 각 묶음의 판정은 이렇게 씁니다. 기여 항목과 명확히 맞으면 contributionItem을 목록의 원문 그대로 씁니다. 어느 항목에도 맞지 않지만 설명할 가치가 있으면 contributionItem을 null로 두고 recommended를 true로 합니다. 그 밖에는 contributionItem을 '${UNCLASSIFIED_LABEL}'로 두고 recommended를 false로 합니다.
 
-입력으로 들어온 묶음은 이미 저장소 전체에서 점수로 걸러낸 상위 후보입니다. 따라서 고를 것이 없는 입력이 아닙니다. recommended가 true이거나 기여 항목에 맞는 묶음을 합쳐서 최소 1개, 최대 ${payload.candidateLimit}개 고르세요. 이 상한은 고르는 개수에만 걸립니다. decisions 배열의 길이를 줄이는 데 쓰면 안 됩니다. 나머지 묶음은 전부 '${UNCLASSIFIED_LABEL}'로 담으세요. 고를 때는 규모가 큰 묶음보다 설명할 거리가 있는 묶음을 앞세우세요.` +
+각 입력은 PR 묶음 또는 단일 커밋입니다. 하나의 완결된 경험이라고 가정하지 마세요. 제공된 정보에서 기술적 선택이나 문제 해결을 확인할 단서가 있는 항목을 후속 diff 검토 대상으로 추천하세요. 변경 규모나 커밋 수만으로 설명 가치를 판단하지 마세요. 제공되지 않은 문제 상황, 선택 이유, 성과를 추정하지 마세요. 추천 개수는 최대 ${payload.candidateLimit}개까지입니다. 이 상한은 고르는 개수에만 걸리며 decisions 배열의 길이를 줄이는 데 쓰면 안 됩니다. 추천하지 않는 나머지는 '${UNCLASSIFIED_LABEL}'로 담으세요.` +
         localInputScopeHint(),
       prompt: renderStageAPrompt(payload),
       abortSignal,
@@ -438,6 +440,22 @@ export async function selectStageACandidates(
   timeoutMs = resolveLlmTimeoutMs(STAGE_A_TIMEOUT_MS)
 ): Promise<StageACandidateOutput> {
   const payload = buildStageAPayload(input);
+  /**
+   * 모델에 묻기 전에 먼저 막습니다. SHA 앞 7자리가 같은 두 단일 커밋이 한 배치에 들어오면
+   * 모델에게는 완전히 같은 머리줄로 보여 한 번만 응답하고, 아래 `shaByModelUnitId`가 뒤 항목의
+   * SHA로 조용히 덮어써 앞 항목이 실제로는 판단받지 못했는데도 판단받은 것처럼 넘어갑니다. 이
+   * 경로는 `unknown_sha`로 잡히지 않습니다 — 모델이 돌려준 식별자 자체는 배치 안에 실재하는
+   * 값이기 때문입니다(Codex 리뷰, 이슈 #101). 배치 크기(`STAGE_A_MAX_UNITS`)에서 충돌 확률은
+   * 낮지만(약 0.007%), 발생하면 아무 오류 없이 데이터가 잘못 붙으므로 모델을 부르기 전에
+   * 막습니다.
+   */
+  const modelFacingIds = input.units.map((unit) => modelFacingUnitId(unit.unitId));
+  if (new Set(modelFacingIds).size !== modelFacingIds.length) {
+    throw new ExperienceCandidateOutputError(
+      "schema_validation",
+      "SHA 앞 7자리가 같은 단일 커밋 판단 단위가 있어 모델에 안전하게 물어볼 수 없습니다."
+    );
+  }
   const abortController = new AbortController();
   const timeout = setTimeout(
     () => abortController.abort(new DOMException("Stage A timeout", "TimeoutError")),
@@ -452,34 +470,31 @@ export async function selectStageACandidates(
     clearTimeout(timeout);
   }
 
-  // 모델은 PR 번호로 답하지만 이 지점 이후로는 전부 대표 SHA로 옮깁니다. 뒤 단계와 오류 보고가
-  // 커밋 SHA 기반이라 식별자를 두 종류로 들고 다니면 복구 경로가 갈라집니다.
-  const shaByPullRequest = new Map(
-    input.units.map(({ pullRequestNumber, representativeSha }) => [
-      pullRequestNumber,
-      representativeSha,
-    ])
+  // 모델은 머리줄 식별자로 답하지만 이 지점 이후로는 전부 대표 SHA로 옮깁니다. 뒤 단계와 오류
+  // 보고가 커밋 SHA 기반이라 식별자를 두 종류로 들고 다니면 복구 경로가 갈라집니다.
+  const shaByModelUnitId = new Map(
+    input.units.map((unit) => [modelFacingUnitId(unit.unitId), unit.representativeSha])
   );
-  const returnedNumbers = output.decisions.map(({ pullRequestNumber }) => pullRequestNumber);
-  const unknownNumbers = [
-    ...new Set(returnedNumbers.filter((number) => !shaByPullRequest.has(number))),
+  const returnedIds = output.decisions.map(({ unitId }) => unitId);
+  const unknownIds = [
+    ...new Set(returnedIds.filter((id) => !shaByModelUnitId.has(id))),
   ];
-  if (unknownNumbers.length > 0) {
+  if (unknownIds.length > 0) {
     throw new ExperienceCandidateOutputError(
       "unknown_sha",
-      `입력 집합에 없는 PR 번호가 포함되어 있습니다: ${unknownNumbers.map((number) => `#${number}`).join(", ")}`,
-      { unknownShas: unknownNumbers.map((number) => `#${number}`) }
+      `입력 집합에 없는 식별자가 포함되어 있습니다: ${unknownIds.join(", ")}`,
+      { unknownShas: unknownIds }
     );
   }
-  if (new Set(returnedNumbers).size !== returnedNumbers.length) {
+  if (new Set(returnedIds).size !== returnedIds.length) {
     throw new ExperienceCandidateOutputError(
       "schema_validation",
-      "Stage A 응답에 같은 PR 번호가 두 번 이상 포함되어 있습니다."
+      "Stage A 응답에 같은 식별자가 두 번 이상 포함되어 있습니다."
     );
   }
   const contributionItems = new Set(input.contributionItems);
   const candidates = output.decisions.flatMap<StageACandidate>((decision) => {
-    const sha = shaByPullRequest.get(decision.pullRequestNumber)!;
+    const sha = shaByModelUnitId.get(decision.unitId)!;
     if (
       decision.contributionItem !== UNCLASSIFIED_LABEL &&
       decision.contributionItem !== null &&
@@ -508,14 +523,14 @@ export async function selectStageACandidates(
   const unclassifiedShas = input.units
     .map(({ representativeSha }) => representativeSha)
     .filter((sha) => !candidateShas.has(sha));
-  const returned = new Set(returnedNumbers);
+  const returned = new Set(returnedIds);
   const missingShas = input.units
-    .filter(({ pullRequestNumber }) => !returned.has(pullRequestNumber))
+    .filter((unit) => !returned.has(modelFacingUnitId(unit.unitId)))
     .map(({ representativeSha }) => representativeSha);
   if (missingShas.length > 0) {
     throw new ExperienceCandidateOutputError(
       "schema_validation",
-      "Stage A 응답은 입력된 모든 PR 번호를 정확히 한 번 포함해야 합니다.",
+      "Stage A 응답은 입력된 모든 판단 단위를 정확히 한 번 포함해야 합니다.",
       { missingShas, partialOutput: {
         candidates,
         unclassifiedShas: unclassifiedShas.filter((sha) => !missingShas.includes(sha)),

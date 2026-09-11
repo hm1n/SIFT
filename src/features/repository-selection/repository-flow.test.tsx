@@ -89,7 +89,7 @@ describe("RepositoryFlow 인터뷰 중 이탈 확인", () => {
         status: "success",
         data: { allCommits: [COMMIT], includedCommits: [COMMIT], repository: { fileTree: [], treeTruncated: false, languages: {} } },
         candidates: { candidates: [CANDIDATE], insufficientCandidatesReason: null, diffs: [] },
-        stageASelection: { excludedCommits: [], excludedUnits: [], thresholdScore: 0, selectedUnitCount: 1, unjudgedShas: [] },
+        stageASelection: { excludedUnits: [], thresholdScore: 0, selectedUnitCount: 1, unjudgedShas: [] },
       });
     });
     vi.stubGlobal(
