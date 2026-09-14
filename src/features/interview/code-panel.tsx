@@ -229,19 +229,24 @@ function SelectedFileDiff({
           {file.path}
         </p>
 
-        {file.commits.length > 1 ? (
-          <div className={styles.commitSelector}>
-            <span className={styles.sectionCount}>Commits / {padded(file.commits.length)}</span>
-            <button
-              type="button"
-              className={styles.commitStep}
-              disabled={commitIndex === 0}
-              aria-label="Previous commit"
-              onClick={() => onCommitIndexChange(commitIndex - 1)}
-            >
-              ←
-            </button>
-            <code>{commit.sha.slice(0, 7)}</code>
+        {/* 커밋이 하나뿐이면 SHA만 남고 넘기는 조작이 사라집니다. */}
+        <div className={styles.commitSelector}>
+          {file.commits.length > 1 ? (
+            <>
+              <span className={styles.sectionCount}>Commits / {padded(file.commits.length)}</span>
+              <button
+                type="button"
+                className={styles.commitStep}
+                disabled={commitIndex === 0}
+                aria-label="Previous commit"
+                onClick={() => onCommitIndexChange(commitIndex - 1)}
+              >
+                ←
+              </button>
+            </>
+          ) : null}
+          <code>{commit.sha.slice(0, 7)}</code>
+          {file.commits.length > 1 ? (
             <button
               type="button"
               className={styles.commitStep}
@@ -251,12 +256,8 @@ function SelectedFileDiff({
             >
               →
             </button>
-          </div>
-        ) : (
-          <p className={styles.commitMeta}>
-            <code>{commit.sha.slice(0, 7)}</code>
-          </p>
-        )}
+          ) : null}
+        </div>
 
         {/*
           색인에서 찾지 못한 커밋은 제목과 메시지가 비어 있습니다. 비었다는 사실만 보여 주면

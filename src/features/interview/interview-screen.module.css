@@ -40,7 +40,6 @@
 .tab:focus-visible { outline: 2px solid var(--color-foreground); outline-offset: 2px; }
 .tabMode { position: relative; }
 .tabMode .column { position: absolute; inset: 0; width: auto; }
-.tabMode .columnActive { visibility: visible; }
 .tabMode .columnHidden { visibility: hidden; }
 
 .backButton:focus-visible, .panelToggle:focus-visible, .backConfirmButton:focus-visible, .backCancelButton:focus-visible { outline: 2px solid var(--color-foreground); outline-offset: 2px; }

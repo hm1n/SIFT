@@ -46,8 +46,7 @@
 .diffHeader { display: grid; gap: 4px; flex-shrink: 0; border-bottom: 1px solid var(--color-border); padding: 8px 12px; }
 .diffPath { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-foreground); font-family: var(--font-mono); font-size: var(--label-size-sm); font-weight: 500; }
 .commitSelector { display: flex; align-items: center; gap: 6px; }
-.commitSelector code, .commitMeta code { color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); }
-.commitMeta { margin: 0; }
+.commitSelector code { color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); }
 .commitStep { border: 0; background: none; color: var(--color-muted-foreground); cursor: pointer; font-family: var(--font-mono); font-size: var(--label-size-sm); line-height: 1; padding: 2px 4px; }
 .commitStep:hover:not(:disabled) { color: var(--color-foreground); }
 .commitStep:disabled { color: var(--color-scrollbar); cursor: not-allowed; }

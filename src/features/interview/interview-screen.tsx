@@ -92,9 +92,7 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
    * 있습니다. 높이가 0이 되면 로그의 자동 스크롤이 하단을 잡지 못한 채 다시 보이게 됩니다.
    */
   const columnClass = (column: WorkspaceColumn) =>
-    isTabMode
-      ? `${styles.column} ${activeColumn === column ? styles.columnActive : styles.columnHidden}`
-      : styles.column;
+    isTabMode && activeColumn !== column ? `${styles.column} ${styles.columnHidden}` : styles.column;
   const columnWidth = (width: number) => (isTabMode ? undefined : { width: `${width}px` });
 
   /**
