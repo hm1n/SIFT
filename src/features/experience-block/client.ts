@@ -39,7 +39,15 @@ export class BlockUpdateFetchError extends Error {
 }
 
 function isErrorBody(value: unknown): value is { error: { kind?: string; message?: string } } {
-  return typeof value === "object" && value !== null && "error" in value;
+  // `error`가 있어도 null이면 아래에서 `json.error.kind`에 접근할 때 TypeError가 납니다(CodeRabbit
+  // PR #117). 중첩 객체까지 확인해야 안전하게 좁혀집니다.
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "error" in value &&
+    typeof value.error === "object" &&
+    value.error !== null
+  );
 }
 
 export async function fetchBlockUpdate(input: FetchBlockUpdateInput): Promise<FetchBlockUpdateResult> {
