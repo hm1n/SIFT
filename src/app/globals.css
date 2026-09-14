@@ -19,6 +19,15 @@
   --color-scrollbar: #d4d4d4;
   --color-scrollbar-hover: #a3a3a3;
 
+  /*
+   * diff 줄의 추가·삭제 색입니다. 디자인 원본(`Chat Interface Design/src/App.tsx`의 `DiffLineRow`)이
+   * 쓰는 값 그대로입니다. 색만으로 가르지 않습니다. `+`/`−` 기호와 줄 번호가 함께 남습니다.
+   */
+  --color-diff-add: #16a34a;
+  --color-diff-add-surface: #f0fdf4;
+  --color-diff-del: #dc2626;
+  --color-diff-del-surface: #fef2f2;
+
   --radius: 7px;
 
   /* 폰트. Inter와 Geist Mono는 layout.tsx가 next/font로 등록한 변수이고, Pretendard는 CDN 스타일시트가 제공합니다.

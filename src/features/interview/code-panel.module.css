@@ -3,8 +3,10 @@
  * (`Chat Interface Design/src/App.tsx`의 `CodePanel`·`FileRow`·`DiffLineRow`)을 따르고, 색과
  * 라운드는 `globals.css` 토큰만 씁니다.
  *
- * diff 줄은 추가·삭제를 색으로 가르지 않습니다. 배경 대비와 `+`/`−` 기호와 왼쪽 표시선 셋으로
- * 구분합니다. 디자인 원본의 연초록·연분홍 배경을 그대로 옮기지 않은 근거는 이슈 #98 Non-goal입니다.
+ * diff 줄의 추가·삭제는 디자인 원본과 같은 초록·빨강으로 가릅니다. 이슈 #98은 semantic 색을
+ * Non-goal로 두고 배경 대비와 기호와 왼쪽 표시선만 썼지만, 실물을 본 뒤 디자인 원본대로
+ * 넣기로 했습니다. 색만으로 가르지는 않습니다. `+`/`−` 기호와 줄 번호가 그대로 남아 색을
+ * 구분하지 못해도 추가와 삭제를 읽을 수 있습니다. 값은 `globals.css`의 diff 토큰입니다.
  */
 
 .panel { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; border-right: 1px solid var(--color-border); background: var(--color-card); }
@@ -41,6 +43,9 @@
 .fileRow:hover .filename { color: var(--color-foreground); }
 .fileRow[aria-current="true"] .filename { color: var(--color-foreground); font-weight: 500; }
 .fileStat { flex-shrink: 0; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); }
+/* 파일 행과 diff 헤더의 +/− 집계입니다. diff 줄과 같은 초록·빨강을 씁니다. */
+.fileStat[data-kind="add"], .diffStats [data-kind="add"] { color: var(--color-diff-add); }
+.fileStat[data-kind="del"], .diffStats [data-kind="del"] { color: var(--color-diff-del); }
 
 .diffSection { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
 .diffHeader { display: grid; gap: 4px; flex-shrink: 0; border-bottom: 1px solid var(--color-border); padding: 8px 12px; }
@@ -55,12 +60,15 @@
 
 .diffBody { flex: 1; min-height: 0; overflow: auto; padding: 2px 0; }
 .diffLine { display: flex; align-items: flex-start; border-left: 2px solid transparent; min-width: 0; }
-.diffLine[data-type="add"] { border-left-color: var(--color-foreground); background: var(--color-muted); }
-.diffLine[data-type="del"] { border-left-color: var(--color-scrollbar-hover); }
+.diffLine[data-type="add"] { background: var(--color-diff-add-surface); }
+.diffLine[data-type="del"] { background: var(--color-diff-del-surface); }
+.diffLine[data-type="add"] .diffMark { color: var(--color-diff-add); }
+.diffLine[data-type="del"] .diffMark { color: var(--color-diff-del); }
 .diffLineNumber { flex-shrink: 0; width: 34px; border-right: 1px solid var(--color-border); padding: 0 6px; text-align: right; user-select: none; color: var(--color-scrollbar); font-family: var(--font-mono); font-size: var(--label-size-xs); line-height: 20px; }
 .diffMark { flex-shrink: 0; width: 14px; text-align: center; user-select: none; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); line-height: 20px; }
 .diffContent { flex: 1; min-width: 0; padding: 0 6px; white-space: pre; color: var(--color-foreground); font-family: var(--font-mono); font-size: var(--label-size-md); line-height: 20px; }
-.diffLine[data-type="del"] .diffContent { color: var(--color-muted-foreground); text-decoration: line-through; text-decoration-color: var(--color-scrollbar); }
+/* 취소선은 색이 없던 때의 대체 표시였습니다. 디자인 원본에는 없어 색을 넣으며 함께 걷었습니다. */
+.diffLine[data-type="del"] .diffContent { color: var(--color-muted-foreground); }
 .diffMeta { display: flex; align-items: flex-start; background: var(--color-muted); }
 .diffMeta .diffContent { color: var(--color-muted-foreground); }
 

@@ -147,8 +147,12 @@ export function CodePanel({ snapshot }: CodePanelProps) {
                       </span>
                       <span className={styles.visuallyHidden}>{STATUS_MARK[file.status].label}</span>
                       <span className={styles.filename}>{file.filename}</span>
-                      <span className={styles.fileStat}>+{file.additions}</span>
-                      <span className={styles.fileStat}>−{file.deletions}</span>
+                      <span className={styles.fileStat} data-kind="add">
+                        +{file.additions}
+                      </span>
+                      <span className={styles.fileStat} data-kind="del">
+                        −{file.deletions}
+                      </span>
                     </button>
                   </li>
                 ))}
@@ -270,8 +274,8 @@ function SelectedFileDiff({
         )}
         {commit.title === null ? null : <p className={styles.commitTitle}>{commit.title}</p>}
         <p className={styles.diffStats}>
-          <span>+{commit.file.additions}</span>
-          <span>−{commit.file.deletions}</span>
+          <span data-kind="add">+{commit.file.additions}</span>
+          <span data-kind="del">−{commit.file.deletions}</span>
         </p>
       </div>
 
