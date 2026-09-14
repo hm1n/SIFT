@@ -97,7 +97,7 @@ export function ExperienceCandidateList({
           <p className={styles.listSubtitle}>{`${candidates.candidates.length} experiences found`}</p>
           {candidates.insufficientCandidatesReason ? (
             <p className={styles.insufficientReason}>
-              <strong>후보를 3개 채우지 않은 이유</strong>
+              <strong>후보를 더 채우지 않은 이유</strong>
               {candidates.insufficientCandidatesReason} 기준을 완화하거나 후보를 임의로 채우지 않습니다.
             </p>
           ) : null}

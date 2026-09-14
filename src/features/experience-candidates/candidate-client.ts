@@ -444,7 +444,13 @@ export async function fetchStageBCandidatesFromApi(
   }
   const { diffs, ...output } = payload as { diffs: CandidateDiff[] } & Record<string, unknown>;
   try {
-    return { ...validateExperienceCandidateOutput(output), diffs };
+    /**
+     * 서버가 쓴 상한은 판단 단위 수와 `STAGE_B_MAX_CANDIDATES` 중 작은 쪽입니다. 여기서는 그 값을
+     * 알 수 없지만, 판단 단위는 이 요청에 실어 보낸 Stage A 후보를 Pull Request로 묶은 결과라
+     * 후보 수를 넘지 않습니다. 따라서 후보 수를 상한으로 두면 정상 응답을 거부하지 않으면서
+     * 전송 계층에서 개수가 부풀려진 응답은 잡아냅니다.
+     */
+    return { ...validateExperienceCandidateOutput(output, candidates.length), diffs };
   } catch (cause) {
     // 서버가 이미 검증한 응답이므로 형식 위반은 LLM 스키마 위반이 아니라 전송 계층 문제로 다룹니다.
     throw new CandidateRequestError("stage_b", "invalid_response", "Stage B 응답 형식이 올바르지 않습니다.", { cause });
