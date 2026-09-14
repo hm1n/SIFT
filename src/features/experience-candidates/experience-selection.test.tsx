@@ -125,7 +125,7 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
   it("대표 커밋을 색인에서 찾지 못하면 무엇이 부족한지 알리고 목록으로 돌아갈 수 있다", () => {
     renderList([candidate("abcdef123456")], []);
 
-    fireEvent.click(screen.getByRole("button", { name: /커밋 색인 실패 · abcdef1/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Commit not indexed · abcdef1/ }));
     fireEvent.click(screen.getByRole("button", { name: CONFIRM_LABEL }));
 
     const alert = screen.getByRole("alert");

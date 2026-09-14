@@ -82,8 +82,8 @@ export const WORK_UNIT_SELECTION_EXCLUSION_COPY: Record<
   string
 > = {
   over_input_budget:
-    "한 번에 판단할 수 있는 입력 상한 안에서 점수 순으로 골랐고, 이 묶음은 그 안에 들지 못했습니다",
-  over_byte_budget: "이 묶음 하나가 한 번에 보낼 수 있는 분량을 혼자 넘습니다",
+    "Units were picked by score within the input limit for a single judgment, and this one did not make it",
+  over_byte_budget: "This single unit alone exceeds what one request can carry",
 };
 
 /**

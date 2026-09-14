@@ -144,32 +144,32 @@ const PATCH_ENVELOPE_BYTES = 8;
 const EVIDENCE_STATEMENT_VERIFIABILITY: EvidenceVerifiability = {
   status: "unverifiable",
   aiSelected: true,
-  detail: "AI가 작성한 해석 문장입니다. Repository 값이 아니므로 사실로 다루지 않습니다.",
+  detail: "An interpretation written by the AI. It is not a Repository value, so it is not treated as fact.",
 };
 
 const REPRESENTATIVE_COMMIT_VERIFIABILITY: EvidenceVerifiability = {
   status: "verified",
   aiSelected: false,
   detail:
-    "커밋 SHA, 제목, 메시지, 변경 파일, patch 본문, PR 정보는 GitHub 응답 값입니다. 다만 메시지에 적힌 수치·비교·의도는 그렇게 적혀 있다는 사실까지만 확인됩니다.",
+    "Commit SHA, title, message, changed files, patch body, and PR info are values from the GitHub response. Numbers, comparisons, and intent written in a message are confirmed only as far as being written there.",
 };
 
 const RELATED_COMMIT_VERIFIABILITY: EvidenceVerifiability = {
   status: "verified",
   aiSelected: true,
   detail:
-    "대표 커밋과 같은 PR에 속한다는 관계까지만 확인됩니다. 근거로서 관련 있다는 판단은 확인 불가입니다.",
+    "Confirmed only as belonging to the same PR as the representative commit. Whether it is actually relevant as evidence is unverifiable.",
 };
 
 const CITED_FILE_PATHS_VERIFIABILITY: EvidenceVerifiability = {
   status: "verified",
   aiSelected: true,
   detail:
-    "후보 커밋의 실제 변경 파일 목록에 있는 경로임까지만 확인됩니다. 근거로서 관련 있다는 판단은 확인 불가입니다.",
+    "Confirmed only as a path in the candidate commit's actual changed-file list. Whether it is actually relevant as evidence is unverifiable.",
 };
 
 const NOT_INDEXED_COMMIT_DETAIL =
-  "커밋 색인에서 찾지 못해 제목, 메시지, PR 정보를 확인할 수 없습니다.";
+  "Not found in the commit index, so title, message, and PR info cannot be confirmed.";
 
 /**
  * 확인 가능으로 표시할 범위는 서버 `assertCandidateEvidence`가 실제로 증명한 것까지입니다. 색인에서

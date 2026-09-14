@@ -129,7 +129,7 @@ describe("ExperienceCandidateList", () => {
     expect(screen.getByRole("button", { name: "상태 머신 구현" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "오류 계약 정의" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "응답 검증 추가" })).toBeInTheDocument();
-    expect(screen.queryByText("후보를 3개 채우지 않은 이유")).not.toBeInTheDocument();
+    expect(screen.queryByText("Why there are not more candidates")).not.toBeInTheDocument();
   });
 
   it("후보가 부족한 이유를 목록 패널에 표시한다", () => {
@@ -166,12 +166,12 @@ describe("ExperienceCandidateList", () => {
 
   it("대표 SHA를 커밋 색인에서 찾지 못하면 목록과 상세에서 계약 파손을 드러낸다", () => {
     renderList([candidate("abcdef123456")], [], "하나뿐입니다.");
-    const row = within(screen.getByRole("button", { name: "커밋 색인 실패 · abcdef1" }));
+    const row = within(screen.getByRole("button", { name: "Commit not indexed · abcdef1" }));
 
-    expect(row.getByText("커밋 색인 실패 · abcdef1")).toBeInTheDocument();
+    expect(row.getByText("Commit not indexed · abcdef1")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "커밋 색인 실패 · abcdef1" }));
-    expect(screen.getByRole("heading", { name: "커밋 색인 실패 · abcdef1" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Commit not indexed · abcdef1" }));
+    expect(screen.getByRole("heading", { name: "Commit not indexed · abcdef1" })).toBeInTheDocument();
     expect(screen.getByText("Representative commit not found in the commit index.")).toBeInTheDocument();
   });
 
@@ -245,13 +245,13 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
   it("제외된 값이 전부 비어 있으면 제외 구획을 렌더하지 않는다", () => {
     renderListWithSelection(EMPTY_SELECTION);
 
-    expect(screen.queryByRole("heading", { name: "1차 선별에서 제외된 항목" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Excluded in the first pass" })).not.toBeInTheDocument();
   });
 
   it("stageASelection을 넘기지 않아도 목록이 정상 렌더된다", () => {
     renderList([candidate("a")], [commit("a", "선택 없이 렌더")], "하나뿐입니다.");
 
-    expect(screen.queryByRole("heading", { name: "1차 선별에서 제외된 항목" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Excluded in the first pass" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "선택 없이 렌더" })).toBeInTheDocument();
   });
 
@@ -269,7 +269,7 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
       }],
     });
 
-    expect(screen.getByText("커밋 abcdef1")).toBeInTheDocument();
+    expect(screen.getByText("Commit abcdef1")).toBeInTheDocument();
     expect(screen.getByText("직접 푸시한 변경")).toBeInTheDocument();
     expect(screen.queryByText(/PR #/)).not.toBeInTheDocument();
   });
@@ -290,16 +290,16 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
     // 개별 항목 단위 예산 검사로 바뀌면서(2026-09-11) 단일 점수 경계로는 더 이상 설명하지
     // 않습니다.
     expect(
-      screen.getByText("저장소가 커서 전체 12묶음 중 10묶음만 판단했습니다")
+      screen.getByText("The repository is large, so only 10 of 12 work units were judged")
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/분석 가능한 분량 안에서 점수순으로 선택했고, 같은 점수에서는 최신 커밋을 우선했습니다\./)
+      screen.getByText(/Units were picked by score within the analyzable budget/)
     ).toBeInTheDocument();
     expect(screen.getByText("PR #2")).toBeInTheDocument();
     expect(screen.getByText("PR #1")).toBeInTheDocument();
-    expect(screen.getByText("2점 · 휴리스틱")).toBeInTheDocument();
-    expect(screen.getByText("고친 파일이 많습니다")).toBeInTheDocument();
-    expect(screen.getByText("여러 날에 걸쳐 작업했습니다")).toBeInTheDocument();
+    expect(screen.getByText("2 · heuristic")).toBeInTheDocument();
+    expect(screen.getByText("Many files changed")).toBeInTheDocument();
+    expect(screen.getByText("Worked on across several days")).toBeInTheDocument();
 
     // 컷 바로 아래(점수가 더 높은) 묶음이 먼저 나옵니다.
     const items = screen.getAllByText(/^PR #\d+$/);
@@ -318,16 +318,16 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
     });
 
     expect(
-      screen.getByText("저장소가 커서 전체 12묶음 중 10묶음만 판단했습니다")
+      screen.getByText("The repository is large, so only 10 of 12 work units were judged")
     ).toBeInTheDocument();
-    expect(screen.getByText("한 번에 보낼 수 있는 분량을 넘어 1묶음을 제외했습니다")).toBeInTheDocument();
+    expect(screen.getByText("1 work unit excluded for exceeding what one request can carry")).toBeInTheDocument();
   });
 
   it("모델이 판단하지 못한 묶음 건수를 표시한다", () => {
     renderListWithSelection({ ...EMPTY_SELECTION, unjudgedShas: ["deadbeef00112233"] });
 
-    expect(screen.getByText("모델이 판단하지 못한 묶음 1건")).toBeInTheDocument();
-    expect(screen.getByText(/제외한 것이 아니라 판단이 없는 상태입니다/)).toBeInTheDocument();
+    expect(screen.getByText("1 work unit the model did not judge")).toBeInTheDocument();
+    expect(screen.getByText(/there is simply no judgment/)).toBeInTheDocument();
     expect(screen.getByText("deadbee")).toBeInTheDocument();
   });
 
@@ -339,7 +339,7 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
       excludedUnits: [excludedUnit(1, 1, "over_input_budget")],
     });
 
-    const scoreEl = screen.getByText("1점 · 휴리스틱");
+    const scoreEl = screen.getByText("1 · heuristic");
     expect(scoreEl).not.toHaveTextContent("Verified");
     const prEl = screen.getByText("PR #1");
     expect(prEl.previousElementSibling).toHaveTextContent("Verified");
@@ -351,14 +351,14 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
       unjudgedShas: ["deadbeef00112233"],
     });
 
-    const details = screen.getByText("모델이 판단하지 못한 묶음 1건").closest("details");
+    const details = screen.getByText("1 work unit the model did not judge").closest("details");
     expect(details).not.toBeNull();
     expect(details).not.toHaveAttribute("open");
 
-    fireEvent.click(screen.getByText("모델이 판단하지 못한 묶음 1건"));
+    fireEvent.click(screen.getByText("1 work unit the model did not judge"));
     expect(details).toHaveAttribute("open");
 
-    fireEvent.click(screen.getByText("모델이 판단하지 못한 묶음 1건"));
+    fireEvent.click(screen.getByText("1 work unit the model did not judge"));
     expect(details).not.toHaveAttribute("open");
   });
 
@@ -371,7 +371,7 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
       excludedUnits: many,
     });
 
-    const summaryText = "저장소가 커서 전체 66묶음 중 10묶음만 판단했습니다";
+    const summaryText = "The repository is large, so only 10 of 66 work units were judged";
     expect(screen.getByText(summaryText)).toBeInTheDocument();
     const details = screen.getByText(summaryText).closest("details");
     const list = details?.querySelector("ul");
