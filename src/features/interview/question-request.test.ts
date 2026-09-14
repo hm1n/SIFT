@@ -273,6 +273,23 @@ describe("parseInterviewStreamRequestBody", () => {
       });
       expect(parsed).toMatchObject({ ok: false, kind: "invalid_request" });
     });
+
+    it("blockUpdateFailed와 targetResponse가 서로 모순되면 invalid_request로 거절한다 (CodeRabbit PR #117)", () => {
+      // 실패한 블록 갱신에는 분류할 응답이 없습니다. blockUpdateFailed:true인데 targetResponse가
+      // 있거나, blockUpdateFailed:false인데 targetResponse가 없으면 다음 질문 생성에 앞뒤가 안 맞는
+      // 직전 결과가 전달됩니다.
+      const failedWithResponse = parseInterviewStreamRequestBody({
+        snapshot: evidenceSnapshotFixture(),
+        lastOutcome: { blockUpdateFailed: true, targetResponse: "provided", conflicts: [] },
+      });
+      expect(failedWithResponse).toMatchObject({ ok: false, kind: "invalid_request" });
+
+      const succeededWithoutResponse = parseInterviewStreamRequestBody({
+        snapshot: evidenceSnapshotFixture(),
+        lastOutcome: { blockUpdateFailed: false, targetResponse: null, conflicts: [] },
+      });
+      expect(succeededWithoutResponse).toMatchObject({ ok: false, kind: "invalid_request" });
+    });
   });
 });
 

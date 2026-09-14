@@ -206,6 +206,10 @@ function isLastOutcome(value: unknown): value is InterviewLastOutcome {
   if (value.targetResponse !== null && !TARGET_RESPONSES.includes(value.targetResponse as (typeof TARGET_RESPONSES)[number])) {
     return false;
   }
+  // 실패한 블록 갱신에는 분류할 응답이 없습니다(구현검토 2026-09-11 P1-5). 두 필드가 서로 모순되는
+  // 조합(예: 실패했는데 targetResponse가 있음)은 다음 질문 생성에 앞뒤가 안 맞는 직전 결과를
+  // 전달하므로 여기서 거절합니다.
+  if (value.blockUpdateFailed !== (value.targetResponse === null)) return false;
   if (!Array.isArray(value.conflicts) || value.conflicts.length > INTERVIEW_LAST_OUTCOME_MAX_CONFLICTS) return false;
   return value.conflicts.every(
     (conflict) =>
