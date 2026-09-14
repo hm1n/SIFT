@@ -337,15 +337,17 @@ describe("CodePanel", () => {
 
 
 /**
- * diff의 추가·삭제 색입니다. jsdom은 CSS Module을 적용하지 않아 렌더 결과에서 색을 읽을 수 없으므로
- * 소스를 읽어 확인합니다. 확인하는 것은 "초록과 빨강"이라는 특정 값이 아니라, 추가와 삭제가 서로 다른
- * 토큰을 가리키는지와 색을 지웠을 때 남는 표시가 있는지 둘입니다. 이슈 #98은 semantic 색을 Non-goal로
- * 두었다가 실물을 보고 디자인 원본대로 넣기로 뒤집었는데, 이때 색만으로 가르는 형태로 돌아가지 않도록
- * `+`/`−` 기호가 남아 있는지를 함께 붙잡아 둡니다.
+ * diff의 추가·삭제 색입니다. 이슈 #98은 semantic 색을 Non-goal로 두었다가 실물을 보고 디자인
+ * 원본대로 넣기로 뒤집었습니다. 한 번 뒤집힌 결정이라 "색만으로 가르는" 형태로 되돌아가지 않게
+ * 두 가지를 붙잡습니다. 추가와 삭제가 **서로 다른** 색이라는 것과, 색을 읽지 못해도 `+`/`−`
+ * 기호로 가를 수 있다는 것입니다.
+ *
+ * 앞쪽은 jsdom이 CSS Module을 적용하지 않아 렌더로 읽을 수 없어 토큰 값을 대조합니다. 셀렉터가
+ * 그 토큰을 어떻게 참조하는지까지 정규식으로 훑지는 않습니다. 포매팅만 바꿔도 깨지는데 사용자가
+ * 보는 것은 아무것도 지키지 못합니다(PR #120 리뷰).
  */
 describe("CodePanel diff 색", () => {
   const here = dirname(fileURLToPath(import.meta.url));
-  const panelCss = readFileSync(join(here, "code-panel.module.css"), "utf8");
   const globalsCss = readFileSync(join(here, "..", "..", "app", "globals.css"), "utf8");
 
   const token = (name: string) =>
@@ -359,17 +361,6 @@ describe("CodePanel diff 색", () => {
     expect(del).toBeTruthy();
     expect(add).not.toBe(del);
     expect(token("color-diff-add-surface")).not.toBe(token("color-diff-del-surface"));
-
-    for (const kind of ["add", "del"] as const) {
-      // diff 줄의 +/− 기호
-      expect(panelCss).toMatch(
-        new RegExp(`\\.diffLine\\[data-type="${kind}"\\] \\.diffMark \\{[^}]*var\\(--color-diff-${kind}\\)`)
-      );
-      // 파일 행과 diff 헤더의 +/− 집계
-      expect(panelCss).toMatch(
-        new RegExp(`\\[data-kind="${kind}"\\][^{]*\\{[^}]*var\\(--color-diff-${kind}\\)`)
-      );
-    }
   });
 
   it("색을 읽지 못해도 +/− 기호로 추가와 삭제를 가를 수 있다", () => {
