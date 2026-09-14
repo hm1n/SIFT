@@ -1,51 +1,89 @@
 /*
-  #98부터 3열 워크스페이스의 가운데 열에 놓입니다. 열이 준 높이를 채우도록 높이 규칙만 바꿨습니다.
-  로그가 자기 안에서 스크롤한다는 사실, 자동 스크롤 처리(`use-auto-scroll.ts`), 낭독 경계는 그대로
-  입니다. 한 열로 쌓던 시절의 `max-height: 60vh`는 열 높이와 무관한 값이라 열 아래가 비었습니다.
-  세로 쌓기와 같은 gap을 유지하려고 grid 대신 flex를 씁니다.
-*/
+ * 인터뷰 워크스페이스의 가운데 대화 열입니다.
+ *
+ * #98은 3열 배치만 하고 이 파일에서는 높이 규칙 두 줄만 고쳤습니다. 그 결과 헤더와 코드 패널과
+ * PAAR가 토큰·영어인 화면에서 이 열만 `#5b52d6` 계열 보라색과 한국어로 남아 한 화면 안에서
+ * 갈렸습니다. 그래서 색 52개를 전부 `globals.css` 토큰으로 옮겼습니다. 문구는
+ * `interview-stream-view.tsx`에서 함께 영어로 옮겼습니다. 후속 backlog 22번이 여기서 닫힙니다.
+ *
+ * 타이포그래피와 버튼 모양은 디자인 원본(`Chat Interface Design/src/App.tsx`의 `MessageRow`·
+ * `MessageContent`·composer)과 먼저 개편된 `experience-candidate-detail.module.css`를 따릅니다.
+ * 오류 배경과 글자색만 토큰 9종 밖인데, 확인 실패를 알리는 의미색이라 그 파일의 `.selectionError`와
+ * 같은 값을 씁니다.
+ *
+ * 높이 규칙은 그대로입니다. 로그가 자기 안에서 스크롤하고, 자동 스크롤(`use-auto-scroll.ts`)과
+ * 낭독 경계와 `InterviewMessage`의 memo 경계는 건드리지 않았습니다.
+ */
 .stream { display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; padding: 16px 0; }
-.log { display: grid; gap: 4px; flex: 1; min-height: 0; overflow-y: auto; border: 1px solid #ecebf0; border-radius: 12px; padding: 16px; background: #fff; overflow-wrap: anywhere; }
-.log:focus-visible { outline: 3px solid rgba(109, 99, 232, .25); outline-offset: 2px; }
-.preparing { color: #777580; font-size: 14px; }
-.message { display: grid; gap: 10px; border-top: 1px solid #f2f1f6; padding: 12px 0; color: #34333d; font-size: 15px; line-height: 1.7; }
+.log { display: grid; gap: 4px; flex: 1; min-height: 0; overflow-y: auto; border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px; background: var(--color-card); overflow-wrap: anywhere; }
+.preparing { color: var(--color-muted-foreground); font-size: 14px; }
+
+.message { display: grid; gap: 6px; border-top: 1px solid var(--color-border); padding: 12px 0; color: var(--color-foreground); font-size: 14px; line-height: 1.65; }
 .message:first-child { border-top: 0; padding-top: 0; }
-.roleLabel { color: #777580; font-size: 12px; font-weight: 700; letter-spacing: .02em; }
-.message[data-role="answer"] { border-left: 3px solid #d9d6f2; padding-left: 12px; }
-.message[data-role="answer"] .roleLabel { color: #5b52d6; }
-.message h2 { color: #1f1e28; font-size: 18px; letter-spacing: -.02em; }
+/*
+ * 누가 말한 것인지는 색이 아니라 글자로 구분합니다. 디자인 원본의 `YOU`·`AGENT`와 같은 mono 대문자
+ * 라벨이고, 질문 쪽을 진하게 둡니다.
+ */
+.roleLabel { color: var(--color-foreground); font-family: var(--font-mono); font-size: var(--label-size-sm); font-weight: 500; letter-spacing: var(--label-tracking); text-transform: uppercase; }
+.message[data-role="answer"] { border-left: 3px solid var(--color-border); padding-left: 12px; }
+.message[data-role="answer"] .roleLabel { color: var(--color-muted-foreground); }
+.message h2 { color: var(--color-foreground); font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
 .message ul { display: grid; gap: 4px; margin: 0; padding-left: 18px; }
-.message code { border-radius: 4px; background: #f5f4fa; font-size: 13px; padding: 1px 4px; }
-.codeBlock pre, .plainCode { overflow-x: auto; border-radius: 10px; background: #f7f7fb; font-size: 13px; line-height: 1.6; padding: 12px 14px; }
-.codeBlock code, .plainCode code { background: none; font-size: 13px; padding: 0; }
-.trimNotice { border-left: 3px solid #e0ddf0; border-radius: 6px; background: #f7f7fb; color: #55535e; font-size: 12px; line-height: 1.6; margin: 4px 0; padding: 10px 12px; }
-.status { color: #777580; font-size: 13px; }
-.unreadButton { width: fit-content; min-height: 44px; border: 0; border-radius: 999px; background: #5b52d6; color: #fff; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
-.unreadButton:focus-visible { outline: 3px solid rgba(109, 99, 232, .35); outline-offset: 2px; }
-.unreadNotice { color: #777580; font-size: 12px; line-height: 1.5; }
+.message code { border-radius: 4px; background: var(--color-muted); font-family: var(--font-mono); font-size: 12px; padding: 1px 4px; }
+
+/*
+ * highlight된 블록은 shiki가 `<pre>`에 배경을 인라인으로 박으므로 여기 배경이 닿지 않습니다.
+ * 테두리와 라운드와 여백만 두 경로에 같이 걸어 모양을 맞춥니다.
+ */
+.codeBlock pre, .plainCode { overflow-x: auto; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-muted); font-family: var(--font-mono); font-size: 12px; line-height: 1.6; padding: 10px 12px; }
+.codeBlock code, .plainCode code { background: none; font-size: 12px; padding: 0; }
+
+.trimNotice { border-left: 3px solid var(--color-border); border-radius: var(--radius); background: var(--color-muted); color: var(--color-muted-foreground); font-size: 12px; line-height: 1.6; margin: 4px 0; padding: 10px 12px; }
+.status { color: var(--color-muted-foreground); font-size: 12px; }
+
+.unreadButton { width: fit-content; min-height: 32px; border: 0; border-radius: var(--radius); background: var(--color-primary); color: var(--color-primary-foreground); cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; padding: 0 12px; }
+.unreadButton:hover { background: #404040; }
+.unreadNotice { color: var(--color-muted-foreground); font-size: 12px; line-height: 1.5; }
 /* 내용이 없을 때도 노드는 남겨 둡니다. live region은 붙어 있는 동안의 변경만 알립니다. 절대 위치로
    빼서 grid 항목에서 제외해야 빈 상태에서 gap이 생기지 않습니다. */
 .unreadNotice:empty { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-.error { display: grid; gap: 6px; border-radius: 10px; background: #fdecec; padding: 12px 14px; }
-.errorMessage { color: #8c2f2f; font-size: 14px; font-weight: 700; }
-.errorGuidance { color: #8c4a4a; font-size: 13px; line-height: 1.6; }
-.retryButton { width: fit-content; min-height: 44px; border: 1px solid #d9b5b5; border-radius: 999px; background: #fff; color: #8c2f2f; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
-.retryButton:focus-visible { outline: 3px solid rgba(140, 47, 47, .25); outline-offset: 2px; }
+
+/* 확인 실패를 알리는 의미색입니다. `experience-candidate-detail.module.css`의 `.selectionError`와 같은 값입니다. */
+.error { display: grid; gap: 6px; border-radius: var(--radius); background: #fdeaea; padding: 12px 14px; }
+.errorMessage { color: #a3272c; font-size: 14px; font-weight: 600; }
+.errorGuidance { color: #7c3b3d; font-size: 13px; line-height: 1.6; }
+.retryButton { width: fit-content; min-height: 32px; border: 1px solid #d4d4d4; border-radius: var(--radius); background: var(--color-card); color: #404040; cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; padding: 0 12px; }
+.retryButton:hover { border-color: var(--color-muted-foreground); color: var(--color-foreground); }
+
 .answerForm { display: grid; gap: 8px; }
-.answerLabel { color: #34333d; font-size: 14px; font-weight: 700; }
-.answerInput { width: 100%; box-sizing: border-box; resize: vertical; border: 1px solid #d9d8e0; border-radius: 10px; background: #fff; color: #34333d; font: inherit; font-size: 15px; line-height: 1.6; padding: 10px 12px; }
-.answerInput:focus-visible { outline: 3px solid rgba(109, 99, 232, .25); outline-offset: 2px; }
-.answerInput:disabled { background: #f7f7fb; color: #9a98a3; }
-.answerInput[aria-invalid="true"] { border-color: #c94f4f; }
-.answerHint { color: #777580; font-size: 12px; line-height: 1.5; }
-.submitButton { width: fit-content; min-height: 44px; border: 0; border-radius: 999px; background: #5b52d6; color: #fff; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
-.submitButton:disabled { background: #c9c6e6; cursor: not-allowed; }
-.submitButton:focus-visible { outline: 3px solid rgba(109, 99, 232, .35); outline-offset: 2px; }
-.endButton { width: fit-content; min-height: 44px; border: 1px solid #d9d8e0; border-radius: 999px; background: #fff; color: #55535e; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
-.endButton:focus-visible { outline: 3px solid rgba(109, 99, 232, .25); outline-offset: 2px; }
-.endConfirm { display: grid; gap: 10px; border: 1px solid #e4e2ec; border-radius: 10px; background: #f7f7fb; padding: 12px 14px; }
-.endConfirmText { color: #34333d; font-size: 13px; line-height: 1.6; }
+.answerLabel { color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-sm); font-weight: 400; letter-spacing: var(--label-tracking); text-transform: uppercase; }
+.answerInput { width: 100%; box-sizing: border-box; resize: vertical; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-card); color: var(--color-foreground); font: inherit; font-size: 14px; line-height: 1.65; padding: 10px 12px; }
+.answerInput::placeholder { color: var(--color-scrollbar-hover); }
+.answerInput:hover:not(:disabled) { border-color: var(--color-scrollbar); }
+.answerInput:disabled { background: var(--color-muted); color: var(--color-muted-foreground); }
+.answerInput[aria-invalid="true"] { border-color: #a3272c; }
+.answerHint { color: var(--color-muted-foreground); font-size: 12px; line-height: 1.5; }
+
+.submitButton { width: fit-content; min-height: 32px; border: 0; border-radius: var(--radius); background: var(--color-primary); color: var(--color-primary-foreground); cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; padding: 0 12px; }
+.submitButton:hover:not(:disabled) { background: #404040; }
+.submitButton:disabled { opacity: .3; cursor: not-allowed; }
+
+.endButton { width: fit-content; min-height: 32px; border: 1px solid #d4d4d4; border-radius: var(--radius); background: var(--color-card); color: #404040; cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; padding: 0 12px; }
+.endButton:hover { border-color: var(--color-muted-foreground); color: var(--color-foreground); }
+
+.endConfirm { display: grid; gap: 10px; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-muted); padding: 12px 14px; }
+.endConfirmText { color: var(--color-foreground); font-size: 13px; line-height: 1.6; }
 .endActions { display: flex; flex-wrap: wrap; gap: 8px; }
-.endConfirmButton { min-height: 44px; border: 0; border-radius: 999px; background: #34333d; color: #fff; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
-.endConfirmButton:focus-visible { outline: 3px solid rgba(52, 51, 61, .3); outline-offset: 2px; }
-.endedNotice { border-radius: 10px; background: #f7f7fb; color: #55535e; font-size: 13px; line-height: 1.6; padding: 12px 14px; }
+.endConfirmButton { min-height: 32px; border: 0; border-radius: var(--radius); background: var(--color-primary); color: var(--color-primary-foreground); cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; padding: 0 12px; }
+.endConfirmButton:hover { background: #404040; }
+
+.endedNotice { border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-muted); color: var(--color-muted-foreground); font-size: 13px; line-height: 1.6; padding: 12px 14px; }
+
+/* 초점 표시는 `code-panel.module.css`·`button.module.css`와 같은 2px 실선 하나로 통일합니다. */
+.log:focus-visible,
+.unreadButton:focus-visible,
+.retryButton:focus-visible,
+.answerInput:focus-visible,
+.submitButton:focus-visible,
+.endButton:focus-visible,
+.endConfirmButton:focus-visible { outline: 2px solid var(--color-foreground); outline-offset: 2px; }
