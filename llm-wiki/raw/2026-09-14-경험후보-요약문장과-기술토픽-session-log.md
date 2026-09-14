@@ -77,6 +77,20 @@ Stage A를 매번 다시 돌리면 후보 묶음이 달라져 개편 전후를 �
 
 목록 행의 `ROW_TOPIC_COUNT`를 2에서 1로 줄이는 안도 준비했다가 쓰지 않았습니다. 항목이 4~8자로 줄면서 앞 두 개를 이어도 한 줄에 들어갔습니다.
 
+## 5. PR #118 CodeRabbit 1차 리뷰
+
+지적 2건이고 라운드 1회입니다.
+
+**묶음 1(P1).** `technicalTopics`의 JSON Schema `maxItems: 6`이 화면 정규화 계약을 앞지릅니다. 토픽이 7개면 Gemini가 응답 전체를 거부해 후보 최대 20개가 함께 사라지고, 이슈 Constraint를 직접 위반합니다. 4절에서 같은 경로로 14회 중 3회가 실패한 것을 제가 이미 관측했는데, 그때 프롬프트 문장만 빼고 스키마 쪽 원인을 남겨 뒀습니다. 증상이 사라진 것을 원인이 사라진 것으로 본 판단 착오입니다.
+
+반영 전에 `buildCandidateOutputJsonSchema`의 제약을 런타임 검증과 전부 대조했습니다. `sha`·`evidence`의 `minLength`, `relatedShas`·`citedFilePaths` 원소의 `minLength`, `additionalProperties`와 `required`는 런타임과 일치합니다. 어긋나는 곳은 지적된 `technicalTopics.maxItems` 하나뿐이었습니다. `candidates.maxItems`도 응답 전체를 버리지만 `validateExperienceCandidateOutput`이 같은 조건으로 함께 거부하는 의도된 기존 계약(이슈 #108)이라 이번 범위 밖으로 뒀습니다.
+
+**묶음 2(P2, 예외 적용).** 프롬프트 끝의 `한국어로 답하세요.`가 `outputContractText` 뒤에 붙어 있어 마지막 지시가 됩니다. 영어 저장소에서 두 필드의 언어 규칙을 덮을 수 있습니다. merge blocker는 아니지만 수정 비용이 문장 하나이고 이 PR이 스스로 세운 계약을 위반하므로 같은 PR에서 반영했습니다.
+
+지적되지 않은 같은 성격의 결함이 하나 있었습니다. 언어 규칙이 `technicalTopics` 문단 안에만 있어 `summary`에는 아예 걸려 있지 않았습니다. 같은 프롬프트, 같은 데이터 흐름이라 함께 고쳐 두 필드 공통 규칙으로 올리고 우선순위를 명시했습니다.
+
+영어 저장소에서 실제로 영어가 나오는지는 확인하지 못했습니다. `hm1n/SIFT`의 커밋이 전부 한글이라 실데이터가 없습니다. 회귀 테스트는 문구의 존재와 전역 지시보다 앞에 오는 순서까지만 잠급니다.
+
 ## 5. 남긴 것
 
 `unknown_file_path` 실패율이 10% 안팎이라는 사실은 이번 변경과 무관하지만 수치로는 처음 확인했습니다. 위키의 확인 필요 항목으로 남겼습니다.
