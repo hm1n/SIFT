@@ -275,18 +275,22 @@ export function useExperienceInterview({
    * 저장 결과를 상태에 반영합니다. 성공하면 함께 보낸 밀린 턴까지 저장된 것이므로 그 표시를 지우고,
    * 실패하면 이번 턴을 밀린 턴으로 남깁니다.
    *
+   * 인터뷰 줄이 아직 없어 저장하지 않은 턴도 밀린 턴으로 남깁니다. 확정할 때 만드는 인터뷰 줄은
+   * 요청 하나를 기다려야 생기는데, 그 사이에 답변한 턴을 세지 않으면 줄이 생긴 뒤에도 그 턴만
+   * 영영 저장되지 않습니다.
+   *
    * 요청이 실패한 경우에도 이번 턴을 밀린 턴으로 남깁니다. 서버가 이미 저장한 뒤에 응답만 잃었다면
    * 다음 저장이 같은 턴을 한 번 더 보내지만, 그때는 저장된 블록 버전이 이미 올라 있어 조건부 갱신이
    * 걸러 냅니다. 대화가 겹쳐 저장되는 대신 `version_conflict`가 되어 화면이 다시 불러오기를 묻습니다.
    */
   const recordSaveResult = useCallback((turnId: string, sent: ExperienceBlockSaveTarget | undefined, status: BlockUpdateSaveStatus, savedVersion: number | null) => {
-    if (sent === undefined) return;
-    if (status === "saved") {
+    if (status === "saved" && sent !== undefined) {
       if (savedVersion !== null) savedBlockVersionRef.current = savedVersion;
       for (const id of [...(sent.pendingTurnIds ?? []), turnId]) pendingTurnIdsRef.current.delete(id);
     } else {
       pendingTurnIdsRef.current.add(turnId);
     }
+    // 저장 대상이 없어 저장하지 않은 것은 실패가 아닙니다. 안내 문구를 바꾸지 않습니다.
     if (status !== "skipped") setSaveStatus(status);
     setUnsavedTurnCount(pendingTurnIdsRef.current.size);
   }, []);

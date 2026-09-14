@@ -1,7 +1,10 @@
 "use client";
 
 import { Fragment, useId, useState } from "react";
-import { useExperienceInterview } from "@/features/experience-block/use-experience-interview";
+import {
+  useExperienceInterview,
+  type RestoredInterview,
+} from "@/features/experience-block/use-experience-interview";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
 import { clearsOnRetry } from "./errors";
 import type { InterviewStreamErrorKind, InterviewStreamRequestErrorKind } from "./errors";
@@ -140,6 +143,13 @@ export interface InterviewStreamViewProps extends Partial<UseInterviewStreamOpti
   url?: string;
   /** 블록 갱신 서버 경로입니다. `snapshot`이 있을 때만 씁니다. */
   blockUpdateUrl?: string;
+  /**
+   * 이 대화를 저장할 인터뷰 줄입니다(이슈 #115). 경험을 확정할 때 상위 화면이 만들어 내려 줍니다.
+   * 없으면 저장하지 않고 대화는 그대로 진행합니다.
+   */
+  interviewId?: string | null;
+  /** 저장된 인터뷰를 이어갈 때 그 대화와 블록 상태와 진행 상태입니다. */
+  restore?: RestoredInterview;
 }
 
 /**
@@ -174,6 +184,8 @@ function ExperienceInterviewStreamView({
   url = DEFAULT_INTERVIEW_STREAM_URL,
   blockUpdateUrl = DEFAULT_EXPERIENCE_BLOCK_UPDATE_URL,
   snapshot,
+  interviewId,
+  restore,
   fetchImpl,
   retryDelaysMs,
   sleep,
@@ -184,6 +196,8 @@ function ExperienceInterviewStreamView({
     questionUrl: url,
     blockUpdateUrl,
     snapshot,
+    interviewId,
+    restore,
     fetchImpl,
     retryDelaysMs,
     sleep,

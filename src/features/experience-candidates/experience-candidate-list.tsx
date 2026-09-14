@@ -9,7 +9,11 @@ import { candidateTitle, deriveCandidatePeriod, pluralCount } from "./candidate-
 import { MAX_TECHNICAL_TOPICS } from "./schema";
 import { ExperienceCandidateDetail } from "./experience-candidate-detail";
 import { InterviewScreen } from "@/features/interview/interview-screen";
-import { confirmExperienceSelection, type ExperienceSelectionState } from "./experience-selection";
+import {
+  confirmExperienceSelection,
+  type ConfirmedExperience,
+  type ExperienceSelectionState,
+} from "./experience-selection";
 import {
   WORK_UNIT_SELECTION_EXCLUSION_COPY,
   type ExcludedWorkUnit,
@@ -66,6 +70,14 @@ interface ExperienceCandidateListProps {
    * 확인을 그대로 건너뛰고 대화를 잃습니다(PR #105 Codex 리뷰 P1).
    */
   onInterviewActiveChange?: (active: boolean) => void;
+  /**
+   * 경험을 확정하거나(값) 확정을 물렀을 때(`null`) 불립니다(이슈 #115). 인터뷰 줄을 만드는 일은
+   * 분석 결과를 들고 있는 상위 화면이 합니다. 여기서 만들면 저장할 분석 결과를 이 기능이 다시
+   * 알아야 하고, `repository-analysis`를 가져오게 되어 역방향 의존이 생깁니다.
+   */
+  onExperienceConfirmed?: (confirmed: ConfirmedExperience | null) => void;
+  /** 상위가 만든 인터뷰 줄입니다. 없으면 저장하지 않고 대화는 그대로 진행합니다. */
+  interviewId?: string | null;
 }
 
 export function ExperienceCandidateList({
@@ -75,6 +87,8 @@ export function ExperienceCandidateList({
   stageASelection,
   onSelectRepository,
   onInterviewActiveChange,
+  onExperienceConfirmed,
+  interviewId,
 }: ExperienceCandidateListProps) {
   const items = useMemo(() => createExperienceCandidateListItems(data, candidates), [data, candidates]);
   // 목록 행과 상세 양쪽이 관련 커밋의 date를 봐야 해서 여기서 한 번만 모읍니다.
@@ -92,10 +106,23 @@ export function ExperienceCandidateList({
   // 비웁니다. master-detail에서는 목록이 항상 보이므로 선택 자체를 비울 필요가 없습니다.
   function returnToCandidates() {
     setSelection({ status: "idle" });
+    onExperienceConfirmed?.(null);
+  }
+
+  /**
+   * 확정 시점에 상위로 알립니다. 스냅샷을 만들지 못했으면 알리지 않습니다. 인터뷰가 시작되지 않으니
+   * 저장할 것도 없습니다.
+   */
+  function confirmSelection(item: ExperienceCandidateListItem, title: string) {
+    const next = confirmExperienceSelection(item, data, candidates);
+    setSelection(next);
+    if (next.status === "confirmed") {
+      onExperienceConfirmed?.({ candidateKey: item.candidate.sha, title, snapshot: next.snapshot });
+    }
   }
 
   if (selection.status === "confirmed") {
-    return <InterviewScreen snapshot={selection.snapshot} onBack={returnToCandidates} />;
+    return <InterviewScreen snapshot={selection.snapshot} interviewId={interviewId} onBack={returnToCandidates} />;
   }
 
   return (
@@ -156,7 +183,7 @@ export function ExperienceCandidateList({
             commitsBySha={commitsBySha}
             item={selectedItem}
             onBack={returnToCandidates}
-            onConfirm={() => setSelection(confirmExperienceSelection(selectedItem, data, candidates))}
+            onConfirm={() => confirmSelection(selectedItem, candidateTitle(selectedItem.candidate, selectedItem.commit))}
             onSelectRepository={onSelectRepository}
             selectionError={selection.status === "error" ? selection.reason : undefined}
           />

@@ -3,12 +3,20 @@
 import { useId, useState } from "react";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
 import { InterviewEvidencePanel } from "./interview-evidence-panel";
+import type { RestoredInterview } from "@/features/experience-block/use-experience-interview";
 import { InterviewStreamView } from "./interview-stream-view";
 import styles from "./interview-screen.module.css";
 
 export interface InterviewScreenProps {
   snapshot: ExperienceEvidenceSnapshot;
   onBack: () => void;
+  /**
+   * 이 대화를 저장할 인터뷰 줄입니다(이슈 #115). 확정한 뒤 요청 하나를 기다려야 생기므로 처음에는
+   * 비어 있다가 나중에 채워질 수 있습니다. 없는 동안의 턴은 줄이 생긴 뒤 함께 저장됩니다.
+   */
+  interviewId?: string | null;
+  /** 저장된 인터뷰를 이어갈 때 그 대화와 블록 상태와 진행 상태입니다. */
+  restore?: RestoredInterview;
   /** 테스트에서 스트림 응답을 대체하는 통로입니다. */
   fetchImpl?: typeof fetch;
 }
@@ -35,7 +43,7 @@ export interface InterviewScreenProps {
  * 어긋납니다. Empty는 없습니다. 후보 0개는 앞 단계 Empty가 처리하므로 이 화면에 도달하지
  * 않습니다.
  */
-export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreenProps) {
+export function InterviewScreen({ snapshot, onBack, interviewId, restore, fetchImpl }: InterviewScreenProps) {
   const title =
     snapshot.representativeCommit.title ?? `대표 커밋 ${snapshot.candidateSha.slice(0, 7)}`;
   // 대화가 실제로 사라지는 자리는 여기입니다. `onBack`이 후보 목록의 확정 상태를 비우고 이 화면을
@@ -97,7 +105,7 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
         diff를 펼쳐 확인할 수 있습니다.
       </p>
 
-      <InterviewStreamView snapshot={snapshot} fetchImpl={fetchImpl} />
+      <InterviewStreamView snapshot={snapshot} interviewId={interviewId} restore={restore} fetchImpl={fetchImpl} />
       <InterviewEvidencePanel snapshot={snapshot} />
     </section>
   );
