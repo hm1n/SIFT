@@ -35,7 +35,9 @@ const commit = (
 const candidate = (sha: string, overrides: Partial<ExperienceCandidate> = {}): ExperienceCandidate => ({
   sha,
   relatedShas: [],
+  summary: `${sha}의 경험 요약입니다.`,
   evidence: `${sha}의 Repository 근거입니다.`,
+  technicalTopics: [],
   citedFilePaths: [],
   source: "automatic_recommendation",
   ...overrides,
@@ -107,7 +109,7 @@ describe("ExperienceCandidateList", () => {
       commit("related", "지연 백오프 조정", [], "2026-08-01T00:00:00Z"),
     ];
     renderList(
-      [candidate("representative", { relatedShas: ["related"], source: "contribution_match" })],
+      [candidate("representative", { summary: "재시도 큐 도입", relatedShas: ["related"], source: "contribution_match" })],
       commits,
       "하나뿐입니다."
     );
@@ -123,7 +125,11 @@ describe("ExperienceCandidateList", () => {
 
   it("후보 3개의 제목을 표시하고 부족 사유는 숨긴다", () => {
     const commits = [commit("a", "상태 머신 구현"), commit("b", "오류 계약 정의"), commit("c", "응답 검증 추가")];
-    renderList(commits.map(({ sha }) => candidate(sha)), commits, null);
+    renderList(
+      commits.map(({ sha, title }) => candidate(sha, { summary: title })),
+      commits,
+      null
+    );
 
     expect(screen.getByText("3 experiences found")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "상태 머신 구현" })).toBeInTheDocument();
@@ -134,10 +140,77 @@ describe("ExperienceCandidateList", () => {
 
   it("후보가 부족한 이유를 목록 패널에 표시한다", () => {
     const commits = [commit("representative", "후보 목록 구현")];
-    renderList([candidate("representative", { source: "contribution_match" })], commits, "독립적인 근거가 하나뿐입니다.");
+    renderList(
+      [candidate("representative", { summary: "후보 목록 구현", source: "contribution_match" })],
+      commits,
+      "독립적인 근거가 하나뿐입니다."
+    );
 
     expect(screen.getByRole("button", { name: "후보 목록 구현" })).toBeInTheDocument();
     expect(screen.getByText(/독립적인 근거가 하나뿐입니다/)).toBeInTheDocument();
+  });
+
+  /**
+   * 이슈 #110 회귀입니다. 제목을 대표 커밋 제목으로 되돌리면 conventional commit의 type prefix가
+   * 다시 드러납니다. 커밋 제목과 다른 문장을 넣어 어느 쪽을 쓰는지 구분합니다.
+   */
+  it("목록 행 제목과 접근성 이름이 대표 커밋 제목이 아니라 summary를 쓴다", () => {
+    renderList(
+      [candidate("representative", { summary: "Gatsby 빌드 설정 정리" })],
+      [commit("representative", "settings: Gatsby 설정 정리")],
+      "하나뿐입니다."
+    );
+
+    expect(screen.getByRole("button", { name: "Gatsby 빌드 설정 정리" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "settings: Gatsby 설정 정리" })).not.toBeInTheDocument();
+  });
+
+  it("목록 행은 토픽 앞 두 개만 표시하고 토픽이 없으면 줄을 그리지 않는다", () => {
+    renderList(
+      [
+        candidate("a", { summary: "토픽 있는 후보", technicalTopics: ["Gatsby", "webpack", "GraphQL"] }),
+        candidate("b", { summary: "토픽 없는 후보", technicalTopics: [] }),
+      ],
+      [commit("a", "토픽 커밋 A"), commit("b", "토픽 커밋 B")],
+      "두 개뿐입니다."
+    );
+
+    const withTopics = within(screen.getByRole("button", { name: "토픽 있는 후보" }));
+    expect(withTopics.getByText("Gatsby · webpack")).toBeInTheDocument();
+    expect(withTopics.queryByText(/GraphQL/)).not.toBeInTheDocument();
+
+    const withoutTopics = within(screen.getByRole("button", { name: "토픽 없는 후보" }));
+    expect(withoutTopics.queryByText(/·/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * 이슈 #110 회귀입니다. 스키마가 빈 문자열과 개수 초과를 거부하지 않으므로(후보를 버리지 않으려고)
+   * 여기서 걸러야 합니다. 토픽 문자열을 React `key`로 쓰기 때문에 중복이 남으면 렌더가 깨집니다.
+   */
+  it("토픽의 빈 문자열과 중복을 제거하고 개수 상한으로 자른다", () => {
+    const commits = [commit("representative", "토픽 정규화")];
+    const candidateItem = candidate("representative", {
+      technicalTopics: ["React", " ", "React", "  Next.js  ", "a", "b", "c", "d", "e"],
+    });
+    const data: CandidateDataOutput = {
+      allCommits: commits,
+      includedCommits: commits,
+      repository: { fileTree: [], treeTruncated: false, languages: {} },
+    };
+    const candidates: StageBCandidateResult = {
+      candidates: [candidateItem],
+      insufficientCandidatesReason: "하나뿐입니다.",
+      diffs: [],
+    };
+
+    expect(createExperienceCandidateListItems(data, candidates)[0].normalizedTechnicalTopics).toEqual([
+      "React",
+      "Next.js",
+      "a",
+      "b",
+      "c",
+      "d",
+    ]);
   });
 
   it("관련 SHA와 인용 파일을 원본 순서대로 중복 제거하고 대표 SHA는 관련 커밋에서 제외한다", () => {
@@ -165,7 +238,7 @@ describe("ExperienceCandidateList", () => {
   });
 
   it("대표 SHA를 커밋 색인에서 찾지 못하면 목록과 상세에서 계약 파손을 드러낸다", () => {
-    renderList([candidate("abcdef123456")], [], "하나뿐입니다.");
+    renderList([candidate("abcdef123456", { summary: "" })], [], "하나뿐입니다.");
     const row = within(screen.getByRole("button", { name: "커밋 색인 실패 · abcdef1" }));
 
     expect(row.getByText("커밋 색인 실패 · abcdef1")).toBeInTheDocument();
@@ -176,14 +249,14 @@ describe("ExperienceCandidateList", () => {
   });
 
   it("행의 접근성 이름은 보이는 제목과 같다", () => {
-    renderList([candidate("a")], [commit("a", "접근성 이름 검증")], "하나뿐입니다.");
+    renderList([candidate("a", { summary: "접근성 이름 검증" })], [commit("a", "접근성 이름 검증")], "하나뿐입니다.");
 
     expect(screen.getByRole("button", { name: "접근성 이름 검증" })).toBeInTheDocument();
   });
 
   it("선택한 행에 aria-current를 표시하고 다른 후보를 고르면 옮겨간다", () => {
     renderList(
-      [candidate("a"), candidate("b")],
+      [candidate("a", { summary: "선택 표시 A" }), candidate("b", { summary: "선택 표시 B" })],
       [commit("a", "선택 표시 A"), commit("b", "선택 표시 B")],
       "두 개뿐입니다."
     );
@@ -198,7 +271,7 @@ describe("ExperienceCandidateList", () => {
 
   it("목록에서 다른 후보를 선택하면 상세가 함께 바뀐다", () => {
     renderList(
-      [candidate("a"), candidate("b")],
+      [candidate("a", { summary: "상세 전환 A" }), candidate("b", { summary: "상세 전환 B" })],
       [commit("a", "상세 전환 A"), commit("b", "상세 전환 B")],
       "두 개뿐입니다."
     );
@@ -249,7 +322,7 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
   });
 
   it("stageASelection을 넘기지 않아도 목록이 정상 렌더된다", () => {
-    renderList([candidate("a")], [commit("a", "선택 없이 렌더")], "하나뿐입니다.");
+    renderList([candidate("a", { summary: "선택 없이 렌더" })], [commit("a", "선택 없이 렌더")], "하나뿐입니다.");
 
     expect(screen.queryByRole("heading", { name: "1차 선별에서 제외된 항목" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "선택 없이 렌더" })).toBeInTheDocument();
