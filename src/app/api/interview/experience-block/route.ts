@@ -1,7 +1,7 @@
 import { generateObject } from "ai";
 import type { NextRequest } from "next/server";
 import { applyBlockUpdate, blockConflicts, markDisplay } from "@/features/experience-block/reducer";
-import { BLOCK_KINDS, type BlockUpdateOutput } from "@/features/experience-block/types";
+import { BLOCK_KINDS, type BlockUpdateOutput, type ExperienceBlockState } from "@/features/experience-block/types";
 import {
   experienceBlockErrorStatus,
   type ExperienceBlockErrorKind,
@@ -10,6 +10,7 @@ import { createBlockUpdateModel } from "@/features/experience-block/llm-provider
 import {
   MAX_EXPERIENCE_BLOCK_BODY_BYTES,
   parseExperienceBlockRequestBody,
+  type ExperienceBlockSaveTarget,
 } from "@/features/experience-block/request";
 import { LLM_MAX_RETRIES } from "@/features/experience-candidates/llm-provider";
 import {
@@ -18,11 +19,15 @@ import {
   BLOCK_MAX_OUTPUT_TOKENS,
   BLOCK_UPDATE_MODEL,
   BLOCK_UPDATE_REASONING_EFFORT,
+  type BlockUpdateTurn,
 } from "@/features/interview/block-prompt";
 import { INTERVIEW_QUESTION_TOTAL_TIMEOUT_MS } from "@/features/interview/question-generation";
 import { mapInterviewLlmError } from "@/features/interview/llm-error";
-import { getGitHubTokenFromRequest } from "@/lib/github/auth-session";
+import { turnsToSave } from "@/features/saved-interviews/turn";
+import { getGitHubSessionFromRequest } from "@/lib/github/auth-session";
 import { GitHubFetchError } from "@/lib/github/errors";
+import { neonStore } from "@/lib/db/neon-store";
+import type { SiftStore } from "@/lib/db/store";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -72,12 +77,48 @@ async function defaultGenerate(
   return object;
 }
 
+/**
+ * 그 턴을 저장한 결과입니다(이슈 #115). 저장하지 않았으면 `skipped`입니다.
+ *
+ * `failed`는 저장 계층이 오류를 던진 경우입니다. 종류를 더 나누지 않는 이유는 화면이 할 일이 같기
+ * 때문입니다. 저장하지 못했다고 알리고 대화는 그대로 잇습니다. `version_conflict`만 갈라 둡니다.
+ * 다른 탭이 먼저 저장한 경우라 화면이 최신 내용을 다시 불러올지 물어야 합니다.
+ */
+export type BlockUpdateSaveStatus = "skipped" | "saved" | "version_conflict" | "not_found" | "failed";
+
+/**
+ * 저장 실패를 요청 전체의 실패로 돌리지 않습니다. 블록 갱신은 이미 성공했으므로, 여기서 실패를 올리면
+ * 사용자는 방금 화면에 그려진 답변과 블록을 잃습니다. 결과만 응답에 실어 화면이 안내하게 합니다.
+ */
+async function saveTurn(
+  store: SiftStore,
+  githubUserId: number,
+  save: ExperienceBlockSaveTarget | undefined,
+  history: readonly BlockUpdateTurn[],
+  answerTurnId: string,
+  blockState: ExperienceBlockState
+): Promise<BlockUpdateSaveStatus> {
+  if (save === undefined) return "skipped";
+  try {
+    return await store.appendTurn({
+      githubUserId,
+      interviewId: save.interviewId,
+      turn: turnsToSave(history, answerTurnId, save.pendingTurnIds),
+      blockState,
+      expectedBlockVersion: save.expectedBlockVersion,
+    });
+  } catch {
+    return "failed";
+  }
+}
+
 export async function handleExperienceBlockUpdate(
   request: NextRequest,
-  options: { generate?: GenerateBlockUpdate } = {}
+  options: { generate?: GenerateBlockUpdate; store?: SiftStore } = {}
 ): Promise<Response> {
+  let githubUserId: number;
   try {
-    getGitHubTokenFromRequest(request);
+    githubUserId = getGitHubSessionFromRequest(request).githubUserId;
   } catch (error) {
     if (error instanceof GitHubFetchError && error.kind === "auth_revoked") {
       return errorResponse("unauthorized", "GitHub 인증 세션이 필요합니다.");
@@ -114,7 +155,7 @@ export async function handleExperienceBlockUpdate(
   if (!parsed.ok) {
     return errorResponse(parsed.kind, parsed.message);
   }
-  const { snapshot, history, state, targetBlock, targetElement, answerTurnId } = parsed.body;
+  const { snapshot, history, state, targetBlock, targetElement, answerTurnId, save } = parsed.body;
 
   const prompt = buildBlockUpdatePrompt({ snapshot, state, history, targetBlock, targetElement, answerTurnId });
   const generate = options.generate ?? defaultGenerate;
@@ -140,6 +181,16 @@ export async function handleExperienceBlockUpdate(
     );
   }
 
+  // 블록 갱신을 적용한 직후에 저장합니다. 저장이 먼저 오면 검증을 통과하지 못한 상태를 쓰게 됩니다.
+  const saveStatus = await saveTurn(
+    options.store ?? neonStore(),
+    githubUserId,
+    save,
+    history,
+    answerTurnId,
+    result.state
+  );
+
   return Response.json({
     state: result.state,
     affectedBlocks: result.affectedBlocks,
@@ -147,6 +198,7 @@ export async function handleExperienceBlockUpdate(
     conflicts: Object.fromEntries(BLOCK_KINDS.map((block) => [block, blockConflicts(result.state, block)])),
     warnings: result.warnings,
     targetResponse: result.targetResponse,
+    save: saveStatus,
   });
 }
 

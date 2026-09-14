@@ -39,6 +39,31 @@ export interface ExperienceBlockRequestBody {
    */
   readonly targetElement: BlockElement;
   readonly answerTurnId: string;
+  /**
+   * 이 턴을 저장할 인터뷰입니다(이슈 #115). 없으면 저장하지 않고 블록만 갱신합니다.
+   *
+   * 저장 전용 API를 새로 만들지 않고 이미 있는 이 요청에 얹습니다. 무상태 서버라 클라이언트가 이미 매
+   * 턴 근거와 이력과 블록 상태를 전부 보내고 있어, 저장에 필요한 값이 이 요청에 다 들어 있습니다.
+   *
+   * 없어도 되는 값으로 둡니다. 저장 계층이 막혀 인터뷰를 만들지 못한 사용자도 인터뷰는 그대로 할 수
+   * 있어야 하고, 그 경우 이 값이 없는 채로 옵니다.
+   */
+  readonly save?: ExperienceBlockSaveTarget;
+}
+
+export interface ExperienceBlockSaveTarget {
+  readonly interviewId: string;
+  /**
+   * 저장된 블록 버전으로 클라이언트가 알고 있는 값입니다. 이 값이 저장된 값과 다르면 다른 탭이 먼저
+   * 저장한 것이므로 아무것도 쓰지 않습니다.
+   *
+   * 요청의 `state.version`으로 대신하지 않습니다. 앞선 턴에서 저장이 실패했으면 화면의 버전만 오르고
+   * 저장된 버전은 그대로여서 둘이 어긋납니다. 저장된 값과 맞춰야 하는 것은 화면의 버전이 아니라
+   * 마지막으로 저장에 성공한 버전입니다.
+   */
+  readonly expectedBlockVersion: number;
+  /** 앞선 턴에서 저장이 실패해 아직 저장되지 않은 턴입니다. 이번 턴과 함께 이어 붙입니다. */
+  readonly pendingTurnIds?: readonly string[];
 }
 
 /**
@@ -304,6 +329,11 @@ export function parseExperienceBlockRequestBody(value: unknown): ExperienceBlock
     };
   }
 
+  const save = parseSaveTarget(value.save, history);
+  if (save !== undefined && !save.ok) {
+    return { ok: false, kind: "invalid_request", message: save.message };
+  }
+
   return {
     ok: true,
     body: {
@@ -313,6 +343,46 @@ export function parseExperienceBlockRequestBody(value: unknown): ExperienceBlock
       targetBlock: value.targetBlock,
       targetElement: value.targetElement,
       answerTurnId: value.answerTurnId,
+      ...(save === undefined ? {} : { save: save.target }),
+    },
+  };
+}
+
+/**
+ * 저장 대상을 확인합니다. 값이 없으면 저장하지 않는다는 뜻이므로 `undefined`를 돌려줍니다.
+ *
+ * `pendingTurnIds`가 이력에 없는 턴을 가리키면 거절합니다. 조용히 넘기면 밀렸다고 보고한 턴이
+ * 저장되지 않은 채로 요청만 성공하고, 사용자는 밀린 대화가 저장된 줄 압니다.
+ */
+function parseSaveTarget(
+  value: unknown,
+  history: readonly BlockUpdateTurn[]
+): { ok: true; target: ExperienceBlockSaveTarget } | { ok: false; message: string } | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!isRecord(value)) return { ok: false, message: "save 형식이 올바르지 않습니다." };
+  if (!isNonEmptyString(value.interviewId)) {
+    return { ok: false, message: "save.interviewId가 필요합니다." };
+  }
+  if (!isNonNegativeInt(value.expectedBlockVersion)) {
+    return { ok: false, message: "save.expectedBlockVersion은 0 이상의 정수여야 합니다." };
+  }
+  const pendingTurnIds = value.pendingTurnIds;
+  if (pendingTurnIds !== undefined) {
+    if (!Array.isArray(pendingTurnIds) || !pendingTurnIds.every(isNonEmptyString)) {
+      return { ok: false, message: "save.pendingTurnIds는 문자열 배열이어야 합니다." };
+    }
+    const known = new Set(history.map((turn) => turn.turnId));
+    if (pendingTurnIds.some((turnId) => !known.has(turnId))) {
+      return { ok: false, message: "save.pendingTurnIds에 이력에 없는 턴이 있습니다." };
+    }
+  }
+
+  return {
+    ok: true,
+    target: {
+      interviewId: value.interviewId,
+      expectedBlockVersion: value.expectedBlockVersion as number,
+      ...(pendingTurnIds === undefined ? {} : { pendingTurnIds: pendingTurnIds as readonly string[] }),
     },
   };
 }
