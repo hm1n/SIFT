@@ -102,16 +102,19 @@ export function useExperienceInterview({
    * 2026-09-11 P1-2, R3).
    */
   const unreflectedRef = useRef<Map<string, PendingTurn>>(new Map());
+  /** 지금 실제로 블록 갱신 네트워크 호출 중인 턴입니다. 완료(성공·실패 모두)되면 비웁니다. */
+  const activeRef = useRef<PendingTurn | null>(null);
+  const activeAbortRef = useRef<AbortController | null>(null);
   /**
-   * 지금 실행 중인 블록 갱신 호출의 턴입니다. 완료(성공·실패 모두)되면 비웁니다. `callSeq`는 이
-   * 항목을 남긴 `applyTurn` 호출 자신의 번호입니다. 같은 턴을 재시도하면 turnId가 같으므로,
-   * turnId만으로 "이 항목이 내가 넣은 것"을 판정하면 아직 정리 중(catch/finally)인 이전 시도가
-   * 방금 시작한 재시도의 항목을 지워 버릴 수 있습니다. 번호로 자기 항목인지 확인해야 이 경합을
-   * 막습니다.
+   * `applyTurn` 호출을 전부 이 큐에 이어 붙여 한 번에 하나씩만 실행합니다. "현재 답변"(`onBeforeQuestion`)의
+   * 블록 갱신과 "미반영 재처리"(`retryAllUnreflected`)의 블록 갱신은 서로 다른 시점에 독립적으로
+   * 들어올 수 있는데, 예전에는 새 호출이 시작될 때마다 직전 호출을 무조건 abort했습니다. 그래서
+   * 재처리가 시작되며 마침 진행 중이던 현재 답변의 호출을 끊으면, 그 답변은 abort 경로로 빠져
+   * 미반영으로도 등록되지 못한 채 사라졌습니다(추가 재검증 2026-09-12, S3). 두 호출을 동시에
+   * 실행하지 않고 항상 순서대로 기다리게 하면 애초에 서로를 끊을 일이 없어 이 경합 자체가
+   * 사라집니다.
    */
-  const inFlightRef = useRef<(PendingTurn & { readonly callSeq: number }) | null>(null);
-  const callSeqRef = useRef(0);
-  const blockUpdateAbortRef = useRef<AbortController | null>(null);
+  const applyQueueRef = useRef<Promise<void>>(Promise.resolve());
   /**
    * 언마운트됐는지입니다. 이 훅이 사라진 뒤에도 `applyTurn`이나 `onBeforeQuestion`의 이어지는
    * 작업이 상태를 계속 바꾸는 것을 막습니다(구현검토 2026-09-11 P1-3, R5). `useInterviewStream`
@@ -121,7 +124,7 @@ export function useExperienceInterview({
   useEffect(() => {
     return () => {
       unmountedRef.current = true;
-      blockUpdateAbortRef.current?.abort();
+      activeAbortRef.current?.abort();
     };
   }, []);
 
@@ -137,33 +140,33 @@ export function useExperienceInterview({
   });
 
   /**
-   * `answerTurnId`의 답변에 대한 블록 갱신을 부릅니다. 성공하면 상태와 진행을 갱신하고 그 턴의
-   * 미반영 표시만 지웁니다(다른 턴이 여전히 미반영이면 그대로 남습니다). 실패하면 이전 상태를
-   * 유지하고 그 턴을 미반영으로 표시합니다(설계 9절). 어느 쪽이든 던지지 않습니다. 호출부가
+   * `answerTurnId`의 답변에 대한 블록 갱신을 실제로 실행합니다. 성공하면 상태와 진행을 갱신하고
+   * 그 턴의 미반영 표시만 지웁니다(다른 턴이 여전히 미반영이면 그대로 남습니다). 실패하면 이전
+   * 상태를 유지하고 그 턴을 미반영으로 표시합니다(설계 9절). 어느 쪽이든 던지지 않습니다. 호출부가
    * 그대로 다음 단계로 진행할 수 있어야 하기 때문입니다.
    *
-   * 이 호출이 최신 요청을 abort한 뒤 그 abort 때문에 스스로도 취소되면(다른 `applyTurn` 호출이
-   * 겹쳐 들어온 경우) 아무 기록도 남기지 않고 조용히 돌아갑니다. 그 턴을 미반영으로 기록할지는
-   * 취소한 쪽(주로 `endInterview`)이 `inFlightRef`를 보고 직접 판단합니다. 그래야 "종료가 끊은
-   * 진행 중이던 호출"과 "이 함수 자신이 이전 호출을 끊은 것"을 헷갈리지 않습니다.
+   * 반드시 `applyQueueRef`를 통해서만 불려 한 번에 하나씩만 실행됩니다. 그래서 이 함수가 시작하는
+   * 시점에는 다른 `runApplyTurn` 호출이 진행 중일 수 없고, abort는 오직 `endInterview`나 언마운트
+   * 같은 명시적인 취소에서만 옵니다(다른 `applyTurn` 호출이 이 호출을 끊는 경우는 없습니다).
    *
-   * 응답이 도착하면(성공이든 실패든) `callSeq`가 그 시점의 "가장 최근에 시작한 호출"과 같은지
-   * 봅니다. 다르면 그 사이 다른 호출(주로 겹쳐 들어온 재처리)이 이미 새로 시작된 것이므로 이
-   * 응답은 낡은 것으로 보고 아무것도 반영하지 않습니다. 응답 도착 순서가 요청 순서와 같다고
-   * 보장할 수 없어(느린 재처리 응답이 그 뒤에 시작한 다음 턴의 응답보다 늦게 와도), 버전을 그냥
-   * 덮어쓰면 최신 상태가 옛 상태로 되돌아갈 수 있습니다(구현검토 2026-09-11 P1-3, R4).
+   * 큐에서 자기 차례가 왔을 때 이미 언마운트돼 있으면 네트워크 호출 자체를 시작하지 않고 곧장
+   * 미반영으로 남깁니다. 그래야 언마운트 뒤 큐에 남은 항목이 화면을 떠난 뒤에도 계속 네트워크
+   * 요청을 내보내는 일이 없습니다(추가 재검증 2026-09-12, S4).
    */
-  const applyTurn = useCallback(
+  const runApplyTurn = useCallback(
     async (
       turn: BlockUpdateTurn,
       target: NonNullable<InterviewQuestionTarget>
     ): Promise<{ readonly ok: boolean; readonly targetResponse: TargetResponse | null }> => {
+      if (unmountedRef.current) {
+        unreflectedRef.current.set(turn.turnId, { turn, target });
+        syncUnreflectedTurnId();
+        return { ok: false, targetResponse: null };
+      }
       const current = optionsRef.current;
-      blockUpdateAbortRef.current?.abort();
       const controller = new AbortController();
-      blockUpdateAbortRef.current = controller;
-      const callSeq = ++callSeqRef.current;
-      inFlightRef.current = { turn, target, callSeq };
+      activeAbortRef.current = controller;
+      activeRef.current = { turn, target };
       try {
         const result = await fetchBlockUpdate({
           url: current.blockUpdateUrl,
@@ -176,7 +179,7 @@ export function useExperienceInterview({
           fetchImpl: current.fetchImpl,
           signal: controller.signal,
         });
-        if (unmountedRef.current || callSeqRef.current !== callSeq) return { ok: false, targetResponse: null };
+        if (unmountedRef.current) return { ok: false, targetResponse: null };
         setBlockStateBoth(result.state);
         progressRef.current = recordResponse(progressRef.current, target.targetBlock, target.targetElement, result.targetResponse);
         unreflectedRef.current.delete(turn.turnId);
@@ -184,28 +187,48 @@ export function useExperienceInterview({
         return { ok: true, targetResponse: result.targetResponse };
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") return { ok: false, targetResponse: null };
-        if (unmountedRef.current || callSeqRef.current !== callSeq) return { ok: false, targetResponse: null };
         // 갱신 실패만으로 같은 블록에 고정하지 않습니다. progress는 건드리지 않고 다음 단계에서
         // 이전 평가 그대로 이동 정책을 적용합니다.
         unreflectedRef.current.set(turn.turnId, { turn, target });
         syncUnreflectedTurnId();
         return { ok: false, targetResponse: null };
       } finally {
-        if (inFlightRef.current?.callSeq === callSeq) inFlightRef.current = null;
+        activeRef.current = null;
+        activeAbortRef.current = null;
       }
     },
     [setBlockStateBoth, syncUnreflectedTurnId]
   );
 
   /**
-   * 미반영 턴을 전부(오래된 순서로) 다시 시도합니다. 순서대로 기다려 가며 부르므로 각 재처리가
-   * 직전 재처리로 갱신된 최신 상태를 보고 판단합니다. 사용자 종료·열 턴 자동 종료가 공유하는
-   * 정리 경로입니다(구현검토 2026-09-11 P1-2).
+   * `runApplyTurn`을 직렬 큐에 올립니다. "현재 답변"의 블록 갱신(`onBeforeQuestion`)과 "미반영
+   * 재처리"(`retryAllUnreflected`)를 포함해 이 훅의 모든 블록 갱신 호출은 반드시 이 함수를 거쳐야
+   * 동시 실행이 없다는 보장이 성립합니다.
+   */
+  const applyTurn = useCallback(
+    (
+      turn: BlockUpdateTurn,
+      target: NonNullable<InterviewQuestionTarget>
+    ): Promise<{ readonly ok: boolean; readonly targetResponse: TargetResponse | null }> => {
+      const result = applyQueueRef.current.then(() => runApplyTurn(turn, target));
+      applyQueueRef.current = result.then(
+        () => undefined,
+        () => undefined
+      );
+      return result;
+    },
+    [runApplyTurn]
+  );
+
+  /**
+   * 미반영 턴을 전부 다시 시도합니다. 모두 같은 큐(`applyQueueRef`)를 거치므로 여기서 동시에
+   * 걸어도 실제 실행은 걸린 순서대로 하나씩 이뤄지고, 각 재처리가 직전 재처리로 갱신된 최신
+   * 상태를 보고 판단합니다. 사용자 종료·열 턴 자동 종료가 공유하는 정리 경로입니다(구현검토
+   * 2026-09-11 P1-2).
    */
   const retryAllUnreflected = useCallback(async () => {
-    for (const pending of [...unreflectedRef.current.values()]) {
-      await applyTurn(pending.turn, pending.target);
-    }
+    const pending = [...unreflectedRef.current.values()];
+    await Promise.all(pending.map((item) => applyTurn(item.turn, item.target)));
   }, [applyTurn]);
 
   /**
@@ -302,16 +325,21 @@ export function useExperienceInterview({
   /**
    * 사용자 종료입니다. 진행 중이던 블록 갱신 호출을 끊어 화면 이탈이 이 작업 전체를 끊는다는
    * 계약을 지킵니다(설계 Approach 4). 끊긴 호출이 겨냥하던 턴은 abort 자체가 아니라 여기서
-   * `inFlightRef`를 직접 읽어 미반영으로 등록합니다. `applyTurn`의 catch가 비동기로(다음
+   * `activeRef`를 직접 읽어 미반영으로 등록합니다. `applyTurn`의 catch가 비동기로(다음
    * 마이크로태스크에) 도는 것과 달리 이 값은 동기로 최신이라, 등록을 놓치는 경합이 없습니다(구현검토
    * 2026-09-11 P1-2, R6). 종료와 정리 완료는 구분합니다(설계 9절): 미반영 턴이 있으면 그 자리에서
    * 한 번 더 반영을 시도하되, 이 호출은 턴으로 세지 않고 실패해도 종료 자체는 그대로 진행합니다.
+   *
+   * 이 abort로 끊긴 호출은 `runApplyTurn`의 catch에서 AbortError로 잡혀 조용히 끝나지만, 그
+   * 완료를 기다리지 않고 바로 `retryAllUnreflected`를 걸어도 됩니다. 모든 호출이 같은
+   * `applyQueueRef`를 거치므로 이 재시도는 끊긴 호출이 마저 정리될 때까지 큐 안에서 자연히
+   * 대기했다가 실행됩니다.
    */
   // 위 효과와 같은 이유로 `inner.endInterview`만 둡니다.
   const endInterview = useCallback(() => {
     if (endReason === null) setEndReason("user");
-    const interrupted = inFlightRef.current;
-    blockUpdateAbortRef.current?.abort();
+    const interrupted = activeRef.current;
+    activeAbortRef.current?.abort();
     if (interrupted !== null) {
       unreflectedRef.current.set(interrupted.turn.turnId, interrupted);
       syncUnreflectedTurnId();
