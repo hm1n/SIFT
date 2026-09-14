@@ -1,7 +1,30 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { GITHUB_SESSION_KEY_ENV } from "@/lib/github/auth-session";
+import { decryptGitHubSession, GITHUB_SESSION_KEY_ENV } from "@/lib/github/auth-session";
 import { GET } from "./route";
+
+const USER_ID = 44727850;
+
+/**
+ * 콜백은 토큰 교환과 `GET /user`를 차례로 부릅니다. 호출 순서가 아니라 주소로 나눠 응답을 정합니다.
+ * 순서로 정하면 호출이 하나 늘거나 줄 때마다 모든 테스트가 같이 흔들립니다.
+ */
+function stubGitHub(options: { exchange?: () => Response; user?: () => Response } = {}) {
+  const fetchMock = vi.fn((...args: Parameters<typeof fetch>) =>
+    Promise.resolve(
+      String(args[0]).startsWith("https://api.github.com/user")
+        ? (options.user ?? (() => Response.json({ id: USER_ID, login: "octocat" })))()
+        : (options.exchange ?? (() => Response.json({ access_token: "token" })))()
+    )
+  );
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+function sessionCookieValue(response: Response): string {
+  const cookie = response.headers.getSetCookie().find((value) => value.startsWith("github_session="));
+  return (cookie as string).slice("github_session=".length).split(";")[0];
+}
 
 beforeEach(() => {
   process.env.GITHUB_OAUTH_CLIENT_ID = "client-id";
@@ -21,7 +44,7 @@ function request(query: string, stateCookie = "state") {
 
 describe("GitHub OAuth callback", () => {
   it("sets the session, deletes state, and redirects home", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ access_token: "token" })));
+    stubGitHub();
     const response = await GET(request("code=code&state=state"));
     const cookies = response.headers.getSetCookie();
     expect(response.status).toBe(302);
@@ -64,35 +87,56 @@ describe("GitHub OAuth callback", () => {
 
   it("maps a missing session encryption key to config_missing", async () => {
     delete process.env[GITHUB_SESSION_KEY_ENV];
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ access_token: "token" })));
+    stubGitHub();
     const response = await GET(request("code=code&state=state"));
     expect(response.headers.get("location")).toBe("https://app.test/?auth_error=config_missing");
     expect(response.headers.get("set-cookie")).not.toContain("github_session=");
   });
 
   it("sends the exchange request to GitHub with the client secret", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(Response.json({ access_token: "token" }));
-    vi.stubGlobal("fetch", fetchMock);
+    const fetchMock = stubGitHub();
     await GET(request("code=the-code&state=state"));
     expect(fetchMock).toHaveBeenCalledWith(
       "https://github.com/login/oauth/access_token",
       expect.objectContaining({ method: "POST", headers: expect.objectContaining({ Accept: "application/json" }) })
     );
-    const body = String(fetchMock.mock.calls[0][1].body);
+    const body = String(fetchMock.mock.calls[0][1]?.body);
     expect(body).toContain("client_secret=client-secret");
     expect(body).toContain("code=the-code");
   });
 
   it("maps a client credential error to config_missing", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: "incorrect_client_credentials" })));
+    stubGitHub({ exchange: () => Response.json({ error: "incorrect_client_credentials" }) });
     const response = await GET(request("code=code&state=state"));
     expect(response.headers.get("location")).toBe("https://app.test/?auth_error=config_missing");
   });
 
   it("maps exchange failures to exchange_failed", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 500 })));
+    stubGitHub({ exchange: () => new Response("", { status: 500 }) });
     const response = await GET(request("code=code&state=state"));
     expect(response.headers.get("location")).toBe("https://app.test/?auth_error=exchange_failed");
     expect(response.headers.get("set-cookie")).toContain("github_oauth_state=; ");
+  });
+
+  it("puts the GitHub user id in the session cookie", async () => {
+    const fetchMock = stubGitHub();
+    const response = await GET(request("code=code&state=state"));
+    expect(fetchMock).toHaveBeenCalledWith("https://api.github.com/user", expect.anything());
+    expect(decryptGitHubSession(sessionCookieValue(response))).toEqual({ token: "token", githubUserId: USER_ID });
+  });
+
+  /**
+   * `/user` 실패를 config_missing으로 보내면, GitHub이 잠시 답하지 않는 상황에 사용자가 서버 설정을
+   * 고치라는 안내를 받습니다. config_missing은 우리 OAuth 설정과 암호화 키가 없을 때만 씁니다.
+   */
+  it.each([
+    ["a 500 from GET /user", () => new Response("", { status: 500 })],
+    ["a rate limited GET /user", () => Response.json({ message: "rate limited" }, { status: 429 })],
+    ["a GET /user response without a user id", () => Response.json({ login: "octocat" })],
+  ])("maps %s to exchange_failed without setting a session", async (_label, user) => {
+    stubGitHub({ user });
+    const response = await GET(request("code=code&state=state"));
+    expect(response.headers.get("location")).toBe("https://app.test/?auth_error=exchange_failed");
+    expect(response.headers.getSetCookie()).not.toContainEqual(expect.stringContaining("github_session="));
   });
 });

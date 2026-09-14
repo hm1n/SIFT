@@ -37,7 +37,7 @@ export type InterviewStreamRequestErrorKind =
    * 서버 설정 때문에 요청을 처리하지 못한 경우입니다. `stage-a` route가 쓰는 값과 같습니다.
    *
    * 도달 경로가 있습니다. 세션 쿠키가 있는 요청에서 `GITHUB_SESSION_ENCRYPTION_KEY`가 없거나
-   * 32바이트가 아니면 `decryptGitHubToken`이 `auth_revoked`가 아니라 `server_error`를 그대로
+   * 32바이트가 아니면 `decryptGitHubSession`이 `auth_revoked`가 아니라 `server_error`를 그대로
    * 올립니다. 이 값을 여기 두지 않으면 수신부가 아는 분류로 인식하지 못해 전송 실패로 떨어뜨리고,
    * 서버 설정 문제에 "네트워크 상태를 확인해 주세요"라는 틀린 안내가 나갑니다.
    */

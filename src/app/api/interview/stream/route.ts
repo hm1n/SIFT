@@ -145,7 +145,7 @@ export async function handleInterviewQuestionStream(
      * 두 갈래를 모두 남기는 이유는 아래 갈래도 도달하기 때문입니다.
      *
      * 쿠키가 없으면 `auth_revoked`입니다. 쿠키가 있는데 `GITHUB_SESSION_ENCRYPTION_KEY`가 없거나
-     * 32바이트가 아니면 `decryptGitHubToken`이 그 `server_error`를 그대로 올립니다. 두 경우는
+     * 32바이트가 아니면 `decryptGitHubSession`이 그 `server_error`를 그대로 올립니다. 두 경우는
      * 사용자가 할 수 있는 일이 다릅니다. 앞은 다시 로그인이고 뒤는 사용자가 할 수 있는 일이
      * 없습니다.
      *

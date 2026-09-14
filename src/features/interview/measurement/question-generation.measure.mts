@@ -66,7 +66,7 @@ import {
 import { renderInterviewEvidencePrompt, type InterviewPromptVariant } from "../question-prompt";
 import { createSseEventParser, type InterviewStreamEvent } from "../sse";
 import { handleInterviewQuestionStream } from "../../../app/api/interview/stream/route";
-import { encryptGitHubToken, GITHUB_SESSION_COOKIE } from "../../../lib/github/auth-session";
+import { encryptGitHubSession, GITHUB_SESSION_COOKIE } from "../../../lib/github/auth-session";
 import {
   GITHUB_API_BASE,
   classifyErrorResponse,
@@ -537,7 +537,7 @@ async function measureSseRoute(
   // 자리만 채웁니다. 암호화 키는 `.env`의 운영 키를 그대로 씁니다.
   const request = new NextRequest("https://example.com/api/interview/stream", {
     method: "POST",
-    headers: { cookie: `${GITHUB_SESSION_COOKIE}=${encryptGitHubToken("measurement-placeholder")}` },
+    headers: { cookie: `${GITHUB_SESSION_COOKIE}=${encryptGitHubSession({ token: "measurement-placeholder", githubUserId: 1 })}` },
     body: JSON.stringify({ snapshot }),
   });
 

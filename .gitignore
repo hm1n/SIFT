@@ -56,3 +56,9 @@ next-env.d.ts
 
 # obsidian
 .obsidian
+
+# neon
+# 링크한 프로젝트와 브랜치를 담은 로컬 컨텍스트라 사람마다 다릅니다.
+.neon
+# 스킬 자체가 `.claude/skills`로 무시 대상이라 잠금 파일만 남길 이유가 없습니다.
+skills-lock.json

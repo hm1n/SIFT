@@ -15,7 +15,7 @@ import { MAX_INTERVIEW_STREAM_BODY_BYTES } from "@/features/interview/question-r
 import { createSseEventParser } from "@/features/interview/sse";
 import type { InterviewStreamEvent } from "@/features/interview/sse";
 import {
-  encryptGitHubToken,
+  encryptGitHubSession,
   GITHUB_SESSION_COOKIE,
   GITHUB_SESSION_KEY_ENV,
 } from "@/lib/github/auth-session";
@@ -30,7 +30,7 @@ function request(
   return new NextRequest("https://example.com/api/interview/stream", {
     method: "POST",
     headers: {
-      ...(authenticated ? { cookie: `${GITHUB_SESSION_COOKIE}=${encryptGitHubToken("token")}` } : {}),
+      ...(authenticated ? { cookie: `${GITHUB_SESSION_COOKIE}=${encryptGitHubSession({ token: "token", githubUserId: 4472785 })}` } : {}),
       ...headers,
     },
     body: typeof body === "string" ? body : JSON.stringify(body),
