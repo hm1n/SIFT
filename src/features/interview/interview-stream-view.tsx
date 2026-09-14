@@ -418,7 +418,20 @@ export function InterviewStreamView({
               aria-invalid={isDraftTooLong || undefined}
             />
             <div className={styles.composerFooter}>
-              <p id={answerHintId} className={styles.answerHint}>
+              {/*
+                디자인의 이 자리에는 PAAR 블록 진행 상태가 들어갑니다. 그 계약이 아직 없어(#89~#91)
+                비워 두되, `aria-describedby`가 가리키는 대상이라 **DOM에서 지우지는 않습니다.** 가리킬
+                것이 없는 `aria-describedby`는 설명이 통째로 사라지는 결함이고, 이슈 #47 PR #52 1차
+                리뷰의 P1이 정확히 그것이었습니다.
+
+                평소에는 시각적으로만 숨기고, 답변이 상한을 넘은 동안에는 보입니다. 그때는 안내가 아니라
+                왜 보낼 수 없는지를 알리는 오류이고, 보이지 않으면 사용자는 버튼이 잠긴 이유를 알 수
+                없습니다.
+              */}
+              <p
+                id={answerHintId}
+                className={isDraftTooLong ? styles.answerError : styles.visuallyHidden}
+              >
                 {isDraftTooLong
                   ? `Your answer is over the size limit for a single message. It is ${draftBytes.toLocaleString()} bytes and the limit is ${INTERVIEW_HISTORY_ITEM_MAX_BYTES.toLocaleString()} bytes. Line breaks and code blocks count toward the size.`
                   : canSubmitAnswer

@@ -465,6 +465,25 @@ describe("InterviewStreamView 실제 생성 경로", () => {
     });
 
     // 보낼 수 없는 상태에서 단축키가 잠금을 우회하면 빈 답변이나 상한을 넘은 답변이 나갑니다.
+    /*
+     * 답변 안내는 디자인에 자리가 없어 평소에는 시각적으로 숨깁니다. 그렇다고 DOM에서 지우면
+     * `aria-describedby`가 없는 id를 가리켜 설명이 통째로 사라집니다. 이슈 #47 PR #52 1차 리뷰의
+     * P1과 같은 결함이라 가리키는 대상이 항상 있는지 확인합니다.
+     */
+    it("답변 칸의 aria-describedby는 언제나 실재하는 설명을 가리킨다", async () => {
+      const first = controllableResponse();
+      const { input } = await renderAfterFirstQuestion([first]);
+
+      const described = () => document.getElementById(input.getAttribute("aria-describedby") ?? "");
+      expect(described()).not.toBeNull();
+      expect(described()).toHaveTextContent("Sending your answer builds the next question");
+
+      // 상한을 넘으면 같은 자리가 왜 보낼 수 없는지로 바뀝니다.
+      fireEvent.change(input, { target: { value: "가".repeat(INTERVIEW_HISTORY_ITEM_MAX_BYTES) } });
+      expect(described()).not.toBeNull();
+      expect(described()).toHaveTextContent("over the size limit for a single message");
+    });
+
     it("보낼 수 없는 상태에서는 단축키도 보내지 않는다", async () => {
       const first = controllableResponse();
       const { fetchImpl, input } = await renderAfterFirstQuestion([first]);
