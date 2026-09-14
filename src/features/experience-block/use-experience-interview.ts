@@ -334,9 +334,12 @@ export function useExperienceInterview({
   // 상한 도달로 정한 종료 사유를 실제 종료로 잇습니다. 훅 스스로 `endInterview`를 부르는 유일한
   // 자리입니다. 사용자 종료는 아래 `endInterview` 래퍼가 직접 부릅니다.
   //
-  // 사용자 종료와 같은 정리 경로(`retryAllUnreflected`)를 거친 뒤에 끝냅니다. 이전에는
-  // `inner.endInterview()`를 곧장 불러, 마지막 턴의 블록 갱신이 실패한 채로 남아도 재처리를
-  // 시도하지 않고 그대로 종료했습니다(구현검토 2026-09-11 P1-2, R9).
+  // 종료와 정리 완료를 구분합니다(설계 9절). 정리 재시도가 끝나기를 기다린 뒤 종료하면, 정리
+  // 재시도가 쓰는 `fetchBlockUpdate`에 timeout이 없어(취소는 언마운트·명시적 종료뿐입니다) 응답이
+  // 계속 pending일 때 열 턴 자동 종료 자체가 멈춥니다(CodeRabbit PR #117). 먼저 끝내고 정리
+  // 재시도는 백그라운드로 흘려보냅니다. 이전에는 `inner.endInterview()`를 아예 부르지 않아, 마지막
+  // 턴의 블록 갱신이 실패한 채로 남아도 재처리 자체를 시도하지 않았습니다(구현검토 2026-09-11 P1-2,
+  // R9). 재처리 자체는 이 순서에서도 그대로 일어납니다.
   //
   // `inner` 전체가 아니라 실제로 읽는 필드만 의존성에 둡니다. `inner`는 `useInterviewStream`이 매
   // 렌더 새로 만드는 객체라, 전체를 넣으면 이 효과가 매 렌더 다시 실행됩니다. `isEnded`와
@@ -344,7 +347,8 @@ export function useExperienceInterview({
   // 바뀝니다.
   useEffect(() => {
     if (endReason !== "turn_limit" || inner.isEnded) return;
-    void retryAllUnreflected().then(() => inner.endInterview());
+    inner.endInterview();
+    void retryAllUnreflected();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [endReason, inner.isEnded, inner.endInterview, retryAllUnreflected]);
 
