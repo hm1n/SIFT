@@ -155,7 +155,9 @@ describe("RepositoryAnalysisView 시맨틱 구조", () => {
     await renderAndAnalyze();
     const main = screen.getByRole("main");
     expect(main).toContainElement(screen.getByRole("heading", { level: 1, name: "octocat / hello-world" }));
-    expect(screen.getByRole("heading", { level: 2 })).toBeInTheDocument();
+    // master-detail(#97)부터 목록과 상세가 함께 렌더돼 h2가 여럿입니다. 숨은 h1이 그보다 앞선다는
+    // 것만 확인합니다.
+    expect(screen.getAllByRole("heading", { level: 2 }).length).toBeGreaterThan(0);
   });
 });
 
@@ -463,11 +465,10 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
     });
     await renderAndAnalyze();
 
-    expect(screen.getByText(/경험 후보 2개를 선정했습니다/)).toBeInTheDocument();
+    expect(screen.getByText("2 experiences found")).toBeInTheDocument();
     expect(screen.getByText(/나머지 커밋은 diff 근거가 부족합니다/)).toBeInTheDocument();
     expect(screen.getByText(/기준을 완화하거나 후보를\s*임의로 채우지 않습니다/)).toBeInTheDocument();
-    expect(screen.getByText("기여 항목 일치")).toBeInTheDocument();
-    expect(screen.getByText("자동 추천")).toBeInTheDocument();
+    // master-detail(#97)부터 기본 선택된 첫 후보의 evidence는 "Why worth discussing"에 나옵니다.
     expect(screen.getByText("상태 머신을 구현했습니다.")).toBeInTheDocument();
   });
 
@@ -485,9 +486,8 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
     });
     await renderAndAnalyze();
 
-    fireEvent.click(screen.getByRole("button", { name: /커밋 색인 실패 · aaaaaaa/ }));
-
-    expect(screen.getByRole("link", { name: "대표 커밋 aaaaaaa" })).toHaveAttribute(
+    // master-detail(#97)부터 이 후보 하나뿐이면 처음부터 선택돼 있어 클릭이 필요 없습니다.
+    expect(screen.getByRole("link", { name: "커밋 색인 실패 · aaaaaaa" })).toHaveAttribute(
       "href",
       `https://github.com/octocat/hello-world/commit/${sha}`
     );
@@ -511,7 +511,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
     });
     await renderAndAnalyze();
 
-    expect(screen.getByText(/경험 후보 3개를 선정했습니다/)).toBeInTheDocument();
+    expect(screen.getByText("3 experiences found")).toBeInTheDocument();
     expect(screen.queryByText(/후보를 3개 채우지 않은 이유/)).not.toBeInTheDocument();
   });
 
