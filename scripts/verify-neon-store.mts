@@ -150,6 +150,28 @@ async function main(): Promise<void> {
   check("인터뷰를 열면 openedAt을 갱신한다", (reopened!.openedAt > beforeOpen), true);
   check("여는 것이 updatedAt을 건드리지 않는다", reopened!.updatedAt.getTime(), appended!.updatedAt.getTime());
 
+  /**
+   * 목록 행의 `PAAR n/4`입니다. 이 수는 코드가 아니라 질의가 셉니다. `jsonb_each`와 `jsonb_typeof`를
+   * 쓰는 식이라 가짜 실행기로는 옳은지 알 수 없고 여기서만 확인할 수 있습니다.
+   */
+  const evaluated = {
+    ...blockAt(4),
+    evaluation: {
+      ...emptyExperienceBlockState().evaluation,
+      problem: { sufficient: true, askable: false, reason: "sufficient" as const },
+      result: { sufficient: true, askable: false, reason: "sufficient" as const },
+      action: { sufficient: false, askable: true, reason: "askable" as const },
+    },
+  };
+  check("평가를 담은 턴을 저장한다", await store.appendTurn({
+    githubUserId: USER_ID, interviewId,
+    turn: [{ role: "answer", text: "답변 4" }],
+    progress: emptyInterviewProgress(), blockState: evaluated, expectedBlockVersion: 3,
+  }), "saved");
+
+  check("목록이 충분한 블록 수를 센다", (await store.listInterviews(USER_ID))[0].completedBlockCount, 2);
+  check("복원도 같은 수를 센다", (await store.getInterview(interviewId, USER_ID))?.completedBlockCount, 2);
+
   const list = await store.listInterviews(USER_ID);
   check("목록에 그 인터뷰가 있다", list.map((item) => item.id), [interviewId]);
   check("남의 목록에는 없다", (await store.listInterviews(OTHER_USER_ID)).length, 0);

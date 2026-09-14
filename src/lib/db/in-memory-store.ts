@@ -9,7 +9,7 @@ import type {
   StoredInterview,
 } from "./store";
 import { emptyInterviewProgress } from "@/features/experience-block/progress";
-import { emptyExperienceBlockState } from "@/features/experience-block/types";
+import { countSufficientBlocks, emptyExperienceBlockState } from "@/features/experience-block/types";
 import type { InterviewHistoryMessage } from "@/features/interview/history";
 
 interface AnalysisRow extends NewAnalysis {
@@ -62,6 +62,7 @@ export function createInMemoryStore(): SiftStore {
       repoName: analysis.repoName,
       title: interview.title,
       status: interview.status,
+      completedBlockCount: countSufficientBlocks(interview.blockState),
       createdAt: interview.createdAt,
       updatedAt: interview.updatedAt,
       openedAt: interview.openedAt,

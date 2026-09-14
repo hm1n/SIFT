@@ -15,6 +15,8 @@ export interface InterviewListItemPayload {
   readonly repoName: string;
   readonly title: string;
   readonly status: InterviewListItem["status"];
+  /** 목록 행의 `PAAR n/4`에서 n입니다. 분모는 화면이 `BLOCK_KINDS.length`로 만듭니다. */
+  readonly completedBlockCount: number;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -37,6 +39,7 @@ export function toInterviewListItemPayload(item: InterviewListItem): InterviewLi
     repoName: item.repoName,
     title: item.title,
     status: item.status,
+    completedBlockCount: item.completedBlockCount,
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
   };

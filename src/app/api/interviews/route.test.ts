@@ -12,6 +12,7 @@ import {
 } from "@/lib/github/auth-session";
 import { handleCreateInterview, handleListInterviews } from "./route";
 import { emptyInterviewProgress } from "@/features/experience-block/progress";
+import { emptyExperienceBlockState } from "@/features/experience-block/types";
 
 const OWNER_ID = 44727850;
 const OTHER_ID = 13579246;
@@ -181,7 +182,7 @@ describe("GET /api/interviews", () => {
       githubUserId: OWNER_ID,
       interviewId: second.interviewId,
       turn: [{ role: "answer", text: "답변" }],
-      blockState: { version: 1 } as never,
+      blockState: { ...emptyExperienceBlockState(), version: 1 },
       progress: emptyInterviewProgress(),
       expectedBlockVersion: 0,
     });
@@ -202,6 +203,30 @@ describe("GET /api/interviews", () => {
     expect(typeof item.createdAt).toBe("string");
     expect(new Date(item.updatedAt).toISOString()).toBe(item.updatedAt);
     expect(item).not.toHaveProperty("openedAt");
+  });
+
+  // 목록 행의 `PAAR n/4`입니다. 응답에 싣지 않으면 화면이 진행도를 그릴 방법이 없습니다.
+  it("충분한 블록 수를 목록 응답에 싣는다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await (await handleCreateInterview(request(createBody()), store)).json();
+    await store.appendTurn({
+      githubUserId: OWNER_ID,
+      interviewId,
+      turn: [{ role: "answer", text: "답변" }],
+      blockState: {
+        ...emptyExperienceBlockState(),
+        version: 1,
+        evaluation: {
+          ...emptyExperienceBlockState().evaluation,
+          problem: { sufficient: true, askable: false, reason: "sufficient" },
+        },
+      },
+      progress: emptyInterviewProgress(),
+      expectedBlockVersion: 0,
+    });
+
+    const [item] = (await (await handleListInterviews(request(null, { method: "GET" }), store)).json()).interviews;
+    expect(item.completedBlockCount).toBe(1);
   });
 
   it("다른 사용자의 인터뷰는 목록에 없다", async () => {

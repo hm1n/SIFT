@@ -116,6 +116,13 @@ export interface InterviewListItem {
   readonly repoName: string;
   readonly title: string;
   readonly status: InterviewStatus;
+  /**
+   * 충분하다고 평가된 블록 수입니다. 목록 행의 `PAAR n/4`에서 n입니다. 분모는 `BLOCK_KINDS.length`입니다.
+   *
+   * 블록 상태 전체를 목록에 싣지 않고 이 수만 셉니다. 목록은 저장된 인터뷰를 전부 돌려주는데, 인터뷰
+   * 하나의 블록 상태에는 주장과 표시 문장이 모두 들어 있어 목록 응답이 화면이 쓰지 않는 값으로 부풉니다.
+   */
+  readonly completedBlockCount: number;
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly openedAt: Date;

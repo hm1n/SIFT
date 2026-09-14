@@ -13,7 +13,7 @@ import type {
 import type { InterviewProgress } from "@/features/experience-block/progress";
 import { emptyInterviewProgress } from "@/features/experience-block/progress";
 import type { ExperienceBlockState } from "@/features/experience-block/types";
-import { emptyExperienceBlockState } from "@/features/experience-block/types";
+import { BLOCK_KINDS, emptyExperienceBlockState } from "@/features/experience-block/types";
 import type { InterviewHistoryMessage } from "@/features/interview/history";
 
 /**
@@ -85,6 +85,23 @@ function toProgress(value: unknown): InterviewProgress {
   return known.every((block) => block in value) ? (value as InterviewProgress) : empty;
 }
 
+/**
+ * 충분하다고 평가된 블록 수를 세는 식입니다. `countSufficientBlocks`가 내는 값과 같아야 합니다.
+ *
+ * 이 수를 코드가 아니라 질의에서 셉니다. 코드에서 세려면 목록 질의가 블록 상태를 통째로 실어 와야
+ * 하는데, 인터뷰 하나의 블록 상태에는 주장과 표시 문장이 모두 들어 있어 화면이 쓰지 않는 값이 목록
+ * 응답의 대부분을 차지하게 됩니다.
+ *
+ * 블록 이름 넷은 `BLOCK_KINDS`에서 만듭니다. 값이 컴파일 시점에 고정된 낱말이라 질의문에 그대로
+ * 끼워도 안전하고, 여기에 다시 적으면 이름이 바뀔 때 한쪽만 남습니다. `jsonb_each`는 객체가 아닌
+ * 값을 받으면 오류를 내므로 모양을 먼저 봅니다(칸을 더하기 전에 만들어진 줄).
+ */
+const COMPLETED_BLOCK_COUNT_SQL = `(select count(*)
+            from jsonb_each(case when jsonb_typeof(s.block_state -> 'evaluation') = 'object'
+                                 then s.block_state -> 'evaluation' else '{}'::jsonb end) e
+           where e.key in (${BLOCK_KINDS.map((kind) => `'${kind}'`).join(", ")})
+             and e.value ->> 'sufficient' = 'true')::int as completed_block_count`;
+
 function toListItem(row: Record<string, unknown>): InterviewListItem {
   return {
     id: row.id as string,
@@ -92,6 +109,7 @@ function toListItem(row: Record<string, unknown>): InterviewListItem {
     repoName: row.repo_name as string,
     title: row.title as string,
     status: toStatus(row.status),
+    completedBlockCount: row.completed_block_count as number,
     createdAt: row.created_at as Date,
     updatedAt: row.updated_at as Date,
     openedAt: row.opened_at as Date,
@@ -226,6 +244,7 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
     async listInterviews(githubUserId: number): Promise<InterviewListItem[]> {
       const rows = await run(
         `select s.id, s.title, s.status, s.created_at, s.updated_at, s.opened_at,
+                ${COMPLETED_BLOCK_COUNT_SQL},
                 ra.repo_owner, ra.repo_name
            from interview_session s
            join repository_analysis ra on ra.id = s.analysis_id
@@ -249,6 +268,7 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
           where s.id = $1 and s.analysis_id = ra.id and ra.github_user_id = $2
          returning s.id, s.analysis_id, s.candidate_key, s.title, s.evidence, s.history,
                    s.block_state, s.block_version, s.status, s.progress,
+                   ${COMPLETED_BLOCK_COUNT_SQL},
                    s.created_at, s.updated_at, s.opened_at,
                    ra.repo_owner, ra.repo_name`,
         [id, githubUserId]

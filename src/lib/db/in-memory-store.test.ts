@@ -315,6 +315,37 @@ describe("메모리 저장 계층", () => {
     }
   });
 
+  /**
+   * 목록 행의 `PAAR n/4`입니다. 아직 평가가 없는 블록은 `null`이라 세지 않습니다. Neon 구현은 같은
+   * 값을 질의에서 세므로 두 구현이 같은 수를 내야 합니다.
+   */
+  it("목록은 충분하다고 평가된 블록 수를 함께 돌려준다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seed(store);
+    const blockState = {
+      ...emptyExperienceBlockState(),
+      version: 1,
+      evaluation: {
+        ...emptyExperienceBlockState().evaluation,
+        problem: { sufficient: true, askable: false, reason: "sufficient" as const },
+        action: { sufficient: false, askable: true, reason: "askable" as const },
+      },
+    };
+
+    expect((await store.listInterviews(OWNER_ID))[0].completedBlockCount).toBe(0);
+
+    await store.appendTurn({
+      githubUserId: OWNER_ID,
+      interviewId,
+      turn: [{ role: "answer", text: "답변" }],
+      blockState,
+      progress: emptyInterviewProgress(),
+      expectedBlockVersion: 0,
+    });
+
+    expect((await store.listInterviews(OWNER_ID))[0].completedBlockCount).toBe(1);
+  });
+
   it("목록은 마지막으로 이어간 시각이 최근인 순서로 돌려준다", async () => {
     vi.useFakeTimers();
     try {

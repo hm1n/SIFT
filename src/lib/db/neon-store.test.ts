@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { emptyInterviewProgress } from "@/features/experience-block/progress";
-import { emptyExperienceBlockState } from "@/features/experience-block/types";
+import { BLOCK_KINDS, emptyExperienceBlockState } from "@/features/experience-block/types";
 import { DatabaseError } from "./client";
 import { neonStore, type SqlExecutor } from "./neon-store";
 import type { SiftStore } from "./store";
@@ -262,6 +262,7 @@ describe("Neon 저장 계층", () => {
       block_version: 2,
       status: "in_progress",
       progress: emptyInterviewProgress(),
+      completed_block_count: 2,
       created_at: new Date("2026-09-01T00:00:00Z"),
       updated_at: new Date("2026-09-10T00:00:00Z"),
       opened_at: new Date("2026-09-14T00:00:00Z"),
@@ -286,6 +287,7 @@ describe("Neon 저장 계층", () => {
         blockState: blockStateAt(2),
         blockVersion: 2,
         progress: emptyInterviewProgress(),
+        completedBlockCount: 2,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         openedAt: row.opened_at,
@@ -308,6 +310,30 @@ describe("Neon 저장 계층", () => {
 
       expect(calls[0].text).toContain("order by s.updated_at desc");
       expect(items[0]).toMatchObject({ id: INTERVIEW_ID, repoOwner: "hm1n", repoName: "SIFT" });
+    });
+
+    /**
+     * 목록 행의 `PAAR n/4`입니다. 코드에서 세려면 목록이 블록 상태를 통째로 실어 와야 하므로 질의가
+     * 셉니다. 질의에서 세는 것을 잊고 칸만 읽으면 화면의 진행도가 조용히 빈 값이 됩니다.
+     */
+    it.each([
+      ["목록", (store: SiftStore) => store.listInterviews(OWNER_ID)],
+      ["복원", (store: SiftStore) => store.getInterview(INTERVIEW_ID, OWNER_ID)],
+    ])("%s 질의가 충분한 블록 수를 함께 센다", async (_label, call) => {
+      const { execute, calls } = fakeExecute([[row]]);
+      await call(neonStore(execute));
+
+      expect(calls[0].text).toContain("as completed_block_count");
+      expect(calls[0].text).toContain("'sufficient' = 'true'");
+      // 블록 이름은 `BLOCK_KINDS`에서 만듭니다. 넷 중 하나라도 빠지면 진행도가 4분의 1씩 어긋납니다.
+      for (const kind of BLOCK_KINDS) expect(calls[0].text).toContain(`'${kind}'`);
+    });
+
+    it("셈이 비어 있는 인터뷰는 진행도가 0이다", async () => {
+      const { execute } = fakeExecute([[{ ...row, completed_block_count: 0 }]]);
+      const items = await neonStore(execute).listInterviews(OWNER_ID);
+
+      expect(items[0].completedBlockCount).toBe(0);
     });
 
     /**
