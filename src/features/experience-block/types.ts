@@ -21,6 +21,22 @@ export const BLOCK_PURPOSES: Readonly<Record<BlockKind, string>> = {
   result: "결과: 변경 뒤 관찰한 변화와, 그것을 확인한 방법",
 };
 
+/**
+ * 블록 목적을 이루는 두 요소입니다. `a`가 앞 절, `b`가 뒷 절입니다(`BLOCK_PURPOSES`를 "와," 기준으로
+ * 나눈 것과 같습니다). 이슈 #90 "같은 부족 요소에 최대 1회 재질문" 규칙을 구현하는 최소 추적 단위로
+ * 씁니다. 모델이 자유 형식으로 부족 요소를 지어내게 하면 같은 뜻을 다른 이름으로 내 재질문 제한을
+ * 우회할 수 있어, 제품이 고정한 이 두 값만 씁니다.
+ */
+export const BLOCK_ELEMENTS = ["a", "b"] as const;
+export type BlockElement = (typeof BLOCK_ELEMENTS)[number];
+
+export const BLOCK_ELEMENT_PURPOSES: Readonly<Record<BlockKind, Readonly<Record<BlockElement, string>>>> = {
+  problem: { a: "이 작업을 시작하게 만든 상황", b: "기존 방식이 만든 구체적인 비용이나 한계" },
+  alternatives: { a: "실제로 검토한 선택지", b: "그것을 고르거나 버린 이유" },
+  action: { a: "실제로 택한 방식", b: "코드에서 확인되는 구체적인 구현" },
+  result: { a: "변경 뒤 관찰한 변화", b: "그것을 확인한 방법" },
+};
+
 /** 주장의 출처입니다. 한 주장에 두 종류가 함께 붙을 수 있습니다. */
 export type ClaimSource =
   | { readonly source: "repository"; readonly commitSha: string; readonly filePath: string | null }
@@ -66,6 +82,17 @@ export interface BlockEvaluation {
   readonly reason: ProgressReason;
 }
 
+/**
+ * 이번 질문이 겨냥한 블록·요소 하나에 대한 이번 답변의 반응입니다. 블록 전체의 누적 평가인
+ * `BlockEvaluation`과 달리, 방금 던진 질문 하나에 한정된 값입니다.
+ *
+ * `unanswered`는 답변이 이 질문과 무관했거나 반응이 없던 경우입니다. `unknown`(기억나지 않음)과
+ * 구분합니다. 기억나지 않는다는 명시적 답변이 아닌 것을 기억 못 하는 것으로 잘못 세면 재질문 예산을
+ * 엉뚱하게 소진시킵니다.
+ */
+export const TARGET_RESPONSES = ["provided", "unknown", "not_done", "refused", "unanswered"] as const;
+export type TargetResponse = (typeof TARGET_RESPONSES)[number];
+
 export interface ExperienceBlockState {
   /** 갱신이 반영될 때마다 1씩 오릅니다. 요청의 기준 버전과 다르면 응답을 적용하지 않습니다. */
   readonly version: number;
@@ -97,6 +124,8 @@ export interface BlockUpdateOutput {
   readonly ops: readonly ClaimOp[];
   readonly display: readonly BlockDisplayOutput[];
   readonly evaluation: readonly BlockEvaluationOutput[];
+  /** 이번 호출이 겨냥한 블록·요소 하나에 대한 이번 답변의 반응입니다. `targetResponse` 참고. */
+  readonly targetResponse: TargetResponse;
 }
 
 export function emptyExperienceBlockState(): ExperienceBlockState {
@@ -112,4 +141,12 @@ export function emptyExperienceBlockState(): ExperienceBlockState {
 
 export function isBlockKind(value: unknown): value is BlockKind {
   return typeof value === "string" && (BLOCK_KINDS as readonly string[]).includes(value);
+}
+
+export function isBlockElement(value: unknown): value is BlockElement {
+  return typeof value === "string" && (BLOCK_ELEMENTS as readonly string[]).includes(value);
+}
+
+export function isTargetResponse(value: unknown): value is TargetResponse {
+  return typeof value === "string" && (TARGET_RESPONSES as readonly string[]).includes(value);
 }

@@ -114,9 +114,9 @@ export async function handleExperienceBlockUpdate(
   if (!parsed.ok) {
     return errorResponse(parsed.kind, parsed.message);
   }
-  const { snapshot, history, state, targetBlock, answerTurnId } = parsed.body;
+  const { snapshot, history, state, targetBlock, targetElement, answerTurnId } = parsed.body;
 
-  const prompt = buildBlockUpdatePrompt({ snapshot, state, history, targetBlock, answerTurnId });
+  const prompt = buildBlockUpdatePrompt({ snapshot, state, history, targetBlock, targetElement, answerTurnId });
   const generate = options.generate ?? defaultGenerate;
 
   let modelOutput: BlockUpdateOutput;
@@ -132,7 +132,7 @@ export async function handleExperienceBlockUpdate(
     return errorResponse(mapped.kind, mapped.message);
   }
 
-  const result = applyBlockUpdate(state, modelOutput, { snapshot, turnId: answerTurnId });
+  const result = applyBlockUpdate(state, modelOutput, { snapshot, turnId: answerTurnId, targetBlock });
   if (!result.ok) {
     return errorResponse(
       "block_update_rejected",
@@ -146,6 +146,7 @@ export async function handleExperienceBlockUpdate(
     display: Object.fromEntries(BLOCK_KINDS.map((block) => [block, markDisplay(result.state, block)])),
     conflicts: Object.fromEntries(BLOCK_KINDS.map((block) => [block, blockConflicts(result.state, block)])),
     warnings: result.warnings,
+    targetResponse: result.targetResponse,
   });
 }
 

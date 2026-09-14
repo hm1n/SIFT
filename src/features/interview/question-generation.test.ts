@@ -287,6 +287,47 @@ describe("대화 이력", () => {
   });
 });
 
+describe("lastOutcome (구현검토 2026-09-11 P1-5)", () => {
+  const history = [
+    { role: "question" as const, text: "왜 이 구조를 골랐나요?" },
+    { role: "answer" as const, text: "재시도 비용을 줄이려고요." },
+  ];
+  const lastOutcome = {
+    blockUpdateFailed: false,
+    targetResponse: "unknown" as const,
+    conflicts: [{ observation: "근거는 fetch 기반 수신을 보여 줍니다." }],
+  };
+
+  it("lastOutcome이 없으면 null이고 메시지가 늘지 않는다", () => {
+    const prompt = buildInterviewQuestionPrompt(snapshot, { history });
+    expect(prompt.lastOutcome).toBeNull();
+    // evidence + 질문 + 답변, focus·lastOutcome 없이 셋뿐입니다.
+    expect(toInterviewQuestionMessages(prompt)).toHaveLength(3);
+  });
+
+  it("lastOutcome을 주면 JSON 문자열로 담고 focus보다 앞선 별도 메시지로 싣는다", () => {
+    const prompt = buildInterviewQuestionPrompt(snapshot, {
+      history,
+      targetBlock: "action",
+      targetElement: "b",
+      lastOutcome,
+    });
+    expect(prompt.lastOutcome).toBe(JSON.stringify(lastOutcome));
+
+    const messages = toInterviewQuestionMessages(prompt);
+    // evidence, question, answer, lastOutcome, focus 순서입니다.
+    expect(messages).toHaveLength(5);
+    expect(messages[3]).toEqual({ role: "user", content: prompt.lastOutcome });
+    expect(messages[4]).toEqual({ role: "user", content: prompt.focus });
+  });
+
+  it("프롬프트 바이트에 lastOutcome이 들어간다", () => {
+    const without = buildInterviewQuestionPrompt(snapshot, { history });
+    const withOutcome = buildInterviewQuestionPrompt(snapshot, { history, lastOutcome });
+    expect(interviewQuestionPromptBytes(withOutcome)).toBeGreaterThan(interviewQuestionPromptBytes(without));
+  });
+});
+
 describe("출력 상한", () => {
   it("생성 호출에 출력 상한을 싣는다", () => {
     // 상한이 빠지면 질문이 이력 항목 상한을 넘길 수 있고, 그때 클라이언트는 제출을 잠급니다.

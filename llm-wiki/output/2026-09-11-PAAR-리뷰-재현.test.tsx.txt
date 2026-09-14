@@ -1,0 +1,139 @@
+// @vitest-environment jsdom
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
+import { encodeSseEvent } from "@/features/interview/sse";
+import { emptyInterviewProgress, recordAsked, recordResponse, selectNextTarget } from "@/features/experience-block/progress";
+import { emptyExperienceBlockState } from "@/features/experience-block/types";
+import { useExperienceInterview } from "@/features/experience-block/use-experience-interview";
+
+afterEach(cleanup);
+const snapshot = evidenceSnapshotFixture();
+const full = { sufficient: true, askable: false, reason: "sufficient" as const };
+function body(version = 1, done = false) {
+  const state = { ...emptyExperienceBlockState(), version };
+  if (done) state.evaluation = { problem: full, alternatives: full, action: full, result: full };
+  return { state, affectedBlocks: [], targetResponse: "provided" };
+}
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => { resolve = r; });
+  return { promise, resolve };
+}
+function response(value: unknown, status = 200) {
+  return { ok: status === 200, status, json: async () => value } as Response;
+}
+function mount(blockFetch: (init: RequestInit) => Promise<Response>) {
+  let questionCount = 0;
+  const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === "/block") return blockFetch(init!);
+    questionCount++;
+    return new Response(encodeSseEvent({ type: "chunk", seq: 1, text: `Question ${questionCount}` }) + encodeSseEvent({ type: "done", seq: 1 }), { headers: { "Content-Type": "text/event-stream" } });
+  });
+  const hook = renderHook(() => useExperienceInterview({ questionUrl: "/question", blockUpdateUrl: "/block", snapshot, fetchImpl, retryDelaysMs: [], scheduleFrame: (cb) => { cb(); return 0; }, cancelFrame: () => {} }));
+  return { ...hook, fetchImpl, questionCount: () => questionCount };
+}
+async function submit(h: ReturnType<typeof mount>, answer: string) {
+  await waitFor(() => expect(h.result.current.canSubmitAnswer).toBe(true));
+  act(() => { expect(h.result.current.submitAnswer(answer)).toBe(true); });
+}
+
+it("R1: a first unknown after provided must retain its one retry", () => {
+  let p = recordAsked(emptyInterviewProgress(), "problem", "a");
+  p = recordResponse(p, "problem", "a", "provided");
+  p = recordAsked(p, "problem", "a");
+  p = recordResponse(p, "problem", "a", "unknown");
+  expect(p.problem.elements.a.reaskUsed).toBe(false);
+});
+
+it("R2: asking after unknown consumes the retry even when the answer is unrelated", () => {
+  let p = recordAsked(emptyInterviewProgress(), "problem", "a");
+  p = recordResponse(p, "problem", "a", "unknown");
+  p = recordAsked(p, "problem", "a");
+  p = recordResponse(p, "problem", "a", "unanswered");
+  expect(p.problem.elements.a.reaskUsed).toBe(true);
+});
+
+it("R3: successful t2 must not erase unresolved t1", async () => {
+  let calls = 0;
+  const h = mount(async () => ++calls === 1 ? response({ error: { kind: "block_update_rejected", message: "rejected" } }, 502) : response(body()));
+  await submit(h, "t1 answer");
+  await waitFor(() => expect(h.result.current.unreflectedTurnId).toBe("t1"));
+  await submit(h, "t2 answer");
+  await waitFor(() => expect(h.result.current.turnsUsed).toBe(2));
+  expect(h.result.current.unreflectedTurnId).toBe("t1");
+});
+
+it("R4: a late aborted retry must not replace a newer turn's state", async () => {
+  let calls = 0;
+  const late = deferred<unknown>();
+  const h = mount(async () => {
+    calls++;
+    if (calls === 1) return response({ error: { kind: "block_update_rejected" } }, 502);
+    if (calls === 2) return { ok: true, status: 200, json: () => late.promise } as Response;
+    return response(body(2));
+  });
+  await submit(h, "t1 answer");
+  await waitFor(() => expect(h.result.current.unreflectedTurnId).toBe("t1"));
+  act(() => h.result.current.retryUnreflectedBlockUpdate());
+  await waitFor(() => expect(calls).toBe(2));
+  await submit(h, "t2 answer");
+  await waitFor(() => expect(h.result.current.blockState.version).toBe(2));
+  await act(async () => { late.resolve(body(1)); await late.promise; });
+  expect(h.result.current.blockState.version).toBe(2);
+});
+
+it("R5: unmount must cancel the block update and prevent a later question", async () => {
+  const late = deferred<Response>();
+  let signal: AbortSignal | undefined;
+  const h = mount(async (init) => { signal = init.signal!; return late.promise; });
+  await submit(h, "t1 answer");
+  await waitFor(() => expect(signal).toBeDefined());
+  h.unmount();
+  await act(async () => { late.resolve(response(body())); await late.promise; });
+  expect({ aborted: signal!.aborted, questionCount: h.questionCount() }).toEqual({ aborted: true, questionCount: 1 });
+});
+
+it("R6: ending during update must preserve or finish the submitted answer", async () => {
+  let calls = 0;
+  const h = mount(async (init) => {
+    calls++;
+    return new Promise<Response>((_resolve, reject) => init.signal!.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError"))));
+  });
+  await submit(h, "t1 answer");
+  await waitFor(() => expect(calls).toBe(1));
+  await act(async () => { h.result.current.endInterview(); });
+  expect(h.result.current.isEnded).toBe(true);
+  expect(h.result.current.unreflectedTurnId === "t1" || calls > 1 || h.result.current.blockState.version > 0).toBe(true);
+});
+
+it("R7: ready-to-finish must allow a supplemental answer before user ends", async () => {
+  const h = mount(async () => response(body(1, true)));
+  await submit(h, "all information");
+  await waitFor(() => expect(h.result.current.isReadyToFinish).toBe(true));
+  expect(h.result.current.isEnded).toBe(false);
+  let accepted = false;
+  act(() => { accepted = h.result.current.submitAnswer("a correction before ending"); });
+  expect(accepted).toBe(true);
+});
+
+it("R8: a block already populated by another answer must not reserve an unvisited slot", () => {
+  const askable = { sufficient: false, askable: true, reason: "askable" as const };
+  const next = selectNextTarget({
+    evaluation: { problem: askable, alternatives: askable, action: null, result: null },
+    progress: recordAsked(emptyInterviewProgress(), "problem", "a"),
+    turnsUsed: 7, maxTurns: 10, isEnded: false,
+    lastTarget: { block: "problem", element: "a" },
+  });
+  expect(next).toEqual({ kind: "ask", block: "problem", element: "b" });
+});
+
+it("R9: automatic turn-limit ending should attempt final cleanup when the last update fails", async () => {
+  let calls = 0;
+  const h = mount(async () => ++calls === 10
+    ? response({ error: { kind: "block_update_rejected" } }, 502)
+    : response(body(calls)));
+  for (let turn = 1; turn <= 10; turn++) await submit(h, `answer ${turn}`);
+  await waitFor(() => expect(h.result.current.isEnded).toBe(true));
+  expect(calls).toBe(11);
+});
