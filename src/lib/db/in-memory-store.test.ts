@@ -110,7 +110,62 @@ describe("메모리 저장 계층", () => {
     expect(await store.deleteInterview(interviewId, OWNER_ID)).toBe(false);
   });
 
-  it("목록은 마지막으로 연 시각이 최근인 순서로 돌려준다", async () => {
+  // 갱신하지 않으면 90일 정리가 매일 여는 인터뷰도 만든 지 90일이면 지웁니다.
+  it("인터뷰를 열면 openedAt을 갱신해 돌려준다", async () => {
+    vi.useFakeTimers();
+    try {
+      const store = createInMemoryStore();
+      vi.setSystemTime(new Date("2026-09-01T00:00:00Z"));
+      const { interviewId } = await seed(store);
+
+      vi.setSystemTime(new Date("2026-11-20T00:00:00Z"));
+      const opened = await store.getInterview(interviewId, OWNER_ID);
+      expect(opened?.openedAt).toEqual(new Date("2026-11-20T00:00:00Z"));
+      expect(opened?.createdAt).toEqual(new Date("2026-09-01T00:00:00Z"));
+
+      // 만든 지 90일이 지났어도 방금 열었으므로 정리 대상이 아닙니다.
+      expect(await store.purgeInterviewsOpenedBefore(new Date(Date.now() - 90 * 24 * 60 * 60 * 1000))).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("턴을 이어 붙이면 updatedAt만 갱신하고 openedAt은 두지 않는다", async () => {
+    vi.useFakeTimers();
+    try {
+      const store = createInMemoryStore();
+      vi.setSystemTime(new Date("2026-09-01T00:00:00Z"));
+      const { interviewId } = await seed(store);
+
+      vi.setSystemTime(new Date("2026-09-05T00:00:00Z"));
+      await store.appendTurn({ interviewId, turn: [{ role: "answer", text: "답변" }], blockState: blockStateAt(1), expectedBlockVersion: 0 });
+
+      const [item] = await store.listInterviews(OWNER_ID);
+      expect(item.updatedAt).toEqual(new Date("2026-09-05T00:00:00Z"));
+      expect(item.openedAt).toEqual(new Date("2026-09-01T00:00:00Z"));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("버전이 어긋나 저장하지 않으면 updatedAt도 그대로 둔다", async () => {
+    vi.useFakeTimers();
+    try {
+      const store = createInMemoryStore();
+      vi.setSystemTime(new Date("2026-09-01T00:00:00Z"));
+      const { interviewId } = await seed(store);
+
+      vi.setSystemTime(new Date("2026-09-05T00:00:00Z"));
+      expect(await store.appendTurn({ interviewId, turn: [], blockState: blockStateAt(9), expectedBlockVersion: 7 })).toBe("version_conflict");
+
+      const [item] = await store.listInterviews(OWNER_ID);
+      expect(item.updatedAt).toEqual(new Date("2026-09-01T00:00:00Z"));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("목록은 마지막으로 이어간 시각이 최근인 순서로 돌려준다", async () => {
     vi.useFakeTimers();
     try {
       const store = createInMemoryStore();

@@ -22,10 +22,19 @@ export interface SiftStore {
    *
    * `expectedBlockVersion`이 저장된 값과 다르면 아무것도 쓰지 않고 `version_conflict`를 돌려줍니다.
    * 다른 탭이 먼저 저장한 경우입니다.
+   *
+   * 저장에 성공하면 `updatedAt`을 갱신합니다.
    */
   appendTurn(input: AppendTurn): Promise<AppendTurnResult>;
+  /** 마지막으로 이어간 시각이 최근인 순서입니다. */
   listInterviews(githubUserId: number): Promise<InterviewListItem[]>;
-  /** 다른 사용자의 것이면 `null`입니다. 읽은 뒤에 비교하지 않고 조회 조건에 사용자 번호를 넣습니다. */
+  /**
+   * 다른 사용자의 것이면 `null`입니다. 읽은 뒤에 비교하지 않고 조회 조건에 사용자 번호를 넣습니다.
+   *
+   * 읽기이지만 `openedAt`을 갱신하고 갱신된 값을 돌려줍니다. 이 호출이 곧 "인터뷰를 여는 것"이고,
+   * `openedAt`이 90일 자동 정리의 기준이기 때문입니다. 갱신하지 않으면 매일 여는 인터뷰도 만든 지
+   * 90일이면 지워집니다.
+   */
   getInterview(id: string, githubUserId: number): Promise<StoredInterview | null>;
   /** 지운 것이 없으면 `false`입니다. 없는 경우와 남의 것인 경우를 구분하지 않습니다. */
   deleteInterview(id: string, githubUserId: number): Promise<boolean>;
@@ -60,12 +69,24 @@ export type AppendTurnResult = "saved" | "version_conflict" | "not_found";
 
 export type InterviewStatus = "in_progress" | "completed";
 
+/**
+ * 시간 칸이 셋이고 뜻이 각각 다릅니다. 표의 `created_at`, `updated_at`, `opened_at`에 맞닿습니다.
+ *
+ * - `createdAt`은 인터뷰를 만든 때입니다. 바뀌지 않습니다.
+ * - `updatedAt`은 마지막으로 이어간 때입니다. `appendTurn`이 갱신하고, 목록이 화면에 보이는 값입니다.
+ * - `openedAt`은 마지막으로 연 때입니다. `getInterview`가 갱신하고, 90일 자동 정리의 기준입니다.
+ *
+ * 하나로 합치지 않는 이유는 둘의 쓰임이 다르기 때문입니다. 목록에서 고르기만 하고 답을 달지 않아도
+ * 사용자는 그 인터뷰를 쓰고 있으므로 정리 대상이 아니어야 합니다.
+ */
 export interface InterviewListItem {
   readonly id: string;
   readonly repoOwner: string;
   readonly repoName: string;
   readonly title: string;
   readonly status: InterviewStatus;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
   readonly openedAt: Date;
 }
 

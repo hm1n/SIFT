@@ -21,6 +21,8 @@ interface InterviewRow extends NewInterview {
   blockState: StoredInterview["blockState"];
   blockVersion: number;
   status: StoredInterview["status"];
+  createdAt: Date;
+  updatedAt: Date;
   openedAt: Date;
 }
 
@@ -46,6 +48,8 @@ export function createInMemoryStore(): SiftStore {
       repoName: analysis.repoName,
       title: interview.title,
       status: interview.status,
+      createdAt: interview.createdAt,
+      updatedAt: interview.updatedAt,
       openedAt: interview.openedAt,
     };
   }
@@ -71,6 +75,8 @@ export function createInMemoryStore(): SiftStore {
         blockState: emptyExperienceBlockState(),
         blockVersion: 0,
         status: "in_progress",
+        createdAt: new Date(),
+        updatedAt: new Date(),
         openedAt: new Date(),
       });
       return id;
@@ -83,6 +89,7 @@ export function createInMemoryStore(): SiftStore {
       interview.history = [...interview.history, ...turn];
       interview.blockState = blockState;
       interview.blockVersion = blockState.version;
+      interview.updatedAt = new Date();
       return "saved";
     },
 
@@ -92,7 +99,7 @@ export function createInMemoryStore(): SiftStore {
           const analysis = ownedBy(interview, githubUserId);
           return analysis ? [toListItem(interview, analysis)] : [];
         })
-        .sort((a, b) => b.openedAt.getTime() - a.openedAt.getTime());
+        .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
     },
 
     async getInterview(id, githubUserId) {
@@ -100,6 +107,8 @@ export function createInMemoryStore(): SiftStore {
       if (!interview) return null;
       const analysis = ownedBy(interview, githubUserId);
       if (!analysis) return null;
+      // 이 호출이 곧 "인터뷰를 여는 것"입니다. 갱신하지 않으면 90일 정리가 쓰는 인터뷰를 지웁니다.
+      interview.openedAt = new Date();
       return {
         ...toListItem(interview, analysis),
         analysisId: interview.analysisId,
