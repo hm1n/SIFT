@@ -482,7 +482,10 @@ describe("출력 계약 프롬프트", () => {
       new AbortController().signal
     );
 
-    return generateObjectMock.mock.calls.at(-1)![0].system ?? "";
+    const { system } = generateObjectMock.mock.calls.at(-1)![0];
+    // `system`은 문자열 한 덩어리로 조립해 넘깁니다. 문구의 등장 순서를 보는 테스트가 있어
+    // 여기서 문자열로 좁혀 둡니다.
+    return typeof system === "string" ? system : "";
   }
 
   /**
@@ -553,7 +556,21 @@ describe("출력 계약 프롬프트", () => {
     expect(system).toContain("두세 낱말짜리 명사구로 짧게 적습니다");
     expect(system).toContain("어느 프로젝트에나 해당하는 말은 항목으로 쓰지 말고");
     expect(system).toContain("summary에 쓴 문장을 그대로 옮기지 마세요");
-    expect(system).toContain("한글이면 한글로, 영어면 영어로");
+    expect(system).toContain("summary와 technicalTopics 두 필드만은 커밋 메시지와 같은 언어로 적습니다");
+    expect(system).toContain("뒤에 나오는 응답 언어 지시보다 우선합니다");
     expect(system).toContain("넣을 것이 없으면 빈 배열로 두세요");
+  });
+
+  /**
+   * PR #118 CodeRabbit 리뷰 회귀입니다. 프롬프트 끝의 "한국어로 답하세요"는 응답 전체에 걸리므로,
+   * 두 필드의 언어 규칙이 그보다 앞에 있고 우선한다고 적혀 있어야 영어 저장소에서 제목과 토픽이
+   * 한국어로 끌려가지 않습니다. 순서가 뒤집히면 문구가 남아 있어도 효력을 잃습니다.
+   */
+  it("두 필드의 언어 규칙이 전체 응답 언어 지시보다 앞에 온다", async () => {
+    const system = await capturedSystemPrompt(3);
+
+    expect(system.indexOf("커밋 메시지와 같은 언어로 적습니다")).toBeLessThan(
+      system.indexOf("한국어로 답하세요")
+    );
   });
 });
