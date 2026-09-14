@@ -3,6 +3,7 @@ import { serializedByteLength } from "@/features/experience-candidates/evidence-
 import type { BlockUpdateTurn } from "@/features/interview/block-prompt";
 import { INTERVIEW_HISTORY_ITEM_MAX_BYTES, INTERVIEW_MAX_TURNS } from "@/features/interview/history";
 import { isExperienceEvidenceSnapshot, SNAPSHOT_BODY_BYTES } from "@/features/interview/question-request";
+import { isInterviewProgress, type InterviewProgress } from "./progress";
 import { byteLength, CLAIMS_STATE_MAX_BYTES, evidenceIndex } from "./reducer";
 import {
   BLOCK_KINDS,
@@ -64,6 +65,21 @@ export interface ExperienceBlockSaveTarget {
   readonly expectedBlockVersion: number;
   /** 앞선 턴에서 저장이 실패해 아직 저장되지 않은 턴입니다. 이번 턴과 함께 이어 붙입니다. */
   readonly pendingTurnIds?: readonly string[];
+  /**
+   * 이번 답변을 반영하기 **전**의 질문 진행 상태입니다. 질문을 보낸 기록(`recordAsked`)까지는 들어
+   * 있고 이번 답변의 반응은 아직 들어 있지 않습니다.
+   *
+   * 반영한 뒤의 값을 받지 않는 이유는, 반영에 필요한 `targetResponse`를 모델 출력에서 서버가 계산하기
+   * 때문입니다. 클라이언트는 요청을 보내는 시점에 그 값을 알 수 없습니다. 그래서 반영 전 값을 받아
+   * 서버가 `recordResponse`를 적용해 저장합니다. 이렇게 해야 저장된 진행 상태와 블록 상태가 같은
+   * 응답에서 나온 값이 됩니다.
+   */
+  readonly progress: InterviewProgress;
+  /**
+   * 이번에 답한 질문을 보낸 시점의 그 요소 `askedCount`입니다. `recordResponse`가 처음 `unknown`을
+   * 받은 시점을 기록할 때 쓰고, "지금" 값을 대신 쓰면 재질문 예산 판정이 어긋납니다.
+   */
+  readonly askedCountAtQuestion: number;
 }
 
 /**
@@ -366,6 +382,12 @@ function parseSaveTarget(
   if (!isNonNegativeInt(value.expectedBlockVersion)) {
     return { ok: false, message: "save.expectedBlockVersion은 0 이상의 정수여야 합니다." };
   }
+  if (!isInterviewProgress(value.progress)) {
+    return { ok: false, message: "save.progress 형식이 올바르지 않습니다." };
+  }
+  if (!isNonNegativeInt(value.askedCountAtQuestion)) {
+    return { ok: false, message: "save.askedCountAtQuestion은 0 이상의 정수여야 합니다." };
+  }
   const pendingTurnIds = value.pendingTurnIds;
   if (pendingTurnIds !== undefined) {
     if (!Array.isArray(pendingTurnIds) || !pendingTurnIds.every(isNonEmptyString)) {
@@ -382,6 +404,8 @@ function parseSaveTarget(
     target: {
       interviewId: value.interviewId,
       expectedBlockVersion: value.expectedBlockVersion as number,
+      progress: value.progress,
+      askedCountAtQuestion: value.askedCountAtQuestion as number,
       ...(pendingTurnIds === undefined ? {} : { pendingTurnIds: pendingTurnIds as readonly string[] }),
     },
   };

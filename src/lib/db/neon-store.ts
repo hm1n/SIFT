@@ -10,6 +10,8 @@ import type {
   SiftStore,
   StoredInterview,
 } from "./store";
+import type { InterviewProgress } from "@/features/experience-block/progress";
+import { emptyInterviewProgress } from "@/features/experience-block/progress";
 import type { ExperienceBlockState } from "@/features/experience-block/types";
 import { emptyExperienceBlockState } from "@/features/experience-block/types";
 import type { InterviewHistoryMessage } from "@/features/interview/history";
@@ -69,6 +71,18 @@ function toJsonb(value: unknown, column: string): string {
 function toStatus(value: unknown): InterviewStatus {
   if (value === "in_progress" || value === "completed") return value;
   throw new DatabaseError("query_failed", `status 칸에 모르는 값이 있습니다: ${String(value)}`);
+}
+
+/**
+ * `progress` 칸은 표에 나중에 더했고 기본값이 `'{}'`입니다. 그 칸이 생기기 전에 만들어진 줄은 빈
+ * 객체를 들고 있으므로, 블록이 하나도 없는 값을 그대로 돌려주면 읽는 쪽이 `progress.problem`에서
+ * 깨집니다. 블록 키가 갖춰지지 않은 값은 비어 있는 것으로 보고 초깃값을 돌려줍니다.
+ */
+function toProgress(value: unknown): InterviewProgress {
+  const empty = emptyInterviewProgress();
+  if (typeof value !== "object" || value === null) return empty;
+  const known = Object.keys(empty);
+  return known.every((block) => block in value) ? (value as InterviewProgress) : empty;
 }
 
 function toListItem(row: Record<string, unknown>): InterviewListItem {
@@ -132,8 +146,8 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
       const id = randomUUID();
       const rows = await run(
         `insert into interview_session
-           (id, analysis_id, candidate_key, title, evidence, history, block_state, block_version, status)
-         select $1::uuid, ra.id, $4::text, $5::text, $6::jsonb, '[]'::jsonb, $7::jsonb, 0, 'in_progress'
+           (id, analysis_id, candidate_key, title, evidence, history, block_state, block_version, status, progress)
+         select $1::uuid, ra.id, $4::text, $5::text, $6::jsonb, '[]'::jsonb, $7::jsonb, 0, 'in_progress', $8::jsonb
            from repository_analysis ra
           where ra.id = $2::uuid and ra.github_user_id = $3::bigint
          returning id`,
@@ -145,6 +159,7 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
           input.title,
           toJsonb(input.evidence, "evidence"),
           toJsonb(emptyExperienceBlockState(), "block_state"),
+          toJsonb(emptyInterviewProgress(), "progress"),
         ]
       );
       return rows.length > 0 ? (rows[0].id as string) : null;
@@ -163,6 +178,7 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
       interviewId,
       turn,
       blockState,
+      progress,
       expectedBlockVersion,
     }: AppendTurn): Promise<AppendTurnResult> {
       if (!isUuid(interviewId)) return "not_found";
@@ -175,6 +191,7 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
             set history = s.history || $3::jsonb,
                 block_state = $4::jsonb,
                 block_version = $5,
+                progress = $7::jsonb,
                 updated_at = now()
            from repository_analysis ra
           where s.id = $1
@@ -189,6 +206,7 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
           toJsonb(blockState, "block_state"),
           blockState.version,
           expectedBlockVersion,
+          toJsonb(progress, "progress"),
         ]
       );
       if (updated.length > 0) return "saved";
@@ -230,7 +248,7 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
            from repository_analysis ra
           where s.id = $1 and s.analysis_id = ra.id and ra.github_user_id = $2
          returning s.id, s.analysis_id, s.candidate_key, s.title, s.evidence, s.history,
-                   s.block_state, s.block_version, s.status,
+                   s.block_state, s.block_version, s.status, s.progress,
                    s.created_at, s.updated_at, s.opened_at,
                    ra.repo_owner, ra.repo_name`,
         [id, githubUserId]
@@ -245,6 +263,7 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
         history: row.history as readonly InterviewHistoryMessage[],
         blockState: row.block_state as ExperienceBlockState,
         blockVersion: row.block_version as number,
+        progress: toProgress(row.progress),
       };
     },
 

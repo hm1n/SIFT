@@ -8,6 +8,7 @@ import type {
   SiftStore,
   StoredInterview,
 } from "./store";
+import { emptyInterviewProgress } from "@/features/experience-block/progress";
 import { emptyExperienceBlockState } from "@/features/experience-block/types";
 import type { InterviewHistoryMessage } from "@/features/interview/history";
 
@@ -20,6 +21,7 @@ interface InterviewRow extends NewInterview {
   history: InterviewHistoryMessage[];
   blockState: StoredInterview["blockState"];
   blockVersion: number;
+  progress: StoredInterview["progress"];
   status: StoredInterview["status"];
   createdAt: Date;
   updatedAt: Date;
@@ -96,6 +98,7 @@ export function createInMemoryStore(): SiftStore {
         history: [],
         blockState: emptyExperienceBlockState(),
         blockVersion: 0,
+        progress: emptyInterviewProgress(),
         status: "in_progress",
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -104,7 +107,7 @@ export function createInMemoryStore(): SiftStore {
       return id;
     },
 
-    async appendTurn({ githubUserId, interviewId, turn, blockState, expectedBlockVersion }: AppendTurn): Promise<AppendTurnResult> {
+    async appendTurn({ githubUserId, interviewId, turn, blockState, progress, expectedBlockVersion }: AppendTurn): Promise<AppendTurnResult> {
       const interview = interviews.get(interviewId);
       if (!interview || !ownedBy(interview, githubUserId)) return "not_found";
       if (interview.blockVersion !== expectedBlockVersion) return "version_conflict";
@@ -115,6 +118,7 @@ export function createInMemoryStore(): SiftStore {
       interview.history = [...interview.history, ...asJsonb(turn)];
       interview.blockState = asJsonb(blockState);
       interview.blockVersion = blockState.version;
+      interview.progress = asJsonb(progress);
       interview.updatedAt = new Date();
       return "saved";
     },
@@ -143,6 +147,7 @@ export function createInMemoryStore(): SiftStore {
         history: interview.history,
         blockState: interview.blockState,
         blockVersion: interview.blockVersion,
+        progress: interview.progress,
       };
     },
 

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { emptyInterviewProgress } from "@/features/experience-block/progress";
 import { emptyExperienceBlockState } from "@/features/experience-block/types";
 import { createInMemoryStore } from "./in-memory-store";
 import type { SiftStore } from "./store";
@@ -49,6 +50,7 @@ describe("메모리 저장 계층", () => {
       interviewId,
       turn: [{ role: "question", text: "첫 질문" }, { role: "answer", text: "첫 답변" }],
       blockState: blockStateAt(1),
+      progress: emptyInterviewProgress(),
       expectedBlockVersion: 0,
     });
     await store.appendTurn({
@@ -56,6 +58,7 @@ describe("메모리 저장 계층", () => {
       interviewId,
       turn: [{ role: "question", text: "둘째 질문" }, { role: "answer", text: "둘째 답변" }],
       blockState: blockStateAt(2),
+      progress: emptyInterviewProgress(),
       expectedBlockVersion: 1,
     });
 
@@ -67,13 +70,14 @@ describe("메모리 저장 계층", () => {
   it("블록 버전이 어긋나면 아무것도 쓰지 않고 version_conflict를 돌려준다", async () => {
     const store = createInMemoryStore();
     const { interviewId } = await seed(store);
-    await store.appendTurn({ githubUserId: OWNER_ID, interviewId, turn: [{ role: "question", text: "첫 질문" }], blockState: blockStateAt(1), expectedBlockVersion: 0 });
+    await store.appendTurn({ githubUserId: OWNER_ID, interviewId, turn: [{ role: "question", text: "첫 질문" }], blockState: blockStateAt(1), progress: emptyInterviewProgress(), expectedBlockVersion: 0 });
 
     const result = await store.appendTurn({
       githubUserId: OWNER_ID,
       interviewId,
       turn: [{ role: "question", text: "다른 탭의 질문" }],
       blockState: blockStateAt(2),
+      progress: emptyInterviewProgress(),
       expectedBlockVersion: 0,
     });
 
@@ -96,6 +100,7 @@ describe("메모리 저장 계층", () => {
       interviewId,
       turn: [{ role: "answer", text: "버전을 올리지 않는 답변" }],
       blockState: blockStateAt(0),
+      progress: emptyInterviewProgress(),
       expectedBlockVersion: 0,
     });
     expect(sameVersion).toBe("version_conflict");
@@ -124,6 +129,7 @@ describe("메모리 저장 계층", () => {
         { role: "answer", text: "이번 답변" },
       ],
       blockState: blockStateAt(2),
+      progress: emptyInterviewProgress(),
       expectedBlockVersion: 0,
     });
 
@@ -178,6 +184,7 @@ describe("메모리 저장 계층", () => {
       interviewId: "00000000-0000-0000-0000-000000000000",
       turn: [],
       blockState: blockStateAt(1),
+      progress: emptyInterviewProgress(),
       expectedBlockVersion: 0,
     });
     expect(result).toBe("not_found");
@@ -233,6 +240,7 @@ describe("메모리 저장 계층", () => {
       interviewId,
       turn: [{ role: "answer", text: "남의 인터뷰에 넣으려는 답변" }],
       blockState: blockStateAt(1),
+      progress: emptyInterviewProgress(),
       expectedBlockVersion: 0,
     });
 
@@ -280,7 +288,7 @@ describe("메모리 저장 계층", () => {
       const { interviewId } = await seed(store);
 
       vi.setSystemTime(new Date("2026-09-05T00:00:00Z"));
-      await store.appendTurn({ githubUserId: OWNER_ID, interviewId, turn: [{ role: "answer", text: "답변" }], blockState: blockStateAt(1), expectedBlockVersion: 0 });
+      await store.appendTurn({ githubUserId: OWNER_ID, interviewId, turn: [{ role: "answer", text: "답변" }], blockState: blockStateAt(1), progress: emptyInterviewProgress(), expectedBlockVersion: 0 });
 
       const [item] = await store.listInterviews(OWNER_ID);
       expect(item.updatedAt).toEqual(new Date("2026-09-05T00:00:00Z"));
@@ -298,7 +306,7 @@ describe("메모리 저장 계층", () => {
       const { interviewId } = await seed(store);
 
       vi.setSystemTime(new Date("2026-09-05T00:00:00Z"));
-      expect(await store.appendTurn({ githubUserId: OWNER_ID, interviewId, turn: [], blockState: blockStateAt(9), expectedBlockVersion: 7 })).toBe("version_conflict");
+      expect(await store.appendTurn({ githubUserId: OWNER_ID, interviewId, turn: [], blockState: blockStateAt(9), progress: emptyInterviewProgress(), expectedBlockVersion: 7 })).toBe("version_conflict");
 
       const [item] = await store.listInterviews(OWNER_ID);
       expect(item.updatedAt).toEqual(new Date("2026-09-01T00:00:00Z"));

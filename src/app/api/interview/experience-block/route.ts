@@ -1,12 +1,20 @@
 import { generateObject } from "ai";
 import type { NextRequest } from "next/server";
 import { applyBlockUpdate, blockConflicts, markDisplay } from "@/features/experience-block/reducer";
-import { BLOCK_KINDS, type BlockUpdateOutput, type ExperienceBlockState } from "@/features/experience-block/types";
+import {
+  BLOCK_KINDS,
+  type BlockElement,
+  type BlockKind,
+  type BlockUpdateOutput,
+  type ExperienceBlockState,
+  type TargetResponse,
+} from "@/features/experience-block/types";
 import {
   experienceBlockErrorStatus,
   type ExperienceBlockErrorKind,
 } from "@/features/experience-block/errors";
 import { createBlockUpdateModel } from "@/features/experience-block/llm-provider";
+import { recordResponse } from "@/features/experience-block/progress";
 import {
   MAX_EXPERIENCE_BLOCK_BODY_BYTES,
   parseExperienceBlockRequestBody,
@@ -96,7 +104,9 @@ async function saveTurn(
   save: ExperienceBlockSaveTarget | undefined,
   history: readonly BlockUpdateTurn[],
   answerTurnId: string,
-  blockState: ExperienceBlockState
+  blockState: ExperienceBlockState,
+  target: { readonly targetBlock: BlockKind; readonly targetElement: BlockElement },
+  targetResponse: TargetResponse
 ): Promise<BlockUpdateSaveStatus> {
   if (save === undefined) return "skipped";
   try {
@@ -105,6 +115,15 @@ async function saveTurn(
       interviewId: save.interviewId,
       turn: turnsToSave(history, answerTurnId, save.pendingTurnIds),
       blockState,
+      // 이번 답변의 반응을 여기서 반영합니다. 반응은 모델 출력에서 방금 계산한 값이라 클라이언트가
+      // 요청을 보내는 시점에는 알 수 없습니다. 그래서 반영 전 값을 받아 서버가 반영합니다.
+      progress: recordResponse(
+        save.progress,
+        target.targetBlock,
+        target.targetElement,
+        targetResponse,
+        save.askedCountAtQuestion
+      ),
       expectedBlockVersion: save.expectedBlockVersion,
     });
   } catch {
@@ -188,7 +207,9 @@ export async function handleExperienceBlockUpdate(
     save,
     history,
     answerTurnId,
-    result.state
+    result.state,
+    { targetBlock, targetElement },
+    result.targetResponse
   );
 
   return Response.json({

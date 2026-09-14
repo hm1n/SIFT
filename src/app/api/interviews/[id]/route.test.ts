@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { emptyInterviewProgress } from "@/features/experience-block/progress";
 import { emptyExperienceBlockState } from "@/features/experience-block/types";
 import { DatabaseError } from "@/lib/db/client";
 import { createInMemoryStore } from "@/lib/db/in-memory-store";
@@ -80,6 +81,7 @@ describe("GET /api/interviews/[id]", () => {
       interviewId,
       turn: [{ role: "question", text: "질문" }, { role: "answer", text: "답변" }],
       blockState: { ...emptyExperienceBlockState(), version: 1 },
+      progress: emptyInterviewProgress(),
       expectedBlockVersion: 0,
     });
 

@@ -11,6 +11,7 @@ import {
   GITHUB_SESSION_KEY_ENV,
 } from "@/lib/github/auth-session";
 import { handleCreateInterview, handleListInterviews } from "./route";
+import { emptyInterviewProgress } from "@/features/experience-block/progress";
 
 const OWNER_ID = 44727850;
 const OTHER_ID = 13579246;
@@ -181,6 +182,7 @@ describe("GET /api/interviews", () => {
       interviewId: second.interviewId,
       turn: [{ role: "answer", text: "답변" }],
       blockState: { version: 1 } as never,
+      progress: emptyInterviewProgress(),
       expectedBlockVersion: 0,
     });
 

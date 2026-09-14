@@ -1,6 +1,7 @@
 import { APICallError, NoObjectGeneratedError } from "ai";
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { emptyInterviewProgress, recordAsked } from "@/features/experience-block/progress";
 import { emptyExperienceBlockState } from "@/features/experience-block/types";
 import { MAX_EXPERIENCE_BLOCK_BODY_BYTES } from "@/features/experience-block/request";
 import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
@@ -253,7 +254,7 @@ describe("POST /api/interview/experience-block 저장", () => {
     const interviewId = await seed(store);
 
     const response = await handleExperienceBlockUpdate(
-      request(requestBody({ save: { interviewId, expectedBlockVersion: 0 } })),
+      request(requestBody({ save: { interviewId, expectedBlockVersion: 0, progress: emptyInterviewProgress(), askedCountAtQuestion: 1 } })),
       { generate: alwaysOutput(acceptedOutput), store }
     );
 
@@ -275,7 +276,7 @@ describe("POST /api/interview/experience-block 저장", () => {
     ];
 
     await handleExperienceBlockUpdate(
-      request(requestBody({ history, save: { interviewId, expectedBlockVersion: 0, pendingTurnIds: ["t0"] } })),
+      request(requestBody({ history, save: { interviewId, expectedBlockVersion: 0, progress: emptyInterviewProgress(), askedCountAtQuestion: 1, pendingTurnIds: ["t0"] } })),
       { generate: alwaysOutput(acceptedOutput), store }
     );
 
@@ -296,7 +297,7 @@ describe("POST /api/interview/experience-block 저장", () => {
     } as unknown as SiftStore;
 
     const response = await handleExperienceBlockUpdate(
-      request(requestBody({ save: { interviewId: "11111111-1111-4111-8111-111111111111", expectedBlockVersion: 0 } })),
+      request(requestBody({ save: { interviewId: "11111111-1111-4111-8111-111111111111", expectedBlockVersion: 0, progress: emptyInterviewProgress(), askedCountAtQuestion: 1 } })),
       { generate: alwaysOutput(acceptedOutput), store: failing }
     );
 
@@ -304,6 +305,43 @@ describe("POST /api/interview/experience-block 저장", () => {
     const body = await response.json();
     expect(body.save).toBe("failed");
     expect(body.state.version).toBe(1);
+  });
+
+  /**
+   * 진행 상태를 저장하지 않으면 복원한 인터뷰가 사용자가 이미 답하지 못한 요소를 예산만큼 다시
+   * 묻습니다. 반영에 필요한 반응은 모델 출력에서 서버가 계산하므로 서버가 반영해 저장합니다.
+   */
+  it("이번 답변의 반응을 진행 상태에 반영해 저장한다", async () => {
+    const store = createInMemoryStore();
+    const interviewId = await seed(store);
+    const unknownOutput = {
+      ...acceptedOutput,
+      evaluation: [{ block: "problem", sufficient: false, askable: true, reason: "unknown" }],
+      targetResponse: "unknown",
+    };
+
+    // 클라이언트가 보내는 값은 질문을 보낸 기록까지 들어 있고 이번 답변의 반응은 아직 없습니다.
+    const asked = recordAsked(emptyInterviewProgress(), "problem", "a");
+
+    await handleExperienceBlockUpdate(
+      request(requestBody({ save: { interviewId, expectedBlockVersion: 0, progress: asked, askedCountAtQuestion: 1 } })),
+      { generate: alwaysOutput(unknownOutput), store }
+    );
+
+    const stored = await store.getInterview(interviewId, OWNER_ID);
+    // `targetBlock`은 problem, `targetElement`는 a입니다.
+    expect(stored?.progress.problem.elements.a.firstUnknownAskedCount).toBe(1);
+    expect(stored?.progress.problem.visited).toBe(true);
+    // 겨냥하지 않은 블록은 그대로입니다.
+    expect(stored?.progress.result.visited).toBe(false);
+  });
+
+  it("보내온 진행 상태의 모양이 어긋나면 422다", async () => {
+    const response = await handleExperienceBlockUpdate(
+      request(requestBody({ save: { interviewId: "x", expectedBlockVersion: 0, progress: { problem: {} }, askedCountAtQuestion: 1 } })),
+      { generate: alwaysOutput(acceptedOutput), store: createInMemoryStore() }
+    );
+    expect(response.status).toBe(422);
   });
 
   it("다른 탭이 먼저 저장했으면 version_conflict를 돌려준다", async () => {
@@ -314,11 +352,12 @@ describe("POST /api/interview/experience-block 저장", () => {
       interviewId,
       turn: [{ role: "answer", text: "다른 탭의 답변" }],
       blockState: { ...emptyExperienceBlockState(), version: 1 },
+      progress: emptyInterviewProgress(),
       expectedBlockVersion: 0,
     });
 
     const response = await handleExperienceBlockUpdate(
-      request(requestBody({ save: { interviewId, expectedBlockVersion: 0 } })),
+      request(requestBody({ save: { interviewId, expectedBlockVersion: 0, progress: emptyInterviewProgress(), askedCountAtQuestion: 1 } })),
       { generate: alwaysOutput(acceptedOutput), store }
     );
 
@@ -342,7 +381,7 @@ describe("POST /api/interview/experience-block 저장", () => {
     });
 
     const response = await handleExperienceBlockUpdate(
-      request(requestBody({ save: { interviewId: theirs, expectedBlockVersion: 0 } })),
+      request(requestBody({ save: { interviewId: theirs, expectedBlockVersion: 0, progress: emptyInterviewProgress(), askedCountAtQuestion: 1 } })),
       { generate: alwaysOutput(acceptedOutput), store }
     );
 
@@ -353,7 +392,7 @@ describe("POST /api/interview/experience-block 저장", () => {
   // 저장된 줄 압니다.
   it("밀린 턴 식별자가 이력에 없으면 422다", async () => {
     const response = await handleExperienceBlockUpdate(
-      request(requestBody({ save: { interviewId: "x", expectedBlockVersion: 0, pendingTurnIds: ["없는턴"] } })),
+      request(requestBody({ save: { interviewId: "x", expectedBlockVersion: 0, progress: emptyInterviewProgress(), askedCountAtQuestion: 1, pendingTurnIds: ["없는턴"] } })),
       { generate: alwaysOutput(acceptedOutput), store: createInMemoryStore() }
     );
 
@@ -362,7 +401,7 @@ describe("POST /api/interview/experience-block 저장", () => {
   });
 
   it.each([
-    ["interviewId가 없으면", { expectedBlockVersion: 0 }],
+    ["interviewId가 없으면", { expectedBlockVersion: 0, progress: emptyInterviewProgress(), askedCountAtQuestion: 1 }],
     ["기대 버전이 음수면", { interviewId: "x", expectedBlockVersion: -1 }],
     ["기대 버전이 정수가 아니면", { interviewId: "x", expectedBlockVersion: 1.5 }],
   ])("save에서 %s 422다", async (_label, save) => {

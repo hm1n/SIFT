@@ -12,6 +12,7 @@
 import { randomUUID } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { emptyInterviewProgress, recordAsked } from "@/features/experience-block/progress";
 import { emptyExperienceBlockState } from "@/features/experience-block/types";
 import { getSql } from "@/lib/db/client";
 import { neonStore } from "@/lib/db/neon-store";
@@ -34,8 +35,22 @@ const OTHER_USER_ID = USER_ID + 1;
 
 let failures = 0;
 
+/**
+ * 키 순서를 맞춘 뒤에 비교합니다. Postgres의 jsonb는 키 순서를 보존하지 않아서, 넣은 객체와 읽은
+ * 객체의 키 순서가 다릅니다. 값이 같은데도 `JSON.stringify` 비교는 어긋납니다.
+ */
+function stable(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stable);
+  if (typeof value !== "object" || value === null) return value;
+  return Object.fromEntries(
+    Object.keys(value as Record<string, unknown>)
+      .sort()
+      .map((key) => [key, stable((value as Record<string, unknown>)[key])])
+  );
+}
+
 function check(label: string, actual: unknown, expected: unknown): void {
-  const ok = JSON.stringify(actual) === JSON.stringify(expected);
+  const ok = JSON.stringify(stable(actual)) === JSON.stringify(stable(expected));
   if (!ok) failures += 1;
   console.log(`${ok ? "통과" : "실패"}  ${label}${ok ? "" : `\n      기대 ${JSON.stringify(expected)}\n      실제 ${JSON.stringify(actual)}`}`);
 }
@@ -78,6 +93,7 @@ async function main(): Promise<void> {
   console.log(`인터뷰 줄을 만들었습니다: ${interviewId}`);
 
   const created = await store.getInterview(interviewId, USER_ID);
+  check("빈 진행 상태로 시작한다", created?.progress, emptyInterviewProgress());
   check("빈 이력과 0번 블록 버전으로 시작한다", [created?.history, created?.blockVersion], [[], 0]);
   check("근거를 그대로 돌려준다", created?.evidence, { commits: ["sha-1"] });
   check("분석의 저장소 이름을 함께 돌려준다", [created?.repoOwner, created?.repoName], ["hm1n", "SIFT"]);
@@ -87,25 +103,25 @@ async function main(): Promise<void> {
   check("첫 턴을 저장한다", await store.appendTurn({
     githubUserId: USER_ID, interviewId,
     turn: [{ role: "question", text: "질문 1" }, { role: "answer", text: "답변 1" }],
-    blockState: blockAt(1), expectedBlockVersion: 0,
+    progress: emptyInterviewProgress(), blockState: blockAt(1), expectedBlockVersion: 0,
   }), "saved");
 
   check("기대 버전이 어긋나면 version_conflict다", await store.appendTurn({
     githubUserId: USER_ID, interviewId,
     turn: [{ role: "question", text: "덮어쓰면 안 되는 질문" }],
-    blockState: blockAt(2), expectedBlockVersion: 0,
+    progress: emptyInterviewProgress(), blockState: blockAt(2), expectedBlockVersion: 0,
   }), "version_conflict");
 
   check("버전이 오르지 않으면 version_conflict다", await store.appendTurn({
     githubUserId: USER_ID, interviewId,
     turn: [{ role: "question", text: "버전을 올리지 않는 질문" }],
-    blockState: blockAt(1), expectedBlockVersion: 1,
+    progress: emptyInterviewProgress(), blockState: blockAt(1), expectedBlockVersion: 1,
   }), "version_conflict");
 
   check("남의 인터뷰에는 이어 붙이지 못한다", await store.appendTurn({
     githubUserId: OTHER_USER_ID, interviewId,
     turn: [{ role: "answer", text: "남의 답변" }],
-    blockState: blockAt(2), expectedBlockVersion: 1,
+    progress: emptyInterviewProgress(), blockState: blockAt(2), expectedBlockVersion: 1,
   }), "not_found");
 
   // 저장이 한 번 밀렸다가 다시 성공하는 경우입니다. 새 버전이 기대 버전보다 2 큽니다.
@@ -115,10 +131,13 @@ async function main(): Promise<void> {
       { role: "question", text: "질문 2" }, { role: "answer", text: "답변 2" },
       { role: "question", text: "질문 3" }, { role: "answer", text: "답변 3" },
     ],
+    // 질문을 세 번 보낸 진행 상태입니다. 저장한 뒤 그대로 읽히는지 아래에서 확인합니다.
+    progress: recordAsked(recordAsked(recordAsked(emptyInterviewProgress(), "problem", "a"), "problem", "a"), "problem", "a"),
     blockState: blockAt(3), expectedBlockVersion: 1,
   }), "saved");
 
   const appended = await store.getInterview(interviewId, USER_ID);
+  check("진행 상태를 덮어쓴다", appended?.progress.problem.elements.a.askedCount, 3);
   check("덮어쓰지 않고 뒤에 이어 붙인다", appended?.history.map((m) => m.text), [
     "질문 1", "답변 1", "질문 2", "답변 2", "질문 3", "답변 3",
   ]);

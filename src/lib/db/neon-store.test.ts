@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { emptyInterviewProgress } from "@/features/experience-block/progress";
 import { emptyExperienceBlockState } from "@/features/experience-block/types";
 import { DatabaseError } from "./client";
 import { neonStore, type SqlExecutor } from "./neon-store";
@@ -64,6 +65,7 @@ describe("Neon 저장 계층", () => {
             interviewId: INTERVIEW_ID,
             turn: [],
             blockState: blockStateAt(1),
+            progress: emptyInterviewProgress(),
             expectedBlockVersion: 0,
           }),
       ],
@@ -113,6 +115,7 @@ describe("Neon 저장 계층", () => {
         interviewId: "없는-값",
         turn: [],
         blockState: blockStateAt(1),
+        progress: emptyInterviewProgress(),
         expectedBlockVersion: 0,
       });
 
@@ -138,6 +141,7 @@ describe("Neon 저장 계층", () => {
         interviewId: INTERVIEW_ID,
         turn: [{ role: "question", text: "질문" }],
         blockState: blockStateAt(1),
+        progress: emptyInterviewProgress(),
         expectedBlockVersion: 0,
       });
 
@@ -159,6 +163,7 @@ describe("Neon 저장 계층", () => {
         interviewId: INTERVIEW_ID,
         turn: [],
         blockState: blockStateAt(4),
+        progress: emptyInterviewProgress(),
         expectedBlockVersion: 3,
       });
 
@@ -173,6 +178,7 @@ describe("Neon 저장 계층", () => {
         interviewId: INTERVIEW_ID,
         turn: [],
         blockState: blockStateAt(3),
+        progress: emptyInterviewProgress(),
         expectedBlockVersion: 3,
       });
 
@@ -191,6 +197,7 @@ describe("Neon 저장 계층", () => {
         interviewId: INTERVIEW_ID,
         turn: [{ role: "answer", text: "밀린 답변" }],
         blockState: blockStateAt(3),
+        progress: emptyInterviewProgress(),
         expectedBlockVersion: 1,
       });
 
@@ -204,6 +211,7 @@ describe("Neon 저장 계층", () => {
         interviewId: INTERVIEW_ID,
         turn: [],
         blockState: blockStateAt(1),
+        progress: emptyInterviewProgress(),
         expectedBlockVersion: 0,
       });
 
@@ -218,6 +226,7 @@ describe("Neon 저장 계층", () => {
         interviewId: INTERVIEW_ID,
         turn: [],
         blockState: blockStateAt(1),
+        progress: emptyInterviewProgress(),
         expectedBlockVersion: 0,
       });
 
@@ -252,6 +261,7 @@ describe("Neon 저장 계층", () => {
       block_state: blockStateAt(2),
       block_version: 2,
       status: "in_progress",
+      progress: emptyInterviewProgress(),
       created_at: new Date("2026-09-01T00:00:00Z"),
       updated_at: new Date("2026-09-10T00:00:00Z"),
       opened_at: new Date("2026-09-14T00:00:00Z"),
@@ -275,6 +285,7 @@ describe("Neon 저장 계층", () => {
         history: [{ role: "question", text: "질문" }],
         blockState: blockStateAt(2),
         blockVersion: 2,
+        progress: emptyInterviewProgress(),
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         openedAt: row.opened_at,
@@ -297,6 +308,17 @@ describe("Neon 저장 계층", () => {
 
       expect(calls[0].text).toContain("order by s.updated_at desc");
       expect(items[0]).toMatchObject({ id: INTERVIEW_ID, repoOwner: "hm1n", repoName: "SIFT" });
+    });
+
+    /**
+     * `progress` 칸은 나중에 더했고 기본값이 빈 객체입니다. 그대로 돌려주면 읽는 쪽이
+     * `progress.problem`에서 깨집니다.
+     */
+    it("칸이 생기기 전에 만들어진 줄의 빈 진행 상태는 초깃값으로 돌려준다", async () => {
+      const { execute } = fakeExecute([[{ ...row, progress: {} }]]);
+      const interview = await neonStore(execute).getInterview(INTERVIEW_ID, OWNER_ID);
+
+      expect(interview?.progress).toEqual(emptyInterviewProgress());
     });
 
     it("모르는 status 값은 임의로 접지 않고 오류로 올린다", async () => {

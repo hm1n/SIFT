@@ -1,3 +1,4 @@
+import type { InterviewProgress } from "@/features/experience-block/progress";
 import type { ExperienceBlockState } from "@/features/experience-block/types";
 import type { InterviewHistoryMessage } from "@/features/interview/history";
 
@@ -9,7 +10,8 @@ import type { InterviewHistoryMessage } from "@/features/interview/history";
  * 이 타입을 매개변수로 받고 기본값으로 실제 구현을 쓰면, 테스트는 `createInMemoryStore()`를 넘겨
  * 데이터베이스 없이 그대로 돌 수 있습니다. 라우트가 `GenerateBlockUpdate`를 받는 방식과 같습니다.
  *
- * 실제 저장과 복원은 이 이슈의 범위가 아닙니다. Neon 구현체는 첫 호출 지점이 생기는 이슈에서 넣습니다.
+ * 구현은 둘입니다. 테스트가 쓰는 `createInMemoryStore()`와 실제 경로가 쓰는 `neonStore()`입니다. 둘이
+ * 같은 판정을 하는지는 `scripts/verify-neon-store.mts`가 실제 Neon을 상대로 확인합니다.
  *
  * `unknown`으로 둔 칸은 표의 jsonb로 갑니다. `JSON.stringify`가 그대로 다룰 수 있는 값이어야 합니다.
  * `undefined`와 `bigint`와 함수와 순환 참조는 들어갈 수 없습니다. 타입으로 막지 않고 메모리 구현이
@@ -47,6 +49,9 @@ export interface SiftStore {
    * 인터뷰가 없거나 그 사용자의 것이 아니면 `not_found`입니다. 둘을 구분하지 않습니다.
    *
    * 저장에 성공하면 `updatedAt`을 갱신합니다.
+   *
+   * `progress`는 이 턴을 반영한 뒤의 질문 진행 상태입니다. 블록 상태와 함께 덮어씁니다. 이력처럼
+   * 이어 붙이지 않는 이유는 누적된 값 자체가 최신 상태이기 때문입니다.
    */
   appendTurn(input: AppendTurn): Promise<AppendTurnResult>;
   /** 마지막으로 이어간 시각이 최근인 순서입니다. */
@@ -87,6 +92,7 @@ export interface AppendTurn {
   readonly interviewId: string;
   readonly turn: readonly InterviewHistoryMessage[];
   readonly blockState: ExperienceBlockState;
+  readonly progress: InterviewProgress;
   readonly expectedBlockVersion: number;
 }
 
@@ -122,4 +128,13 @@ export interface StoredInterview extends InterviewListItem {
   readonly history: readonly InterviewHistoryMessage[];
   readonly blockState: ExperienceBlockState;
   readonly blockVersion: number;
+  /**
+   * 질문 진행 상태입니다. 블록의 요소마다 몇 번 물었는지와 언제 처음 "기억나지 않는다"를 받았는지를
+   * 담고, 그 값이 재질문 예산을 정합니다.
+   *
+   * 정의서의 SQL에 없던 칸을 2026-09-14에 더했습니다. 저장하지 않으면 복원한 인터뷰가 사용자가 이미
+   * 답하지 못한 요소를 예산만큼 다시 묻습니다. 블록 상태의 평가는 블록이 충분한지만 말하고 그 요소를
+   * 몇 번 물었는지는 말하지 않으므로 대신 쓸 수 없습니다.
+   */
+  readonly progress: InterviewProgress;
 }
