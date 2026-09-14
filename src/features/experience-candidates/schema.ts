@@ -24,12 +24,18 @@ const CANDIDATE_KEYS = [
 ] as const;
 
 /**
- * 토픽 개수 상한입니다. JSON Schema의 `maxItems`로만 요청하고 런타임 검증에서는 세지 않습니다.
+ * 토픽 개수 상한입니다. 프롬프트로만 요청하고 JSON Schema와 런타임 검증 어느 쪽에서도 세지
+ * 않습니다. 넘겨 온 응답은 화면 정규화(`createExperienceCandidateListItems`)가 이 값으로 잘라
+ * 레이아웃만 지킵니다.
  *
- * 개수와 길이를 런타임으로 강제하면 한 후보가 상한을 넘겼을 때 `schema_validation`으로 응답
- * 전체, 즉 후보 최대 `STAGE_B_MAX_CANDIDATES`개가 함께 버려집니다. 토픽이 몇 개 더 오는 것보다
- * 후보가 사라지는 손해가 큽니다(이슈 #110 Constraint). 넘겨 온 응답은 화면 정규화
- * (`createExperienceCandidateListItems`)가 이 값으로 잘라 레이아웃만 지킵니다.
+ * 개수를 강제하면 한 후보가 상한을 넘겼을 때 응답 전체, 즉 후보 최대 `STAGE_B_MAX_CANDIDATES`개가
+ * 함께 버려집니다. 토픽이 몇 개 더 오는 것보다 후보가 사라지는 손해가 큽니다(이슈 #110
+ * Constraint).
+ *
+ * JSON Schema의 `maxItems`도 같은 이유로 쓰지 않습니다. `maxItems`는 요청이 아니라 강제입니다.
+ * Gemini 구조화 출력이 직접 거부하고 SDK가 `NoObjectGeneratedError`를 던지므로, 런타임 검증과
+ * 정규화에 닿기 전에 응답 전체가 사라집니다. 프롬프트가 항목을 잘게 나누라고 유도했을 때 이
+ * 경로로 14회 중 3회가 실패했습니다(2026-09-14 실측).
  */
 export const MAX_TECHNICAL_TOPICS = 6;
 
@@ -56,11 +62,11 @@ function buildCandidateOutputJsonSchema(maxCandidates: number) {
           properties: {
             sha: { type: "string", minLength: 1 },
             relatedShas: { type: "array", items: { type: "string", minLength: 1 } },
-            // `summary`와 `technicalTopics`에 `minLength`·`minItems`를 두지 않는 이유는
+            // `summary`와 `technicalTopics`에 `minLength`·`minItems`·`maxItems`를 두지 않는 이유는
             // `MAX_TECHNICAL_TOPICS`에 적었습니다.
             summary: { type: "string" },
             evidence: { type: "string", minLength: 1 },
-            technicalTopics: { type: "array", maxItems: MAX_TECHNICAL_TOPICS, items: { type: "string" } },
+            technicalTopics: { type: "array", items: { type: "string" } },
             citedFilePaths: { type: "array", items: { type: "string", minLength: 1 } },
             source: { type: "string", enum: [...SOURCES] as string[] },
           },

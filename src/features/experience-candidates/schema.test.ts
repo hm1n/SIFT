@@ -165,7 +165,10 @@ describe("경험 후보 출력 검증", () => {
     ["technicalTopics가 빈 배열이어도", { technicalTopics: [] }],
     ["technicalTopics에 빈 문자열이 섞여 있어도", { technicalTopics: ["React", ""] }],
     ["technicalTopics가 상한을 넘겨도", {
-      technicalTopics: ["a", "b", "c", "d", "e", "f", "g"],
+      technicalTopics: Array.from(
+        { length: MAX_TECHNICAL_TOPICS + 1 },
+        (_unused, index) => `topic-${index}`
+      ),
     }],
   ])("%s 후보를 버리지 않는다", (_label, patch) => {
     const output = validateExperienceCandidateOutput({
@@ -176,15 +179,22 @@ describe("경험 후보 출력 검증", () => {
     expect(output.candidates).toHaveLength(1);
   });
 
-  /** 모델에 보내는 계약에는 개수 상한이 있어야 합니다. 런타임에서 세지 않는 만큼 여기서만 요청합니다. */
-  it("JSON Schema가 technicalTopics의 개수 상한을 요청한다", () => {
+  /**
+   * PR #118 CodeRabbit 리뷰 회귀입니다. `maxItems`는 요청이 아니라 강제입니다. Gemini 구조화
+   * 출력이 직접 거부하므로, 상한을 여기 걸면 토픽이 7개인 응답이 `validateExperienceCandidateOutput`과
+   * 화면 정규화에 닿기 전에 사라지고 후보 전체가 버려집니다. 개수는 프롬프트로만 요청하고
+   * 초과분은 정규화가 자릅니다.
+   */
+  it("JSON Schema가 technicalTopics의 개수를 제한하지 않는다", () => {
     const { jsonSchema } = createExperienceCandidateOutputSchema(3);
 
     expect(
       (jsonSchema as {
-        properties: { candidates: { items: { properties: { technicalTopics: { maxItems: number } } } } };
-      }).properties.candidates.items.properties.technicalTopics.maxItems
-    ).toBe(MAX_TECHNICAL_TOPICS);
+        properties: {
+          candidates: { items: { properties: { technicalTopics: Record<string, unknown> } } };
+        };
+      }).properties.candidates.items.properties.technicalTopics
+    ).toEqual({ type: "array", items: { type: "string" } });
   });
 
   it("같은 대표 SHA를 여러 후보로 반복하면 거부한다", () => {
