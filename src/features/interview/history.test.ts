@@ -194,4 +194,21 @@ describe("buildLastOutcome (구현검토 2026-09-11 P1-5)", () => {
     expect(bytes).toBeLessThanOrEqual(INTERVIEW_LAST_OUTCOME_OBSERVATION_MAX_BYTES);
     expect(result!.conflicts[0].observation.length).toBeLessThan(long.length);
   });
+
+  /**
+   * CodeRabbit PR #117: 이 절단이 원본 UTF-8 바이트만 재는지 확인이 필요하다는 지적이 있었습니다.
+   * 재현되지는 않았습니다 — `fitObservationToBytes`가 쓰는 `serializedByteLength`는
+   * `evidence-snapshot.ts`의 `serializedCodePointBytes`를 통해 JSON 이스케이프(따옴표·역슬래시
+   * 2바이트, 그 밖의 제어 문자 6바이트)까지 이미 반영해서 잽니다. 이 테스트는 그 사실을 고정합니다.
+   * 따옴표·역슬래시·제어 문자로만 채우면 원본 글자 수는 상한보다 훨씬 작아도, 실제로
+   * `JSON.stringify`했을 때의 바이트는 상한 안에 들어와야 합니다.
+   */
+  it("따옴표·역슬래시·제어 문자로 채운 관찰 문장도 직렬화 바이트 상한 안으로 자른다", () => {
+    const long = '"\\'.repeat(INTERVIEW_LAST_OUTCOME_OBSERVATION_MAX_BYTES);
+    const result = buildLastOutcome({ ok: true, targetResponse: "unknown" }, [{ observation: long }]);
+    const observation = result!.conflicts[0].observation;
+    const serializedBytes = new TextEncoder().encode(JSON.stringify(observation)).byteLength - 2; // 감싸는 따옴표 제외
+    expect(serializedBytes).toBeLessThanOrEqual(INTERVIEW_LAST_OUTCOME_OBSERVATION_MAX_BYTES);
+    expect(observation.length).toBeLessThan(long.length);
+  });
 });
