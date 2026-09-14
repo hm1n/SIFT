@@ -103,6 +103,15 @@ describe("ExperienceCandidateList", () => {
     expect(createExperienceCandidateListItems(data, candidates)[0]).toMatchObject({ origin: "repository" });
   });
 
+  // 제목과 사유가 구분 없이 붙어 `candidatesThe repository...`로 읽히던 자리입니다. 문단이
+  // grid라 화면에서는 이미 두 행이지만 낭독은 텍스트 흐름을 따릅니다(PR #120 리뷰).
+  it("부족 사유 제목과 본문 사이에 구분이 있다", () => {
+    renderList([candidate("a")], [], "커밋이 하나뿐입니다.");
+
+    const notice = screen.getByText(/Why there are not more candidates/).closest("p");
+    expect(notice?.textContent).toContain("Why there are not more candidates: 커밋이 하나뿐입니다.");
+  });
+
   it("목록 행은 디자인대로 제목·커밋 수·기간만 보여준다", () => {
     const commits = [
       commit("representative", "재시도 큐 도입", [], "2026-07-01T00:00:00Z"),
@@ -365,9 +374,11 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
     expect(
       screen.getByText("The repository is large, so only 10 of 12 work units were judged")
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Units were picked by score within the analyzable budget/)
-    ).toBeInTheDocument();
+    // 제외 사유와 선택 기준이 두 문장으로 갈라져야 합니다. 문장 경계가 없으면
+    // "did not make it Units were picked..."처럼 이어집니다(PR #120 리뷰).
+    const exclusionReason = screen.getByText(/Units were picked by score within the analyzable budget/);
+    expect(exclusionReason).toHaveTextContent("This unit did not make it. Units were picked by score");
+    expect(exclusionReason.textContent).not.toMatch(/make it Units/);
     expect(screen.getByText("PR #2")).toBeInTheDocument();
     expect(screen.getByText("PR #1")).toBeInTheDocument();
     expect(screen.getByText("2 · heuristic")).toBeInTheDocument();

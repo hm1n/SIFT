@@ -106,7 +106,7 @@ export function ExperienceCandidateList({
           <p className={styles.listSubtitle}>{`${pluralCount(candidates.candidates.length, "experience")} found`}</p>
           {candidates.insufficientCandidatesReason ? (
             <p className={styles.insufficientReason}>
-              <strong>Why there are not more candidates</strong>
+              <strong>Why there are not more candidates: </strong>
               {candidates.insufficientCandidatesReason} The bar is not lowered and candidates are not padded.
             </p>
           ) : null}

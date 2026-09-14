@@ -162,8 +162,15 @@ describe("selectWorkUnitsForStageA", () => {
     expect(selection.bytes).toBe(0);
   });
 
-  it("제외 사유마다 표시 문구가 있다", () => {
-    expect(Object.values(WORK_UNIT_SELECTION_EXCLUSION_COPY).every((copy) => copy.length > 0)).toBe(true);
+  it("제외 사유 문구는 마침표로 끝나고 선택 기준을 말하지 않는다", () => {
+    // 화면이 이 문장 뒤에 선택 기준을 이어 붙입니다. 마침표가 없으면 두 문장이 한 문장처럼
+    // 이어지고, 기준을 여기서도 말하면 같은 말이 두 번 나옵니다. 한국어를 영어로 옮기면서
+    // 문장 경계가 사라진 자리입니다(PR #120 리뷰).
+    for (const copy of Object.values(WORK_UNIT_SELECTION_EXCLUSION_COPY)) {
+      expect(copy.length).toBeGreaterThan(0);
+      expect(copy.endsWith(".")).toBe(true);
+      expect(copy).not.toMatch(/picked by score/);
+    }
   });
 
   it("제외된 묶음은 발화한 신호를 함께 돌려준다", () => {
