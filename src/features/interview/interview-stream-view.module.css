@@ -105,12 +105,21 @@
  * 스크롤합니다. 높이는 `interview-stream-view.tsx`가 재서 인라인으로 넣습니다.
  */
 .answerForm { flex-shrink: 0; border-top: 1px solid var(--color-border); background: var(--color-card); padding: 12px 16px; }
+/*
+ * 초점이 들어와도 테두리를 바꾸지 않습니다. 디자인 원본은 `focus-within`으로 테두리를 진하게 하지만
+ * 사용자가 그 강조를 빼기로 했습니다. hover와 입력 상한 초과(`data-invalid`)는 초점이 아니므로 남깁니다.
+ *
+ * 그래서 초점 표시는 글자 커서 하나입니다. 아래 `.answerInput`의 `outline: none`과 함께 봐야 합니다.
+ */
 .composer { display: grid; border: 1px solid var(--color-border); border-radius: var(--radius); transition: border-color 120ms ease; }
 .composer:hover { border-color: var(--color-scrollbar); }
-.composer:focus-within { border-color: var(--color-scrollbar-hover); }
 .composer[data-invalid] { border-color: #a3272c; }
 
-.answerInput { display: block; width: 100%; box-sizing: border-box; resize: none; overflow-y: auto; max-height: 140px; border: 0; background: transparent; color: var(--color-foreground); font: inherit; font-size: 14px; line-height: 1.65; padding: 12px 16px 6px; }
+/*
+ * `outline: none`은 의도한 것입니다. 브라우저 기본 초점 테두리가 composer 테두리 위에 그려져, 위에서
+ * `focus-within`을 뺀 의미가 없어집니다. 이 칸의 초점은 글자 커서가 알립니다.
+ */
+.answerInput { display: block; width: 100%; box-sizing: border-box; resize: none; overflow-y: auto; max-height: 140px; border: 0; outline: none; background: transparent; color: var(--color-foreground); font: inherit; font-size: 14px; line-height: 1.65; padding: 12px 16px 6px; }
 .answerInput::placeholder { color: var(--color-scrollbar-hover); }
 .answerInput:disabled { color: var(--color-muted-foreground); }
 
@@ -139,11 +148,8 @@
 .log:focus-visible,
 .unreadButton:focus-visible,
 .retryButton:focus-visible,
-.answerInput:focus-visible,
 .submitButton:focus-visible,
 .endButton:focus-visible,
 .endConfirmButton:focus-visible { outline: 2px solid var(--color-foreground); outline-offset: 2px; }
-/* 입력 칸은 테두리 안쪽에 그립니다. 바깥으로 두면 composer 테두리와 겹쳐 두 줄로 보입니다. */
-.answerInput:focus-visible { outline-offset: -2px; }
 /* 로그는 스크롤 영역이라 바깥 여백이 없습니다. 안쪽에 그려야 잘리지 않습니다. */
 .log:focus-visible { outline-offset: -2px; }
