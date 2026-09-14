@@ -1,15 +1,29 @@
 "use client";
 
 import { Fragment, useId, useState } from "react";
+import { useExperienceInterview } from "@/features/experience-block/use-experience-interview";
+import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
 import { clearsOnRetry } from "./errors";
 import type { InterviewStreamErrorKind, InterviewStreamRequestErrorKind } from "./errors";
 import { INTERVIEW_HISTORY_ITEM_MAX_BYTES, interviewHistoryItemBytes } from "./history";
 import { InterviewMessage } from "./interview-message";
 import { useAutoScroll } from "./use-auto-scroll";
-import { useInterviewStream, type InterviewStreamPhase, type UseInterviewStreamOptions } from "./use-interview-stream";
+import {
+  useInterviewStream,
+  type InterviewStreamPhase,
+  type InterviewStreamState,
+  type UseInterviewStreamOptions,
+} from "./use-interview-stream";
 import styles from "./interview-stream-view.module.css";
 
 export const DEFAULT_INTERVIEW_STREAM_URL = "/api/interview/stream";
+/**
+ * 이슈 #90의 블록 갱신 서버 경로입니다. `snapshot`이 있으면(실제 생성 경로) 이 화면이
+ * `useExperienceInterview`를 써서 답변마다 이 URL로 블록 갱신을 호출합니다. 이전에는 이 화면이
+ * `useInterviewStream`만 직접 불러, 훅 자체는 갖춰졌어도 실제 서비스 경로에서 턴 카운트·열 턴
+ * 자동 종료·블록 갱신이 한 번도 실행되지 않았습니다(CodeRabbit PR #117).
+ */
+export const DEFAULT_EXPERIENCE_BLOCK_UPDATE_URL = "/api/interview/experience-block";
 
 const STATUS_TEXT: Record<InterviewStreamPhase, string> = {
   idle: "질문 스트리밍을 아직 시작하지 않았습니다.",
@@ -124,31 +138,80 @@ function errorGuidance(kind: InterviewStreamErrorKind, resumable: boolean): stri
 
 export interface InterviewStreamViewProps extends Partial<UseInterviewStreamOptions> {
   url?: string;
+  /** 블록 갱신 서버 경로입니다. `snapshot`이 있을 때만 씁니다. */
+  blockUpdateUrl?: string;
 }
 
 /**
  * 질문 스트리밍의 표시 기반입니다.
  *
  * `snapshot`을 주면 실제 생성 경로를 씁니다. 근거 스냅샷을 `POST` 본문으로 보내고, 끊겼을 때
- * 이어받지 않습니다. 주지 않으면 테스트용 스트림을 `GET`으로 받고 이어받기도 그대로 동작합니다.
+ * 이어받지 않으며, 답변마다 `useExperienceInterview`가 블록 갱신을 함께 호출합니다(이슈 #90).
+ * 주지 않으면 테스트용 스트림을 `GET`으로 받고 이어받기도 그대로 동작하며 답변 입력 자체가 없어
+ * 블록 갱신도 일어나지 않습니다.
+ *
+ * 두 경로가 각자 다른 훅(`useInterviewStream`·`useExperienceInterview`)을 부르므로 하나의 함수
+ * 안에서 조건부로 부르면 React Hooks 규칙을 어깁니다. 대신 `snapshot` 유무로 완전히 다른 컴포넌트로
+ * 갈라 각자 자기 훅을 부르고, 화면을 그리는 부분만 `InterviewStreamBody`로 공유합니다.
  */
-export function InterviewStreamView({
+export function InterviewStreamView(props: InterviewStreamViewProps = {}) {
+  return props.snapshot === undefined ? (
+    <TestStreamInterviewView {...props} />
+  ) : (
+    <ExperienceInterviewStreamView {...props} snapshot={props.snapshot} />
+  );
+}
+
+function TestStreamInterviewView({
   url = DEFAULT_INTERVIEW_STREAM_URL,
   ...streamOptions
-}: InterviewStreamViewProps = {}) {
-  const {
-    messages,
-    status,
-    error,
-    receivedSeq,
-    removedHistory,
-    canSubmitAnswer,
-    isLastQuestionTooLong,
-    isEnded,
-    retry,
-    submitAnswer,
-    endInterview,
-  } = useInterviewStream({ url, ...streamOptions });
+}: InterviewStreamViewProps) {
+  const inner = useInterviewStream({ url, ...streamOptions });
+  return <InterviewStreamBody {...inner} hasSnapshot={false} />;
+}
+
+function ExperienceInterviewStreamView({
+  url = DEFAULT_INTERVIEW_STREAM_URL,
+  blockUpdateUrl = DEFAULT_EXPERIENCE_BLOCK_UPDATE_URL,
+  snapshot,
+  fetchImpl,
+  retryDelaysMs,
+  sleep,
+  scheduleFrame,
+  cancelFrame,
+}: InterviewStreamViewProps & { snapshot: ExperienceEvidenceSnapshot }) {
+  const inner = useExperienceInterview({
+    questionUrl: url,
+    blockUpdateUrl,
+    snapshot,
+    fetchImpl,
+    retryDelaysMs,
+    sleep,
+    scheduleFrame,
+    cancelFrame,
+  });
+  return <InterviewStreamBody {...inner} hasSnapshot={true} />;
+}
+
+interface InterviewStreamBodyProps extends InterviewStreamState {
+  /** 답변 입력을 그릴지입니다. 근거 스냅샷이 있는 실제 생성 경로에서만 답변을 받습니다. */
+  hasSnapshot: boolean;
+}
+
+function InterviewStreamBody({
+  messages,
+  status,
+  error,
+  receivedSeq,
+  removedHistory,
+  canSubmitAnswer,
+  isLastQuestionTooLong,
+  isEnded,
+  retry,
+  submitAnswer,
+  endInterview,
+  hasSnapshot,
+}: InterviewStreamBodyProps) {
   // 청크 도착만이 아니라 답변 제출도 내용을 바꿉니다. 답변은 청크가 아니라 `receivedSeq`가 움직이지
   // 않으므로 메시지 수를 함께 묶습니다.
   const { containerRef, hasUnreadContent, scrollToBottom, handleScroll } =
@@ -300,7 +363,7 @@ export function InterviewStreamView({
           </p>
           <p id={errorId} className={styles.errorGuidance}>
             {error
-              ? errorGuidance(error.kind, streamOptions.snapshot === undefined)
+              ? errorGuidance(error.kind, !hasSnapshot)
               : `이 질문은 한 번에 보낼 수 있는 크기 ${INTERVIEW_HISTORY_ITEM_MAX_BYTES.toLocaleString()}바이트를 넘어 답변을 받을 수 없습니다. 다시 시도하면 지금까지의 대화를 그대로 두고 이 질문만 새로 만듭니다.`}
           </p>
           {canRetry ? (
@@ -321,7 +384,7 @@ export function InterviewStreamView({
         입력을 열면 답변이 아무 데도 가지 않습니다. 생성 중과 오류 표시 중에는 잠깁니다. 오류는 다시
         시도로 풀어야 하고, 그 다시 시도는 실패한 질문 하나만 다시 만듭니다.
       */}
-      {streamOptions.snapshot === undefined ? null : isEnded ? (
+      {!hasSnapshot ? null : isEnded ? (
         /*
           종료 상태를 답변 입력이 있던 자리에 그립니다. 새 자리를 만들지 않는 이유는 이 자리가
           "지금 사용자가 할 수 있는 일"을 그리는 자리이기 때문입니다. 종료 사실 자체는 위 상태

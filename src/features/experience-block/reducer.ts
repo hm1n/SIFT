@@ -3,12 +3,14 @@ import { INTERVIEW_HISTORY_ITEM_MAX_BYTES } from "@/features/interview/history";
 import {
   BLOCK_KINDS,
   isBlockKind,
+  isTargetResponse,
   type BlockKind,
   type Claim,
   type ClaimOp,
   type ClaimSource,
   type DisplaySentence,
   type ExperienceBlockState,
+  type TargetResponse,
 } from "./types";
 
 /**
@@ -43,13 +45,21 @@ export type BlockUpdateRejection =
   | "claim_block_mismatch"
   | "block_too_large"
   | "claims_too_large"
-  | "invalid_evaluation";
+  | "invalid_evaluation"
+  | "invalid_target_response";
 
 /** 응답을 거절하지 않고 조정한 내용입니다. 충돌한 주장을 참조한 표시 문장은 설계 8절에 따라 그 문장만 뺍니다. */
 export type BlockUpdateWarning = { readonly kind: "conflicted_sentence_dropped"; readonly detail: string };
 
 export type BlockUpdateResult =
-  | { readonly ok: true; readonly state: ExperienceBlockState; readonly affectedBlocks: readonly BlockKind[]; readonly warnings: readonly BlockUpdateWarning[] }
+  | {
+      readonly ok: true;
+      readonly state: ExperienceBlockState;
+      readonly affectedBlocks: readonly BlockKind[];
+      readonly warnings: readonly BlockUpdateWarning[];
+      /** 이번 호출이 겨냥한 블록·요소에 대한 이번 답변의 반응입니다. `context.targetBlock` 참고. */
+      readonly targetResponse: TargetResponse;
+    }
   | { readonly ok: false; readonly errors: readonly { kind: BlockUpdateRejection; detail: string }[] };
 
 const utf8 = new TextEncoder();
@@ -78,7 +88,16 @@ export function evidenceIndex(snapshot: ExperienceEvidenceSnapshot) {
 export function applyBlockUpdate(
   state: ExperienceBlockState,
   output: unknown,
-  context: { readonly snapshot: ExperienceEvidenceSnapshot; readonly turnId: string }
+  context: {
+    readonly snapshot: ExperienceEvidenceSnapshot;
+    readonly turnId: string;
+    /**
+     * 이번 질문이 겨냥한 블록입니다. targetBlock은 주장이 바뀌지 않았어도 반드시 평가받아야
+     * 합니다(설계 4-4절). 백로그 2026-09-11 1번: 평가 검증 루프가 이 값과 이번에 주장이 바뀐
+     * 블록(affected)의 평가 누락을 잡지 못해 낡은 평가가 남는 결함을 여기서 막습니다.
+     */
+    readonly targetBlock: BlockKind;
+  }
 ): BlockUpdateResult {
   const errors: { kind: BlockUpdateRejection; detail: string }[] = [];
   const warnings: BlockUpdateWarning[] = [];
@@ -89,6 +108,13 @@ export function applyBlockUpdate(
   if (!isRecord(output) || !Array.isArray(output.ops) || !Array.isArray(output.display) || !Array.isArray(output.evaluation)) {
     return { ok: false, errors: [{ kind: "invalid_shape", detail: "ops, display, evaluation 배열이 필요합니다." }] };
   }
+  if (!isTargetResponse(output.targetResponse)) {
+    return {
+      ok: false,
+      errors: [{ kind: "invalid_target_response", detail: `targetResponse: ${String(output.targetResponse)}` }],
+    };
+  }
+  const targetResponse = output.targetResponse;
   const commits = evidenceIndex(context.snapshot);
 
   const validateSources = (sources: unknown, where: string): sources is readonly ClaimSource[] => {
@@ -253,6 +279,7 @@ export function applyBlockUpdate(
 
   // 3. 평가를 검증합니다.
   const evaluation = { ...state.evaluation };
+  const evaluatedBlocks = new Set<BlockKind>();
   (output.evaluation as unknown[]).forEach((raw, index) => {
     const where = `evaluation[${index}]`;
     if (!isRecord(raw)) return fail("invalid_shape", where);
@@ -265,8 +292,15 @@ export function applyBlockUpdate(
     const consistent = raw.sufficient ? raw.reason === "sufficient" || raw.reason === "none" : raw.reason !== "sufficient";
     if (!consistent) return fail("invalid_evaluation", `${where}: sufficient와 reason이 어긋납니다.`);
     evaluation[raw.block] = { sufficient: raw.sufficient, askable: raw.askable, reason: raw.reason as never };
+    evaluatedBlocks.add(raw.block);
     affected.add(raw.block);
   });
+
+  // targetBlock은 주장이 바뀌지 않았어도 반드시 평가받아야 하고, 이번에 주장이 바뀐 블록(affected)도
+  // 평가 없이 낡은 값을 남기면 안 됩니다(설계 4-4절, 백로그 2026-09-11 1번).
+  for (const block of new Set([context.targetBlock, ...affected])) {
+    if (!evaluatedBlocks.has(block)) fail("invalid_evaluation", `${block} 블록의 평가가 빠졌습니다.`);
+  }
 
   if (errors.length > 0) return { ok: false, errors };
 
@@ -281,7 +315,13 @@ export function applyBlockUpdate(
   if (byteLength(JSON.stringify(next.claims)) > CLAIMS_STATE_MAX_BYTES) {
     return { ok: false, errors: [{ kind: "claims_too_large", detail: `주장 상태가 ${CLAIMS_STATE_MAX_BYTES}바이트를 넘습니다.` }] };
   }
-  return { ok: true, state: next, affectedBlocks: BLOCK_KINDS.filter((block) => affected.has(block)), warnings };
+  return {
+    ok: true,
+    state: next,
+    affectedBlocks: BLOCK_KINDS.filter((block) => affected.has(block)),
+    warnings,
+    targetResponse,
+  };
 }
 
 /** 화면 표시입니다. 모델 출력이 아니라 참조된 주장의 출처에서 계산합니다. */

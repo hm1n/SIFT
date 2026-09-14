@@ -1,0 +1,132 @@
+// @vitest-environment jsdom
+import { StrictMode, type ReactNode } from "react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
+import { encodeSseEvent } from "@/features/interview/sse";
+import { useInterviewStream } from "@/features/interview/use-interview-stream";
+import { emptyExperienceBlockState } from "@/features/experience-block/types";
+import { emptyInterviewProgress, recordAsked, recordResponse, selectNextTarget } from "@/features/experience-block/progress";
+import { useExperienceInterview } from "@/features/experience-block/use-experience-interview";
+
+afterEach(cleanup);
+const snapshot = evidenceSnapshotFixture();
+const full = { sufficient: true, askable: false, reason: "sufficient" as const };
+function body(version = 1, done = false) {
+  const state = { ...emptyExperienceBlockState(), version };
+  if (done) state.evaluation = { problem: full, alternatives: full, action: full, result: full };
+  return { state, affectedBlocks: [], targetResponse: "provided" };
+}
+function response(value: unknown, status = 200) {
+  return { ok: status === 200, status, json: async () => value } as Response;
+}
+function abortable(init: RequestInit): Promise<Response> {
+  return new Promise((_resolve, reject) => init.signal!.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError"))));
+}
+function mount(blockFetch: (init: RequestInit) => Promise<Response>, strict = false) {
+  let questionCount = 0;
+  const fetchImpl = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === "/block") return blockFetch(init!);
+    questionCount++;
+    return new Response(encodeSseEvent({ type: "chunk", seq: 1, text: `Question ${questionCount}` }) + encodeSseEvent({ type: "done", seq: 1 }), { headers: { "Content-Type": "text/event-stream" } });
+  });
+  const hook = renderHook(() => useExperienceInterview({ questionUrl: "/question", blockUpdateUrl: "/block", snapshot, fetchImpl, retryDelaysMs: [], scheduleFrame: (cb) => { cb(); return 0; }, cancelFrame: () => {} }), strict ? { wrapper: ({ children }: { children: ReactNode }) => <StrictMode>{children}</StrictMode> } : undefined);
+  return { ...hook, fetchImpl, questionCount: () => questionCount };
+}
+async function submit(h: ReturnType<typeof mount>, answer: string) {
+  await waitFor(() => expect(h.result.current.canSubmitAnswer).toBe(true));
+  act(() => { expect(h.result.current.submitAnswer(answer)).toBe(true); });
+}
+
+it("S1: the existing interview hook must still end under StrictMode", () => {
+  const h = renderHook(() => useInterviewStream({ url: "/question", snapshot, autoStart: false }), { wrapper: ({ children }: { children: ReactNode }) => <StrictMode>{children}</StrictMode> });
+  act(() => h.result.current.endInterview());
+  expect(h.result.current.isEnded).toBe(true);
+});
+
+it("S2: StrictMode must not discard the first successful block update", async () => {
+  const h = mount(async () => response(body()), true);
+  await submit(h, "first answer");
+  await act(async () => { await Promise.resolve(); });
+  expect(h.result.current.blockState.version).toBe(1);
+});
+
+it("S3: retrying old t1 must not lose a currently processing t2", async () => {
+  let calls = 0;
+  const h = mount(async (init) => {
+    calls++;
+    if (calls === 1) return response({ error: { kind: "block_update_rejected" } }, 502);
+    if (calls === 2) return abortable(init);
+    return response(body());
+  });
+  await submit(h, "t1 answer");
+  await waitFor(() => expect(h.result.current.unreflectedTurnId).toBe("t1"));
+  await submit(h, "t2 answer");
+  await waitFor(() => expect(calls).toBe(2));
+  await act(async () => h.result.current.retryUnreflectedBlockUpdate());
+  await waitFor(() => expect(calls).toBe(3));
+  expect(h.result.current.unreflectedTurnId).toBe("t2");
+});
+
+it("S4: unmount during a retry queue must not launch the remaining requests", async () => {
+  let calls = 0;
+  const h = mount(async (init) => {
+    calls++;
+    if (calls <= 2) return response({ error: { kind: "block_update_rejected" } }, 502);
+    if (calls === 3) return abortable(init);
+    return response(body());
+  });
+  await submit(h, "t1 answer");
+  await waitFor(() => expect(h.result.current.turnsUsed).toBe(1));
+  await submit(h, "t2 answer");
+  await waitFor(() => expect(h.result.current.turnsUsed).toBe(2));
+  act(() => h.result.current.retryUnreflectedBlockUpdate());
+  await waitFor(() => expect(calls).toBe(3));
+  await act(async () => h.unmount());
+  expect(calls).toBe(3);
+});
+
+it("S5: responding to a completion notice is not another AI question turn", async () => {
+  const h = mount(async () => response(body(1, true)));
+  await submit(h, "complete answer");
+  await waitFor(() => expect(h.result.current.isReadyToFinish).toBe(true));
+  await submit(h, "supplement without a new AI question");
+  await act(async () => { await Promise.resolve(); });
+  expect(h.questionCount()).toBe(1);
+  expect(h.result.current.turnsUsed).toBe(1);
+});
+
+it("S6: a failed evaluation after the last retry must not allow the same target again", () => {
+  let p = recordAsked(emptyInterviewProgress(), "problem", "a");
+  p = recordResponse(p, "problem", "a", "unknown");
+  p = recordAsked(p, "problem", "b");
+  p = recordResponse(p, "problem", "b", "unknown");
+  p = recordAsked(p, "problem", "b");
+  p = recordResponse(p, "problem", "b", "unknown");
+  p = recordAsked(p, "problem", "a");
+  // The evaluation of a's retry failed, so applyTurn never calls recordResponse.
+  const next = selectNextTarget({
+    evaluation: { problem: { sufficient: false, askable: true, reason: "askable" }, alternatives: full, action: full, result: full },
+    progress: p, turnsUsed: 4, maxTurns: 10, isEnded: false,
+    lastTarget: { block: "problem", element: "a" },
+  });
+  expect(next).toEqual({ kind: "done" });
+});
+
+it("C1: first unknown after provided retains the retry", () => {
+  let p = recordAsked(emptyInterviewProgress(), "problem", "a");
+  p = recordResponse(p, "problem", "a", "provided");
+  p = recordAsked(p, "problem", "a");
+  p = recordResponse(p, "problem", "a", "unknown");
+  expect(p.problem.elements.a.reaskUsed).toBe(false);
+});
+
+it("C2: ordinary t2 success keeps t1 pending", async () => {
+  let calls = 0;
+  const h = mount(async () => ++calls === 1 ? response({ error: { kind: "block_update_rejected" } }, 502) : response(body()));
+  await submit(h, "t1 answer");
+  await waitFor(() => expect(h.result.current.unreflectedTurnId).toBe("t1"));
+  await submit(h, "t2 answer");
+  await waitFor(() => expect(h.result.current.turnsUsed).toBe(2));
+  expect(h.result.current.unreflectedTurnId).toBe("t1");
+});

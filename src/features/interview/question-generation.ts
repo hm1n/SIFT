@@ -3,7 +3,9 @@ import { generationEmptyError } from "./errors";
 import {
   INTERVIEW_HISTORY_MAX_BYTES,
   INTERVIEW_HISTORY_MAX_ITEMS,
+  INTERVIEW_LAST_OUTCOME_MAX_BYTES,
   type InterviewHistoryMessage,
+  type InterviewLastOutcome,
 } from "./history";
 import { mapInterviewLlmError } from "./llm-error";
 import {
@@ -21,6 +23,7 @@ import { createInterviewQuestionModel } from "@/features/experience-candidates/l
 import { serializedByteLength } from "@/features/experience-candidates/evidence-snapshot";
 import { INTERVIEW_HISTORY_ITEM_MAX_BYTES } from "./history";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
+import { BLOCK_ELEMENT_PURPOSES, type BlockElement, type BlockKind } from "@/features/experience-block/types";
 
 /**
  * 첫 질문 생성 모델입니다.
@@ -165,6 +168,7 @@ export const INTERVIEW_QUESTION_MAX_PROMPT_BYTES =
   EVIDENCE_SNAPSHOT_MAX_INPUT_TOKENS * EVIDENCE_SNAPSHOT_BYTES_PER_TOKEN +
   INTERVIEW_QUESTION_SYSTEM_PROMPT_MAX_BYTES +
   INTERVIEW_HISTORY_MAX_BYTES +
+  INTERVIEW_LAST_OUTCOME_MAX_BYTES +
   2 * (1 + INTERVIEW_HISTORY_MAX_ITEMS) +
   PROMPT_BYTES_TOLERANCE;
 
@@ -176,6 +180,16 @@ export interface InterviewQuestionPrompt {
    * 같이 시스템 프롬프트와 근거 하나뿐입니다.
    */
   readonly history: readonly InterviewHistoryMessage[];
+  /**
+   * 이번 질문이 겨냥하는 블록과 요소입니다. targetBlock과 targetElement가 둘 다 있을 때만
+   * 생기는 JSON 문자열이고, 없으면 null입니다(첫 질문이거나 대상을 정하지 않은 호출).
+   */
+  readonly focus: string | null;
+  /**
+   * 직전 턴의 블록 갱신 결과입니다(이슈 #90, 구현검토 2026-09-11 P1-5). `lastOutcome` 입력이
+   * 있을 때만 생기는 JSON 문자열이고, 없으면 null입니다.
+   */
+  readonly lastOutcome: string | null;
 }
 
 /** provider 호출을 주입할 수 있게 열어 둡니다. 테스트와 측정 스크립트가 같은 자리에 들어옵니다. */
@@ -187,6 +201,11 @@ export type GenerateInterviewQuestion = (
 export interface BuildInterviewQuestionPromptOptions {
   readonly history?: readonly InterviewHistoryMessage[];
   readonly variant?: InterviewPromptVariant;
+  /** 이번 질문이 겨냥할 블록과 요소입니다. 둘 다 있을 때만 `focus`가 생깁니다. */
+  readonly targetBlock?: BlockKind;
+  readonly targetElement?: BlockElement;
+  /** 직전 턴의 블록 갱신 결과입니다. 있을 때만 `lastOutcome` 메시지가 생깁니다. */
+  readonly lastOutcome?: InterviewLastOutcome;
 }
 
 /**
@@ -194,18 +213,35 @@ export interface BuildInterviewQuestionPromptOptions {
  *
  * 이력이 있으면 시스템 프롬프트에 꼬리 질문 규칙이 더해집니다. 이력이 없으면 첫 질문 경로와
  * 완전히 같은 값이 나옵니다.
+ *
+ * `targetBlock`과 `targetElement`는 시스템 프롬프트가 아니라 별도 `focus` 메시지에 실립니다
+ * (질문마다 달라져 시스템 프롬프트 바이트 상한 유도가 흔들리면 안 되기 때문입니다, 설계
+ * `llm-wiki/wiki/2026-09-11-PAAR-경험블록-설계-개정.md` 6절).
  */
 export function buildInterviewQuestionPrompt(
   snapshot: ExperienceEvidenceSnapshot,
   {
     history = [],
     variant = INTERVIEW_QUESTION_PROMPT_VARIANT,
+    targetBlock,
+    targetElement,
+    lastOutcome,
   }: BuildInterviewQuestionPromptOptions = {}
 ): InterviewQuestionPrompt {
+  const focus =
+    targetBlock !== undefined && targetElement !== undefined
+      ? JSON.stringify({
+          targetBlock,
+          targetElement,
+          purpose: BLOCK_ELEMENT_PURPOSES[targetBlock][targetElement],
+        })
+      : null;
   return {
     system: renderInterviewQuestionSystemPrompt(variant, history.length > 0),
     evidence: renderInterviewEvidencePrompt(snapshot),
     history,
+    focus,
+    lastOutcome: lastOutcome !== undefined ? JSON.stringify(lastOutcome) : null,
   };
 }
 
@@ -217,7 +253,13 @@ export function buildInterviewQuestionPrompt(
  * 얹으면 충분합니다.
  */
 export function interviewQuestionPromptBytes(prompt: InterviewQuestionPrompt): number {
-  const parts = [prompt.system, prompt.evidence, ...prompt.history.map(({ text }) => text)];
+  const parts = [
+    prompt.system,
+    prompt.evidence,
+    ...(prompt.focus !== null ? [prompt.focus] : []),
+    ...(prompt.lastOutcome !== null ? [prompt.lastOutcome] : []),
+    ...prompt.history.map(({ text }) => text),
+  ];
   return new TextEncoder().encode(parts.join("\n\n")).byteLength;
 }
 
@@ -289,6 +331,8 @@ export const INTERVIEW_QUESTION_MAX_RETRIES = 1;
 export function toInterviewQuestionMessages({
   evidence,
   history,
+  focus,
+  lastOutcome,
 }: InterviewQuestionPrompt): { role: "user" | "assistant"; content: string }[] {
   return [
     { role: "user", content: evidence },
@@ -296,6 +340,10 @@ export function toInterviewQuestionMessages({
       role: role === "question" ? ("assistant" as const) : ("user" as const),
       content: text,
     })),
+    // lastOutcome을 먼저 둡니다. "직전 처리가 이랬다"는 맥락이 "이번엔 이걸 겨냥한다"는 focus보다
+    // 앞에 와야 자연스럽습니다.
+    ...(lastOutcome !== null ? [{ role: "user" as const, content: lastOutcome }] : []),
+    ...(focus !== null ? [{ role: "user" as const, content: focus }] : []),
   ];
 }
 
@@ -415,6 +463,11 @@ export interface StartInterviewQuestionStreamOptions {
   /** 지나간 질문과 답변입니다. 비어 있으면 첫 질문을 만듭니다. */
   history?: readonly InterviewHistoryMessage[];
   variant?: InterviewPromptVariant;
+  /** 이번 질문이 겨냥할 블록과 요소입니다. 이력이 없는 첫 질문에도 넘길 수 있습니다. */
+  targetBlock?: BlockKind;
+  targetElement?: BlockElement;
+  /** 직전 턴의 블록 갱신 결과입니다. 이력이 없는 첫 질문에는 오지 않습니다. */
+  lastOutcome?: InterviewLastOutcome;
   firstChunkTimeoutMs?: number;
   totalTimeoutMs?: number;
   /** 클라이언트가 연결을 끊으면 provider 호출도 함께 끊습니다. */
@@ -427,6 +480,9 @@ export async function startInterviewQuestionStream(
     generate = defaultGenerate,
     history,
     variant,
+    targetBlock,
+    targetElement,
+    lastOutcome,
     firstChunkTimeoutMs = INTERVIEW_QUESTION_FIRST_CHUNK_TIMEOUT_MS,
     totalTimeoutMs = INTERVIEW_QUESTION_TOTAL_TIMEOUT_MS,
     signal,
@@ -471,7 +527,7 @@ export async function startInterviewQuestionStream(
     );
   }
 
-  const prompt = buildInterviewQuestionPrompt(snapshot, { history, variant });
+  const prompt = buildInterviewQuestionPrompt(snapshot, { history, variant, targetBlock, targetElement, lastOutcome });
   const iterator = generate(prompt, controller.signal)[Symbol.asyncIterator]();
 
   /**

@@ -2,9 +2,13 @@ import {
   INTERVIEW_HISTORY_ITEM_MAX_BYTES,
   INTERVIEW_HISTORY_MAX_BYTES,
   INTERVIEW_HISTORY_MAX_ITEMS,
+  INTERVIEW_LAST_OUTCOME_MAX_BYTES,
+  INTERVIEW_LAST_OUTCOME_MAX_CONFLICTS,
+  INTERVIEW_LAST_OUTCOME_OBSERVATION_MAX_BYTES,
   interviewHistoryItemBytes,
   isWellFormedInterviewHistory,
   type InterviewHistoryMessage,
+  type InterviewLastOutcome,
 } from "./history";
 import type {
   EvidenceSnapshotCommit,
@@ -12,6 +16,14 @@ import type {
   EvidenceVerifiability,
   ExperienceEvidenceSnapshot,
 } from "@/features/experience-candidates/types";
+import {
+  isBlockElement,
+  isBlockKind,
+  TARGET_RESPONSES,
+  type BlockElement,
+  type BlockKind,
+} from "@/features/experience-block/types";
+import { serializedByteLength } from "@/features/experience-candidates/evidence-snapshot";
 
 /**
  * `POST /api/interview/stream`의 요청 본문입니다. 하위 이슈 B와 공유하는 계약이고 착수 전에
@@ -23,6 +35,19 @@ import type {
 export interface InterviewStreamRequestBody {
   readonly snapshot: ExperienceEvidenceSnapshot;
   readonly history: readonly InterviewHistoryMessage[];
+  /**
+   * 이번 질문이 겨냥할 블록과 요소입니다(이슈 #90). 훅이 6절 "다음 질문 선택" 로직으로 정해 보내고,
+   * 이 route는 프롬프트의 `focus`에 실어 모델에게 초점을 알리는 데만 씁니다. 이력이 없는 첫 질문도
+   * 겨냥할 대상이 있으므로(문제 블록의 첫 요소) 이력 유무와 무관하게 선택 항목입니다. 없으면 이전
+   * 계약처럼 대상 없는 일반 질문을 만듭니다.
+   */
+  readonly targetBlock?: BlockKind;
+  readonly targetElement?: BlockElement;
+  /**
+   * 직전 턴의 블록 갱신 결과입니다(이슈 #90, 구현검토 2026-09-11 P1-5). 눈에 띄는 결과가 있을
+   * 때만 훅이 실어 보내는 선택 항목입니다. `history.ts`의 `InterviewLastOutcome` 참고.
+   */
+  readonly lastOutcome?: InterviewLastOutcome;
 }
 
 /**
@@ -47,7 +72,17 @@ export const SNAPSHOT_BODY_BYTES = 64 * 1024;
  * 첫 질문 요청은 그대로 통과합니다. 이력 몫은 `INTERVIEW_MAX_TURNS`에서 유도되므로 지원할 턴 수를
  * 바꾸면 이 값이 따라옵니다.
  */
-export const MAX_INTERVIEW_STREAM_BODY_BYTES = SNAPSHOT_BODY_BYTES + INTERVIEW_HISTORY_MAX_BYTES;
+/**
+ * `targetBlock`·`targetElement`와 JSON 구조 오버헤드를 위한 여유입니다. 이슈 #90에서 더했습니다.
+ * `experience-block/request.ts`의 `EXPERIENCE_BLOCK_REQUEST_META_BYTES`와 같은 성격입니다.
+ */
+export const INTERVIEW_STREAM_TARGET_META_BYTES = 128;
+
+export const MAX_INTERVIEW_STREAM_BODY_BYTES =
+  SNAPSHOT_BODY_BYTES +
+  INTERVIEW_HISTORY_MAX_BYTES +
+  INTERVIEW_STREAM_TARGET_META_BYTES +
+  INTERVIEW_LAST_OUTCOME_MAX_BYTES;
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/;
 
@@ -165,6 +200,25 @@ function isHistoryMessage(value: unknown): value is InterviewHistoryMessage {
   return (value.role === "question" || value.role === "answer") && typeof value.text === "string";
 }
 
+function isLastOutcome(value: unknown): value is InterviewLastOutcome {
+  if (!isRecord(value)) return false;
+  if (typeof value.blockUpdateFailed !== "boolean") return false;
+  if (value.targetResponse !== null && !TARGET_RESPONSES.includes(value.targetResponse as (typeof TARGET_RESPONSES)[number])) {
+    return false;
+  }
+  // 실패한 블록 갱신에는 분류할 응답이 없습니다(구현검토 2026-09-11 P1-5). 두 필드가 서로 모순되는
+  // 조합(예: 실패했는데 targetResponse가 있음)은 다음 질문 생성에 앞뒤가 안 맞는 직전 결과를
+  // 전달하므로 여기서 거절합니다.
+  if (value.blockUpdateFailed !== (value.targetResponse === null)) return false;
+  if (!Array.isArray(value.conflicts) || value.conflicts.length > INTERVIEW_LAST_OUTCOME_MAX_CONFLICTS) return false;
+  return value.conflicts.every(
+    (conflict) =>
+      isRecord(conflict) &&
+      typeof conflict.observation === "string" &&
+      serializedByteLength(conflict.observation) <= INTERVIEW_LAST_OUTCOME_OBSERVATION_MAX_BYTES
+  );
+}
+
 /**
  * 요청 본문 파싱 결과입니다.
  *
@@ -229,5 +283,32 @@ export function parseInterviewStreamRequestBody(
     };
   }
 
-  return { ok: true, body: { snapshot: value.snapshot, history } };
+  const hasTargetBlock = value.targetBlock !== undefined;
+  const hasTargetElement = value.targetElement !== undefined;
+  if (hasTargetBlock !== hasTargetElement) {
+    return {
+      ok: false,
+      kind: "invalid_request",
+      message: "대상 블록과 대상 요소는 함께 있거나 함께 없어야 합니다.",
+    };
+  }
+  if (hasTargetBlock && (!isBlockKind(value.targetBlock) || !isBlockElement(value.targetElement))) {
+    return { ok: false, kind: "invalid_request", message: "대상 블록이나 대상 요소가 올바르지 않습니다." };
+  }
+
+  if (value.lastOutcome !== undefined && !isLastOutcome(value.lastOutcome)) {
+    return { ok: false, kind: "invalid_request", message: "직전 처리 결과 형식이 올바르지 않습니다." };
+  }
+
+  return {
+    ok: true,
+    body: {
+      snapshot: value.snapshot,
+      history,
+      ...(hasTargetBlock
+        ? { targetBlock: value.targetBlock as BlockKind, targetElement: value.targetElement as BlockElement }
+        : {}),
+      ...(value.lastOutcome !== undefined ? { lastOutcome: value.lastOutcome as InterviewLastOutcome } : {}),
+    },
+  };
 }
