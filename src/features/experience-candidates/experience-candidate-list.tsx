@@ -5,7 +5,7 @@ import type { ExperienceCandidateListItem, StageBCandidateResult } from "./types
 import type { CandidateDataOutput, ReadonlyCommitDetail } from "@/lib/github/types";
 import type { RepositoryRef } from "@/lib/github/types";
 import { VERIFIABILITY_LABEL } from "./evidence-verifiability";
-import { deriveCandidatePeriod, pluralCount } from "./candidate-period";
+import { commitTitle, deriveCandidatePeriod, pluralCount } from "./candidate-period";
 import { ExperienceCandidateDetail } from "./experience-candidate-detail";
 import { InterviewScreen } from "@/features/interview/interview-screen";
 import { confirmExperienceSelection, type ExperienceSelectionState } from "./experience-selection";
@@ -103,7 +103,7 @@ export function ExperienceCandidateList({
           ) : null}
           <ul className={styles.candidateList} aria-label="Candidates">
             {items.map(({ candidate, commit, normalizedRelatedShas }) => {
-              const indexedTitle = commit?.title ?? `커밋 색인 실패 · ${candidate.sha.slice(0, 7)}`;
+              const indexedTitle = commitTitle(commit, candidate.sha);
               const selected = candidate.sha === selectedSha;
               const commitCount = 1 + normalizedRelatedShas.length;
               const relatedDates = normalizedRelatedShas

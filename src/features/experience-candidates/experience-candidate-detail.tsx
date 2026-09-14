@@ -8,7 +8,7 @@ import {
   REPOSITORY_VERIFIED_NOTICE,
   VERIFIABILITY_LABEL,
 } from "./evidence-verifiability";
-import { deriveCandidatePeriod, formatCommitDate, pluralCount } from "./candidate-period";
+import { commitTitle, deriveCandidatePeriod, formatCommitDate, pluralCount } from "./candidate-period";
 import { EXPERIENCE_SELECTION_ERROR_COPY } from "./experience-selection";
 import styles from "./experience-candidate-detail.module.css";
 
@@ -54,7 +54,7 @@ interface EvidenceListEntry {
 function evidenceEntry(sha: string, commit: ReadonlyCommitDetail | null, aiSelected: boolean): EvidenceListEntry {
   return {
     sha,
-    title: commit?.title ?? `커밋 색인 실패 · ${sha.slice(0, 7)}`,
+    title: commitTitle(commit, sha),
     date: commit?.date ?? null,
     pullRequests: commit?.pullRequests ?? [],
     aiSelected,
@@ -73,7 +73,7 @@ export function ExperienceCandidateDetail({
 }: ExperienceCandidateDetailProps) {
   const [showAllEvidence, setShowAllEvidence] = useState(false);
   const { candidate, commit, normalizedRelatedShas } = item;
-  const title = commit?.title ?? `커밋 색인 실패 · ${candidate.sha.slice(0, 7)}`;
+  const title = commitTitle(commit, candidate.sha);
   const commitCount = 1 + normalizedRelatedShas.length;
 
   const evidenceEntries: readonly EvidenceListEntry[] = [
@@ -142,7 +142,7 @@ export function ExperienceCandidateDetail({
           </div>
           {evidenceEntries.length > EVIDENCE_LIST_COLLAPSE_THRESHOLD ? (
             <button className={styles.viewAllButton} type="button" onClick={() => setShowAllEvidence((value) => !value)}>
-              {showAllEvidence ? "Show less" : `View all ${evidenceEntries.length} commits →`}
+              {showAllEvidence ? "Show less" : `View all ${pluralCount(evidenceEntries.length, "commit")} →`}
             </button>
           ) : null}
         </section>
