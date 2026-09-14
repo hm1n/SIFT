@@ -15,7 +15,13 @@
  * 낭독 경계와 `InterviewMessage`의 memo 경계는 건드리지 않았습니다.
  */
 .stream { display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; padding: 16px 0; }
-.log { display: grid; gap: 4px; flex: 1; min-height: 0; overflow-y: auto; border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px; background: var(--color-card); overflow-wrap: anywhere; }
+/*
+ * `align-content: start`가 있어야 합니다. grid의 기본값 `stretch`는 컨테이너에 남는 높이를 자동 크기
+ * 행에 나눠 줍니다. #98에서 `max-height: 60vh`를 걷어내고 로그가 열 높이를 채우게 되자 남는 높이가
+ * 생겼고, 대화가 짧을 때 메시지 블록이 화면 높이를 따라 늘어났습니다. 메시지 높이는 내용이 정합니다.
+ * `experience-candidate-list.module.css`의 `.candidateList`가 같은 이유로 같은 선언을 씁니다.
+ */
+.log { display: grid; align-content: start; gap: 4px; flex: 1; min-height: 0; overflow-y: auto; border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px; background: var(--color-card); overflow-wrap: anywhere; }
 .preparing { color: var(--color-muted-foreground); font-size: 14px; }
 
 .message { display: grid; gap: 6px; border-top: 1px solid var(--color-border); padding: 12px 0; color: var(--color-foreground); font-size: 14px; line-height: 1.65; }
