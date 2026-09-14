@@ -137,6 +137,63 @@ describe("useExperienceInterview", () => {
     expect(result.current.turnsUsed).toBe(1);
   });
 
+  it("currentTarget이 다음 질문의 대상을 따라간다", async () => {
+    // 블록 패널의 "수집 중" 카드와 답변 입력 아래의 현재 블록 안내가 이 값을 읽습니다. ref로만
+    // 들고 있으면 대상이 바뀌어도 렌더가 일어나지 않아 화면이 앞 블록에 멈춥니다.
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    const fetchImpl = makeFetchImpl({
+      questionSources: [q1, q2],
+      blockUpdateResponses: [jsonResponse(200, blockUpdateBody({ evaluation: { problem: SUFFICIENT } }))],
+    });
+    const { result } = renderHook(() =>
+      useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    expect(result.current.currentTarget).toEqual({ targetBlock: "problem", targetElement: "a" });
+    completeQuestion(q1, "문제 상황을 알려주세요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+    act(() => {
+      result.current.submitAnswer("화면이 비어 있었습니다.");
+    });
+
+    await waitFor(() =>
+      expect(result.current.currentTarget).toEqual({ targetBlock: "alternatives", targetElement: "a" })
+    );
+  });
+
+  it("블록 갱신을 호출하는 동안 isBlockUpdating이 참이다", async () => {
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    // 응답을 우리가 풀어 줄 때까지 붙잡아 호출 중인 구간을 만듭니다.
+    let release: (response: Response) => void = () => {};
+    const blockUpdate = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === QUESTION_URL) return (fetchImpl.mock.calls.length === 1 ? q1 : q2).response;
+      return blockUpdate;
+    });
+    const { result } = renderHook(() =>
+      useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    completeQuestion(q1, "문제 상황을 알려주세요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+    act(() => {
+      result.current.submitAnswer("화면이 비어 있었습니다.");
+    });
+    await waitFor(() => expect(result.current.isBlockUpdating).toBe(true));
+
+    await act(async () => {
+      release(jsonResponse(200, blockUpdateBody({})));
+    });
+    await waitFor(() => expect(result.current.isBlockUpdating).toBe(false));
+  });
+
   it("블록 갱신이 실패해도 질문은 그대로 요청되고, 재시도로 미반영 턴을 다시 반영한다", async () => {
     const q1 = controllableResponse();
     const q2 = controllableResponse();
@@ -161,6 +218,8 @@ describe("useExperienceInterview", () => {
     // 실패해도 질문은 그대로 요청됩니다(질문1, 블록갱신 실패, 질문2).
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
     expect(result.current.unreflectedTurnId).toBe("t1");
+    // 블록 패널이 어느 카드에 오류를 그릴지 정하려면 미반영 턴이 겨냥했던 블록도 알아야 합니다.
+    expect(result.current.unreflectedBlocks).toEqual(["problem"]);
     // 실패만으로 같은 블록에 고정하지 않습니다. 이전 평가(null)로도 계속 이동 정책을 따릅니다.
     completeQuestion(q2, "다른 질문");
     await waitFor(() => expect(result.current.messages).toHaveLength(3));
@@ -170,6 +229,7 @@ describe("useExperienceInterview", () => {
     });
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(4));
     await waitFor(() => expect(result.current.unreflectedTurnId).toBeNull());
+    await waitFor(() => expect(result.current.unreflectedBlocks).toEqual([]));
     expect(result.current.blockState.evaluation.problem).toEqual(ASKABLE);
   });
 

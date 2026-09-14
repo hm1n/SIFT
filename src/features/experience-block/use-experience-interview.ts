@@ -17,7 +17,13 @@ import {
 } from "@/features/interview/use-interview-stream";
 import { BlockUpdateFetchError, fetchBlockUpdate } from "./client";
 import { emptyInterviewProgress, recordAsked, recordResponse, selectNextTarget } from "./progress";
-import { emptyExperienceBlockState, type ExperienceBlockState, type TargetResponse } from "./types";
+import {
+  BLOCK_KINDS,
+  emptyExperienceBlockState,
+  type BlockKind,
+  type ExperienceBlockState,
+  type TargetResponse,
+} from "./types";
 
 /**
  * 이슈 #90 "턴 진행과 블록 전환, 열 턴 자동 종료"의 훅입니다. 설계는
@@ -62,8 +68,29 @@ export interface UseExperienceInterviewState extends InterviewStreamState {
   isReadyToFinish: boolean;
   /** 종료 사유입니다. 종료 전에는 `null`입니다. */
   endReason: ExperienceInterviewEndReason | null;
+  /**
+   * 지금 화면에 있는 질문이 겨냥한 블록과 요소입니다. 첫 질문 전에도 `FIRST_TARGET`으로 정해져
+   * 있어 `null`이 되지 않습니다.
+   *
+   * 블록 패널이 "수집 중" 카드를 가리는 데 쓰고, 답변 입력 아래의 현재 블록 안내도 이 값을
+   * 읽습니다. 화면이 진행 상태를 따로 추적하면 질문이 겨냥한 블록과 어긋난 값을 그릴 수 있어,
+   * 대상을 실제로 정하는 이 훅이 그대로 내보냅니다.
+   */
+  currentTarget: NonNullable<InterviewQuestionTarget>;
+  /**
+   * 블록 갱신을 호출하는 중인지입니다. 현재 답변의 갱신과 미반영 재처리를 가리지 않습니다. 둘 다
+   * 같은 직렬 큐를 거치므로 한 번에 하나만 참입니다.
+   *
+   * 블록 패널의 "수집 중" 표시와 재처리 버튼의 중복 호출 방지에 함께 씁니다.
+   */
+  isBlockUpdating: boolean;
   /** 블록 갱신이 실패해 반영되지 않은 턴의 ID입니다. 없으면 `null`입니다. */
   unreflectedTurnId: string | null;
+  /**
+   * 미반영 턴들이 겨냥했던 블록입니다. 블록 패널이 어느 카드에 오류를 그릴지 정하는 데 씁니다.
+   * `unreflectedTurnId`가 가장 오래된 턴 하나만 알려 주는 것과 달리 미반영 턴 전체를 담습니다.
+   */
+  unreflectedBlocks: readonly BlockKind[];
   /** 미반영 턴의 블록 갱신을 다시 시도합니다. 미반영 턴이 없으면 아무 일도 하지 않습니다. */
   retryUnreflectedBlockUpdate: () => void;
 }
@@ -93,12 +120,20 @@ export function useExperienceInterview({
   const [isReadyToFinish, setIsReadyToFinish] = useState(false);
   const [endReason, setEndReason] = useState<ExperienceInterviewEndReason | null>(null);
   const [unreflectedTurnId, setUnreflectedTurnId] = useState<string | null>(null);
+  const [unreflectedBlocks, setUnreflectedBlocks] = useState<readonly BlockKind[]>([]);
 
   // 지금까지의 턴 전체입니다. 블록 갱신 호출이 매번 다시 싣습니다(설계 5절).
   const turnsRef = useRef<BlockUpdateTurn[]>([]);
   const turnSeqRef = useRef(0);
   // 방금 답한 질문이 겨냥했던 대상입니다. 첫 질문은 `initialTarget`과 같은 값으로 시작합니다.
   const answeredTargetRef = useRef<NonNullable<InterviewQuestionTarget>>(FIRST_TARGET);
+  /**
+   * `answeredTargetRef`를 화면이 읽을 수 있게 옮긴 값입니다. ref는 바뀌어도 렌더를 일으키지 않아
+   * 블록 패널이 대상 전환을 놓칩니다. 갱신하는 곳이 한 곳뿐이라 두 값이 갈릴 여지는 없습니다.
+   */
+  const [currentTarget, setCurrentTarget] = useState<NonNullable<InterviewQuestionTarget>>(FIRST_TARGET);
+  /** 블록 갱신 호출이 진행 중인지입니다. `activeRef`와 같은 사실을 화면 쪽으로 옮긴 것입니다. */
+  const [isBlockUpdating, setIsBlockUpdating] = useState(false);
   /**
    * 방금 답한 질문을 보낸 시점의, 그 대상 요소 `askedCount`입니다(CodeRabbit PR #117). 첫 질문은
    * `progressRef`의 초깃값이 이미 `recordAsked`를 한 번 거친 값이라 1입니다. `recordResponse`가
@@ -147,8 +182,14 @@ export function useExperienceInterview({
 
   /** `unreflectedRef`가 바뀐 뒤 노출용 상태를 맞춥니다. 가장 오래된(먼저 실패한) 턴을 보여 줍니다. */
   const syncUnreflectedTurnId = useCallback(() => {
-    const oldest = unreflectedRef.current.keys().next();
-    setUnreflectedTurnId(oldest.done ? null : oldest.value);
+    // `Map`이 넣은 순서를 지키므로 첫 항목이 먼저 실패한 턴입니다.
+    const pending = [...unreflectedRef.current.values()];
+    setUnreflectedTurnId(pending.length === 0 ? null : pending[0].turn.turnId);
+    // 미반영 턴이 여럿이면 겨냥한 블록도 여럿입니다. 화면이 어느 카드에 오류를 그릴지 정하려면
+    // 가장 오래된 턴 하나가 아니라 전부를 알아야 합니다.
+    setUnreflectedBlocks(
+      BLOCK_KINDS.filter((block) => pending.some((item) => item.target.targetBlock === block))
+    );
   }, []);
 
   const optionsRef = useRef({ questionUrl, blockUpdateUrl, snapshot, fetchImpl, retryDelaysMs, sleep, scheduleFrame, cancelFrame });
@@ -185,6 +226,7 @@ export function useExperienceInterview({
       const controller = new AbortController();
       activeAbortRef.current = controller;
       activeRef.current = { turn, target, askedCountAtQuestion };
+      setIsBlockUpdating(true);
       try {
         const result = await fetchBlockUpdate({
           url: current.blockUpdateUrl,
@@ -219,6 +261,7 @@ export function useExperienceInterview({
       } finally {
         activeRef.current = null;
         activeAbortRef.current = null;
+        setIsBlockUpdating(false);
       }
     },
     [setBlockStateBoth, syncUnreflectedTurnId]
@@ -317,6 +360,7 @@ export function useExperienceInterview({
       progressRef.current = recordAsked(progressRef.current, next.block, next.element);
       const target: NonNullable<InterviewQuestionTarget> = { targetBlock: next.block, targetElement: next.element };
       answeredTargetRef.current = target;
+      setCurrentTarget(target);
       answeredAskedCountRef.current = progressRef.current[next.block].elements[next.element].askedCount;
       return { kind: "ask", target, lastOutcome };
     },
@@ -395,7 +439,10 @@ export function useExperienceInterview({
     maxTurns: INTERVIEW_MAX_TURNS,
     isReadyToFinish,
     endReason,
+    currentTarget,
+    isBlockUpdating,
     unreflectedTurnId,
+    unreflectedBlocks,
     retryUnreflectedBlockUpdate,
   };
 }
