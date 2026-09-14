@@ -239,14 +239,14 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
               <span className={styles.label} id={labelId}>Your Contribution</span>
               <span className={styles.optional}>Optional</span>
             </div>
-            <p className={styles.contributionCopy} id={copyId}>프로젝트에서 주로 기여한 내용을 알려주세요.</p>
+            <p className={styles.contributionCopy} id={copyId}>Tell us what you mainly contributed to this project.</p>
             <div className={styles.textareaFrame}>
               <textarea
                 ref={textareaRef}
                 className={styles.textarea}
                 value={contribution}
                 onChange={(event) => setContribution(event.target.value)}
-                placeholder="실시간 채팅, 푸시 알림, TypeScript 전환 작업을 주로 담당했습니다."
+                placeholder="e.g. I mainly built the realtime chat, push notifications, and the TypeScript migration."
                 rows={3}
                 aria-labelledby={labelId}
                 aria-describedby={copyId}

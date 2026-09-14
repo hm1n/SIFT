@@ -61,7 +61,7 @@ export function errorResponse(error: unknown, total?: number): Response {
   const githubError =
     error instanceof GitHubFetchError
       ? error
-      : new GitHubFetchError("server_error", "GitHub 조회 요청을 처리하지 못했습니다.");
+      : new GitHubFetchError("server_error", "Could not handle the GitHub lookup request.");
   const body: SerializedGitHubError = {
     kind: githubError.kind,
     message: githubError.message,
@@ -82,7 +82,7 @@ export async function readApiResponse<T>(response: Response, detailError = false
   try {
     body = await response.json();
   } catch {
-    throw new GitHubFetchError("server_error", "서버 응답을 해석하지 못했습니다.");
+    throw new GitHubFetchError("server_error", "Could not parse the server response.");
   }
   if (response.ok) return body as T;
   const serialized =
@@ -91,7 +91,7 @@ export async function readApiResponse<T>(response: Response, detailError = false
       ? body.error
       : undefined;
   if (!serialized || !("kind" in serialized) || !isKind(serialized.kind)) {
-    throw new GitHubFetchError("server_error", "서버 오류 응답 형식이 올바르지 않습니다.");
+    throw new GitHubFetchError("server_error", "The server error response format is not valid.");
   }
   const errorBody = serialized as SerializedGitHubError;
   const cause = errorBody.causeKind
@@ -108,7 +108,7 @@ export async function apiFetch<T>(input: RequestInfo | URL, init?: RequestInit, 
   try {
     response = await fetch(input, init);
   } catch {
-    throw new GitHubFetchError("network", "서버에 연결하지 못했습니다.");
+    throw new GitHubFetchError("network", "Could not reach the server.");
   }
   return readApiResponse<T>(response, detailError);
 }

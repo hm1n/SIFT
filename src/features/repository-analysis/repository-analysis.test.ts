@@ -372,7 +372,7 @@ describe("generateCandidates", () => {
     if (last?.status !== "error") throw new Error("unreachable");
     expect(last.retryPoint).toBeUndefined();
     expect(last.error).toMatchObject({ kind: "contract_violation", recovery: "retry" });
-    expect(last.error.title).toContain("서버 계약과 맞지 않았습니다");
+    expect(last.error.title).toContain("did not match the server contract");
   });
 
   it("Stage A 실패는 Stage A부터 재시도할 수 있는 retryPoint를 남긴다", async () => {
@@ -500,10 +500,10 @@ describe("toCandidateGenerationError", () => {
       new CandidateRequestError("stage_a", "llm_timeout", "시간 초과"),
       "stage_a"
     );
-    expect(stageB.title).toContain("실행 시간 예산");
-    expect(stageB.message).toContain("GitHub diff·PR 조회를 포함한");
-    expect(stageA.title).toContain("LLM 분석 시간이 초과");
-    expect(stageA.title).not.toContain("예산");
+    expect(stageB.title).toContain("exceeded its time budget");
+    expect(stageB.message).toContain("including the GitHub diff and PR lookups");
+    expect(stageA.title).toContain("LLM analysis timed out");
+    expect(stageA.title).not.toContain("budget");
   });
 
   it("CandidateRequestError가 아닌 오류는 일반 실패와 재시도로 변환한다", () => {

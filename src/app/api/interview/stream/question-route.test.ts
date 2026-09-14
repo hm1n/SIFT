@@ -295,7 +295,7 @@ describe("POST /api/interview/stream", () => {
   });
 
   // Gemini는 잘못된 키를 401이 아니라 400 `INVALID_ARGUMENT`로 돌려줍니다(2026-09-01 실측). 본문으로
-  // 갈라 두지 않으면 이 실패가 `llm_request`로 가고, 화면이 "근거가 크기를 넘었습니다"를 띄웁니다.
+  // 갈라 두지 않으면 이 실패가 `llm_request`로 가고, 화면이 "근거가 over the size limit습니다"를 띄웁니다.
   it("잘못된 키의 400도 502와 llm_auth로 보낸다", async () => {
     const response = await handleInterviewQuestionStream(request({ snapshot }), {
       generate: () =>
@@ -348,7 +348,7 @@ describe("POST /api/interview/stream", () => {
       {
         type: "error",
         kind: "llm_failure",
-        message: "질문 생성 서비스가 일시적으로 응답하지 못했습니다.",
+        message: "The question generation service is temporarily unavailable.",
       },
     ]);
   });

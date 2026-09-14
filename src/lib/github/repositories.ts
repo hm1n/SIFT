@@ -45,12 +45,12 @@ export async function fetchUserRepositories(token: string): Promise<RepositorySu
     if (!response.ok) {
       throw new GitHubFetchError(
         response.status === 404 ? "server_error" : await classifyErrorResponse(response),
-        `Repository 목록을 가져오지 못했습니다 (${response.status})`
+        `Could not fetch the repository list (${response.status})`
       );
     }
-    const page = await parseJson<RawRepository[]>(response, "Repository 목록 응답을 해석하지 못했습니다");
+    const page = await parseJson<RawRepository[]>(response, "Could not parse the repository list response");
     if (!Array.isArray(page)) {
-      throw new GitHubFetchError("server_error", "Repository 목록 응답 형식이 올바르지 않습니다.");
+      throw new GitHubFetchError("server_error", "The repository list response format is not valid.");
     }
     for (const raw of page) {
       if (seen.has(raw.id)) continue;

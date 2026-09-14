@@ -76,13 +76,13 @@ export function RepositoryFlow() {
             aria-labelledby={leaveConfirmTitleId}
             aria-describedby={leaveConfirmDescId}
           >
-            <p id={leaveConfirmTitleId} className={styles.leaveConfirmTitle}>Repository를 바꾸시겠습니까?</p>
+            <p id={leaveConfirmTitleId} className={styles.leaveConfirmTitle}>Change repository?</p>
             <p id={leaveConfirmDescId} className={styles.leaveConfirmText}>
-              지금까지의 인터뷰 대화가 사라지고 다시 이어갈 수 없습니다. 작성 중인 답변도 사라집니다.
+              The interview conversation so far is cleared for good, along with any answer you are still writing.
             </p>
             <div className={styles.leaveConfirmActions}>
-              <Button variant="primary" onClick={leaveToSelection} autoFocus>Repository 바꾸기</Button>
-              <Button variant="secondary" onClick={() => setConfirmingLeave(false)}>인터뷰 계속하기</Button>
+              <Button variant="primary" onClick={leaveToSelection} autoFocus>Change repository</Button>
+              <Button variant="secondary" onClick={() => setConfirmingLeave(false)}>Continue the interview</Button>
             </div>
           </div>
         </div>

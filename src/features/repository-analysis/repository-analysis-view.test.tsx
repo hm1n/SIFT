@@ -264,22 +264,22 @@ describe("RepositoryAnalysisView Empty의 Stage A 제외 표시", () => {
     });
     await renderAndAnalyze();
 
-    expect(screen.getByRole("heading", { name: "1차 선별에서 제외된 항목" })).toBeInTheDocument();
-    expect(screen.getByText("저장소가 커서 전체 1묶음 중 0묶음만 판단했습니다")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Excluded in the first pass" })).toBeInTheDocument();
+    expect(screen.getByText("The repository is large, so only 0 of 1 work units were judged")).toBeInTheDocument();
   });
 
   it("제외 0건이면 제외 섹션이 렌더되지 않는다", async () => {
     mockState({ status: "empty", kind: "no_stage_a_candidates", stageASelection: EMPTY_STAGE_A_SELECTION });
     await renderAndAnalyze();
 
-    expect(screen.queryByRole("heading", { name: "1차 선별에서 제외된 항목" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Excluded in the first pass" })).not.toBeInTheDocument();
   });
 
   it("Stage A 전에 나는 빈 상태는 stageASelection이 없어도 지금과 똑같이 동작한다", async () => {
     mockState({ status: "empty", kind: "no_commits" });
     await renderAndAnalyze();
 
-    expect(screen.queryByRole("heading", { name: "1차 선별에서 제외된 항목" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Excluded in the first pass" })).not.toBeInTheDocument();
     expect(screen.getByText("No commits found to analyze.")).toBeInTheDocument();
   });
 
@@ -292,7 +292,7 @@ describe("RepositoryAnalysisView Empty의 Stage A 제외 표시", () => {
     });
     await renderAndAnalyze();
 
-    expect(screen.getByText("모델이 판단하지 못한 묶음 1건")).toBeInTheDocument();
+    expect(screen.getByText("1 work unit the model did not judge")).toBeInTheDocument();
     expect(screen.getByText("deadbee")).toBeInTheDocument();
   });
 
@@ -326,7 +326,7 @@ describe("RepositoryAnalysisView Empty의 Stage A 제외 표시", () => {
     });
     await renderAndAnalyze();
 
-    const summaryText = "저장소가 커서 전체 1묶음 중 0묶음만 판단했습니다";
+    const summaryText = "The repository is large, so only 0 of 1 work units were judged";
     const details = screen.getByText(summaryText).closest("details");
     expect(details).not.toHaveAttribute("open");
     fireEvent.click(screen.getByText(summaryText));
@@ -467,7 +467,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
 
     expect(screen.getByText("2 experiences found")).toBeInTheDocument();
     expect(screen.getByText(/나머지 커밋은 diff 근거가 부족합니다/)).toBeInTheDocument();
-    expect(screen.getByText(/기준을 완화하거나 후보를\s*임의로 채우지 않습니다/)).toBeInTheDocument();
+    expect(screen.getByText(/The bar is not lowered and candidates are not padded/)).toBeInTheDocument();
     // master-detail(#97)부터 기본 선택된 첫 후보의 evidence는 "Why worth discussing"에 나옵니다.
     expect(screen.getByText("상태 머신을 구현했습니다.")).toBeInTheDocument();
   });
@@ -487,7 +487,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
     await renderAndAnalyze();
 
     // master-detail(#97)부터 이 후보 하나뿐이면 처음부터 선택돼 있어 클릭이 필요 없습니다.
-    expect(screen.getByRole("link", { name: "커밋 색인 실패 · aaaaaaa" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Commit not indexed · aaaaaaa" })).toHaveAttribute(
       "href",
       `https://github.com/octocat/hello-world/commit/${sha}`
     );
@@ -512,7 +512,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
     await renderAndAnalyze();
 
     expect(screen.getByText("3 experiences found")).toBeInTheDocument();
-    expect(screen.queryByText(/후보를 3개 채우지 않은 이유/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Why there are not more candidates/)).not.toBeInTheDocument();
   });
 
   it.each([

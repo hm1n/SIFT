@@ -7,7 +7,12 @@
 .header { flex-shrink: 0; border-bottom: 1px solid var(--color-border); padding: 20px 24px; }
 .header h2 { margin: 0; color: var(--color-foreground); font-size: 14px; font-weight: 600; letter-spacing: -.01em; line-height: 1.4; }
 .eyebrow, .sectionEyebrow { display: block; margin: 0 0 8px; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); letter-spacing: var(--label-tracking); text-transform: uppercase; }
-.body { flex: 1; overflow-y: auto; padding: 20px 24px; display: grid; gap: 24px; }
+/*
+ * `align-content: start`가 있어야 합니다. grid의 기본값 `stretch`는 남는 높이를 자동 크기 행에
+ * 나눠 줍니다. `.body`는 `flex: 1`이라 목록 패널(`max-height: 640px`)이 더 길면 남는 높이가 생기고,
+ * 내용이 짧은 후보에서 문단 사이가 화면 높이를 따라 벌어졌습니다. 문단 높이는 내용이 정합니다.
+ */
+.body { flex: 1; overflow-y: auto; padding: 20px 24px; display: grid; align-content: start; gap: 24px; }
 .body p { margin: 0; color: var(--color-muted-foreground); font-size: 13px; line-height: 1.6; }
 .meta { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
 .meta span { color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-sm); }

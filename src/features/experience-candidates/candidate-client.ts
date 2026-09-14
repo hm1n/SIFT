@@ -93,13 +93,13 @@ async function postCandidateApi(stage: CandidateStage, url: string, body: unknow
       body: JSON.stringify(body),
     });
   } catch (cause) {
-    throw new CandidateRequestError(stage, "fetch_network", "후보 생성 서버에 연결하지 못했습니다.", { cause });
+    throw new CandidateRequestError(stage, "fetch_network", "Could not reach the candidate generation server.", { cause });
   }
   let payload: unknown;
   try {
     payload = await response.json();
   } catch (cause) {
-    throw new CandidateRequestError(stage, "invalid_response", "후보 생성 응답을 해석하지 못했습니다.", { cause });
+    throw new CandidateRequestError(stage, "invalid_response", "Could not parse the candidate generation response.", { cause });
   }
   if (response.ok) return payload;
   const error =
@@ -111,7 +111,7 @@ async function postCandidateApi(stage: CandidateStage, url: string, body: unknow
     typeof error?.kind === "string" && (KNOWN_ERROR_KINDS as readonly string[]).includes(error.kind)
       ? (error.kind as CandidateRequestErrorKind)
       : "server_error";
-  const message = typeof error?.message === "string" ? error.message : "후보 생성 요청에 실패했습니다.";
+  const message = typeof error?.message === "string" ? error.message : "The candidate generation request failed.";
   throw new CandidateRequestError(stage, kind, message, { retryable: error?.retryable !== false });
 }
 
@@ -291,7 +291,7 @@ export function assertStageARequestWithinLimits(
   throw new CandidateRequestError(
     "stage_a",
     "invalid_request",
-    "Stage A 입력이 한 번에 보낼 수 있는 상한에 들어가지 않습니다. 기여 항목이 길면 줄여주세요.",
+    "The Stage A input does not fit the limit for a single request. Shorten your contribution note if it is long.",
     { retryable: false }
   );
 }
@@ -377,7 +377,7 @@ export async function fetchStageACandidatesFromApi(
     throw new CandidateRequestError(
       "stage_a",
       "invalid_response",
-      "Stage A 응답 형식이 올바르지 않습니다."
+      "The Stage A response format is not valid."
     );
   }
   const { candidates, unclassifiedShas, unjudgedShas } = payload;
@@ -388,7 +388,7 @@ export async function fetchStageACandidatesFromApi(
     throw new CandidateRequestError(
       "stage_a",
       "schema_validation",
-      `Stage A 후보가 상한 ${INITIAL_STAGE_A_CANDIDATE_LIMIT}개를 넘었습니다.`
+      `Stage A returned more than the limit of ${INITIAL_STAGE_A_CANDIDATE_LIMIT} candidates.`
     );
   }
   // 후보 수 검증까지는 묶음 단위로 하고, 커밋으로 펼치는 것은 마지막에 합니다.
@@ -440,7 +440,7 @@ export async function fetchStageBCandidatesFromApi(
     !Array.isArray((payload as { diffs?: unknown }).diffs) ||
     !(payload as { diffs: unknown[] }).diffs.every(isCandidateDiff)
   ) {
-    throw new CandidateRequestError("stage_b", "invalid_response", "Stage B 응답 형식이 올바르지 않습니다.");
+    throw new CandidateRequestError("stage_b", "invalid_response", "The Stage B response format is not valid.");
   }
   const { diffs, ...output } = payload as { diffs: CandidateDiff[] } & Record<string, unknown>;
   try {
@@ -453,6 +453,6 @@ export async function fetchStageBCandidatesFromApi(
     return { ...validateExperienceCandidateOutput(output, candidates.length), diffs };
   } catch (cause) {
     // 서버가 이미 검증한 응답이므로 형식 위반은 LLM 스키마 위반이 아니라 전송 계층 문제로 다룹니다.
-    throw new CandidateRequestError("stage_b", "invalid_response", "Stage B 응답 형식이 올바르지 않습니다.", { cause });
+    throw new CandidateRequestError("stage_b", "invalid_response", "The Stage B response format is not valid.", { cause });
   }
 }

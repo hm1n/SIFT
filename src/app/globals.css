@@ -19,10 +19,21 @@
   --color-scrollbar: #d4d4d4;
   --color-scrollbar-hover: #a3a3a3;
 
+  /*
+   * diff 줄의 추가·삭제 색입니다. 디자인 원본(`Chat Interface Design/src/App.tsx`의 `DiffLineRow`)이
+   * 쓰는 값 그대로입니다. 색만으로 가르지 않습니다. `+`/`−` 기호와 줄 번호가 함께 남습니다.
+   */
+  --color-diff-add: #16a34a;
+  --color-diff-add-surface: #f0fdf4;
+  --color-diff-del: #dc2626;
+  --color-diff-del-surface: #fef2f2;
+
   --radius: 7px;
 
-  /* 폰트. Inter와 Geist Mono는 layout.tsx가 next/font로 등록한 변수이고, Pretendard는 CDN 스타일시트가 제공합니다. */
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  /* 폰트. Inter와 Geist Mono는 layout.tsx가 next/font로 등록한 변수이고, Pretendard는 CDN 스타일시트가 제공합니다.
+     --font-sans는 Inter 다음에 Pretendard를 둡니다. Inter의 @font-face에 한글 범위가 없어 브라우저가 글자 단위로
+     갈라 라틴은 Inter, 한글은 Pretendard로 그립니다. 화면 모듈마다 한글 폰트를 따로 지정하지 않기 위한 배치입니다. */
+  --font-sans: var(--font-inter), "Pretendard Variable", "Pretendard", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
   --font-pretendard: "Pretendard Variable", "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, Helvetica, Arial, sans-serif;
 
@@ -44,8 +55,18 @@ body {
   overflow-x: hidden;
 }
 
+/*
+ * `min-height`가 아니라 `height`입니다. 화면이 자기 안에서 스크롤하려면 위에서부터 확정된 높이가
+ * 내려와야 합니다. `min-height: 100%`는 아래 한계만 정하므로 내용이 뷰포트를 넘으면 body가 같이
+ * 자라고, 그러면 `flex: 1; min-height: 0`으로 줄어들 준비를 해 둔 아래 모든 칸이 줄어들 이유를
+ * 잃습니다. 코드 패널에서 변경 줄이 많은 파일을 고르면 diff가 자기 안에서 스크롤하지 않고 화면
+ * 전체를 늘렸습니다.
+ *
+ * `overflow-x: hidden` 때문에 body의 `overflow-y`는 `auto`로 계산됩니다. 그래서 셸을 쓰지 않는
+ * 화면(로그인)에서 내용이 뷰포트를 넘으면 body가 스크롤합니다. 잘리지 않습니다.
+ */
 body {
-  min-height: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   color: var(--color-foreground);

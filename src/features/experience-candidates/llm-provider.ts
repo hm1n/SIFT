@@ -64,7 +64,7 @@ export function requireLocalModel(config: LocalLlmConfig, model: string | null, 
     // 모델 설정 오류로 뭉개져 원인이 환경변수 누락이라는 사실이 드러나지 않습니다.
     throw new ExperienceCandidateOutputError(
       "llm_configuration",
-      `NEXT_PUBLIC_LLM_BASE_URL을 설정했으면 ${envName}도 설정해야 합니다.`
+      `If NEXT_PUBLIC_LLM_BASE_URL is set, ${envName} must be set too.`
     );
   }
   return createGroq({ baseURL: config.baseURL, apiKey: config.apiKey })(model);

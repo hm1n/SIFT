@@ -107,7 +107,7 @@ async function requestPage<T>(
     );
   }
   return {
-    data: await parseJson<T>(response, `${context} 응답을 해석하지 못했습니다`),
+    data: await parseJson<T>(response, `Could not parse the ${context} response`),
     next: parseNextLink(response.headers.get("link")),
   };
 }
@@ -125,7 +125,7 @@ async function fetchAllCommitFiles(
     const page: { data: RawCommitDetail; next: string | null } = await requestPage<RawCommitDetail>(
       next,
       token,
-      `커밋 상세 정보를 가져오지 못했습니다: ${sha}`
+      `Could not fetch commit details: ${sha}`
     );
     detail ??= page.data;
     files.push(...(page.data.files ?? []));
@@ -149,7 +149,7 @@ async function fetchAllPullRequests(
     >(
       next,
       token,
-      `커밋 PR 정보를 가져오지 못했습니다: ${sha}`
+      `Could not fetch PR info for the commit: ${sha}`
     );
     pullRequests.push(...page.data);
     next = page.next;
@@ -246,7 +246,7 @@ export async function fetchRepositoryMetadata(
   const { data: languages } = await requestPage<Record<string, number>>(
     `${GITHUB_API_BASE}/repos/${owner}/${repo}/languages`,
     token,
-    "Repository 언어 통계를 가져오지 못했습니다"
+    "Could not fetch repository language stats"
   );
   const treeResponse = await githubFetch(
     `${GITHUB_API_BASE}/repos/${owner}/${repo}/git/trees/HEAD?recursive=1`,
@@ -261,16 +261,16 @@ export async function fetchRepositoryMetadata(
     else {
       throw new GitHubFetchError(
         await classifyErrorResponse(treeResponse),
-        `Repository 파일 트리를 가져오지 못했습니다 (${treeResponse.status})`
+        `Could not fetch the repository file tree (${treeResponse.status})`
       );
     }
   } else if (!treeResponse.ok) {
     throw new GitHubFetchError(
       await classifyErrorResponse(treeResponse),
-      `Repository 파일 트리를 가져오지 못했습니다 (${treeResponse.status})`
+      `Could not fetch the repository file tree (${treeResponse.status})`
     );
   } else {
-    tree = await parseJson<RawTree>(treeResponse, "Repository 파일 트리 응답을 해석하지 못했습니다");
+    tree = await parseJson<RawTree>(treeResponse, "Could not parse the repository file tree response");
   }
   return {
     tree: tree.tree.map((entry) => ({
@@ -311,7 +311,7 @@ export async function fetchRepositoryContributionData(
     const { data: languages } = await requestPage<Record<string, number>>(
       `${GITHUB_API_BASE}/repos/${owner}/${repo}/languages`,
       token,
-      "Repository 언어 통계를 가져오지 못했습니다"
+      "Could not fetch repository language stats"
     );
     const treeResponse = await githubFetch(
       `${GITHUB_API_BASE}/repos/${owner}/${repo}/git/trees/HEAD?recursive=1`,
@@ -327,12 +327,12 @@ export async function fetchRepositoryContributionData(
     } else if (!treeResponse.ok) {
       throw new GitHubFetchError(
         await classifyErrorResponse(treeResponse),
-        `Repository 파일 트리를 가져오지 못했습니다 (${treeResponse.status})`
+        `Could not fetch the repository file tree (${treeResponse.status})`
       );
     } else {
       tree = await parseJson<RawTree>(
         treeResponse,
-        "Repository 파일 트리 응답을 해석하지 못했습니다"
+        "Could not parse the repository file tree response"
       );
     }
 

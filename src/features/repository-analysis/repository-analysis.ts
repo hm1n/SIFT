@@ -349,18 +349,18 @@ export async function generateCandidates(
 }
 
 const DIFF_REFETCH_GUIDANCE: Record<Exclude<GitHubFetchErrorKind, "partial_failure">, string> = {
-  rate_limit: "GitHub API 호출 한도가 회복된 뒤 후보 생성을 다시 시도해 주세요.",
-  auth_revoked: "로그인이 만료되었거나 접근 권한이 취소되었습니다. GitHub에 다시 로그인해 주세요.",
-  repo_not_found: "Repository가 삭제되었거나 이름이 변경되었는지 확인하고 다시 선택해 주세요.",
-  network: "네트워크 연결을 확인한 뒤 후보 생성을 다시 시도해 주세요.",
-  server_error: "GitHub 서버 문제일 수 있습니다. 잠시 후 후보 생성을 다시 시도해 주세요.",
+  rate_limit: "Try generating candidates again once the GitHub API rate limit resets.",
+  auth_revoked: "The sign-in expired or access was revoked. Sign in to GitHub again.",
+  repo_not_found: "Check whether the repository was deleted or renamed, then pick it again.",
+  network: "Check your network connection, then try generating candidates again.",
+  server_error: "This may be a GitHub server problem. Try generating candidates again in a moment.",
 };
 
 export function toCandidateGenerationError(error: unknown, stage: CandidateStage): AnalysisError {
   const fallback: AnalysisError = {
     kind: "contract_violation",
-    title: "경험 후보 생성에 실패했습니다",
-    message: "예상하지 못한 오류가 발생했습니다. 후보 생성을 다시 시도해 주세요.",
+    title: "Could not generate experience candidates",
+    message: "An unexpected error occurred. Try generating candidates again.",
     recovery: "retry",
   };
   if (!(error instanceof CandidateRequestError)) return fallback;
@@ -380,8 +380,8 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
       return {
         kind: "diff_refetch_failure",
         causeKind,
-        title: "후보의 diff·PR 근거를 다시 조회하지 못했습니다",
-        message: `최종 판단에 사용할 diff와 PR 정보를 GitHub에서 수집하는 단계에서 실패했습니다. ${DIFF_REFETCH_GUIDANCE[causeKind]}`,
+        title: "Could not re-fetch the diff and PR evidence for the candidates",
+        message: `Collecting the diff and PR info for the final judgment from GitHub failed. ${DIFF_REFETCH_GUIDANCE[causeKind]}`,
         recovery: errorCopy(causeKind).recovery,
       };
     }
@@ -389,8 +389,8 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
     case "json_parse":
       return {
         kind: "llm_schema_violation",
-        title: "LLM 응답이 출력 계약을 지키지 않았습니다",
-        message: `${error.message} 계약을 지키지 않은 결과는 사용하지 않습니다. 후보 생성을 다시 시도해 주세요.`,
+        title: "The LLM response did not follow the output contract",
+        message: `${error.message} A result that breaks the contract is not used. Try generating candidates again.`,
         recovery: "retry",
       };
     case "unknown_sha":
@@ -398,8 +398,8 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
     case "unknown_file_path":
       return {
         kind: "llm_hallucination_rejected",
-        title: "실제 Repository 근거와 맞지 않는 판단을 거부했습니다",
-        message: `${error.message} 입력에 없는 커밋이나 파일을 인용한 결과는 사용하지 않습니다. 후보 생성을 다시 시도해 주세요.`,
+        title: "Rejected a judgment that does not match the actual Repository evidence",
+        message: `${error.message} A result citing a commit or file that is not in the input is not used. Try generating candidates again.`,
         recovery: "retry",
       };
     case "llm_timeout":
@@ -407,30 +407,30 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
       return stage === "stage_b"
         ? {
             kind: "llm_call_failure",
-            title: "Stage B 실행 시간 예산을 초과했습니다",
+            title: "Stage B exceeded its time budget",
             message:
-              "GitHub diff·PR 조회를 포함한 라우트 전체 시간 예산을 초과했습니다. LLM 자체의 실패가 아닐 수 있습니다. 잠시 후 후보 생성을 다시 시도해 주세요.",
+              "The whole route, including the GitHub diff and PR lookups, went over its time budget. This may not be an LLM failure. Try generating candidates again in a moment.",
             recovery: "retry",
           }
         : {
             kind: "llm_call_failure",
-            title: "LLM 분석 시간이 초과되었습니다",
-            message: "분석이 제한 시간 안에 끝나지 않았습니다. 잠시 후 후보 생성을 다시 시도해 주세요.",
+            title: "LLM analysis timed out",
+            message: "The analysis did not finish within the time limit. Try generating candidates again in a moment.",
             recovery: "retry",
           };
     case "llm_rate_limit":
       return {
         kind: "llm_call_failure",
-        title: "LLM 호출 한도에 도달했습니다",
-        message: "호출 한도가 회복된 뒤 후보 생성을 다시 시도해 주세요.",
+        title: "The LLM call limit was reached",
+        message: "Try generating candidates again once the call limit resets.",
         recovery: "retry",
       };
     case "llm_auth":
     case "llm_configuration":
       return {
         kind: "llm_call_failure",
-        title: "LLM 연결 설정에 문제가 있습니다",
-        message: "서비스의 LLM 인증 또는 설정 문제입니다. 잠시 후 후보 생성을 다시 시도해 주세요.",
+        title: "There is a problem with the LLM connection settings",
+        message: "This is an LLM authentication or configuration problem on the service side. Try generating candidates again in a moment.",
         recovery: "retry",
       };
     case "llm_network":
@@ -438,34 +438,34 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
     case "llm_failure":
       return {
         kind: "llm_call_failure",
-        title: "LLM 호출에 실패했습니다",
-        message: `${error.message} 잠시 후 후보 생성을 다시 시도해 주세요.`,
+        title: "The LLM call failed",
+        message: `${error.message} Try generating candidates again in a moment.`,
         recovery: "retry",
       };
     case "body_too_large":
       return {
         kind: "request_too_large",
-        title: "분석 데이터가 요청 한도를 초과했습니다",
+        title: "The analysis data exceeded the request limit",
         message:
-          "수집한 커밋 근거가 한 번에 보낼 수 있는 크기를 초과했습니다. 커밋 수가 더 적은 Repository를 선택해 주세요.",
+          "The collected commit evidence is over the size a single request can carry. Pick a repository with fewer commits.",
         recovery: "select_repository",
       };
     case "fetch_network":
       return {
         kind: "network",
-        title: "후보 생성 서버에 연결하지 못했습니다",
-        message: "네트워크 연결을 확인한 뒤 후보 생성을 다시 시도해 주세요.",
+        title: "Could not reach the candidate generation server",
+        message: "Check your network connection, then try generating candidates again.",
         recovery: "retry",
       };
     case "invalid_request":
       return {
         kind: "contract_violation",
-        title: "후보 생성 요청이 서버 계약과 맞지 않았습니다",
-        message: `${error.message} 같은 입력을 그대로 다시 보내지 않고 Repository 조회부터 다시 구성해 재시도합니다. 문제가 반복되면 사용자 조작으로 해결할 수 없는 결함일 수 있습니다.`,
+        title: "The candidate generation request did not match the server contract",
+        message: `${error.message} The same input is not resent as is; the retry rebuilds from the Repository lookup. If this keeps happening it may be a defect you cannot work around.`,
         recovery: "retry",
       };
     default:
       // invalid_response, invalid_json 등 사용자가 복구 방법을 고를 수 없는 오류입니다.
-      return { ...fallback, message: `${error.message} 후보 생성을 다시 시도해 주세요.` };
+      return { ...fallback, message: `${error.message} Try generating candidates again.` };
   }
 }

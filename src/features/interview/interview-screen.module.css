@@ -1,17 +1,50 @@
 /*
-  근거 패널은 질문 아래에 한 열로 둡니다. 두 열로 두지 않은 근거는
-  `llm-wiki/wiki/2026-08-25-인터뷰-화면-근거패널-배치.md`에 있습니다.
-*/
-.screen { display: grid; gap: 12px; margin-top: 24px; border-top: 1px solid #ecebf0; padding-top: 24px; }
-.screen h2 { color: #1f1e28; font-size: 20px; letter-spacing: -.02em; }
-.screen p { color: #696773; font-size: 14px; line-height: 1.65; }
-.screen .eyebrow { color: #5b52d6; font-size: 12px; font-weight: 750; text-transform: uppercase; }
-.backButton { width: fit-content; min-height: 44px; border: 0; background: #fff; color: #34333d; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0; }
-.backButton:focus-visible { outline: 3px solid rgba(109, 99, 232, .25); outline-offset: 2px; }
-.backConfirm { display: grid; gap: 10px; width: fit-content; border: 1px solid #e4e2ec; border-radius: 10px; background: #f7f7fb; padding: 12px 14px; }
-.screen .backConfirmText { color: #34333d; font-size: 13px; line-height: 1.6; }
+ * 인터뷰 3열 워크스페이스입니다. 헤더 한 줄 아래에 코드 / 대화 / PAAR 세 열을 두고, 세 열은 셸이
+ * 준 높이를 나눠 씁니다. 배치 근거는 `llm-wiki/wiki/2026-09-14-인터뷰-3열-워크스페이스.md`에 있고,
+ * 색·라운드·타이포는 `globals.css` 토큰만 씁니다.
+ */
+.screen { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; background: var(--color-card); }
+
+.header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; min-height: 44px; border-bottom: 1px solid var(--color-border); padding: 0 16px; }
+.headerMain { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.headerDivider { width: 1px; height: 14px; flex-shrink: 0; background: var(--color-border); }
+.backButton { flex-shrink: 0; border: 0; background: none; color: var(--color-muted-foreground); cursor: pointer; font-family: var(--font-mono); font-size: var(--label-size-sm); letter-spacing: var(--label-tracking-wide); padding: 6px 0; }
+.backButton:hover { color: var(--color-foreground); }
+.eyebrow { flex-shrink: 0; margin: 0; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-sm); letter-spacing: var(--label-tracking); text-transform: uppercase; }
+.title { min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-foreground); font-size: 12px; font-weight: 500; }
+.headerActions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.panelToggle { border: 1px solid var(--color-border); border-radius: var(--radius); background: none; color: var(--color-muted-foreground); cursor: pointer; font-family: var(--font-mono); font-size: var(--label-size-xs); letter-spacing: var(--label-tracking-wide); text-transform: uppercase; padding: 4px 8px; }
+.panelToggle[aria-pressed="true"] { background: var(--color-muted); color: var(--color-foreground); }
+.panelToggle:hover { color: var(--color-foreground); }
+
+.backConfirm { display: grid; gap: 10px; flex-shrink: 0; border-bottom: 1px solid var(--color-border); background: var(--color-muted); padding: 12px 16px; }
+.backConfirmText { margin: 0; color: var(--color-foreground); font-size: 13px; line-height: 1.6; }
 .backActions { display: flex; flex-wrap: wrap; gap: 8px; }
-.backConfirmButton { min-height: 44px; border: 0; border-radius: 999px; background: #34333d; color: #fff; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
-.backConfirmButton:focus-visible { outline: 3px solid rgba(52, 51, 61, .3); outline-offset: 2px; }
-.backCancelButton { min-height: 44px; border: 1px solid #d9d8e0; border-radius: 999px; background: #fff; color: #55535e; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
-.backCancelButton:focus-visible { outline: 3px solid rgba(109, 99, 232, .25); outline-offset: 2px; }
+.backConfirmButton { min-height: 36px; border: 0; border-radius: var(--radius); background: var(--color-primary); color: var(--color-primary-foreground); cursor: pointer; font: inherit; font-size: 13px; font-weight: 500; padding: 0 16px; }
+.backCancelButton { min-height: 36px; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-card); color: var(--color-foreground); cursor: pointer; font: inherit; font-size: 13px; font-weight: 500; padding: 0 16px; }
+
+.workspace { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.column { min-height: 0; overflow: hidden; }
+.codeColumn, .paarColumn { flex-shrink: 0; }
+/*
+ * 대화 열은 남은 폭을 다 씁니다. `min-width: 0`이 없으면 긴 코드 블록이 열을 밀어냅니다.
+ *
+ * 좌우 패딩을 두지 않습니다. 메시지 행이 자기 여백을 갖고 구분선을 열 끝까지 긋습니다(디자인 원본).
+ * 오른쪽 경계선은 여기서 긋습니다. PAAR 열에는 왼쪽 경계선이 없습니다.
+ */
+.chatColumn { display: flex; flex-direction: column; flex: 1; min-width: 0; border-right: 1px solid var(--color-border); }
+
+/*
+ * 좁은 폭의 탭 배치입니다. 보이지 않는 열도 DOM과 레이아웃에 남깁니다. `display: none`으로 감추면
+ * 대화 로그의 높이가 0이 되어 자동 스크롤이 하단을 잡지 못한 채 다시 나타납니다. `visibility`는
+ * 레이아웃을 남기면서 접근성 트리와 포커스에서만 빼 줍니다.
+ */
+.tabBar { display: flex; gap: 4px; flex-shrink: 0; border-bottom: 1px solid var(--color-border); padding: 6px 12px; }
+.tab { flex: 1; border: 1px solid var(--color-border); border-radius: var(--radius); background: none; color: var(--color-muted-foreground); cursor: pointer; font-family: var(--font-mono); font-size: var(--label-size-xs); letter-spacing: var(--label-tracking-wide); text-transform: uppercase; padding: 6px 8px; }
+.tab[aria-pressed="true"] { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-primary-foreground); }
+.tab:focus-visible { outline: 2px solid var(--color-foreground); outline-offset: 2px; }
+.tabMode { position: relative; }
+.tabMode .column { position: absolute; inset: 0; width: auto; }
+.tabMode .columnHidden { visibility: hidden; }
+
+.backButton:focus-visible, .panelToggle:focus-visible, .backConfirmButton:focus-visible, .backCancelButton:focus-visible { outline: 2px solid var(--color-foreground); outline-offset: 2px; }

@@ -34,9 +34,13 @@ const FIRST_TARGET: NonNullable<InterviewQuestionTarget> = { targetBlock: "probl
 
 export type ExperienceInterviewEndReason = "user" | "turn_limit";
 
+/** 경험 블록 갱신 엔드포인트입니다. 호출부가 모두 같은 값을 쓰므로 기본값을 여기 둡니다. */
+export const DEFAULT_EXPERIENCE_BLOCK_UPDATE_URL = "/api/interview/experience-block";
+
 export interface UseExperienceInterviewOptions {
-  questionUrl: string;
-  blockUpdateUrl: string;
+  /** 질문 스트림 엔드포인트입니다. 생략하면 `useInterviewStream`의 기본값을 씁니다. */
+  questionUrl?: string;
+  blockUpdateUrl?: string;
   snapshot: ExperienceEvidenceSnapshot;
   fetchImpl?: typeof fetch;
   retryDelaysMs?: readonly number[];
@@ -66,7 +70,7 @@ export interface UseExperienceInterviewState extends InterviewStreamState {
 
 export function useExperienceInterview({
   questionUrl,
-  blockUpdateUrl,
+  blockUpdateUrl = DEFAULT_EXPERIENCE_BLOCK_UPDATE_URL,
   snapshot,
   fetchImpl,
   retryDelaysMs,

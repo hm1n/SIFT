@@ -8,7 +8,7 @@ export const REPOSITORIES_PATH = "/api/github/repositories";
 export async function fetchRepositoriesFromApi(): Promise<RepositorySummary[]> {
   const result = await apiFetch<{ repositories?: unknown }>(REPOSITORIES_PATH);
   if (!result || typeof result !== "object" || !Array.isArray(result.repositories)) {
-    throw new GitHubFetchError("server_error", "서버 응답 형식이 올바르지 않습니다.");
+    throw new GitHubFetchError("server_error", "The server response format is not valid.");
   }
   return result.repositories as RepositorySummary[];
 }

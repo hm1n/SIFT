@@ -182,7 +182,7 @@ describe("buildExperienceEvidenceSnapshot", () => {
       status: "verified",
       aiSelected: true,
     });
-    expect(snapshot.relatedCommits[0].verifiability.detail).toContain("확인 불가");
+    expect(snapshot.relatedCommits[0].verifiability.detail).toContain("unverifiable");
     expect(snapshot.citedFilePaths).toMatchObject({
       paths: ["src/queue.ts"],
       verifiability: { status: "verified", aiSelected: true },

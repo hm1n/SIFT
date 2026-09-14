@@ -147,7 +147,7 @@ export function validateExperienceCandidateOutput(
   ) {
     throw new ExperienceCandidateOutputError(
       "schema_validation",
-      "경험 후보 구조화 응답이 출력 스키마와 일치하지 않습니다."
+      "The structured experience candidate response did not match the output schema."
     );
   }
 
@@ -155,7 +155,7 @@ export function validateExperienceCandidateOutput(
   if (new Set(representativeShas).size !== representativeShas.length) {
     throw new ExperienceCandidateOutputError(
       "schema_validation",
-      "경험 후보의 대표 커밋 SHA는 서로 달라야 합니다."
+      "Representative commit SHAs must be distinct across candidates."
     );
   }
 
@@ -175,7 +175,7 @@ export function validateExperienceCandidateOutput(
   if (!reasonIsValid) {
     throw new ExperienceCandidateOutputError(
       "schema_validation",
-      "후보가 0개이면 부족 사유가 필요하고, 사유는 null이거나 빈 문자열이 아닌 문자열이어야 합니다."
+      "When there are zero candidates a reason is required, and it must be a non-empty string rather than null."
     );
   }
 
@@ -197,7 +197,7 @@ export function assertCandidateShas(
   if (unknownShas.length > 0) {
     throw new ExperienceCandidateOutputError(
       "unknown_sha",
-      `입력 집합에 없는 커밋 SHA가 포함되어 있습니다: ${unknownShas.join(", ")}`,
+      `Contains commit SHAs that are not in the input set: ${unknownShas.join(", ")}`,
       { unknownShas }
     );
   }
@@ -241,7 +241,7 @@ export function assertCandidateEvidence(
     if (unrelatedShas.length > 0) {
       throw new ExperienceCandidateOutputError(
         "unrelated_sha",
-        `대표 커밋과 같은 PR에 속하지 않은 관련 SHA가 있습니다: ${unrelatedShas.join(", ")}`,
+        `Some related SHAs do not belong to the same PR as the representative commit: ${unrelatedShas.join(", ")}`,
         { unknownShas: unrelatedShas }
       );
     }
@@ -255,7 +255,7 @@ export function assertCandidateEvidence(
     if (unknownPaths.length > 0) {
       throw new ExperienceCandidateOutputError(
         "unknown_file_path",
-        `Repository 근거에 없는 인용 파일 경로가 있습니다: ${unknownPaths.join(", ")}`
+        `Some cited file paths are not in the Repository evidence: ${unknownPaths.join(", ")}`
       );
     }
   }
@@ -282,7 +282,7 @@ export function createExperienceCandidateOutputSchema(maxCandidates: number) {
               ? error
               : new ExperienceCandidateOutputError(
                   "schema_validation",
-                  "경험 후보 구조화 응답 검증에 실패했습니다.",
+                  "Validation of the structured experience candidate response failed.",
                   { cause: error }
                 ),
         };

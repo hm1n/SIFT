@@ -1,0 +1,30 @@
+/*
+ * 인터뷰 워크스페이스의 오른쪽 열입니다. #98은 자리와 빈 상태만 둡니다. 블록 내용은 #89~#91이
+ * 채웁니다.
+ */
+.panel { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; border-left: 1px solid var(--color-border); background: var(--color-card); }
+.header { display: flex; align-items: center; gap: 6px; flex-shrink: 0; border-bottom: 1px solid var(--color-border); padding: 8px 12px; }
+.heading { margin: 0; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); font-weight: 400; letter-spacing: var(--label-tracking); text-transform: uppercase; }
+.count { color: var(--color-scrollbar-hover); font-family: var(--font-mono); font-size: var(--label-size-xs); letter-spacing: var(--label-tracking-wide); }
+.empty { flex: 1; overflow-y: auto; margin: 0; padding: 16px 12px; color: var(--color-muted-foreground); font-size: 12px; line-height: 1.6; }
+
+/*
+ * 종료 조작은 디자인 원본에서 이 패널의 맨 아래 자리입니다. 위 내용이 `flex: 1`이라 블록이 적어도
+ * 아래에 붙습니다. 위쪽 경계선은 원본에 없어 두지 않습니다.
+ */
+.footer { flex-shrink: 0; padding: 12px; }
+
+/* 처음 여는 버튼과 확인 버튼이 같은 모양입니다. `width`는 확인 쪽 grid가 어차피 주는 값입니다. */
+.endButton { width: 100%; min-height: 32px; border: 0; border-radius: var(--radius); background: var(--color-primary); color: var(--color-primary-foreground); cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; padding: 0 12px; }
+.endButton:hover { background: #404040; }
+
+.endConfirm { display: grid; gap: 10px; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-muted); padding: 12px; }
+.endConfirmText { margin: 0; color: var(--color-foreground); font-size: 12px; line-height: 1.6; }
+/* 패널이 좁아 두 버튼을 세로로 쌓습니다. 가로로 두면 글자가 잘립니다. */
+.endActions { display: grid; gap: 8px; }
+.endCancelButton { min-height: 32px; border: 1px solid #d4d4d4; border-radius: var(--radius); background: var(--color-card); color: #404040; cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; padding: 0 12px; }
+.endCancelButton:hover { border-color: var(--color-muted-foreground); color: var(--color-foreground); }
+
+/* 초점 표시는 `interview-stream-view.module.css`와 같은 2px 실선 하나로 통일합니다. */
+.endButton:focus-visible,
+.endCancelButton:focus-visible { outline: 2px solid var(--color-foreground); outline-offset: 2px; }

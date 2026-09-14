@@ -15,7 +15,7 @@ const jsonRequest = (body: unknown): RequestInit => ({
 });
 
 function invalidResponse(): never {
-  throw new GitHubFetchError("server_error", "서버 응답 형식이 올바르지 않습니다.");
+  throw new GitHubFetchError("server_error", "The server response format is not valid.");
 }
 
 export async function fetchAuthoredCommitsFromApi(repository: RepositoryRef) {
