@@ -1,5 +1,5 @@
 import type { CommitFileChange, CommitSummary } from "@/lib/github/types";
-import type { GroupableCommit, WorkUnit } from "./work-unit";
+import { modelFacingUnitId, type GroupableCommit, type WorkUnit, type WorkUnitKind } from "./work-unit";
 
 /**
  * 요약에 남길 파일 경로 수입니다.
@@ -25,8 +25,10 @@ export interface SummarizableCommit extends GroupableCommit {
  * 둡니다. 텍스트만 두면 화면이 숫자를 다시 계산하게 되고 두 곳이 어긋납니다.
  */
 export interface WorkUnitSummary {
-  readonly pullRequestNumber: number;
-  readonly pullRequestTitle: string;
+  readonly unitId: string;
+  readonly kind: WorkUnitKind;
+  /** Pull Request 묶음은 PR 제목, 단일 커밋은 그 커밋의 제목입니다. */
+  readonly title: string;
   readonly commitCount: number;
   /** 첫 커밋과 마지막 커밋 사이 일수입니다. 하루 안에 끝난 작업도 1로 둡니다. */
   readonly spanDays: number;
@@ -81,8 +83,9 @@ export function summarizeWorkUnit(unit: WorkUnit<SummarizableCommit>): WorkUnitS
   }
 
   return {
-    pullRequestNumber: unit.pullRequestNumber,
-    pullRequestTitle: unit.pullRequest.title,
+    unitId: unit.unitId,
+    kind: unit.kind,
+    title: unit.title,
     commitCount: unit.commits.length,
     spanDays: calculateSpanDays(unit.commits),
     additions: unit.commits.reduce((sum, { additions }) => sum + additions, 0),
@@ -122,6 +125,28 @@ function foldFilePaths(paths: readonly string[]): string {
 }
 
 /**
+ * 요약 머리줄에서 판단 단위를 가리키는 라벨입니다. `work-unit.ts`의 `modelFacingUnitId`가 만드는
+ * 식별자를 그대로 씁니다(`pr:12`, `commit:abcdef1`).
+ *
+ * 사람이 읽기 좋은 형태(`PR#12`, `커밋 abcdef1`)로 바꾸지 않습니다. 이 머리줄은 모델이 실제로
+ * 읽는 문자열이고(`renderWorkUnitSummary`), 모델은 같은 판단 단위를 `unitId`로 되돌려줘야 합니다.
+ * 표기를 바꿔 보여주면 프롬프트가 모델에게 되돌리기를 요구하게 되는데, `gemini-3.1-flash-lite`는
+ * 되돌리는 대신 머리줄을 그대로 복사해 `demian` 41묶음과 `andbread` 23묶음이 각각 6회 시도 6회
+ * 모두 `unknown_sha`로 끝났습니다(이슈 #107). 보여주는 문자열과 요구하는 문자열을 같게 두면
+ * 변환할 것이 없어집니다.
+ *
+ * 접두어와 자르는 자리수를 이 함수가 따로 정하지 않는 것도 같은 이유입니다. 머리줄을 만드는 곳과
+ * 응답을 검증하는 곳이 각자 다른 상수를 쓰면 응답 검증이 조용히 잘못된 커밋에 판정을 붙입니다
+ * (이슈 #101).
+ *
+ * 화면에 보이는 라벨은 `experience-candidate-list.tsx`의 `unitLabel`이 따로 만듭니다. 그쪽은
+ * 모델과 주고받는 문자열이 아니라 사람이 읽기 좋은 형태를 유지합니다.
+ */
+function renderUnitLabel(summary: WorkUnitSummary): string {
+  return modelFacingUnitId(summary.unitId);
+}
+
+/**
  * 요약을 Stage A 입력 문자열로 만듭니다.
  *
  * JSON이 아니라 줄 형식인 이유는 실측 때문입니다. 커밋 단위 JSON 페이로드에서 중괄호와 따옴표
@@ -136,15 +161,19 @@ function foldFilePaths(paths: readonly string[]): string {
  *
  * Pull Request 제목의 대괄호 라벨도 그대로 둡니다. `demian`은 19개 중 4종뿐이라 중복이지만
  * `andbread`는 64개 중 57종이어서 저장소마다 다른 정보를 담습니다.
+ *
+ * 단일 커밋 묶음은 커밋 제목 줄을 생략합니다. 커밋이 하나뿐이라 머리줄의 제목과 완전히
+ * 같은 문장을 한 번 더 반복하는 것이라 정보가 없습니다.
  */
 export function renderWorkUnitSummary(summary: WorkUnitSummary): string {
   const remaining = summary.changedFilePathCount - summary.topFilePaths.length;
   const paths = foldFilePaths(summary.topFilePaths) + (remaining > 0 ? ` +${remaining}` : "");
-  return [
-    `PR#${summary.pullRequestNumber} ${summary.pullRequestTitle} [${summary.commitCount}커밋 ${summary.spanDays}일 +${summary.additions}-${summary.deletions} ${summary.changedFilePathCount}파일]`,
-    `  ${summary.commitTitles.join(" / ")}`,
-    `  ${paths}`,
-  ].join("\n");
+  const header = `${renderUnitLabel(summary)} ${summary.title} [${summary.commitCount}커밋 ${summary.spanDays}일 +${summary.additions}-${summary.deletions} ${summary.changedFilePathCount}파일]`;
+  const lines =
+    summary.kind === "pull_request"
+      ? [header, `  ${summary.commitTitles.join(" / ")}`, `  ${paths}`]
+      : [header, `  ${paths}`];
+  return lines.join("\n");
 }
 
 /**
