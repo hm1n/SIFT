@@ -35,14 +35,6 @@ export interface ElementProgress {
    * 있습니다(구현검토 2026-09-11 P1-1).
    */
   readonly firstUnknownAskedCount: number | null;
-  /**
-   * `unknown` 응답 뒤 재질문을 이미 썼는지입니다. 6-1절: "기억나지 않는다는 답변 뒤에는 다른
-   * 단서가 있을 때 같은 부족 요소에 최대 1회 다시 묻습니다." 참이면 이 요소는 더 묻지 않습니다.
-   *
-   * "다른 단서가 있을 때"라는 조건은 이 계약에 신호가 없어 판정하지 않습니다. 재질문이 실제로
-   * 제시되면(같은 요소를 다시 물으면) 그 응답이 무엇이든 예산을 소진한 것으로 봅니다.
-   */
-  readonly reaskUsed: boolean;
 }
 
 export interface BlockProgress {
@@ -60,7 +52,7 @@ export interface BlockProgress {
 
 export type InterviewProgress = Readonly<Record<BlockKind, BlockProgress>>;
 
-const EMPTY_ELEMENT_PROGRESS: ElementProgress = { askedCount: 0, firstUnknownAskedCount: null, reaskUsed: false };
+const EMPTY_ELEMENT_PROGRESS: ElementProgress = { askedCount: 0, firstUnknownAskedCount: null };
 
 export function emptyInterviewProgress(): InterviewProgress {
   return Object.fromEntries(
@@ -89,14 +81,18 @@ export function recordAsked(progress: InterviewProgress, block: BlockKind, eleme
 }
 
 /**
- * 답변의 `targetResponse`를 반영합니다.
+ * 답변의 `targetResponse`를 반영합니다. 처음 `unknown`을 받으면 그 시점의 `askedCount`를
+ * `firstUnknownAskedCount`로 남겨 둡니다. `askedCount`(총 질문 횟수)로 직접 판정하지 않는 이유는,
+ * 그러면 `provided`로 답한 요소를 나중에 다시 물었을 때 그 첫 `unknown`만으로 곧장 소진 처리되기
+ * 때문입니다(구현검토 2026-09-11 P1-1, R1).
  *
- * 처음 `unknown`을 받으면 그 시점의 `askedCount`를 `firstUnknownAskedCount`로 남겨 둡니다. 그
- * 뒤로 이 요소에 다시 질문이 나가(`askedCount`가 오르고) `recordResponse`가 다시 불리면, 이번
- * 응답이 무엇이든(다시 `unknown`이든, 무관한 답이든) 재질문을 이미 제시한 것이므로 예산을
- * 소진합니다. `askedCount`(총 질문 횟수)로 직접 판정하지 않는 이유는, 그러면 `provided`로 답한
- * 요소를 나중에 다시 물었을 때 그 첫 `unknown`만으로 곧장 소진 처리되기 때문입니다(구현검토
- * 2026-09-11 P1-1, R1).
+ * 재질문 예산을 다 썼는지는 이 함수가 판정하지 않습니다. `isElementClosed`가 `askedCount`와
+ * `firstUnknownAskedCount`만으로 매번 다시 계산합니다. 예전에는 이 함수가 그 시점에 `reaskUsed`
+ * 플래그를 계산해 저장했는데, 재질문을 보낸 뒤 그 응답의 블록 갱신 호출 자체가 실패하면(네트워크
+ * 오류 등) 이 함수가 한 번도 불리지 않아 플래그가 영영 세워지지 않고, 이미 재질문 예산을 다 쓴
+ * 요소를 다시 골라 버렸습니다(추가 재검증 2026-09-12). `askedCount`는 질문을 보내는 즉시
+ * `recordAsked`가 올리므로 응답 처리 성공 여부와 무관하게 항상 최신입니다. 판정을 그 값에서 직접
+ * 계산하면 응답을 받기도 전에 이미 재질문을 보냈다는 사실만으로 닫을 수 있습니다.
  */
 export function recordResponse(
   progress: InterviewProgress,
@@ -108,10 +104,6 @@ export function recordResponse(
   const elementProgress = blockProgress.elements[element];
   const firstUnknownAskedCount =
     elementProgress.firstUnknownAskedCount ?? (response === "unknown" ? elementProgress.askedCount : null);
-  const reaskUsed =
-    elementProgress.reaskUsed ||
-    (firstUnknownAskedCount !== null &&
-      elementProgress.askedCount - firstUnknownAskedCount >= PROGRESS_CONFIG.maxAsksAfterUnknown - 1);
   return {
     ...progress,
     [block]: {
@@ -119,14 +111,23 @@ export function recordResponse(
       refused: blockProgress.refused || response === "refused",
       elements: {
         ...blockProgress.elements,
-        [element]: { ...elementProgress, firstUnknownAskedCount, reaskUsed },
+        [element]: { ...elementProgress, firstUnknownAskedCount },
       },
     },
   };
 }
 
+/**
+ * `askedCount`와 `firstUnknownAskedCount`만으로 재질문 예산 소진 여부를 계산합니다(구현검토
+ * 2026-09-11 P1-1, 추가 재검증 2026-09-12). 첫 `unknown` 이후 이 요소에 다시 질문을 보낸 횟수가
+ * 재질문 허용 횟수에 닿으면, 그 재질문의 응답을 아직 받지 못했어도(진행 중이거나 실패했어도) 닫힌
+ * 것으로 봅니다. 응답 도착을 기다려야만 닫힌다고 하면, 재질문 자체는 나갔는데 그 응답의 블록 갱신
+ * 호출만 실패한 경우 이 요소가 계속 열려 있어 예산을 넘겨 다시 물을 수 있습니다.
+ */
 function isElementClosed(elementProgress: ElementProgress): boolean {
-  return elementProgress.reaskUsed;
+  const { firstUnknownAskedCount, askedCount } = elementProgress;
+  if (firstUnknownAskedCount === null) return false;
+  return askedCount - firstUnknownAskedCount >= PROGRESS_CONFIG.maxAsksAfterUnknown - 1;
 }
 
 /**

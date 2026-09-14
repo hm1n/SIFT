@@ -13,7 +13,7 @@ const NONE_LEFT: BlockEvaluation = { sufficient: false, askable: false, reason: 
 describe("recordAsked·recordResponse", () => {
   it("빈 진행 상태는 네 블록 모두 미방문이고 두 요소 모두 0회다", () => {
     const progress = emptyInterviewProgress();
-    const emptyElement = { askedCount: 0, firstUnknownAskedCount: null, reaskUsed: false };
+    const emptyElement = { askedCount: 0, firstUnknownAskedCount: null };
     for (const block of BLOCK_KINDS) {
       expect(progress[block]).toEqual({
         visited: false,
@@ -31,32 +31,90 @@ describe("recordAsked·recordResponse", () => {
     expect(progress.alternatives.visited).toBe(false);
   });
 
+  /**
+   * 아래 세 테스트는 모두 b 요소를 먼저 완전히 닫아 둡니다. selectNextTarget의 요소 선택은 열린
+   * 요소 중 가장 적게 물은 쪽을 고르므로(같은 진행 상태의 다른 테스트 참고), b가 열려 있으면
+   * askedCount가 더 낮은 쪽이 뽑혀 "a가 아직 열려 있는지"를 직접 확인할 수 없습니다. b를 먼저
+   * 닫아 두면 a가 뽑히는지 여부만으로 a의 개폐 상태를 그대로 드러낼 수 있습니다.
+   */
+  function closeElementB(): ReturnType<typeof emptyInterviewProgress> {
+    let progress = recordAsked(emptyInterviewProgress(), "problem", "b");
+    progress = recordResponse(progress, "problem", "b", "unknown");
+    progress = recordAsked(progress, "problem", "b");
+    return recordResponse(progress, "problem", "b", "unknown");
+  }
+
   it("같은 요소에서 unknown을 설정값만큼 받으면 그 요소만 재질문 예산을 소진한다", () => {
     expect(PROGRESS_CONFIG.maxAsksAfterUnknown).toBe(2);
-    let progress = recordAsked(emptyInterviewProgress(), "problem", "a");
+    let progress = closeElementB();
+    progress = recordAsked(progress, "problem", "a");
     progress = recordResponse(progress, "problem", "a", "unknown");
-    expect(progress.problem.elements.a.reaskUsed).toBe(false); // 첫 unknown은 재질문 기회를 아직 남깁니다.
+    // 첫 unknown은 재질문 기회를 아직 남깁니다. b는 이미 닫혀 있으므로 a가 열려 있어야만 뽑힙니다.
+    expect(
+      selectNextTarget({
+        evaluation: { problem: ASKABLE, alternatives: null, action: null, result: null },
+        progress,
+        turnsUsed: 3,
+        maxTurns: 10,
+        isEnded: false,
+        lastTarget: { block: "problem", element: "a" },
+      })
+    ).toEqual({ kind: "ask", block: "problem", element: "a" });
 
     progress = recordAsked(progress, "problem", "a"); // 다른 단서가 있어 다시 묻습니다.
     progress = recordResponse(progress, "problem", "a", "unknown");
-    expect(progress.problem.elements.a.reaskUsed).toBe(true); // 두 번째 unknown으로 예산을 다 썼습니다.
-    expect(progress.problem.elements.b.reaskUsed).toBe(false); // 다른 요소는 영향받지 않습니다.
+    // 두 번째 unknown으로 a의 예산도 다 썼습니다. 두 요소 모두 닫혀 다음 블록으로 넘어갑니다.
+    expect(
+      selectNextTarget({
+        evaluation: { problem: ASKABLE, alternatives: null, action: null, result: null },
+        progress,
+        turnsUsed: 4,
+        maxTurns: 10,
+        isEnded: false,
+        lastTarget: { block: "problem", element: "a" },
+      })
+    ).toEqual({ kind: "ask", block: "alternatives", element: "a" });
   });
 
   it("provided로 답한 요소를 다시 물었을 때 첫 unknown만으로는 소진되지 않는다 (구현검토 P1-1, R1)", () => {
-    let progress = recordAsked(emptyInterviewProgress(), "problem", "a");
+    let progress = closeElementB();
+    progress = recordAsked(progress, "problem", "a");
     progress = recordResponse(progress, "problem", "a", "provided");
     progress = recordAsked(progress, "problem", "a"); // 다른 이유로 같은 요소를 한 번 더 묻습니다.
     progress = recordResponse(progress, "problem", "a", "unknown");
-    expect(progress.problem.elements.a.reaskUsed).toBe(false);
+    expect(progress.problem.elements.a.firstUnknownAskedCount).toBe(2); // 이번이 첫 unknown입니다.
+    expect(
+      selectNextTarget({
+        evaluation: { problem: ASKABLE, alternatives: null, action: null, result: null },
+        progress,
+        turnsUsed: 4,
+        maxTurns: 10,
+        isEnded: false,
+        lastTarget: { block: "problem", element: "a" },
+      })
+    ).toEqual({ kind: "ask", block: "problem", element: "a" }); // 아직 재질문 기회가 남아 열려 있습니다.
   });
 
-  it("unknown 뒤 재질문이 나가면 그 응답이 무엇이든 예산을 소진한다 (구현검토 P1-1, R2)", () => {
-    let progress = recordAsked(emptyInterviewProgress(), "problem", "a");
+  it("unknown 뒤 재질문이 나가면 그 응답을 받기 전에도(진행 중이거나 실패해도) 예산을 소진한다 (추가 재검증 2026-09-12)", () => {
+    // 평가 실패로 recordResponse가 두 번째 응답을 반영하지 못하는 상황을 재현합니다.
+    // askedCount는 질문을 보내는 즉시 오르므로, 그 응답을 못 받아도 재질문 예산은 이미 소진돼야 합니다.
+    let progress = closeElementB();
+    progress = recordAsked(progress, "problem", "a");
     progress = recordResponse(progress, "problem", "a", "unknown");
     progress = recordAsked(progress, "problem", "a"); // 재질문을 실제로 보냈습니다.
-    progress = recordResponse(progress, "problem", "a", "unanswered"); // 응답은 무관해도 예산은 소진됩니다.
-    expect(progress.problem.elements.a.reaskUsed).toBe(true);
+    // 이 재질문의 블록 갱신 호출이 실패해 recordResponse를 부르지 못했다고 가정합니다.
+
+    const target = selectNextTarget({
+      evaluation: { problem: ASKABLE, alternatives: null, action: null, result: null },
+      progress,
+      turnsUsed: 4,
+      maxTurns: 10,
+      isEnded: false,
+      lastTarget: { block: "problem", element: "a" },
+    });
+    // a도 이미 닫혔고 b도 닫혔으므로 problem 전체가 닫혀 다음 블록으로 넘어가야 합니다. 응답을
+    // 받지 못했다는 이유로 a를 또 고르면 안 됩니다.
+    expect(target).toEqual({ kind: "ask", block: "alternatives", element: "a" });
   });
 
   it("unanswered는 unknown과 구분되어 재질문 예산을 쓰지 않는다", () => {
@@ -64,7 +122,7 @@ describe("recordAsked·recordResponse", () => {
     progress = recordResponse(progress, "problem", "a", "unanswered");
     progress = recordAsked(progress, "problem", "a");
     progress = recordResponse(progress, "problem", "a", "unanswered");
-    expect(progress.problem.elements.a.reaskUsed).toBe(false);
+    expect(progress.problem.elements.a.firstUnknownAskedCount).toBeNull();
   });
 
   it("refused 응답은 그 블록 전체를 닫는다", () => {
