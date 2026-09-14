@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { emptyExperienceBlockState } from "@/features/experience-block/types";
-import { InterviewScreen } from "./interview-screen";
+import { fitPanelWidths, InterviewScreen } from "./interview-screen";
 import { DEFAULT_EXPERIENCE_BLOCK_UPDATE_URL } from "@/features/experience-block/use-experience-interview";
 import { evidenceSnapshotFixture, FIXTURE_REPRESENTATIVE_SHA } from "./question-fixture";
 import { createTestStream, type TestStreamScenario } from "./test-stream";
@@ -360,5 +360,46 @@ describe("InterviewScreen", () => {
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
     const body = JSON.parse(fetchImpl.mock.calls[2][1].body);
     expect(body.history.at(-1)).toEqual({ role: "answer", text: "첫 답변" });
+  });
+});
+
+/*
+ * jsdom에는 `ResizeObserver`가 없어 워크스페이스 폭이 0으로 남고, 화면 테스트로는 좁아진 컨테이너를
+ * 재현할 수 없습니다. 폭 계산만 따로 확인합니다.
+ *
+ * 여기서 지키는 계약은 하나입니다. 세 열을 나란히 그리는 동안 대화 열이 `MIN_CHAT_WIDTH_PX`
+ * 아래로 밀리지 않는 것입니다. 탭 모드 판정이 최소 폭 합(708px)인데 렌더가 기본 폭(300+280+8)을
+ * 쓰던 탓에, 그 사이 구간에서 대화 열이 132px까지 좁아졌습니다(PR #120 리뷰).
+ */
+describe("fitPanelWidths", () => {
+  const both = { code: true, paar: true };
+  const chatWidth = (container: number, fitted: { code: number; paar: number }) =>
+    container - fitted.code - fitted.paar - 4 * 2;
+
+  it("세 열이 켜진 가장 좁은 구간에서도 대화 열의 최소 폭을 지킨다", () => {
+    // 708px이 탭 모드 경계이므로 세 열을 나란히 그리는 가장 좁은 폭부터 훑습니다.
+    for (let container = 708; container <= 900; container += 1) {
+      const fitted = fitPanelWidths(container, { code: 300, paar: 280 }, both);
+
+      expect(fitted.code).toBeGreaterThanOrEqual(200);
+      expect(fitted.paar).toBeGreaterThanOrEqual(220);
+      expect(chatWidth(container, fitted)).toBeGreaterThanOrEqual(280);
+    }
+  });
+
+  it("여유가 있으면 손잡이가 낸 폭을 그대로 쓴다", () => {
+    expect(fitPanelWidths(1400, { code: 420, paar: 300 }, both)).toEqual({ code: 420, paar: 300 });
+  });
+
+  it("아직 컨테이너를 재지 못했으면 그대로 둔다", () => {
+    expect(fitPanelWidths(0, { code: 300, paar: 280 }, both)).toEqual({ code: 300, paar: 280 });
+  });
+
+  it("접은 패널은 폭 예산에서 빠진다", () => {
+    // PAAR를 접으면 그 폭도 손잡이도 없으므로 코드 패널이 줄어들 이유가 없습니다.
+    const fitted = fitPanelWidths(700, { code: 300, paar: 280 }, { code: true, paar: false });
+
+    expect(fitted.code).toBe(300);
+    expect(700 - fitted.code - 4).toBeGreaterThanOrEqual(280);
   });
 });

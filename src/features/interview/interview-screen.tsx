@@ -16,6 +16,10 @@ export interface InterviewScreenProps {
   fetchImpl?: typeof fetch;
 }
 
+/** 손잡이가 낼 수 있는 폭의 한계입니다. 컨테이너와의 관계는 `fitPanelWidths`가 봅니다. */
+const clampPanelWidth = (next: number, panel: { min: number; max: number }) =>
+  Math.min(Math.max(next, panel.min), panel.max);
+
 /** 코드 패널의 기본 폭과 한계입니다. 값은 디자인 원본 `InterviewScreen`과 같습니다. */
 const CODE_PANEL = { initial: 300, min: 200, max: 520 } as const;
 const PAAR_PANEL = { initial: 280, min: 220, max: 480 } as const;
@@ -31,6 +35,43 @@ const TAB_MODE_WIDTH_PX =
   CODE_PANEL.min + PAAR_PANEL.min + MIN_CHAT_WIDTH_PX + HANDLE_WIDTH_PX * 2;
 
 type WorkspaceColumn = "code" | "interview" | "paar";
+
+/**
+ * 렌더에 쓸 두 패널 폭입니다. 상태로 든 폭을 그대로 쓰지 않고 지금 컨테이너 폭에 맞춥니다.
+ *
+ * 손잡이를 움직일 때만 맞추면 첫 렌더와 컨테이너 축소와 패널 재개방이 그 경로를 지나지 않습니다.
+ * 탭 모드 판정은 세 열의 **최소** 폭 합(708px)인데 렌더는 **기본** 폭(300+280+손잡이 8)을 쓰므로,
+ * 그 사이 구간에서 세 열이 켜진 채 대화 열이 132px까지 밀립니다. `MIN_CHAT_WIDTH_PX` 계약을
+ * 깨는 자리였습니다(PR #120 리뷰).
+ *
+ * 최소 폭을 먼저 떼어 주고 남는 만큼만 기본 폭 쪽으로 되돌립니다. 두 폭을 각각 비율로 줄이면
+ * 최소 폭에 걸린 쪽이 못 줄인 몫을 다른 쪽이 메우지 않아 합이 예산을 넘습니다.
+ */
+export function fitPanelWidths(
+  container: number,
+  widths: { code: number; paar: number },
+  shown: { code: boolean; paar: boolean }
+): { code: number; paar: number } {
+  // 아직 재지 못했으면(첫 페인트, `ResizeObserver`가 없는 jsdom) 맞출 기준이 없습니다.
+  if (container === 0) return widths;
+
+  const handles = (shown.code ? HANDLE_WIDTH_PX : 0) + (shown.paar ? HANDLE_WIDTH_PX : 0);
+  const budget = container - MIN_CHAT_WIDTH_PX - handles;
+  const minSum = (shown.code ? CODE_PANEL.min : 0) + (shown.paar ? PAAR_PANEL.min : 0);
+  const wantSum =
+    (shown.code ? widths.code - CODE_PANEL.min : 0) + (shown.paar ? widths.paar - PAAR_PANEL.min : 0);
+  if (wantSum <= 0 || minSum + wantSum <= budget) return widths;
+
+  const factor = Math.max(0, Math.min(1, (budget - minSum) / wantSum));
+  return {
+    code: shown.code
+      ? CODE_PANEL.min + Math.floor((widths.code - CODE_PANEL.min) * factor)
+      : widths.code,
+    paar: shown.paar
+      ? PAAR_PANEL.min + Math.floor((widths.paar - PAAR_PANEL.min) * factor)
+      : widths.paar,
+  };
+}
 
 /**
  * 워크스페이스의 실제 폭입니다. 아직 재지 못했으면 0입니다. `ResizeObserver`가 없는 환경(테스트
@@ -102,23 +143,16 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
    */
   const columnClass = (column: WorkspaceColumn) =>
     isTabMode && activeColumn !== column ? `${styles.column} ${styles.columnHidden}` : styles.column;
-  const columnWidth = (width: number) => (isTabMode ? undefined : { width: `${width}px` });
 
   /**
-   * 한 열을 넓히면 대화 열이 좁아집니다. 폭 한계만 보면 대화 열이 최소 폭 아래로 밀리므로 남은
-   * 폭까지 함께 봅니다. 컨테이너 폭을 아직 못 재는 동안(첫 렌더, jsdom)은 폭 한계만 봅니다.
+   * 렌더에 쓰는 폭입니다. 상태로 든 폭은 손잡이가 마지막으로 낸 값이고, 컨테이너가 좁아지면
+   * 그 값을 그대로 쓸 수 없습니다. 대화 열의 최소 폭을 지키는 판단은 여기 한 곳에서 합니다.
    */
-  function clampPanelWidth(next: number, panel: { min: number; max: number }, otherPanelWidth: number) {
-    const container = workspaceWidth;
-    const handles =
-      (showCodePanel ? HANDLE_WIDTH_PX : 0) + (showPaarPanel ? HANDLE_WIDTH_PX : 0);
-    const room =
-      container === 0
-        ? panel.max
-        : container - otherPanelWidth - handles - MIN_CHAT_WIDTH_PX;
-    const max = Math.max(panel.min, Math.min(panel.max, room));
-    return Math.min(Math.max(next, panel.min), max);
-  }
+  const fitted = fitPanelWidths(
+    workspaceWidth,
+    { code: codeWidth, paar: paarWidth },
+    { code: showCodePanel, paar: showPaarPanel }
+  );
 
   return (
     // 이 자리에 `aria-live`를 두지 않습니다. 안쪽 질문 텍스트가 프레임마다 자라나므로 스크린리더가
@@ -226,21 +260,18 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
           <>
             <div
               className={`${styles.codeColumn} ${columnClass("code")}`}
-              style={columnWidth(codeWidth)}
+              style={{ width: `${fitted.code}px` }}
             >
               <CodePanel snapshot={snapshot} />
             </div>
             {isTabMode ? null : (
               <ResizeHandle
                 label="Resize the code panel"
-                width={codeWidth}
+                width={fitted.code}
                 min={CODE_PANEL.min}
                 max={CODE_PANEL.max}
-                onResize={(deltaX) =>
-                  setCodeWidth((width) =>
-                    clampPanelWidth(width + deltaX, CODE_PANEL, showPaarPanel ? paarWidth : 0)
-                  )
-                }
+                // 보이는 폭에서 이어 끕니다. 상태로 든 값에서 끌면 좁아진 화면에서 손이 튑니다.
+                onResize={(deltaX) => setCodeWidth(clampPanelWidth(fitted.code + deltaX, CODE_PANEL))}
               />
             )}
           </>
@@ -256,19 +287,15 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
             {isTabMode ? null : (
               <ResizeHandle
                 label="Resize the PAAR panel"
-                width={paarWidth}
+                width={fitted.paar}
                 min={PAAR_PANEL.min}
                 max={PAAR_PANEL.max}
-                onResize={(deltaX) =>
-                  setPaarWidth((width) =>
-                    clampPanelWidth(width - deltaX, PAAR_PANEL, showCodePanel ? codeWidth : 0)
-                  )
-                }
+                onResize={(deltaX) => setPaarWidth(clampPanelWidth(fitted.paar - deltaX, PAAR_PANEL))}
               />
             )}
             <div
               className={`${styles.paarColumn} ${columnClass("paar")}`}
-              style={columnWidth(paarWidth)}
+              style={{ width: `${fitted.paar}px` }}
             >
               <PaarPanel isEnded={stream.isEnded} onEnd={stream.endInterview} />
             </div>
