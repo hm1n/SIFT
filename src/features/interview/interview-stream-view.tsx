@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useId, useState } from "react";
+import { Fragment, useId, useLayoutEffect, useRef, useState } from "react";
 import { pluralCount } from "@/features/experience-candidates/candidate-period";
 import { clearsOnRetry } from "./errors";
 import type { InterviewStreamErrorKind, InterviewStreamRequestErrorKind } from "./errors";
@@ -123,6 +123,38 @@ function errorGuidance(kind: InterviewStreamErrorKind, resumable: boolean): stri
   return `${cause} ${retryHint(kind, resumable)}`;
 }
 
+/** 자동 증가 textarea의 상한입니다. 디자인 원본과 같은 값이고, 넘으면 입력 안에서 스크롤합니다. */
+const ANSWER_INPUT_MAX_HEIGHT_PX = 140;
+
+/**
+ * 질문이 오기 전 자리를 지키는 표시입니다. 디자인 원본 `ThinkingRow`의 블록 순환을 그대로 그립니다.
+ *
+ * **순환을 CSS로 돌립니다.** 디자인 원본은 `setInterval`로 400ms마다 상태를 바꾸는데, 그러면 질문이
+ * 도착하는 동안 내내 React 렌더가 한 번씩 더 돕니다. 스트리밍 중 리렌더 범위를 줄이는 것이 이
+ * 화면의 핵심 제약이라(AGENTS.md) 같은 모양을 렌더 없이 만듭니다. `prefers-reduced-motion`도 CSS에서
+ * 함께 처리됩니다.
+ *
+ * 블록은 장식이라 `aria-hidden`으로 빼고 같은 뜻의 문장을 시각적으로 숨겨 함께 둡니다. 낭독은 상태
+ * 문단이 담당하지만 그 문단은 스트림 상태만 말하므로, 대화 흐름 안에서 지금 무엇을 기다리는지는
+ * 여기에 남아 있어야 합니다.
+ */
+function ThinkingRow({ label }: { label: string }) {
+  return (
+    <p className={styles.thinking}>
+      <span className={styles.thinkingLabel}>{ROLE_LABEL_QUESTION}</span>
+      <span className={styles.thinkingCells} aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </span>
+      <span className={styles.visuallyHidden}>{label}</span>
+    </p>
+  );
+}
+
+/** 생성 중 표시의 라벨입니다. `interview-message.tsx`의 질문 라벨과 같은 글자를 씁니다. */
+const ROLE_LABEL_QUESTION = "Agent";
+
 export interface InterviewStreamViewProps extends Partial<UseInterviewStreamOptions> {
   url?: string;
 }
@@ -155,6 +187,7 @@ export function InterviewStreamView({
   const { containerRef, hasUnreadContent, scrollToBottom, handleScroll } =
     useAutoScroll<HTMLDivElement>(`${messages.length}:${receivedSeq}`);
   const [draft, setDraft] = useState("");
+  const answerInputRef = useRef<HTMLTextAreaElement>(null);
   // 종료 확인은 화면 상태입니다. 훅에는 확정된 종료만 알립니다. 확인 단계를 훅에 두면 종료하지 않은
   // 상태가 두 가지가 되고, 조작 잠금이 어느 쪽을 봐야 하는지 갈립니다.
   const [isConfirmingEnd, setIsConfirmingEnd] = useState(false);
@@ -208,6 +241,31 @@ export function InterviewStreamView({
     scrollToBottom();
   };
 
+  /*
+   * 답변 칸이 내용만큼 자라게 합니다. 상한을 넘으면 칸 안에서 스크롤합니다.
+   *
+   * `useLayoutEffect`를 쓰는 이유는 높이를 재고 바꾸는 일이기 때문입니다. `useEffect`로 하면 이전
+   * 높이가 한 프레임 그려진 뒤 바뀌어 입력 중에 칸이 튑니다. 잴 때 `auto`로 되돌리지 않으면
+   * `scrollHeight`가 지금 높이에 갇혀 줄을 지워도 줄어들지 않습니다.
+   */
+  useLayoutEffect(() => {
+    const el = answerInputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, ANSWER_INPUT_MAX_HEIGHT_PX)}px`;
+  }, [draft]);
+
+  /*
+   * 줄바꿈이 답변의 일부라 Enter만으로 보내지 않습니다. 코드 블록을 쓰는 답변에서 첫 줄에 보내집니다.
+   * 디자인 원본과 같이 보조 키를 함께 눌렀을 때만 보냅니다. macOS와 그 밖을 모두 받습니다.
+   */
+  const handleAnswerKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey)) return;
+    event.preventDefault();
+    if (!canSubmit) return;
+    event.currentTarget.form?.requestSubmit();
+  };
+
   // 작성 중이던 답변은 확인 문구가 알린 대로 버립니다. 어디에도 보내지 않으므로 남겨 둘 자리가 없습니다.
   const handleEnd = () => {
     endInterview();
@@ -259,9 +317,9 @@ export function InterviewStreamView({
           </Fragment>
         ))}
         {isPreparing ? (
-          <p className={styles.preparing}>
-            {isFollowUp ? "Preparing the next question." : "Preparing the question."}
-          </p>
+          <ThinkingRow
+            label={isFollowUp ? "Preparing the next question." : "Preparing the question."}
+          />
         ) : null}
       </div>
 
@@ -333,31 +391,51 @@ export function InterviewStreamView({
         </p>
       ) : (
         <>
+        {/*
+          디자인 원본의 composer입니다. 테두리 하나 안에 입력 칸과 푸터 줄을 넣고, 초점이 안으로
+          들어오면 테두리가 진해집니다. 라벨은 시각적으로만 숨깁니다. 디자인에는 라벨 자리가 없지만
+          placeholder는 접근 가능한 이름이 되지 못합니다.
+
+          푸터 왼쪽은 디자인에서 PAAR 블록 진행 상태가 들어가는 자리입니다. 그 계약이 아직 없어
+          (#89~#91) 지금은 답변 안내가 그 자리를 씁니다. 안내는 `aria-describedby`가 가리킵니다.
+        */}
         <form className={styles.answerForm} onSubmit={handleSubmit}>
-          <label className={styles.answerLabel} htmlFor={`${baseId}-answer`}>
+          <label className={styles.visuallyHidden} htmlFor={`${baseId}-answer`}>
             Answer
           </label>
-          <textarea
-            id={`${baseId}-answer`}
-            className={styles.answerInput}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            disabled={!canSubmitAnswer}
-            rows={4}
-            placeholder="Answer the question. Code blocks are welcome."
-            aria-describedby={answerHintId}
-            aria-invalid={isDraftTooLong || undefined}
-          />
-          <p id={answerHintId} className={styles.answerHint}>
-            {isDraftTooLong
-              ? `Your answer is over the size limit for a single message. It is ${draftBytes.toLocaleString()} bytes and the limit is ${INTERVIEW_HISTORY_ITEM_MAX_BYTES.toLocaleString()} bytes. Line breaks and code blocks count toward the size.`
-              : canSubmitAnswer
-                ? "Sending your answer builds the next question from the conversation so far."
-                : "You can write an answer once the question has fully arrived."}
-          </p>
-          <button type="submit" className={styles.submitButton} disabled={!canSubmit}>
-            Send answer
-          </button>
+          <div className={styles.composer} data-invalid={isDraftTooLong || undefined}>
+            <textarea
+              id={`${baseId}-answer`}
+              ref={answerInputRef}
+              className={styles.answerInput}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={handleAnswerKeyDown}
+              disabled={!canSubmitAnswer}
+              rows={1}
+              placeholder="Answer the question. Code blocks are welcome."
+              aria-describedby={answerHintId}
+              aria-invalid={isDraftTooLong || undefined}
+            />
+            <div className={styles.composerFooter}>
+              <p id={answerHintId} className={styles.answerHint}>
+                {isDraftTooLong
+                  ? `Your answer is over the size limit for a single message. It is ${draftBytes.toLocaleString()} bytes and the limit is ${INTERVIEW_HISTORY_ITEM_MAX_BYTES.toLocaleString()} bytes. Line breaks and code blocks count toward the size.`
+                  : canSubmitAnswer
+                    ? "Sending your answer builds the next question from the conversation so far."
+                    : "You can write an answer once the question has fully arrived."}
+              </p>
+              <div className={styles.composerActions}>
+                {/* 단축키 표시입니다. 키 조합 자체는 두 보조 키를 모두 받습니다. */}
+                <span className={styles.shortcutHint} aria-hidden="true">
+                  ⌘/Ctrl+↵
+                </span>
+                <button type="submit" className={styles.submitButton} disabled={!canSubmit}>
+                  Send
+                </button>
+              </div>
+            </div>
+          </div>
         </form>
 
         {/*

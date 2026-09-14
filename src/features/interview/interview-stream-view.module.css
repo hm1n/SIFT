@@ -14,28 +14,60 @@
  * 높이 규칙은 그대로입니다. 로그가 자기 안에서 스크롤하고, 자동 스크롤(`use-auto-scroll.ts`)과
  * 낭독 경계와 `InterviewMessage`의 memo 경계는 건드리지 않았습니다.
  */
-.stream { display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; padding: 16px 0; }
+.stream { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+
 /*
+ * 로그는 열 전체를 씁니다. 테두리와 라운드와 패딩을 두지 않습니다. 여백은 각 메시지 행이 갖고,
+ * 행 구분선이 열 끝까지 그어집니다. 디자인 원본의 가운데 열 구조입니다. 카드로 감싸면 열 안에 또
+ * 하나의 상자가 생겨 구분선이 중간에서 끊깁니다.
+ *
  * `align-content: start`가 있어야 합니다. grid의 기본값 `stretch`는 컨테이너에 남는 높이를 자동 크기
  * 행에 나눠 줍니다. #98에서 `max-height: 60vh`를 걷어내고 로그가 열 높이를 채우게 되자 남는 높이가
  * 생겼고, 대화가 짧을 때 메시지 블록이 화면 높이를 따라 늘어났습니다. 메시지 높이는 내용이 정합니다.
  * `experience-candidate-list.module.css`의 `.candidateList`가 같은 이유로 같은 선언을 씁니다.
+ *
+ * 줄바꿈은 `word-break: keep-all`입니다. 한국어를 어절 단위로 끊습니다. 이전의 `overflow-wrap: anywhere`
+ * 는 글자 아무 데서나 끊어서, 좁아진 대화 열에서 한 단어가 두 줄로 갈라졌습니다.
  */
-.log { display: grid; align-content: start; gap: 4px; flex: 1; min-height: 0; overflow-y: auto; border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px; background: var(--color-card); overflow-wrap: anywhere; }
-.preparing { color: var(--color-muted-foreground); font-size: 14px; }
+.log { display: grid; align-content: start; flex: 1; min-height: 0; overflow-y: auto; background: var(--color-card); word-break: keep-all; overflow-wrap: break-word; }
 
-.message { display: grid; gap: 6px; border-top: 1px solid var(--color-border); padding: 12px 0; color: var(--color-foreground); font-size: 14px; line-height: 1.65; }
-.message:first-child { border-top: 0; padding-top: 0; }
+/*
+ * 메시지 한 줄입니다. 고정폭 라벨 칸과 본문 칸을 가로로 놓습니다(디자인 원본 `MessageRow`).
+ * 라벨 칸 폭 44px은 `YOU`·`AGENT` 둘이 들어가는 최소치입니다.
+ */
+.message { display: flex; align-items: flex-start; gap: 12px; border-bottom: 1px solid var(--color-border); padding: 16px; color: var(--color-foreground); font-size: 14px; line-height: 1.65; }
 /*
  * 누가 말한 것인지는 색이 아니라 글자로 구분합니다. 디자인 원본의 `YOU`·`AGENT`와 같은 mono 대문자
- * 라벨이고, 질문 쪽을 진하게 둡니다.
+ * 라벨이고, 질문 쪽을 진하게 둡니다. 답변에 왼쪽 표시선을 두지 않습니다. 라벨 칸이 이미 구분합니다.
  */
-.roleLabel { color: var(--color-foreground); font-family: var(--font-mono); font-size: var(--label-size-sm); font-weight: 500; letter-spacing: var(--label-tracking); text-transform: uppercase; }
-.message[data-role="answer"] { border-left: 3px solid var(--color-border); padding-left: 12px; }
+.roleLabel { flex-shrink: 0; width: 44px; margin: 0; padding-top: 2px; color: var(--color-foreground); font-family: var(--font-mono); font-size: var(--label-size-sm); font-weight: 500; letter-spacing: var(--label-tracking); text-transform: uppercase; }
 .message[data-role="answer"] .roleLabel { color: var(--color-muted-foreground); }
+.messageBody { display: grid; align-content: start; gap: 12px; flex: 1; min-width: 0; }
 .message h2 { color: var(--color-foreground); font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
 .message ul { display: grid; gap: 4px; margin: 0; padding-left: 18px; }
 .message code { border-radius: 4px; background: var(--color-muted); font-family: var(--font-mono); font-size: 12px; padding: 1px 4px; }
+
+/* 질문이 오기 전 자리를 지킵니다. 메시지 행과 같은 라벨 칸을 써서 줄이 어긋나지 않습니다. */
+.thinking { display: flex; align-items: flex-start; gap: 12px; margin: 0; border-bottom: 1px solid var(--color-border); padding: 16px; }
+.thinkingLabel { flex-shrink: 0; width: 44px; padding-top: 2px; color: var(--color-foreground); font-family: var(--font-mono); font-size: var(--label-size-sm); font-weight: 500; letter-spacing: var(--label-tracking); text-transform: uppercase; }
+/*
+ * 칸 셋이 차례로 채워졌다가 함께 비는 순환입니다. 1.6초에 400ms씩 네 단계로, 디자인 원본의
+ * `setInterval` 주기와 같습니다. 칸마다 채워지는 시점이 다르고 비는 시점은 같아서 지연으로는
+ * 만들 수 없습니다. 그래서 keyframe을 셋 둡니다.
+ */
+.thinkingCells { display: inline-flex; gap: 3px; padding-top: 5px; }
+.thinkingCells span { width: 7px; height: 11px; background: var(--color-scrollbar-hover); opacity: .3; }
+.thinkingCells span:nth-child(1) { animation: thinkingCell1 1.6s linear infinite; }
+.thinkingCells span:nth-child(2) { animation: thinkingCell2 1.6s linear infinite; }
+.thinkingCells span:nth-child(3) { animation: thinkingCell3 1.6s linear infinite; }
+
+@keyframes thinkingCell1 { 0%, 24.9% { opacity: .3; } 25%, 100% { opacity: 1; } }
+@keyframes thinkingCell2 { 0%, 49.9% { opacity: .3; } 50%, 100% { opacity: 1; } }
+@keyframes thinkingCell3 { 0%, 74.9% { opacity: .3; } 75%, 100% { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .thinkingCells span { animation: none; opacity: 1; }
+}
 
 /*
  * highlight된 블록은 shiki가 `<pre>`에 배경을 인라인으로 박으므로 여기 배경이 닿지 않습니다.
@@ -44,46 +76,64 @@
 .codeBlock pre, .plainCode { overflow-x: auto; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-muted); font-family: var(--font-mono); font-size: 12px; line-height: 1.6; padding: 10px 12px; }
 .codeBlock code, .plainCode code { background: none; font-size: 12px; padding: 0; }
 
-.trimNotice { border-left: 3px solid var(--color-border); border-radius: var(--radius); background: var(--color-muted); color: var(--color-muted-foreground); font-size: 12px; line-height: 1.6; margin: 4px 0; padding: 10px 12px; }
-.status { color: var(--color-muted-foreground); font-size: 12px; }
+/* 로그 안에 들어가므로 행처럼 좌우 여백을 맞춥니다. */
+.trimNotice { border-left: 3px solid var(--color-border); border-radius: var(--radius); background: var(--color-muted); color: var(--color-muted-foreground); font-size: 12px; line-height: 1.6; margin: 12px 16px; padding: 10px 12px; }
 
-.unreadButton { width: fit-content; min-height: 32px; border: 0; border-radius: var(--radius); background: var(--color-primary); color: var(--color-primary-foreground); cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; padding: 0 12px; }
+/*
+ * 로그 아래 줄들입니다. `.stream`이 패딩과 gap을 갖지 않으므로 각자 좌우 16px을 맞춥니다.
+ * 디자인 원본에는 이 줄들이 없습니다. 스트리밍 상태 낭독과 실패 안내는 목업이 다루지 않는 요구입니다.
+ */
+.status { flex-shrink: 0; margin: 0; padding: 8px 16px; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-sm); letter-spacing: var(--label-tracking-wide); }
+
+.unreadButton { flex-shrink: 0; width: fit-content; min-height: 32px; margin: 0 16px 8px; border: 0; border-radius: var(--radius); background: var(--color-primary); color: var(--color-primary-foreground); cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; padding: 0 12px; }
 .unreadButton:hover { background: #404040; }
-.unreadNotice { color: var(--color-muted-foreground); font-size: 12px; line-height: 1.5; }
+.unreadNotice { flex-shrink: 0; margin: 0; padding: 0 16px; color: var(--color-muted-foreground); font-size: 12px; line-height: 1.5; }
 /* 내용이 없을 때도 노드는 남겨 둡니다. live region은 붙어 있는 동안의 변경만 알립니다. 절대 위치로
    빼서 grid 항목에서 제외해야 빈 상태에서 gap이 생기지 않습니다. */
 .unreadNotice:empty { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 
 /* 확인 실패를 알리는 의미색입니다. `experience-candidate-detail.module.css`의 `.selectionError`와 같은 값입니다. */
-.error { display: grid; gap: 6px; border-radius: var(--radius); background: #fdeaea; padding: 12px 14px; }
+.error { flex-shrink: 0; display: grid; gap: 6px; margin: 0 16px 12px; border-radius: var(--radius); background: #fdeaea; padding: 12px 14px; }
 .errorMessage { color: #a3272c; font-size: 14px; font-weight: 600; }
 .errorGuidance { color: #7c3b3d; font-size: 13px; line-height: 1.6; }
 .retryButton { width: fit-content; min-height: 32px; border: 1px solid #d4d4d4; border-radius: var(--radius); background: var(--color-card); color: #404040; cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; padding: 0 12px; }
 .retryButton:hover { border-color: var(--color-muted-foreground); color: var(--color-foreground); }
 
-.answerForm { display: grid; gap: 8px; }
-.answerLabel { color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-sm); font-weight: 400; letter-spacing: var(--label-tracking); text-transform: uppercase; }
-.answerInput { width: 100%; box-sizing: border-box; resize: vertical; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-card); color: var(--color-foreground); font: inherit; font-size: 14px; line-height: 1.65; padding: 10px 12px; }
-.answerInput::placeholder { color: var(--color-scrollbar-hover); }
-.answerInput:hover:not(:disabled) { border-color: var(--color-scrollbar); }
-.answerInput:disabled { background: var(--color-muted); color: var(--color-muted-foreground); }
-.answerInput[aria-invalid="true"] { border-color: #a3272c; }
-.answerHint { color: var(--color-muted-foreground); font-size: 12px; line-height: 1.5; }
+/*
+ * 입력부입니다. 테두리 하나 안에 입력 칸과 푸터 줄을 넣습니다(디자인 원본 composer). 위쪽 경계선이
+ * 로그와 갈라 줍니다. 입력 칸은 `rows={1}`로 시작해 내용만큼 자라고, 140px을 넘으면 칸 안에서
+ * 스크롤합니다. 높이는 `interview-stream-view.tsx`가 재서 인라인으로 넣습니다.
+ */
+.answerForm { flex-shrink: 0; border-top: 1px solid var(--color-border); background: var(--color-card); padding: 12px 16px; }
+.composer { display: grid; border: 1px solid var(--color-border); border-radius: var(--radius); transition: border-color 120ms ease; }
+.composer:hover { border-color: var(--color-scrollbar); }
+.composer:focus-within { border-color: var(--color-scrollbar-hover); }
+.composer[data-invalid] { border-color: #a3272c; }
 
-.submitButton { width: fit-content; min-height: 32px; border: 0; border-radius: var(--radius); background: var(--color-primary); color: var(--color-primary-foreground); cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; padding: 0 12px; }
+.answerInput { display: block; width: 100%; box-sizing: border-box; resize: none; overflow-y: auto; max-height: 140px; border: 0; background: transparent; color: var(--color-foreground); font: inherit; font-size: 14px; line-height: 1.65; padding: 12px 16px 6px; }
+.answerInput::placeholder { color: var(--color-scrollbar-hover); }
+.answerInput:disabled { color: var(--color-muted-foreground); }
+
+.composerFooter { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 10px 8px; }
+.answerHint { flex: 1; min-width: 0; margin: 0; color: var(--color-muted-foreground); font-size: 11px; line-height: 1.5; }
+.composerActions { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.shortcutHint { color: var(--color-scrollbar-hover); font-family: var(--font-mono); font-size: var(--label-size-xs); letter-spacing: var(--label-tracking-wide); }
+
+.submitButton { width: fit-content; min-height: 28px; border: 0; border-radius: var(--radius); background: var(--color-primary); color: var(--color-primary-foreground); cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; padding: 0 12px; }
 .submitButton:hover:not(:disabled) { background: #404040; }
 .submitButton:disabled { opacity: .3; cursor: not-allowed; }
 
-.endButton { width: fit-content; min-height: 32px; border: 1px solid #d4d4d4; border-radius: var(--radius); background: var(--color-card); color: #404040; cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; padding: 0 12px; }
+.endButton { flex-shrink: 0; width: fit-content; min-height: 32px; margin: 0 16px 12px; border: 1px solid #d4d4d4; border-radius: var(--radius); background: var(--color-card); color: #404040; cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; padding: 0 12px; }
 .endButton:hover { border-color: var(--color-muted-foreground); color: var(--color-foreground); }
 
-.endConfirm { display: grid; gap: 10px; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-muted); padding: 12px 14px; }
+.endConfirm { flex-shrink: 0; display: grid; gap: 10px; margin: 0 16px 12px; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-muted); padding: 12px 14px; }
 .endConfirmText { color: var(--color-foreground); font-size: 13px; line-height: 1.6; }
 .endActions { display: flex; flex-wrap: wrap; gap: 8px; }
 .endConfirmButton { min-height: 32px; border: 0; border-radius: var(--radius); background: var(--color-primary); color: var(--color-primary-foreground); cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; padding: 0 12px; }
 .endConfirmButton:hover { background: #404040; }
 
-.endedNotice { border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-muted); color: var(--color-muted-foreground); font-size: 13px; line-height: 1.6; padding: 12px 14px; }
+/* 종료 뒤 입력부가 있던 자리를 씁니다. 같은 자리이므로 위쪽 경계선도 같습니다. */
+.endedNotice { flex-shrink: 0; margin: 0; border-top: 1px solid var(--color-border); background: var(--color-muted); color: var(--color-muted-foreground); font-size: 13px; line-height: 1.6; padding: 12px 16px; }
 
 /* 초점 표시는 `code-panel.module.css`·`button.module.css`와 같은 2px 실선 하나로 통일합니다. */
 .log:focus-visible,
@@ -93,3 +143,7 @@
 .submitButton:focus-visible,
 .endButton:focus-visible,
 .endConfirmButton:focus-visible { outline: 2px solid var(--color-foreground); outline-offset: 2px; }
+/* 입력 칸은 테두리 안쪽에 그립니다. 바깥으로 두면 composer 테두리와 겹쳐 두 줄로 보입니다. */
+.answerInput:focus-visible { outline-offset: -2px; }
+/* 로그는 스크롤 영역이라 바깥 여백이 없습니다. 안쪽에 그려야 잘리지 않습니다. */
+.log:focus-visible { outline-offset: -2px; }

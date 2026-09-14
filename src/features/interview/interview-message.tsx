@@ -119,10 +119,15 @@ export const InterviewMessage = memo(function InterviewMessage({
   // 누가 말한 것인지는 색이 아니라 글자로 구분합니다. 답변도 질문과 같은 Markdown 렌더러를 씁니다.
   // 사용자가 코드 블록을 답변에 붙이는 경우가 있고, 답변은 제출 즉시 확정되므로 다시 파싱하지
   // 않습니다.
+  //
+  // 라벨과 본문을 가로로 놓습니다. 디자인 원본 `MessageRow`의 고정폭 라벨 칸 + 본문 칸 구조입니다.
+  // 라벨을 본문 위에 쌓으면 줄마다 누가 말했는지 다시 읽어야 해서 대화가 길어질수록 훑기 어렵습니다.
   return (
     <article className={styles.message} data-role={role} aria-label={ROLE_LABEL[role]}>
       <p className={styles.roleLabel}>{ROLE_LABEL[role]}</p>
-      <Markdown components={components}>{text}</Markdown>
+      <div className={styles.messageBody}>
+        <Markdown components={components}>{text}</Markdown>
+      </div>
     </article>
   );
 });

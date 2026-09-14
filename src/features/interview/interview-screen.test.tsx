@@ -307,7 +307,7 @@ describe("InterviewScreen", () => {
     await waitFor(() => expect(input).toBeEnabled());
 
     fireEvent.change(input, { target: { value: "첫 답변" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     expect(screen.getByRole("article", { name: "You" })).toHaveTextContent("첫 답변");
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));

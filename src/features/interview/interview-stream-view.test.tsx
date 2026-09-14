@@ -436,8 +436,44 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       completeQuestion(responses[0], "첫 질문");
       const input = await screen.findByLabelText("Answer");
       await waitFor(() => expect(input).toBeEnabled());
-      return { fetchImpl, input, submit: screen.getByRole("button", { name: "Send answer" }) };
+      return { fetchImpl, input, submit: screen.getByRole("button", { name: "Send" }) };
     }
+
+    // 줄바꿈이 답변의 일부라 Enter만으로는 보내지 않습니다. 코드 블록을 쓰는 답변이 첫 줄에서
+    // 잘려 나가는 것을 막습니다. 보조 키를 함께 눌렀을 때만 보냅니다.
+    it("Ctrl이나 Cmd와 함께 누른 Enter로 답변을 보낸다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const { fetchImpl, input } = await renderAfterFirstQuestion([first, second]);
+      fireEvent.change(input, { target: { value: "단축키 답변" } });
+
+      fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      expect(screen.getByRole("article", { name: "You" })).toHaveTextContent("단축키 답변");
+      expect(input).toHaveValue("");
+    });
+
+    it("보조 키 없는 Enter는 줄바꿈이라 보내지 않는다", async () => {
+      const first = controllableResponse();
+      const { fetchImpl, input } = await renderAfterFirstQuestion([first]);
+      fireEvent.change(input, { target: { value: "아직 쓰는 중" } });
+
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(input).toHaveValue("아직 쓰는 중");
+    });
+
+    // 보낼 수 없는 상태에서 단축키가 잠금을 우회하면 빈 답변이나 상한을 넘은 답변이 나갑니다.
+    it("보낼 수 없는 상태에서는 단축키도 보내지 않는다", async () => {
+      const first = controllableResponse();
+      const { fetchImpl, input } = await renderAfterFirstQuestion([first]);
+      fireEvent.change(input, { target: { value: "   " } });
+
+      fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    });
 
     it("근거 스냅샷이 없으면 답변 입력을 두지 않는다", async () => {
       const source = controllableResponse();
@@ -457,7 +493,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
 
       const input = screen.getByLabelText("Answer");
-      const submit = screen.getByRole("button", { name: "Send answer" });
+      const submit = screen.getByRole("button", { name: "Send" });
       expect(input).toBeDisabled();
       expect(submit).toBeDisabled();
 
@@ -659,7 +695,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
         completeQuestion(sources[turn - 1], `질문 ${turn}`);
         await waitFor(() => expect(input).toBeEnabled());
         fireEvent.change(input, { target: { value: `답변 ${turn}` } });
-        fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
+        fireEvent.click(screen.getByRole("button", { name: "Send" }));
       }
       await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(turns + 1));
       expect(JSON.parse(fetchImpl.mock.calls[turns][1].body).history).toHaveLength(
@@ -708,7 +744,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       // 대화는 남고 답변을 보낼 자리만 사라집니다. 다시 시작하는 조작도 두지 않습니다.
       expect(screen.getByText("첫 질문")).toBeInTheDocument();
       expect(screen.queryByLabelText("Answer")).not.toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "Send answer" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Send" })).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "End interview" })).not.toBeInTheDocument();
       expect(screen.getByText("The interview has ended. The conversation is read-only.")).toBeInTheDocument();
       expect(screen.getByText(/Going back to the candidate list clears this conversation/)).toBeInTheDocument();

@@ -26,8 +26,13 @@
 .workspace { display: flex; flex: 1; min-height: 0; overflow: hidden; }
 .column { min-height: 0; overflow: hidden; }
 .codeColumn, .paarColumn { flex-shrink: 0; }
-/* 대화 열은 남은 폭을 다 씁니다. `min-width: 0`이 없으면 긴 코드 블록이 열을 밀어냅니다. */
-.chatColumn { display: flex; flex-direction: column; flex: 1; min-width: 0; padding: 0 16px; }
+/*
+ * 대화 열은 남은 폭을 다 씁니다. `min-width: 0`이 없으면 긴 코드 블록이 열을 밀어냅니다.
+ *
+ * 좌우 패딩을 두지 않습니다. 메시지 행이 자기 여백을 갖고 구분선을 열 끝까지 긋습니다(디자인 원본).
+ * 오른쪽 경계선은 여기서 긋습니다. PAAR 열에는 왼쪽 경계선이 없습니다.
+ */
+.chatColumn { display: flex; flex-direction: column; flex: 1; min-width: 0; border-right: 1px solid var(--color-border); }
 
 /*
  * 좁은 폭의 탭 배치입니다. 보이지 않는 열도 DOM과 레이아웃에 남깁니다. `display: none`으로 감추면
