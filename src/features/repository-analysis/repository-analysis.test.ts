@@ -37,7 +37,7 @@ const STAGE_A_OUTPUT: StageACandidateResult = {
 };
 const STAGE_B_RESULT: StageBCandidateResult = {
   candidates: [
-    { sha: "sha-1", relatedShas: [], evidence: "분석 상태 머신을 구현했습니다.", citedFilePaths: [], source: "automatic_recommendation" },
+    { sha: "sha-1", relatedShas: [], summary: "경험 요약 한 줄", evidence: "분석 상태 머신을 구현했습니다.", technicalTopics: ["TypeScript"], citedFilePaths: [], source: "automatic_recommendation" },
   ],
   insufficientCandidatesReason: "후보로 판단할 수 있는 커밋이 1개뿐입니다.",
   diffs: [],
@@ -335,7 +335,7 @@ describe("generateCandidates", () => {
   });
 
   it("후보가 3개이면 부족 사유 없이 성공 상태로 끝낸다", async () => {
-    const candidate = { relatedShas: [], evidence: "근거입니다.", citedFilePaths: [], source: "automatic_recommendation" } as const;
+    const candidate = { relatedShas: [], summary: "경험 요약 한 줄", evidence: "근거입니다.", technicalTopics: ["TypeScript"], citedFilePaths: [], source: "automatic_recommendation" } as const;
     const deps = dependencies({
       fetchStageBCandidates: vi.fn().mockResolvedValue({
         candidates: [

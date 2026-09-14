@@ -8,7 +8,7 @@ import {
   REPOSITORY_VERIFIED_NOTICE,
   VERIFIABILITY_LABEL,
 } from "./evidence-verifiability";
-import { commitTitle, deriveCandidatePeriod, formatCommitDate, pluralCount } from "./candidate-period";
+import { candidateTitle, commitTitle, deriveCandidatePeriod, formatCommitDate, pluralCount } from "./candidate-period";
 import { EXPERIENCE_SELECTION_ERROR_COPY } from "./experience-selection";
 import styles from "./experience-candidate-detail.module.css";
 
@@ -31,8 +31,14 @@ interface ExperienceCandidateDetailProps {
 const EVIDENCE_NOTICE_ID = "candidate-evidence-verifiability-notice";
 const VERIFIED_NOTICE_ID = "candidate-repository-verified-notice";
 
-/** "Why worth discussing"·"Technical topics"처럼 지금 스키마에 대응 값이 없는 항목에 씁니다. 임의로 채우지 않습니다(이슈 #97 Constraint). */
-const SCHEMA_GAP_NOTICE = "No corresponding data in the Repository schema to display this.";
+/**
+ * 토픽이 빈 배열로 온 후보의 Empty 표시입니다.
+ *
+ * #97의 `SCHEMA_GAP_NOTICE`("No corresponding data in the Repository schema...")를 대신합니다.
+ * 그 문구는 스키마에 필드가 없다는 뜻이었고, 이제 필드가 있으므로 "이 후보에서는 고를 것이
+ * 없었다"는 다른 사실을 말해야 합니다(이슈 #110).
+ */
+const TOPICS_EMPTY_NOTICE = "No technical topics were identified from the diffs and commit messages of this candidate.";
 
 /** 목록에 3개 초과일 때 접어 두는 기준입니다. 디자인의 "View all" 기준과 같습니다. */
 const EVIDENCE_LIST_COLLAPSE_THRESHOLD = 3;
@@ -72,8 +78,8 @@ export function ExperienceCandidateDetail({
   selectionError,
 }: ExperienceCandidateDetailProps) {
   const [showAllEvidence, setShowAllEvidence] = useState(false);
-  const { candidate, commit, normalizedRelatedShas } = item;
-  const title = commitTitle(commit, candidate.sha);
+  const { candidate, commit, normalizedRelatedShas, normalizedTechnicalTopics } = item;
+  const title = candidateTitle(candidate, commit);
   const commitCount = 1 + normalizedRelatedShas.length;
 
   const evidenceEntries: readonly EvidenceListEntry[] = [
@@ -108,7 +114,18 @@ export function ExperienceCandidateDetail({
 
         <section className={styles.section} aria-labelledby="topics-heading">
           <p id="topics-heading" className={styles.sectionEyebrow}>Technical topics</p>
-          <p className={styles.schemaGapNotice}>{SCHEMA_GAP_NOTICE}</p>
+          {normalizedTechnicalTopics.length > 0 ? (
+            <>
+              <ul className={styles.topicChips}>
+                {normalizedTechnicalTopics.map((topic) => <li key={topic}>{topic}</li>)}
+              </ul>
+              {/* 토픽은 Repository에서 확인한 값이 아니라 LLM이 diff와 커밋 메시지에서 읽어낸
+                  해석입니다. Why worth discussing과 같은 안내를 붙여 근거와 구분합니다. */}
+              <p className={styles.evidenceNotice}>{EVIDENCE_VERIFIABILITY_NOTICE}</p>
+            </>
+          ) : (
+            <p className={styles.topicsEmpty}>{TOPICS_EMPTY_NOTICE}</p>
+          )}
         </section>
 
         <section className={`${styles.section} ${styles.evidenceSection}`} aria-labelledby="evidence-heading">

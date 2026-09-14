@@ -20,6 +20,8 @@
 .rowMeta { display: flex; align-items: center; gap: 8px; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); }
 .rowMeta span + span { position: relative; padding-left: 10px; }
 .rowMeta span + span::before { content: "·"; position: absolute; left: 0; }
+/* 260px 열에서 토픽 이름이 길면 행이 늘어나므로 한 줄로 자릅니다. 전체 목록은 상세 칩에 있습니다. */
+.rowTopics { color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .insufficientReason { display: grid; gap: 3px; border-left: 3px solid var(--color-border); padding-left: 12px; margin: 0 0 4px; }
 .insufficientReason strong { color: var(--color-foreground); }
 .exclusions { display: grid; gap: 10px; border-top: 1px solid var(--color-border); padding-top: 16px; }

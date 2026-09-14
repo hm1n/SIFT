@@ -12,6 +12,33 @@ const SOURCES: readonly ExperienceCandidateSource[] = [
   "automatic_recommendation",
 ];
 
+/** JSON Schema의 `required`와 런타임 `hasOnlyKeys`가 같은 목록을 보게 한 곳에 둡니다. */
+const CANDIDATE_KEYS = [
+  "sha",
+  "relatedShas",
+  "summary",
+  "evidence",
+  "technicalTopics",
+  "citedFilePaths",
+  "source",
+] as const;
+
+/**
+ * 토픽 개수 상한입니다. 프롬프트로만 요청하고 JSON Schema와 런타임 검증 어느 쪽에서도 세지
+ * 않습니다. 넘겨 온 응답은 화면 정규화(`createExperienceCandidateListItems`)가 이 값으로 잘라
+ * 레이아웃만 지킵니다.
+ *
+ * 개수를 강제하면 한 후보가 상한을 넘겼을 때 응답 전체, 즉 후보 최대 `STAGE_B_MAX_CANDIDATES`개가
+ * 함께 버려집니다. 토픽이 몇 개 더 오는 것보다 후보가 사라지는 손해가 큽니다(이슈 #110
+ * Constraint).
+ *
+ * JSON Schema의 `maxItems`도 같은 이유로 쓰지 않습니다. `maxItems`는 요청이 아니라 강제입니다.
+ * Gemini 구조화 출력이 직접 거부하고 SDK가 `NoObjectGeneratedError`를 던지므로, 런타임 검증과
+ * 정규화에 닿기 전에 응답 전체가 사라집니다. 프롬프트가 항목을 잘게 나누라고 유도했을 때 이
+ * 경로로 14회 중 3회가 실패했습니다(2026-09-14 실측).
+ */
+export const MAX_TECHNICAL_TOPICS = 6;
+
 // ponytail: 새 검증 의존성 없이 JSON Schema와 최소 런타임 검증을 병행합니다. 계약 변경 시
 // 둘의 불일치가 반복되면 단일 스키마에서 타입과 JSON Schema를 함께 생성하는 방식으로 승격합니다.
 /**
@@ -31,11 +58,15 @@ function buildCandidateOutputJsonSchema(maxCandidates: number) {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["sha", "relatedShas", "evidence", "citedFilePaths", "source"] as string[],
+          required: [...CANDIDATE_KEYS] as string[],
           properties: {
             sha: { type: "string", minLength: 1 },
             relatedShas: { type: "array", items: { type: "string", minLength: 1 } },
+            // `summary`와 `technicalTopics`에 `minLength`·`minItems`·`maxItems`를 두지 않는 이유는
+            // `MAX_TECHNICAL_TOPICS`에 적었습니다.
+            summary: { type: "string" },
             evidence: { type: "string", minLength: 1 },
+            technicalTopics: { type: "array", items: { type: "string" } },
             citedFilePaths: { type: "array", items: { type: "string", minLength: 1 } },
             source: { type: "string", enum: [...SOURCES] as string[] },
           },
@@ -67,14 +98,26 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(isNonEmptyString);
 }
 
+/**
+ * 빈 문자열 원소를 허용하는 배열 검사입니다. `technicalTopics`에만 씁니다.
+ *
+ * `isStringArray`를 쓰면 원소 하나가 빈 문자열인 것만으로 응답 전체가 거부되고, 그때
+ * `createExperienceCandidateListItems`의 빈 문자열 제거는 도달할 수 없는 코드가 됩니다.
+ */
+function isLooseStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
 function isCandidate(value: unknown): value is ExperienceCandidate {
   if (!isRecord(value)) return false;
 
   return (
-    hasOnlyKeys(value, ["sha", "relatedShas", "evidence", "citedFilePaths", "source"]) &&
+    hasOnlyKeys(value, CANDIDATE_KEYS) &&
     isNonEmptyString(value.sha) &&
     isStringArray(value.relatedShas) &&
+    typeof value.summary === "string" &&
     isNonEmptyString(value.evidence) &&
+    isLooseStringArray(value.technicalTopics) &&
     isStringArray(value.citedFilePaths) &&
     typeof value.source === "string" &&
     SOURCES.includes(value.source as ExperienceCandidateSource)
