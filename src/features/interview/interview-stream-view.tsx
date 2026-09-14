@@ -7,10 +7,8 @@ import type { InterviewStreamErrorKind, InterviewStreamRequestErrorKind } from "
 import { INTERVIEW_HISTORY_ITEM_MAX_BYTES, interviewHistoryItemBytes } from "./history";
 import { InterviewMessage } from "./interview-message";
 import { useAutoScroll } from "./use-auto-scroll";
-import { useInterviewStream, type InterviewStreamPhase, type UseInterviewStreamOptions } from "./use-interview-stream";
+import type { InterviewStreamPhase, InterviewStreamState } from "./use-interview-stream";
 import styles from "./interview-stream-view.module.css";
-
-export const DEFAULT_INTERVIEW_STREAM_URL = "/api/interview/stream";
 
 const STATUS_TEXT: Record<InterviewStreamPhase, string> = {
   idle: "Question streaming has not started yet.",
@@ -155,49 +153,45 @@ function ThinkingRow({ label }: { label: string }) {
 /** 생성 중 표시의 라벨입니다. `interview-message.tsx`의 질문 라벨과 같은 글자를 씁니다. */
 const ROLE_LABEL_QUESTION = "Agent";
 
-export interface InterviewStreamViewProps extends Partial<UseInterviewStreamOptions> {
-  url?: string;
+export interface InterviewStreamViewProps {
+  /**
+   * 스트림 상태입니다. 훅은 `InterviewScreen`이 들고 있습니다.
+   *
+   * 종료 조작이 PAAR 패널로 옮겨 가면서 가운데 열과 오른쪽 열이 같은 종료 상태를 봐야 합니다.
+   * 두 열은 형제이므로 공통 부모가 훅을 들고 양쪽에 나눠 줍니다.
+   */
+  stream: InterviewStreamState;
 }
 
 /**
- * 질문 스트리밍의 표시 기반입니다.
- *
- * `snapshot`을 주면 실제 생성 경로를 씁니다. 근거 스냅샷을 `POST` 본문으로 보내고, 끊겼을 때
- * 이어받지 않습니다. 주지 않으면 테스트용 스트림을 `GET`으로 받고 이어받기도 그대로 동작합니다.
+ * 질문 스트리밍의 표시 기반입니다. 상태는 받기만 하고 만들지 않습니다.
  */
-export function InterviewStreamView({
-  url = DEFAULT_INTERVIEW_STREAM_URL,
-  ...streamOptions
-}: InterviewStreamViewProps = {}) {
+export function InterviewStreamView({ stream }: InterviewStreamViewProps) {
   const {
     messages,
     status,
     error,
     receivedSeq,
     removedHistory,
+    hasSnapshot,
     canSubmitAnswer,
     isLastQuestionTooLong,
     isEnded,
     retry,
     submitAnswer,
-    endInterview,
-  } = useInterviewStream({ url, ...streamOptions });
+  } = stream;
   // 청크 도착만이 아니라 답변 제출도 내용을 바꿉니다. 답변은 청크가 아니라 `receivedSeq`가 움직이지
   // 않으므로 메시지 수를 함께 묶습니다.
   const { containerRef, hasUnreadContent, scrollToBottom, handleScroll } =
     useAutoScroll<HTMLDivElement>(`${messages.length}:${receivedSeq}`);
   const [draft, setDraft] = useState("");
   const answerInputRef = useRef<HTMLTextAreaElement>(null);
-  // 종료 확인은 화면 상태입니다. 훅에는 확정된 종료만 알립니다. 확인 단계를 훅에 두면 종료하지 않은
-  // 상태가 두 가지가 되고, 조작 잠금이 어느 쪽을 봐야 하는지 갈립니다.
-  const [isConfirmingEnd, setIsConfirmingEnd] = useState(false);
 
   const baseId = useId();
   const statusId = `${baseId}-status`;
   const unreadId = `${baseId}-unread`;
   const errorId = `${baseId}-error`;
   const answerHintId = `${baseId}-answer-hint`;
-  const endConfirmId = `${baseId}-end-confirm`;
 
   // 첫 내용이 오기 전의 Loading은 여기 한 곳에서만 그립니다. 첫 질문이면 대화가 비어 있고, 꼬리
   // 질문이면 마지막 항목이 사용자의 답변입니다. 두 경우 모두 아직 자라나는 질문이 없습니다.
@@ -264,13 +258,6 @@ export function InterviewStreamView({
     event.preventDefault();
     if (!canSubmit) return;
     event.currentTarget.form?.requestSubmit();
-  };
-
-  // 작성 중이던 답변은 확인 문구가 알린 대로 버립니다. 어디에도 보내지 않으므로 남겨 둘 자리가 없습니다.
-  const handleEnd = () => {
-    endInterview();
-    setIsConfirmingEnd(false);
-    setDraft("");
   };
 
   return (
@@ -359,7 +346,7 @@ export function InterviewStreamView({
           </p>
           <p id={errorId} className={styles.errorGuidance}>
             {error
-              ? errorGuidance(error.kind, streamOptions.snapshot === undefined)
+              ? errorGuidance(error.kind, !hasSnapshot)
               : `This question is over the ${INTERVIEW_HISTORY_ITEM_MAX_BYTES.toLocaleString()}-byte limit for a single message, so it cannot be answered. Retrying keeps the conversation so far and rebuilds only this question.`}
           </p>
           {canRetry ? (
@@ -380,25 +367,28 @@ export function InterviewStreamView({
         입력을 열면 답변이 아무 데도 가지 않습니다. 생성 중과 오류 표시 중에는 잠깁니다. 오류는 다시
         시도로 풀어야 하고, 그 다시 시도는 실패한 질문 하나만 다시 만듭니다.
       */}
-      {streamOptions.snapshot === undefined ? null : isEnded ? (
+      {!hasSnapshot ? null : isEnded ? (
         /*
           종료 상태를 답변 입력이 있던 자리에 그립니다. 새 자리를 만들지 않는 이유는 이 자리가
           "지금 사용자가 할 수 있는 일"을 그리는 자리이기 때문입니다. 종료 사실 자체는 위 상태
           문단이 낭독하므로 여기서는 되풀이하지 않고 다음에 무엇이 일어나는지만 적습니다.
+
+          작성 중이던 답변은 이 교체로 버려집니다. 종료 확인 문구가 알린 그대로입니다. `draft`를
+          따로 비우지 않는 이유는 종료가 한 방향이라 입력이 다시 열리지 않기 때문입니다. 되돌릴 수
+          있게 되면 그때 비우는 자리를 만듭니다.
         */
         <p className={styles.endedNotice}>
           The answer box is closed. Going back to the candidate list clears this conversation for good.
         </p>
       ) : (
-        <>
-        {/*
+        /*
           디자인 원본의 composer입니다. 테두리 하나 안에 입력 칸과 푸터 줄을 넣고, 초점이 안으로
           들어오면 테두리가 진해집니다. 라벨은 시각적으로만 숨깁니다. 디자인에는 라벨 자리가 없지만
           placeholder는 접근 가능한 이름이 되지 못합니다.
 
           푸터 왼쪽은 디자인에서 PAAR 블록 진행 상태가 들어가는 자리입니다. 그 계약이 아직 없어
           (#89~#91) 지금은 답변 안내가 그 자리를 씁니다. 안내는 `aria-describedby`가 가리킵니다.
-        */}
+        */
         <form className={styles.answerForm} onSubmit={handleSubmit}>
           <label className={styles.visuallyHidden} htmlFor={`${baseId}-answer`}>
             Answer
@@ -450,50 +440,6 @@ export function InterviewStreamView({
             </div>
           </div>
         </form>
-
-        {/*
-          종료는 되돌릴 수 없으므로 한 번 확인을 받습니다. 확인 문구는 사라지는 것을 모두 적습니다.
-          작성 중인 답변, 그리고 후보 목록으로 돌아갈 때의 대화입니다.
-
-          생성 중에도 누를 수 있게 둡니다. 질문을 기다리다 그만두는 것을 막을 이유가 없고, 종료가
-          진행 중인 요청을 끊습니다.
-        */}
-        {isConfirmingEnd ? (
-          <div className={styles.endConfirm} role="group" aria-labelledby={endConfirmId}>
-            <p id={endConfirmId} className={styles.endConfirmText}>
-              Ending the interview closes the answer box and leaves the conversation read-only. Any
-              answer you are still writing is discarded. Going back to the candidate list clears the
-              conversation too, and it cannot be resumed.
-            </p>
-            <div className={styles.endActions}>
-              {/* 확인 문구를 읽지 않고 누르는 일을 줄이려고 초점을 확인 버튼으로 옮깁니다. */}
-              <button
-                type="button"
-                className={styles.endConfirmButton}
-                onClick={handleEnd}
-                autoFocus
-              >
-                End the interview
-              </button>
-              <button
-                type="button"
-                className={styles.endButton}
-                onClick={() => setIsConfirmingEnd(false)}
-              >
-                Continue the interview
-              </button>
-            </div>
-          </div>
-        ) : (
-          <button
-            type="button"
-            className={styles.endButton}
-            onClick={() => setIsConfirmingEnd(true)}
-          >
-            End interview
-          </button>
-        )}
-        </>
       )}
     </section>
   );

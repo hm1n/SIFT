@@ -5,10 +5,28 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { INTERVIEW_HISTORY_ITEM_MAX_BYTES, INTERVIEW_HISTORY_MAX_ITEMS } from "./history";
 import { InterviewStreamView } from "./interview-stream-view";
+import { PaarPanel } from "./paar-panel";
 import { evidenceSnapshotFixture } from "./question-fixture";
 import { encodeSseEvent } from "./sse";
+import { useInterviewStream, type UseInterviewStreamOptions } from "./use-interview-stream";
 
 afterEach(cleanup);
+
+/**
+ * 스트림 훅과 종료 조작을 `InterviewScreen`과 같은 방식으로 잇습니다.
+ *
+ * 훅은 화면 밖에 있고 종료 버튼은 PAAR 패널 아래에 있습니다. 표시 컴포넌트만 그리면 이 테스트가
+ * 검증하는 종료 흐름이 실제 배선과 달라집니다.
+ */
+function StreamViewHarness(options: UseInterviewStreamOptions) {
+  const stream = useInterviewStream(options);
+  return (
+    <>
+      <InterviewStreamView stream={stream} />
+      <PaarPanel isEnded={stream.isEnded} onEnd={stream.endInterview} />
+    </>
+  );
+}
 
 /** 테스트가 청크 도착 시점을 직접 정하려고 컨트롤러를 밖으로 꺼냅니다. */
 function controllableResponse() {
@@ -50,7 +68,7 @@ describe("InterviewStreamView", () => {
   it("첫 내용이 도착하기 전에는 준비 안내를 보여 준다", async () => {
     const fetchImpl = vi.fn().mockReturnValue(new Promise<Response>(() => {}));
 
-    render(<InterviewStreamView fetchImpl={fetchImpl} {...renderOptions} />);
+    render(<StreamViewHarness fetchImpl={fetchImpl} {...renderOptions} />);
 
     expect(await screen.findByText("Preparing the question.")).toBeInTheDocument();
   });
@@ -59,7 +77,7 @@ describe("InterviewStreamView", () => {
     const source = controllableResponse();
     const fetchImpl = vi.fn().mockResolvedValue(source.response);
 
-    render(<InterviewStreamView fetchImpl={fetchImpl} {...renderOptions} />);
+    render(<StreamViewHarness fetchImpl={fetchImpl} {...renderOptions} />);
     await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
 
     source.push(encodeSseEvent({ type: "chunk", seq: 1, text: "청크 경계를 " }));
@@ -74,7 +92,7 @@ describe("InterviewStreamView", () => {
     const source = controllableResponse();
     const fetchImpl = vi.fn().mockResolvedValue(source.response);
 
-    render(<InterviewStreamView fetchImpl={fetchImpl} {...renderOptions} />);
+    render(<StreamViewHarness fetchImpl={fetchImpl} {...renderOptions} />);
     await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
     source.push(encodeSseEvent({ type: "chunk", seq: 1, text: "첫 문장" }));
     await screen.findByText("첫 문장");
@@ -94,7 +112,7 @@ describe("InterviewStreamView", () => {
     const source = controllableResponse();
     const fetchImpl = vi.fn().mockResolvedValue(source.response);
 
-    render(<InterviewStreamView fetchImpl={fetchImpl} {...renderOptions} />);
+    render(<StreamViewHarness fetchImpl={fetchImpl} {...renderOptions} />);
     await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
     source.push(encodeSseEvent({ type: "chunk", seq: 1, text: "첫 문장" }));
     await screen.findByText("첫 문장");
@@ -118,7 +136,7 @@ describe("InterviewStreamView", () => {
     const source = controllableResponse();
     const fetchImpl = vi.fn().mockResolvedValue(source.response);
 
-    render(<InterviewStreamView fetchImpl={fetchImpl} retryDelaysMs={[]} {...renderOptions} />);
+    render(<StreamViewHarness fetchImpl={fetchImpl} retryDelaysMs={[]} {...renderOptions} />);
     await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
     source.push(encodeSseEvent({ type: "chunk", seq: 1, text: "이미 도착한 내용" }));
     await screen.findByText("이미 도착한 내용");
@@ -141,7 +159,7 @@ describe("InterviewStreamView", () => {
       .mockResolvedValueOnce(first.response)
       .mockResolvedValueOnce(second.response);
 
-    render(<InterviewStreamView fetchImpl={fetchImpl} retryDelaysMs={[]} {...renderOptions} />);
+    render(<StreamViewHarness fetchImpl={fetchImpl} retryDelaysMs={[]} {...renderOptions} />);
     await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
     first.push(encodeSseEvent({ type: "chunk", seq: 1, text: "앞부분" }));
     await screen.findByText("앞부분");
@@ -157,7 +175,7 @@ describe("InterviewStreamView", () => {
   it("연결을 시작하지 못하면 시작 실패로 안내한다", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({ ok: false, status: 500, body: null } as unknown as Response);
 
-    render(<InterviewStreamView fetchImpl={fetchImpl} {...renderOptions} />);
+    render(<StreamViewHarness fetchImpl={fetchImpl} {...renderOptions} />);
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Could not open the question stream.");
@@ -175,7 +193,7 @@ describe("InterviewStreamView", () => {
         }),
     } as unknown as Response);
 
-    render(<InterviewStreamView fetchImpl={fetchImpl} {...renderOptions} />);
+    render(<StreamViewHarness fetchImpl={fetchImpl} {...renderOptions} />);
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("The question generation service hit its call limit.");
@@ -198,7 +216,7 @@ describe("InterviewStreamView", () => {
         }),
     } as unknown as Response);
 
-    render(<InterviewStreamView fetchImpl={fetchImpl} {...renderOptions} />);
+    render(<StreamViewHarness fetchImpl={fetchImpl} {...renderOptions} />);
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("The question generation service did not accept the request.");
@@ -225,7 +243,7 @@ describe("InterviewStreamView", () => {
         }),
     } as unknown as Response);
 
-    render(<InterviewStreamView fetchImpl={fetchImpl} {...renderOptions} />);
+    render(<StreamViewHarness fetchImpl={fetchImpl} {...renderOptions} />);
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("The question generation service did not respond.");
@@ -238,7 +256,7 @@ describe("InterviewStreamView", () => {
     const { push, response } = controllableResponse();
     const fetchImpl = vi.fn().mockResolvedValue(response);
 
-    render(<InterviewStreamView fetchImpl={fetchImpl} {...renderOptions} />);
+    render(<StreamViewHarness fetchImpl={fetchImpl} {...renderOptions} />);
     await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
     push(encodeSseEvent({ type: "chunk", seq: 1, text: "질문" }));
     await screen.findByText("질문");
@@ -262,7 +280,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
     const source = controllableResponse();
     const fetchImpl = vi.fn().mockResolvedValue(source.response);
 
-    render(<InterviewStreamView fetchImpl={fetchImpl} snapshot={snapshot} {...renderOptions} />);
+    render(<StreamViewHarness fetchImpl={fetchImpl} snapshot={snapshot} {...renderOptions} />);
 
     await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
     expect(fetchImpl.mock.calls[0][1].method).toBe("POST");
@@ -278,7 +296,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       .mockResolvedValueOnce(second.response);
 
     render(
-      <InterviewStreamView
+      <StreamViewHarness
         fetchImpl={fetchImpl}
         snapshot={snapshot}
         retryDelaysMs={[]}
@@ -308,7 +326,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
     const source = controllableResponse();
     const fetchImpl = vi.fn().mockResolvedValue(source.response);
 
-    render(<InterviewStreamView fetchImpl={fetchImpl} snapshot={snapshot} {...renderOptions} />);
+    render(<StreamViewHarness fetchImpl={fetchImpl} snapshot={snapshot} {...renderOptions} />);
     await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
     source.push(encodeSseEvent({ type: "done", seq: 0 }));
 
@@ -324,7 +342,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
     const source = controllableResponse();
     const fetchImpl = vi.fn().mockResolvedValue(source.response);
 
-    render(<InterviewStreamView fetchImpl={fetchImpl} snapshot={snapshot} {...renderOptions} />);
+    render(<StreamViewHarness fetchImpl={fetchImpl} snapshot={snapshot} {...renderOptions} />);
     await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
     source.push(encodeSseEvent({ type: "chunk", seq: 1, text: "앞부분" }));
     await screen.findByText("앞부분");
@@ -354,7 +372,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
         }),
     } as unknown as Response);
 
-    render(<InterviewStreamView fetchImpl={fetchImpl} snapshot={snapshot} {...renderOptions} />);
+    render(<StreamViewHarness fetchImpl={fetchImpl} snapshot={snapshot} {...renderOptions} />);
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("A server configuration problem stopped the request from being handled.");
@@ -371,7 +389,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
         Promise.resolve({ error: { kind: "llm_auth", message: "LLM authentication failed." } }),
     } as unknown as Response);
 
-    render(<InterviewStreamView fetchImpl={fetchImpl} snapshot={snapshot} {...renderOptions} />);
+    render(<StreamViewHarness fetchImpl={fetchImpl} snapshot={snapshot} {...renderOptions} />);
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Retrying gives the same result");
@@ -390,7 +408,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
     } as unknown as Response);
 
     render(
-      <InterviewStreamView
+      <StreamViewHarness
         fetchImpl={fetchImpl}
         snapshot={evidenceSnapshotFixture()}
         retryDelaysMs={[]}
@@ -419,12 +437,12 @@ describe("InterviewStreamView 실제 생성 경로", () => {
     /** 첫 질문을 끝내고 답변 입력이 열린 화면을 만듭니다. */
     async function renderAfterFirstQuestion(
       responses: ReturnType<typeof controllableResponse>[],
-      props: Partial<React.ComponentProps<typeof InterviewStreamView>> = {}
+      props: Partial<React.ComponentProps<typeof StreamViewHarness>> = {}
     ) {
       const fetchImpl = vi.fn();
       responses.forEach((response) => fetchImpl.mockResolvedValueOnce(response.response));
       render(
-        <InterviewStreamView
+        <StreamViewHarness
           fetchImpl={fetchImpl}
           snapshot={snapshot}
           retryDelaysMs={[]}
@@ -497,7 +515,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
     it("근거 스냅샷이 없으면 답변 입력을 두지 않는다", async () => {
       const source = controllableResponse();
       const fetchImpl = vi.fn().mockResolvedValue(source.response);
-      render(<InterviewStreamView fetchImpl={fetchImpl} {...renderOptions} />);
+      render(<StreamViewHarness fetchImpl={fetchImpl} {...renderOptions} />);
       await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
       completeQuestion(source, "고정 질문");
       await screen.findByText("고정 질문");
@@ -508,7 +526,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
     it("첫 질문이 도착하는 동안에는 입력이 잠기고 빈 답변은 보낼 수 없다", async () => {
       const first = controllableResponse();
       const fetchImpl = vi.fn().mockResolvedValueOnce(first.response);
-      render(<InterviewStreamView fetchImpl={fetchImpl} snapshot={snapshot} {...renderOptions} />);
+      render(<StreamViewHarness fetchImpl={fetchImpl} snapshot={snapshot} {...renderOptions} />);
       await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
 
       const input = screen.getByLabelText("Answer");
@@ -698,7 +716,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
         return source.response;
       });
       render(
-        <InterviewStreamView
+        <StreamViewHarness
           fetchImpl={fetchImpl}
           snapshot={snapshot}
           retryDelaysMs={[]}

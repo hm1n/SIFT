@@ -172,6 +172,29 @@ describe("InterviewScreen", () => {
     expect(screen.getByText(/No PAAR block has been filled yet/)).toBeInTheDocument();
   });
 
+  // 종료 조작은 디자인 원본에서 PAAR 패널의 맨 아래 자리입니다. 스트림 훅이 화면 밖으로 나간 뒤에도
+  // 오른쪽 열의 버튼이 가운데 열의 답변 입력을 닫는지 확인합니다.
+  it("종료는 PAAR 패널 아래에서 하고 확인하면 답변 입력이 닫힌다", async () => {
+    render(
+      <InterviewScreen
+        snapshot={evidenceSnapshotFixture()}
+        onBack={vi.fn()}
+        fetchImpl={testStreamFetch("normal")}
+      />
+    );
+
+    const paar = screen.getByRole("region", { name: "PAAR" });
+    expect(paar).toContainElement(screen.getByRole("button", { name: "End interview" }));
+
+    const input = await screen.findByLabelText("Answer");
+    await waitFor(() => expect(input).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "End interview" }));
+    fireEvent.click(screen.getByRole("button", { name: "End the interview" }));
+
+    expect(screen.queryByLabelText("Answer")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "End interview" })).not.toBeInTheDocument();
+  });
+
   it("헤더 토글로 양옆 패널을 접고 편다", () => {
     render(
       <InterviewScreen snapshot={evidenceSnapshotFixture()} onBack={vi.fn()} fetchImpl={pendingFetch()} />
@@ -186,6 +209,8 @@ describe("InterviewScreen", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "PAAR 0/4" }));
     expect(screen.queryByRole("region", { name: "PAAR" })).not.toBeInTheDocument();
+    // 종료 조작이 이 패널 안에 있으므로 접으면 함께 사라집니다. 다시 펴야 끝낼 수 있습니다.
+    expect(screen.queryByRole("button", { name: "End interview" })).not.toBeInTheDocument();
   });
 
   // 디자인 원본의 손잡이는 마우스 드래그만 받습니다. 키보드로도 폭을 바꿀 수 있어야 합니다.

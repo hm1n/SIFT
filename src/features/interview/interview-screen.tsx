@@ -6,6 +6,7 @@ import { CodePanel } from "./code-panel";
 import { InterviewStreamView } from "./interview-stream-view";
 import { PAAR_BLOCK_COUNT, PaarPanel } from "./paar-panel";
 import { ResizeHandle } from "./resize-handle";
+import { useInterviewStream } from "./use-interview-stream";
 import styles from "./interview-screen.module.css";
 
 export interface InterviewScreenProps {
@@ -58,7 +59,7 @@ function useWorkspaceWidth(ref: React.RefObject<HTMLDivElement | null>): number 
  * 가운데 열은 이슈 #60이 실측으로 확정한 `InterviewStreamView`를 그대로 둡니다. 렌더링 방식,
  * 자동 스크롤, 낭독 경계를 다시 정하지 않습니다. 열 높이를 채우도록 로그의 높이 규칙만 바꿨습니다.
  *
- * **`snapshot`을 반드시 넘깁니다.** 넘기지 않으면 `InterviewStreamView`가 테스트용 스트림을 `GET`으로
+ * **`snapshot`을 반드시 넘깁니다.** 넘기지 않으면 스트림 훅이 테스트용 스트림을 `GET`으로
  * 받고, 그 스트림의 고정 질문이 사용자가 고른 경험의 질문인 것처럼 근거와 나란히 표시됩니다. 어떤
  * 저장소를 골라도 같은 질문이 나오므로 AI가 실제 Repository 근거로 질문한다는 원칙이 깨집니다.
  * PR #65 리뷰 P1이 이 지점이었습니다. 회귀는 이 화면의 테스트가 요청 본문을 직접 확인해 막습니다.
@@ -67,6 +68,14 @@ function useWorkspaceWidth(ref: React.RefObject<HTMLDivElement | null>): number 
  * 시도는 `InterviewStreamView`가 이미 담당합니다. 같은 상태를 두 곳에서 그리면 어긋납니다.
  */
 export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreenProps) {
+  /*
+   * 스트림 훅은 이 화면이 듭니다.
+   *
+   * 종료 조작이 오른쪽 PAAR 패널 아래에 있고 종료 상태를 읽는 것은 가운데 대화 열입니다. 두 열은
+   * 형제라 한쪽이 훅을 들면 다른 쪽이 볼 수 없습니다. 공통 부모인 여기서 들고 양쪽에 나눠 줍니다.
+   */
+  const stream = useInterviewStream({ snapshot, fetchImpl });
+
   const title =
     snapshot.representativeCommit.title ??
     `Representative commit ${snapshot.candidateSha.slice(0, 7)}`;
@@ -155,9 +164,8 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
         인터뷰 종료와 별개로 이 자리에서도 확인을 받습니다. 종료 조작에만 확인을 두면 사용자가 이
         버튼으로 확인을 지나칠 수 있고, 제출한 답변과 작성 중인 답변이 함께 사라집니다.
 
-        종료했는지에 따라 묻지 않게 하려면 이 화면이 훅의 종료 상태를 알아야 하고, 그러려면 훅을
-        `InterviewStreamView` 밖으로 끌어올려야 합니다. 종료한 뒤 한 번 더 묻는 값을 치르고 훅의
-        자리를 그대로 둡니다.
+        종료한 뒤에도 그대로 묻습니다. 종료는 입력만 닫고 대화를 남기지만 이 버튼은 그 대화까지
+        지우기 때문입니다. 사라지는 것이 남아 있는 한 확인을 걷지 않습니다.
       */}
       {isConfirmingBack ? (
         <div className={styles.backConfirm} role="group" aria-labelledby={backConfirmId}>
@@ -239,7 +247,7 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
         ) : null}
 
         <div className={`${styles.chatColumn} ${columnClass("interview")}`}>
-          <InterviewStreamView snapshot={snapshot} fetchImpl={fetchImpl} />
+          <InterviewStreamView stream={stream} />
         </div>
 
         {isTabMode || showPaarPanel ? (
@@ -262,7 +270,7 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
               className={`${styles.paarColumn} ${columnClass("paar")}`}
               style={columnWidth(paarWidth)}
             >
-              <PaarPanel />
+              <PaarPanel isEnded={stream.isEnded} onEnd={stream.endInterview} />
             </div>
           </>
         ) : null}

@@ -136,15 +136,6 @@
 .submitButton:hover:not(:disabled) { background: #404040; }
 .submitButton:disabled { opacity: .3; cursor: not-allowed; }
 
-.endButton { flex-shrink: 0; width: fit-content; min-height: 32px; margin: 0 16px 12px; border: 1px solid #d4d4d4; border-radius: var(--radius); background: var(--color-card); color: #404040; cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; padding: 0 12px; }
-.endButton:hover { border-color: var(--color-muted-foreground); color: var(--color-foreground); }
-
-.endConfirm { flex-shrink: 0; display: grid; gap: 10px; margin: 0 16px 12px; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-muted); padding: 12px 14px; }
-.endConfirmText { color: var(--color-foreground); font-size: 13px; line-height: 1.6; }
-.endActions { display: flex; flex-wrap: wrap; gap: 8px; }
-.endConfirmButton { min-height: 32px; border: 0; border-radius: var(--radius); background: var(--color-primary); color: var(--color-primary-foreground); cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; padding: 0 12px; }
-.endConfirmButton:hover { background: #404040; }
-
 /* 종료 뒤 입력부가 있던 자리를 씁니다. 같은 자리이므로 위쪽 경계선도 같습니다. */
 .endedNotice { flex-shrink: 0; margin: 0; border-top: 1px solid var(--color-border); background: var(--color-muted); color: var(--color-muted-foreground); font-size: 13px; line-height: 1.6; padding: 12px 16px; }
 
@@ -161,8 +152,6 @@
 .log:focus-visible,
 .unreadButton:focus-visible,
 .retryButton:focus-visible,
-.submitButton:focus-visible,
-.endButton:focus-visible,
-.endConfirmButton:focus-visible { outline: 2px solid var(--color-foreground); outline-offset: 2px; }
+.submitButton:focus-visible { outline: 2px solid var(--color-foreground); outline-offset: 2px; }
 /* 로그는 스크롤 영역이라 바깥 여백이 없습니다. 안쪽에 그려야 잘리지 않습니다. */
 .log:focus-visible { outline-offset: -2px; }
