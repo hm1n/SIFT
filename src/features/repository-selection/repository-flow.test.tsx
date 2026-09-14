@@ -117,7 +117,7 @@ describe("RepositoryFlow 인터뷰 중 이탈 확인", () => {
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "인터뷰 계속하기" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue the interview" }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
   });
@@ -126,7 +126,7 @@ describe("RepositoryFlow 인터뷰 중 이탈 확인", () => {
     await renderWithConfirmedInterview();
 
     fireEvent.click(screen.getByRole("button", { name: "← Change repository" }));
-    fireEvent.click(screen.getByRole("button", { name: "Repository 바꾸기" }));
+    fireEvent.click(screen.getByRole("button", { name: "Change repository" }));
 
     await screen.findByRole("heading", { name: "Choose a repository to analyze." });
     expect(screen.queryByRole("region", { name: "Code / Evidence" })).not.toBeInTheDocument();
