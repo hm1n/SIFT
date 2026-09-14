@@ -9,6 +9,7 @@ import {
   type InterviewHistoryMessage,
 } from "@/features/interview/history";
 import {
+  READY_TO_FINISH_PROMPT,
   useInterviewStream,
   type InterviewQuestionOutcome,
   type InterviewQuestionTarget,
@@ -241,6 +242,11 @@ export function useExperienceInterview({
     async ({ history }: { history: readonly InterviewHistoryMessage[] }): Promise<InterviewQuestionOutcome> => {
       const question = history.length >= 2 ? history[history.length - 2].text : "";
       const answer = history[history.length - 1].text;
+      // 완료 대기 안내(`READY_TO_FINISH_PROMPT`)에 대한 보충 답변입니다. 이 안내는 모델이 만든
+      // 질문이 아니라 이 훅이 질문·답변 교대 계약을 지키려고 끼워 넣은 고정 문구이므로(설계 6-1절
+      // "안내 메시지는 턴에 포함하지 않는다"), 이 답변은 턴으로 세지 않습니다. 세면 안내가 반복될
+      // 때마다 턴 상한이 앞당겨져 실제 질문 횟수와 사용 턴 수가 어긋납니다(추가 재검증 2026-09-12).
+      const isSupplementaryAnswer = question === READY_TO_FINISH_PROMPT;
       const turnId = `t${++turnSeqRef.current}`;
       const turn: BlockUpdateTurn = { turnId, question, answer };
       turnsRef.current = [...turnsRef.current, turn];
@@ -254,13 +260,16 @@ export function useExperienceInterview({
       // 충돌은 사용자 진술과 근거가 어긋난 지점이라는 사실 자체가 바뀌지 않으므로).
       const lastOutcome = buildLastOutcome(outcome, blockStateRef.current.conflicts);
 
-      const nextTurnsUsed = turnsUsedRef.current + 1;
-      turnsUsedRef.current = nextTurnsUsed;
-      setTurnsUsed(nextTurnsUsed);
+      const nextTurnsUsed = isSupplementaryAnswer ? turnsUsedRef.current : turnsUsedRef.current + 1;
+      if (!isSupplementaryAnswer) {
+        turnsUsedRef.current = nextTurnsUsed;
+        setTurnsUsed(nextTurnsUsed);
+      }
 
       // 열 턴 자동 종료입니다. 모델의 sufficient 판정에는 종료 권한이 없고, 상한 도달만 자동
       // 종료를 일으킵니다(설계 3절 Approach 3). 상한 도달은 완료 대기 안내 없이 그대로 멈춥니다.
-      if (nextTurnsUsed >= INTERVIEW_MAX_TURNS) {
+      // 보충 답변은 턴이 아니므로 이 판정에도 들어가지 않습니다.
+      if (!isSupplementaryAnswer && nextTurnsUsed >= INTERVIEW_MAX_TURNS) {
         setEndReason("turn_limit");
         return { kind: "stop" };
       }

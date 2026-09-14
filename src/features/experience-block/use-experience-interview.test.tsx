@@ -350,7 +350,7 @@ describe("useExperienceInterview", () => {
     expect(result.current.endReason).toBe("user");
   });
 
-  it("완료 대기 상태에서도 종료 전에는 보충 답변을 제출할 수 있다 (구현검토 P1-4, R7)", async () => {
+  it("완료 대기 상태에서도 종료 전에는 보충 답변을 제출할 수 있다. 보충 답변은 턴으로 세지 않는다 (구현검토 P1-4, R7 / 추가 재검증 2026-09-12, S5)", async () => {
     const q1 = controllableResponse();
     const fetchImpl = makeFetchImpl({
       questionSources: [q1],
@@ -374,6 +374,8 @@ describe("useExperienceInterview", () => {
     });
     await waitFor(() => expect(result.current.isReadyToFinish).toBe(true));
     expect(result.current.isEnded).toBe(false);
+    // 완료 안내 전 마지막 실제 질문·답변까지의 턴 수입니다. 이 값이 보충 답변으로 늘면 안 됩니다.
+    expect(result.current.turnsUsed).toBe(1);
 
     // 완료 대기 안내가 "질문" 자리에 들어와야 보충 답변을 받아도 질문·답변 교대 계약이 깨지지
     // 않습니다(구현검토 P1-4 1차 수정의 회귀, 재검증에서 발견). 답변만 이어 붙이면 다음 실제 질문
@@ -387,6 +389,10 @@ describe("useExperienceInterview", () => {
     expect(accepted).toBe(true);
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3)); // 질문1, 블록갱신1, 블록갱신2(보충)
     expect(result.current.isEnded).toBe(false);
+    // 완료 안내에 대한 보충 답변은 설계 6-1절 "안내 메시지는 턴에 포함하지 않는다"에 따라 턴으로
+    // 세지 않습니다. 이전 구현은 이 답변도 그대로 세어 실제 질문 한 번인데 turnsUsed가 2가
+    // 됐습니다(추가 재검증 2026-09-12, S5).
+    expect(result.current.turnsUsed).toBe(1);
     // 여전히 완료 대기라 다시 완료 안내가 붙고, 그 뒤로도 보충 답변을 또 받을 수 있습니다.
     await waitFor(() => expect(result.current.messages.at(-1)?.role).toBe("question"));
     await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
