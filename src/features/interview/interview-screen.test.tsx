@@ -22,6 +22,29 @@ const testStreamFetch = (scenario: TestStreamScenario) =>
 
 const pendingFetch = () => vi.fn().mockReturnValue(new Promise<Response>(() => {}));
 
+/**
+ * jsdom에는 `ResizeObserver`가 없습니다. 워크스페이스 폭을 재는 훅이 이 전역을 쓰므로, 폭을 고정해
+ * 돌려주는 최소 구현을 끼웁니다. `offsetWidth`는 jsdom에서 언제나 0이라 쓸 수 없습니다.
+ */
+function stubWorkspaceWidth(width: number) {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(private readonly callback: ResizeObserverCallback) {}
+      observe() {
+        this.callback(
+          [{ contentRect: { width } } as ResizeObserverEntry],
+          this as unknown as ResizeObserver
+        );
+      }
+      unobserve() {}
+      disconnect() {}
+    }
+  );
+}
+
+afterEach(() => vi.unstubAllGlobals());
+
 describe("InterviewScreen", () => {
   it("확정한 경험의 대표 커밋 제목을 화면 제목으로 쓴다", () => {
     render(
@@ -225,6 +248,55 @@ describe("InterviewScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Back to candidates" }));
 
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  /*
+    세 열의 최소 폭 합(200 + 280 + 220 + 손잡이 8)보다 좁으면 탭으로 바꿉니다. 판정 기준은 화면 폭이
+    아니라 워크스페이스 폭입니다. 왼쪽 사이드바 폭만큼 어긋나기 때문입니다.
+  */
+  it("좁은 폭에서는 세 열 대신 탭으로 전환한다", () => {
+    stubWorkspaceWidth(700);
+    render(
+      <InterviewScreen snapshot={evidenceSnapshotFixture()} onBack={vi.fn()} fetchImpl={pendingFetch()} />
+    );
+
+    const tabs = screen.getByRole("group", { name: "Workspace view" });
+    expect(tabs).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Interview" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("separator", { name: "Resize the code panel" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Code" }));
+    expect(screen.getByRole("button", { name: "Code" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Interview" })).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("넓은 폭에서는 탭 없이 세 열을 그린다", () => {
+    stubWorkspaceWidth(1_200);
+    render(
+      <InterviewScreen snapshot={evidenceSnapshotFixture()} onBack={vi.fn()} fetchImpl={pendingFetch()} />
+    );
+
+    expect(screen.queryByRole("group", { name: "Workspace view" })).not.toBeInTheDocument();
+    expect(screen.getByRole("separator", { name: "Resize the code panel" })).toBeInTheDocument();
+  });
+
+  /*
+    탭을 바꿔도 대화 열을 떼지 않습니다. 떼면 스트림이 끊기고 대화 이력이 사라집니다. 이슈 #98
+    Constraint가 막는 지점입니다.
+  */
+  it("다른 탭으로 옮겨도 대화 열과 스트림을 그대로 둔다", async () => {
+    stubWorkspaceWidth(700);
+    const fetchImpl = testStreamFetch("normal");
+    render(<InterviewScreen snapshot={evidenceSnapshotFixture()} onBack={vi.fn()} fetchImpl={fetchImpl} />);
+
+    const question = await screen.findByRole("heading", {
+      name: /청크 경계를 세 조건으로 함께 닫은 이유/,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Code" }));
+
+    expect(question).toBeInTheDocument();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("첫 질문이 끝나면 답변 입력이 열리고 답변이 대화에 쌓인다", async () => {

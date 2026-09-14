@@ -24,8 +24,23 @@
 .backCancelButton { min-height: 36px; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-card); color: var(--color-foreground); cursor: pointer; font: inherit; font-size: 13px; font-weight: 500; padding: 0 16px; }
 
 .workspace { display: flex; flex: 1; min-height: 0; overflow: hidden; }
-.codeColumn, .paarColumn { flex-shrink: 0; min-height: 0; overflow: hidden; }
+.column { min-height: 0; overflow: hidden; }
+.codeColumn, .paarColumn { flex-shrink: 0; }
 /* 대화 열은 남은 폭을 다 씁니다. `min-width: 0`이 없으면 긴 코드 블록이 열을 밀어냅니다. */
-.chatColumn { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; overflow: hidden; padding: 0 16px; }
+.chatColumn { display: flex; flex-direction: column; flex: 1; min-width: 0; padding: 0 16px; }
+
+/*
+ * 좁은 폭의 탭 배치입니다. 보이지 않는 열도 DOM과 레이아웃에 남깁니다. `display: none`으로 감추면
+ * 대화 로그의 높이가 0이 되어 자동 스크롤이 하단을 잡지 못한 채 다시 나타납니다. `visibility`는
+ * 레이아웃을 남기면서 접근성 트리와 포커스에서만 빼 줍니다.
+ */
+.tabBar { display: flex; gap: 4px; flex-shrink: 0; border-bottom: 1px solid var(--color-border); padding: 6px 12px; }
+.tab { flex: 1; border: 1px solid var(--color-border); border-radius: var(--radius); background: none; color: var(--color-muted-foreground); cursor: pointer; font-family: var(--font-mono); font-size: var(--label-size-xs); letter-spacing: var(--label-tracking-wide); text-transform: uppercase; padding: 6px 8px; }
+.tab[aria-pressed="true"] { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-primary-foreground); }
+.tab:focus-visible { outline: 2px solid var(--color-foreground); outline-offset: 2px; }
+.tabMode { position: relative; }
+.tabMode .column { position: absolute; inset: 0; width: auto; }
+.tabMode .columnActive { visibility: visible; }
+.tabMode .columnHidden { visibility: hidden; }
 
 .backButton:focus-visible, .panelToggle:focus-visible, .backConfirmButton:focus-visible, .backCancelButton:focus-visible { outline: 2px solid var(--color-foreground); outline-offset: 2px; }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
 import { CodePanel } from "./code-panel";
 import { InterviewStreamView } from "./interview-stream-view";
@@ -22,6 +22,32 @@ const PAAR_PANEL = { initial: 280, min: 220, max: 480 } as const;
 const MIN_CHAT_WIDTH_PX = 280;
 /** `resize-handle.module.css`의 손잡이 폭입니다. 남은 폭을 계산할 때 함께 빼야 합니다. */
 const HANDLE_WIDTH_PX = 4;
+/**
+ * 세 열의 최소 폭과 손잡이를 합친 값입니다. 이보다 좁으면 세 열을 나란히 둘 수 없어 탭으로 바꿉니다.
+ * 화면 폭이 아니라 워크스페이스 폭으로 판정합니다. 왼쪽 사이드바 폭만큼 어긋나기 때문입니다.
+ */
+const TAB_MODE_WIDTH_PX =
+  CODE_PANEL.min + PAAR_PANEL.min + MIN_CHAT_WIDTH_PX + HANDLE_WIDTH_PX * 2;
+
+type WorkspaceColumn = "code" | "interview" | "paar";
+
+/**
+ * 워크스페이스의 실제 폭입니다. 아직 재지 못했으면 0입니다. `ResizeObserver`가 없는 환경(테스트
+ * 기본값)에서는 0으로 남고, 그때는 세 열 배치를 그립니다.
+ */
+function useWorkspaceWidth(ref: React.RefObject<HTMLDivElement | null>): number {
+  const [width, setWidth] = useState(0);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (element === null || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
+
+  return width;
+}
 
 /**
  * 인터뷰 화면 본체입니다. #98부터 왼쪽 코드 근거, 가운데 대화, 오른쪽 PAAR의 3열 워크스페이스입니다.
@@ -56,13 +82,27 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
   const [codeWidth, setCodeWidth] = useState<number>(CODE_PANEL.initial);
   const [paarWidth, setPaarWidth] = useState<number>(PAAR_PANEL.initial);
   const workspaceRef = useRef<HTMLDivElement>(null);
+  const workspaceWidth = useWorkspaceWidth(workspaceRef);
+  const isTabMode = workspaceWidth > 0 && workspaceWidth < TAB_MODE_WIDTH_PX;
+  const [activeColumn, setActiveColumn] = useState<WorkspaceColumn>("interview");
+
+  /**
+   * 탭 모드에서도 세 열을 모두 DOM에 남기고 보이지 않는 열만 감춥니다. 대화 열을 떼면 스트림이
+   * 끊기고 대화 이력이 사라집니다. 감출 때 `display: none`을 쓰지 않는 이유도 같은 자리에
+   * 있습니다. 높이가 0이 되면 로그의 자동 스크롤이 하단을 잡지 못한 채 다시 보이게 됩니다.
+   */
+  const columnClass = (column: WorkspaceColumn) =>
+    isTabMode
+      ? `${styles.column} ${activeColumn === column ? styles.columnActive : styles.columnHidden}`
+      : styles.column;
+  const columnWidth = (width: number) => (isTabMode ? undefined : { width: `${width}px` });
 
   /**
    * 한 열을 넓히면 대화 열이 좁아집니다. 폭 한계만 보면 대화 열이 최소 폭 아래로 밀리므로 남은
    * 폭까지 함께 봅니다. 컨테이너 폭을 아직 못 재는 동안(첫 렌더, jsdom)은 폭 한계만 봅니다.
    */
   function clampPanelWidth(next: number, panel: { min: number; max: number }, otherPanelWidth: number) {
-    const container = workspaceRef.current?.offsetWidth ?? 0;
+    const container = workspaceWidth;
     const handles =
       (showCodePanel ? HANDLE_WIDTH_PX : 0) + (showPaarPanel ? HANDLE_WIDTH_PX : 0);
     const room =
@@ -91,24 +131,26 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
           <p className={styles.eyebrow}>Experience</p>
           <h2 className={styles.title}>{title}</h2>
         </div>
-        <div className={styles.headerActions}>
-          <button
-            className={styles.panelToggle}
-            type="button"
-            aria-pressed={showCodePanel}
-            onClick={() => setShowCodePanel((shown) => !shown)}
-          >
-            Code
-          </button>
-          <button
-            className={styles.panelToggle}
-            type="button"
-            aria-pressed={showPaarPanel}
-            onClick={() => setShowPaarPanel((shown) => !shown)}
-          >
-            PAAR 0/{PAAR_BLOCK_COUNT}
-          </button>
-        </div>
+        {isTabMode ? null : (
+          <div className={styles.headerActions}>
+            <button
+              className={styles.panelToggle}
+              type="button"
+              aria-pressed={showCodePanel}
+              onClick={() => setShowCodePanel((shown) => !shown)}
+            >
+              Code
+            </button>
+            <button
+              className={styles.panelToggle}
+              type="button"
+              aria-pressed={showPaarPanel}
+              onClick={() => setShowPaarPanel((shown) => !shown)}
+            >
+              PAAR 0/{PAAR_BLOCK_COUNT}
+            </button>
+          </div>
+        )}
       </header>
 
       {/*
@@ -140,45 +182,88 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
         </div>
       ) : null}
 
-      <div className={styles.workspace} ref={workspaceRef}>
-        {showCodePanel ? (
+      {/*
+        좁은 폭에서는 세 열을 나란히 둘 수 없어 탭으로 바꿉니다. 탭 상태는 이 화면의 로컬 state이고
+        서버나 URL에 남기지 않습니다. 폭이 다시 넓어지면 세 열 배치로 돌아갑니다.
+      */}
+      {isTabMode ? (
+        <div className={styles.tabBar} role="group" aria-label="Workspace view">
+          <button
+            className={styles.tab}
+            type="button"
+            aria-pressed={activeColumn === "code"}
+            onClick={() => setActiveColumn("code")}
+          >
+            Code
+          </button>
+          <button
+            className={styles.tab}
+            type="button"
+            aria-pressed={activeColumn === "interview"}
+            onClick={() => setActiveColumn("interview")}
+          >
+            Interview
+          </button>
+          <button
+            className={styles.tab}
+            type="button"
+            aria-pressed={activeColumn === "paar"}
+            onClick={() => setActiveColumn("paar")}
+          >
+            PAAR 0/{PAAR_BLOCK_COUNT}
+          </button>
+        </div>
+      ) : null}
+
+      <div className={`${styles.workspace} ${isTabMode ? styles.tabMode : ""}`} ref={workspaceRef}>
+        {isTabMode || showCodePanel ? (
           <>
-            <div className={styles.codeColumn} style={{ width: `${codeWidth}px` }}>
+            <div
+              className={`${styles.codeColumn} ${columnClass("code")}`}
+              style={columnWidth(codeWidth)}
+            >
               <CodePanel snapshot={snapshot} />
             </div>
-            <ResizeHandle
-              label="Resize the code panel"
-              width={codeWidth}
-              min={CODE_PANEL.min}
-              max={CODE_PANEL.max}
-              onResize={(deltaX) =>
-                setCodeWidth((width) =>
-                  clampPanelWidth(width + deltaX, CODE_PANEL, showPaarPanel ? paarWidth : 0)
-                )
-              }
-            />
+            {isTabMode ? null : (
+              <ResizeHandle
+                label="Resize the code panel"
+                width={codeWidth}
+                min={CODE_PANEL.min}
+                max={CODE_PANEL.max}
+                onResize={(deltaX) =>
+                  setCodeWidth((width) =>
+                    clampPanelWidth(width + deltaX, CODE_PANEL, showPaarPanel ? paarWidth : 0)
+                  )
+                }
+              />
+            )}
           </>
         ) : null}
 
-        <div className={styles.chatColumn}>
+        <div className={`${styles.chatColumn} ${columnClass("interview")}`}>
           <InterviewStreamView snapshot={snapshot} fetchImpl={fetchImpl} />
         </div>
 
-        {showPaarPanel ? (
+        {isTabMode || showPaarPanel ? (
           <>
             {/* 오른쪽 열이라 오른쪽으로 끌면 좁아집니다. 부호를 여기서 뒤집습니다. */}
-            <ResizeHandle
-              label="Resize the PAAR panel"
-              width={paarWidth}
-              min={PAAR_PANEL.min}
-              max={PAAR_PANEL.max}
-              onResize={(deltaX) =>
-                setPaarWidth((width) =>
-                  clampPanelWidth(width - deltaX, PAAR_PANEL, showCodePanel ? codeWidth : 0)
-                )
-              }
-            />
-            <div className={styles.paarColumn} style={{ width: `${paarWidth}px` }}>
+            {isTabMode ? null : (
+              <ResizeHandle
+                label="Resize the PAAR panel"
+                width={paarWidth}
+                min={PAAR_PANEL.min}
+                max={PAAR_PANEL.max}
+                onResize={(deltaX) =>
+                  setPaarWidth((width) =>
+                    clampPanelWidth(width - deltaX, PAAR_PANEL, showCodePanel ? codeWidth : 0)
+                  )
+                }
+              />
+            )}
+            <div
+              className={`${styles.paarColumn} ${columnClass("paar")}`}
+              style={columnWidth(paarWidth)}
+            >
               <PaarPanel />
             </div>
           </>
