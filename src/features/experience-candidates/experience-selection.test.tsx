@@ -90,7 +90,7 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
 
     expect(screen.getByText("Experience")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "재시도 큐 도입" })).toBeInTheDocument();
-    expect(screen.getByText("질문을 준비하고 있습니다.")).toBeInTheDocument();
+    expect(screen.getByText("Preparing the question.")).toBeInTheDocument();
     // 근거는 #98부터 왼쪽 코드 패널이 그립니다.
     expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /aaa\.ts/ })).toBeInTheDocument();

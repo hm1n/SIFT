@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useId, useState } from "react";
+import { pluralCount } from "@/features/experience-candidates/candidate-period";
 import { clearsOnRetry } from "./errors";
 import type { InterviewStreamErrorKind, InterviewStreamRequestErrorKind } from "./errors";
 import { INTERVIEW_HISTORY_ITEM_MAX_BYTES, interviewHistoryItemBytes } from "./history";
@@ -12,12 +13,12 @@ import styles from "./interview-stream-view.module.css";
 export const DEFAULT_INTERVIEW_STREAM_URL = "/api/interview/stream";
 
 const STATUS_TEXT: Record<InterviewStreamPhase, string> = {
-  idle: "질문 스트리밍을 아직 시작하지 않았습니다.",
-  connecting: "질문 스트리밍에 연결하고 있습니다.",
-  streaming: "질문이 도착하는 중입니다.",
-  reconnecting: "연결이 끊겨 다시 연결하고 있습니다. 이미 받은 내용은 그대로 둡니다.",
-  done: "질문이 모두 도착했습니다.",
-  error: "질문을 받지 못했습니다.",
+  idle: "Question streaming has not started yet.",
+  connecting: "Connecting to the question stream.",
+  streaming: "The question is arriving.",
+  reconnecting: "The connection dropped. Reconnecting, and keeping what has already arrived.",
+  done: "The question has fully arrived.",
+  error: "The question could not be received.",
 };
 
 /**
@@ -27,17 +28,17 @@ const STATUS_TEXT: Record<InterviewStreamPhase, string> = {
  * 사용자의 조작입니다. 섞으면 스트림이 끝나지 않은 채 종료한 경우에 어느 쪽을 담을지 정할 수 없습니다.
  * 종료 뒤에는 스트림 상태가 무엇이든 이 문장이 그 자리를 덮습니다.
  */
-const ENDED_STATUS_TEXT = "인터뷰를 종료했습니다. 대화는 읽기 전용입니다.";
+const ENDED_STATUS_TEXT = "The interview has ended. The conversation is read-only.";
 
 /**
  * 스트림이 시작되기 전 서버가 거절한 경우입니다. 다시 시도해서 풀리는 것과 아닌 것을 구분해
  * 알립니다.
  */
 const REQUEST_ERROR_GUIDANCE: Partial<Record<InterviewStreamRequestErrorKind, string>> = {
-  unauthorized: "GitHub 인증 세션이 필요합니다. 다시 로그인한 뒤 시도해 주세요.",
-  invalid_request: "요청 형식이 올바르지 않습니다. 다시 시도해도 같은 결과가 나오면 화면을 새로 고쳐 주세요.",
-  invalid_json: "요청 형식이 올바르지 않습니다. 다시 시도해도 같은 결과가 나오면 화면을 새로 고쳐 주세요.",
-  body_too_large: "질문 근거가 한 번에 보낼 수 있는 크기를 넘었습니다. 다시 시도해도 같은 결과가 나옵니다.",
+  unauthorized: "A GitHub sign-in session is required. Sign in again and retry.",
+  invalid_request: "The request was malformed. If retrying gives the same result, reload the page.",
+  invalid_json: "The request was malformed. If retrying gives the same result, reload the page.",
+  body_too_large: "The evidence for this question is over the size limit for a single request. Retrying gives the same result.",
   /**
    * `body_too_large`와 문구를 갈라 씁니다. `clearsOnRetry`가 둘 다 거짓이지만 사용자가 할 수 있는
    * 일이 다릅니다. 본문 상한은 근거가 정하므로 손댈 자리가 없고, 이 실패는 대화를 줄이면 풀립니다.
@@ -51,7 +52,7 @@ const REQUEST_ERROR_GUIDANCE: Partial<Record<InterviewStreamRequestErrorKind, st
    * 풀린다는 뜻의 일반 문구가 나갑니다.
    */
   history_too_large:
-    "대화가 길어져 다음 질문을 만들 수 없습니다. 다시 시도해도 같은 결과가 나옵니다. 인터뷰를 종료하고 후보 목록에서 경험을 다시 골라 새 인터뷰를 시작해 주세요.",
+    "The conversation has grown too long to build the next question. Retrying gives the same result. End this interview and start a new one by picking an experience from the candidate list.",
 };
 
 /**
@@ -59,11 +60,11 @@ const REQUEST_ERROR_GUIDANCE: Partial<Record<InterviewStreamRequestErrorKind, st
  * 안내를 갈라 둔 이유는 재시도의 결과가 스트림의 재개 가능 여부에 따라 달라지기 때문입니다.
  */
 const GENERATION_ERROR_CAUSE: Partial<Record<InterviewStreamErrorKind, string>> = {
-  llm_rate_limit: "질문 생성 호출 한도에 걸렸습니다.",
-  llm_timeout: "질문 생성이 시간 안에 끝나지 않았습니다.",
-  llm_network: "질문 생성 서비스에 연결하지 못했습니다.",
-  llm_auth: "질문 생성 서비스 인증에 실패했습니다. 서버 설정 문제입니다.",
-  llm_configuration: "질문 생성 서비스 설정에 문제가 있습니다.",
+  llm_rate_limit: "The question generation service hit its call limit.",
+  llm_timeout: "Question generation did not finish in time.",
+  llm_network: "Could not reach the question generation service.",
+  llm_auth: "Authentication with the question generation service failed. This is a server configuration problem.",
+  llm_configuration: "The question generation service is misconfigured.",
   /**
    * 크기를 지목하지 않습니다. 2026-09-01 실측에서 Gemini는 잘못된 파라미터도 400으로 돌려주므로 이
    * 분류에 크기와 무관한 실패가 들어옵니다. 근거 크기가 문제인 경우는 provider에 닿기 전에 세 가드가
@@ -71,14 +72,14 @@ const GENERATION_ERROR_CAUSE: Partial<Record<InterviewStreamErrorKind, string>> 
    * `body_too_large`, route의 프롬프트 바이트 가드입니다. 따라서 이 분류가 실제로 뜻하는 것은 크기가
    * 아니라 provider의 요청 거부입니다.
    */
-  llm_request: "질문 생성 서비스가 요청을 받아들이지 않았습니다.",
+  llm_request: "The question generation service did not accept the request.",
   /**
    * Gemini의 500 `INTERNAL`과 503 `UNAVAILABLE`(모델 과부하)이 이 분류로 옵니다. flash 계열에서 가장
    * 흔한 일시 실패인데 항목이 없어 "질문을 만드는 중에 오류가 발생했습니다"라는 기본 문구가
    * 나갔습니다. `clearsOnRetry`가 참이므로 `retryHint`가 잠시 뒤 재시도를 덧붙입니다.
    */
-  llm_failure: "질문 생성 서비스가 응답하지 못했습니다.",
-  server_error: "서버 설정에 문제가 있어 요청을 처리하지 못했습니다.",
+  llm_failure: "The question generation service did not respond.",
+  server_error: "A server configuration problem stopped the request from being handled.",
 };
 
 /**
@@ -89,10 +90,10 @@ const GENERATION_ERROR_CAUSE: Partial<Record<InterviewStreamErrorKind, string>> 
  * 사용자가 그 문구를 읽고 버튼을 누르면 읽던 질문이 사라집니다.
  */
 function retryHint(kind: InterviewStreamErrorKind, resumable: boolean): string {
-  if (!clearsOnRetry(kind)) return "다시 시도해도 같은 결과가 나옵니다.";
+  if (!clearsOnRetry(kind)) return "Retrying gives the same result.";
   return resumable
-    ? "이미 받은 내용은 그대로 두었습니다. 잠시 뒤에 다시 시도해 주세요."
-    : "잠시 뒤에 다시 시도해 주세요. 다시 시도하면 같은 근거로 질문을 처음부터 새로 만들고, 지금까지 받은 내용은 사라집니다.";
+    ? "What already arrived has been kept. Try again in a moment."
+    : "Try again in a moment. Retrying builds the question from scratch on the same evidence, and everything received so far is lost.";
 }
 
 /**
@@ -104,21 +105,21 @@ function retryHint(kind: InterviewStreamErrorKind, resumable: boolean): string {
  */
 function errorGuidance(kind: InterviewStreamErrorKind, resumable: boolean): string {
   if (kind === "stream_connect_failed") {
-    return "연결을 시작하지 못했습니다. 아직 받은 내용은 없습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요.";
+    return "The connection could not be opened. Nothing has arrived yet. Check your network and try again.";
   }
   if (kind === "stream_interrupted") {
     return resumable
-      ? "자동으로 두 번 다시 연결했지만 실패했습니다. 이미 받은 내용은 그대로 두었고, 다시 시도하면 받은 지점부터 이어받습니다."
-      : "질문을 받는 도중 연결이 끊겼습니다. 이 스트림은 끊긴 지점부터 이어받을 수 없어, 다시 시도하면 같은 근거로 질문을 처음부터 새로 만듭니다. 지금까지 받은 내용은 사라집니다.";
+      ? "Two automatic reconnects both failed. What already arrived has been kept, and retrying resumes from where it stopped."
+      : "The connection dropped while the question was arriving. This stream cannot resume from where it stopped, so retrying builds the question from scratch on the same evidence. Everything received so far is lost.";
   }
   if (kind === "generation_empty") {
     // 청크가 0개라 사라질 내용이 없습니다. 여기에 재시도 문구를 붙이면 잃을 내용이 있다고
     // 오해하게 만듭니다.
-    return "질문 내용이 한 조각도 오지 않았습니다. 아직 받은 내용은 없습니다. 다시 시도하면 같은 근거로 질문을 새로 만듭니다.";
+    return "Not one chunk of the question arrived. Nothing has arrived yet. Retrying builds the question again on the same evidence.";
   }
   const requestGuidance = REQUEST_ERROR_GUIDANCE[kind as InterviewStreamRequestErrorKind];
   if (requestGuidance) return requestGuidance;
-  const cause = GENERATION_ERROR_CAUSE[kind] ?? "질문을 만드는 중에 오류가 발생했습니다.";
+  const cause = GENERATION_ERROR_CAUSE[kind] ?? "Something went wrong while building the question.";
   return `${cause} ${retryHint(kind, resumable)}`;
 }
 
@@ -215,7 +216,7 @@ export function InterviewStreamView({
   };
 
   return (
-    <section className={styles.stream} aria-label="AI 질문 스트리밍">
+    <section className={styles.stream} aria-label="AI question stream">
       <div
         ref={containerRef}
         className={styles.log}
@@ -252,14 +253,14 @@ export function InterviewStreamView({
             */}
             {index === 1 && removedHistory.length > 0 ? (
               <p className={styles.trimNotice}>
-                {`대화가 길어져 여기서부터 질문과 답변 ${removedHistory.length / 2}쌍이 다음 질문의 이력에서 빠졌습니다. 화면에는 그대로 남아 있지만 AI는 더 이상 이 부분을 보지 못합니다. 첫 질문과 첫 답변, 그리고 최근 대화는 계속 실립니다.`}
+                {`The conversation grew long, so the history sent with the next question drops ${pluralCount(removedHistory.length / 2, "question-and-answer pair")} starting here. That part stays on screen, but the AI no longer sees it. The first question and answer and the most recent turns are still sent.`}
               </p>
             ) : null}
           </Fragment>
         ))}
         {isPreparing ? (
           <p className={styles.preparing}>
-            {isFollowUp ? "다음 질문을 준비하고 있습니다." : "질문을 준비하고 있습니다."}
+            {isFollowUp ? "Preparing the next question." : "Preparing the question."}
           </p>
         ) : null}
       </div>
@@ -280,12 +281,12 @@ export function InterviewStreamView({
           onClick={scrollToBottom}
           aria-describedby={unreadId}
         >
-          새 메시지 보기
+          View new messages
         </button>
       ) : null}
       <p id={unreadId} className={styles.unreadNotice} aria-live="polite">
         {hasUnreadContent
-          ? "자동 스크롤을 멈춘 동안 새 내용이 도착했습니다. 하단으로 돌아오면 자동 스크롤을 다시 시작합니다."
+          ? "New content arrived while auto-scroll was paused. Return to the bottom to resume auto-scroll."
           : ""}
       </p>
 
@@ -296,12 +297,12 @@ export function InterviewStreamView({
       {!isEnded && (error || isLastQuestionTooLong) ? (
         <div className={styles.error} role="alert">
           <p className={styles.errorMessage}>
-            {error ? error.message : "질문이 너무 길어 대화를 이어갈 수 없습니다."}
+            {error ? error.message : "This question is too long to continue the conversation."}
           </p>
           <p id={errorId} className={styles.errorGuidance}>
             {error
               ? errorGuidance(error.kind, streamOptions.snapshot === undefined)
-              : `이 질문은 한 번에 보낼 수 있는 크기 ${INTERVIEW_HISTORY_ITEM_MAX_BYTES.toLocaleString()}바이트를 넘어 답변을 받을 수 없습니다. 다시 시도하면 지금까지의 대화를 그대로 두고 이 질문만 새로 만듭니다.`}
+              : `This question is over the ${INTERVIEW_HISTORY_ITEM_MAX_BYTES.toLocaleString()}-byte limit for a single message, so it cannot be answered. Retrying keeps the conversation so far and rebuilds only this question.`}
           </p>
           {canRetry ? (
             <button
@@ -310,7 +311,7 @@ export function InterviewStreamView({
               onClick={retry}
               aria-describedby={errorId}
             >
-              다시 시도
+              Retry
             </button>
           ) : null}
         </div>
@@ -328,13 +329,13 @@ export function InterviewStreamView({
           문단이 낭독하므로 여기서는 되풀이하지 않고 다음에 무엇이 일어나는지만 적습니다.
         */
         <p className={styles.endedNotice}>
-          답변 입력을 닫았습니다. 후보 목록으로 돌아가면 이 대화는 사라지고 다시 이어갈 수 없습니다.
+          The answer box is closed. Going back to the candidate list clears this conversation for good.
         </p>
       ) : (
         <>
         <form className={styles.answerForm} onSubmit={handleSubmit}>
           <label className={styles.answerLabel} htmlFor={`${baseId}-answer`}>
-            답변
+            Answer
           </label>
           <textarea
             id={`${baseId}-answer`}
@@ -343,19 +344,19 @@ export function InterviewStreamView({
             onChange={(event) => setDraft(event.target.value)}
             disabled={!canSubmitAnswer}
             rows={4}
-            placeholder="질문에 대한 답변을 적어 주세요. 코드 블록도 쓸 수 있습니다."
+            placeholder="Answer the question. Code blocks are welcome."
             aria-describedby={answerHintId}
             aria-invalid={isDraftTooLong || undefined}
           />
           <p id={answerHintId} className={styles.answerHint}>
             {isDraftTooLong
-              ? `답변이 한 번에 보낼 수 있는 크기를 넘었습니다. ${draftBytes.toLocaleString()}바이트이고 상한은 ${INTERVIEW_HISTORY_ITEM_MAX_BYTES.toLocaleString()}바이트입니다. 줄바꿈과 코드 블록도 크기에 들어갑니다.`
+              ? `Your answer is over the size limit for a single message. It is ${draftBytes.toLocaleString()} bytes and the limit is ${INTERVIEW_HISTORY_ITEM_MAX_BYTES.toLocaleString()} bytes. Line breaks and code blocks count toward the size.`
               : canSubmitAnswer
-                ? "답변을 보내면 지금까지의 대화를 바탕으로 다음 질문을 만듭니다."
-                : "질문이 다 도착하면 답변을 쓸 수 있습니다."}
+                ? "Sending your answer builds the next question from the conversation so far."
+                : "You can write an answer once the question has fully arrived."}
           </p>
           <button type="submit" className={styles.submitButton} disabled={!canSubmit}>
-            답변 보내기
+            Send answer
           </button>
         </form>
 
@@ -369,8 +370,9 @@ export function InterviewStreamView({
         {isConfirmingEnd ? (
           <div className={styles.endConfirm} role="group" aria-labelledby={endConfirmId}>
             <p id={endConfirmId} className={styles.endConfirmText}>
-              인터뷰를 종료하면 답변 입력이 닫히고 대화는 읽기 전용으로 남습니다. 작성 중인 답변은
-              사라집니다. 후보 목록으로 돌아가면 대화도 사라지고 다시 이어갈 수 없습니다.
+              Ending the interview closes the answer box and leaves the conversation read-only. Any
+              answer you are still writing is discarded. Going back to the candidate list clears the
+              conversation too, and it cannot be resumed.
             </p>
             <div className={styles.endActions}>
               {/* 확인 문구를 읽지 않고 누르는 일을 줄이려고 초점을 확인 버튼으로 옮깁니다. */}
@@ -380,14 +382,14 @@ export function InterviewStreamView({
                 onClick={handleEnd}
                 autoFocus
               >
-                인터뷰 종료
+                End the interview
               </button>
               <button
                 type="button"
                 className={styles.endButton}
                 onClick={() => setIsConfirmingEnd(false)}
               >
-                계속하기
+                Continue the interview
               </button>
             </div>
           </div>
@@ -397,7 +399,7 @@ export function InterviewStreamView({
             className={styles.endButton}
             onClick={() => setIsConfirmingEnd(true)}
           >
-            인터뷰 종료하기
+            End interview
           </button>
         )}
         </>

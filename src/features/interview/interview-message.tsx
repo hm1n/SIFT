@@ -95,7 +95,8 @@ export interface InterviewMessageProps {
  * 스트리밍 중인 마지막 메시지만 렌더하면 0.13밀리초입니다. 완료된 메시지는 내용이 더 바뀌지
  * 않으므로 다시 파싱할 이유가 없습니다.
  */
-const ROLE_LABEL = { question: "AI 질문", answer: "내 답변" } as const;
+/** 디자인 원본(`Chat Interface Design/src/App.tsx`의 `MessageRow`)과 같은 mono 대문자 라벨입니다. */
+const ROLE_LABEL = { question: "Agent", answer: "You" } as const;
 
 export const InterviewMessage = memo(function InterviewMessage({
   role,

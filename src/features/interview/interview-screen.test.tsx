@@ -117,7 +117,7 @@ describe("InterviewScreen", () => {
       <InterviewScreen snapshot={evidenceSnapshotFixture()} onBack={vi.fn()} fetchImpl={pendingFetch()} />
     );
 
-    expect(screen.getByText("질문을 준비하고 있습니다.")).toBeInTheDocument();
+    expect(screen.getByText("Preparing the question.")).toBeInTheDocument();
   });
 
   it("도착한 질문을 표시한다", async () => {
@@ -132,7 +132,7 @@ describe("InterviewScreen", () => {
     expect(
       await screen.findByRole("heading", { name: /청크 경계를 세 조건으로 함께 닫은 이유/ })
     ).toBeInTheDocument();
-    expect(await screen.findByText("질문이 모두 도착했습니다.")).toBeInTheDocument();
+    expect(await screen.findByText("The question has fully arrived.")).toBeInTheDocument();
   });
 
   it("질문 생성 오류는 스트림 화면의 안내와 다시 시도를 그대로 쓴다", async () => {
@@ -146,8 +146,8 @@ describe("InterviewScreen", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(/질문 생성 호출 한도에 걸렸습니다/);
-    const retry = screen.getByRole("button", { name: "다시 시도" });
-    expect(retry).toHaveAccessibleDescription(/잠시 뒤에 다시 시도해 주세요/);
+    const retry = screen.getByRole("button", { name: "Retry" });
+    expect(retry).toHaveAccessibleDescription(/Try again in a moment/);
   });
 
   it("코드 패널을 대화 왼쪽에, PAAR 패널을 오른쪽에 둔다", () => {
@@ -156,7 +156,7 @@ describe("InterviewScreen", () => {
     );
 
     const code = screen.getByRole("region", { name: "Code / Evidence" });
-    const stream = screen.getByRole("region", { name: "AI 질문 스트리밍" });
+    const stream = screen.getByRole("region", { name: "AI question stream" });
     const paar = screen.getByRole("region", { name: "PAAR" });
     expect(code.compareDocumentPosition(stream) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(stream.compareDocumentPosition(paar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -179,7 +179,7 @@ describe("InterviewScreen", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Code" }));
     expect(screen.queryByRole("region", { name: "Code / Evidence" })).not.toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "AI 질문 스트리밍" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "AI question stream" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Code" }));
     expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
@@ -303,13 +303,13 @@ describe("InterviewScreen", () => {
     const fetchImpl = testStreamFetch("normal");
     render(<InterviewScreen snapshot={evidenceSnapshotFixture()} onBack={vi.fn()} fetchImpl={fetchImpl} />);
 
-    const input = await screen.findByLabelText("답변");
+    const input = await screen.findByLabelText("Answer");
     await waitFor(() => expect(input).toBeEnabled());
 
     fireEvent.change(input, { target: { value: "첫 답변" } });
-    fireEvent.click(screen.getByRole("button", { name: "답변 보내기" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
 
-    expect(screen.getByRole("article", { name: "내 답변" })).toHaveTextContent("첫 답변");
+    expect(screen.getByRole("article", { name: "You" })).toHaveTextContent("첫 답변");
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
     const body = JSON.parse(fetchImpl.mock.calls[1][1].body);
     expect(body.history.at(-1)).toEqual({ role: "answer", text: "첫 답변" });
