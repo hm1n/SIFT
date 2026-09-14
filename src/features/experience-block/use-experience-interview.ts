@@ -95,7 +95,19 @@ export function useExperienceInterview({
   const turnSeqRef = useRef(0);
   // 방금 답한 질문이 겨냥했던 대상입니다. 첫 질문은 `initialTarget`과 같은 값으로 시작합니다.
   const answeredTargetRef = useRef<NonNullable<InterviewQuestionTarget>>(FIRST_TARGET);
-  type PendingTurn = { turn: BlockUpdateTurn; target: NonNullable<InterviewQuestionTarget> };
+  /**
+   * 방금 답한 질문을 보낸 시점의, 그 대상 요소 `askedCount`입니다(CodeRabbit PR #117). 첫 질문은
+   * `progressRef`의 초깃값이 이미 `recordAsked`를 한 번 거친 값이라 1입니다. `recordResponse`가
+   * "지금"의 `askedCount`가 아니라 이 값을 기준으로 `firstUnknownAskedCount`를 계산해야, 재처리로
+   * 응답이 늦게 도착해도 그 사이 다른 질문이 올린 최신 `askedCount`를 자기 것으로 잘못 기록하지
+   * 않습니다.
+   */
+  const answeredAskedCountRef = useRef(1);
+  type PendingTurn = {
+    turn: BlockUpdateTurn;
+    target: NonNullable<InterviewQuestionTarget>;
+    askedCountAtQuestion: number;
+  };
   /**
    * 미반영 턴마다 재처리에 필요한 요청 맥락을 들고 있습니다. 턴 ID로 키를 둬 어느 턴이든 성공하면
    * 그 턴 자신의 항목만 지웁니다. 단일 슬롯이던 이전 구현은 어느 턴이 성공하든 슬롯을 통째로
@@ -157,17 +169,18 @@ export function useExperienceInterview({
   const runApplyTurn = useCallback(
     async (
       turn: BlockUpdateTurn,
-      target: NonNullable<InterviewQuestionTarget>
+      target: NonNullable<InterviewQuestionTarget>,
+      askedCountAtQuestion: number
     ): Promise<{ readonly ok: boolean; readonly targetResponse: TargetResponse | null }> => {
       if (unmountedRef.current) {
-        unreflectedRef.current.set(turn.turnId, { turn, target });
+        unreflectedRef.current.set(turn.turnId, { turn, target, askedCountAtQuestion });
         syncUnreflectedTurnId();
         return { ok: false, targetResponse: null };
       }
       const current = optionsRef.current;
       const controller = new AbortController();
       activeAbortRef.current = controller;
-      activeRef.current = { turn, target };
+      activeRef.current = { turn, target, askedCountAtQuestion };
       try {
         const result = await fetchBlockUpdate({
           url: current.blockUpdateUrl,
@@ -182,7 +195,13 @@ export function useExperienceInterview({
         });
         if (unmountedRef.current) return { ok: false, targetResponse: null };
         setBlockStateBoth(result.state);
-        progressRef.current = recordResponse(progressRef.current, target.targetBlock, target.targetElement, result.targetResponse);
+        progressRef.current = recordResponse(
+          progressRef.current,
+          target.targetBlock,
+          target.targetElement,
+          result.targetResponse,
+          askedCountAtQuestion
+        );
         unreflectedRef.current.delete(turn.turnId);
         syncUnreflectedTurnId();
         return { ok: true, targetResponse: result.targetResponse };
@@ -190,7 +209,7 @@ export function useExperienceInterview({
         if (error instanceof DOMException && error.name === "AbortError") return { ok: false, targetResponse: null };
         // 갱신 실패만으로 같은 블록에 고정하지 않습니다. progress는 건드리지 않고 다음 단계에서
         // 이전 평가 그대로 이동 정책을 적용합니다.
-        unreflectedRef.current.set(turn.turnId, { turn, target });
+        unreflectedRef.current.set(turn.turnId, { turn, target, askedCountAtQuestion });
         syncUnreflectedTurnId();
         return { ok: false, targetResponse: null };
       } finally {
@@ -209,9 +228,10 @@ export function useExperienceInterview({
   const applyTurn = useCallback(
     (
       turn: BlockUpdateTurn,
-      target: NonNullable<InterviewQuestionTarget>
+      target: NonNullable<InterviewQuestionTarget>,
+      askedCountAtQuestion: number
     ): Promise<{ readonly ok: boolean; readonly targetResponse: TargetResponse | null }> => {
-      const result = applyQueueRef.current.then(() => runApplyTurn(turn, target));
+      const result = applyQueueRef.current.then(() => runApplyTurn(turn, target, askedCountAtQuestion));
       applyQueueRef.current = result.then(
         () => undefined,
         () => undefined
@@ -229,7 +249,7 @@ export function useExperienceInterview({
    */
   const retryAllUnreflected = useCallback(async () => {
     const pending = [...unreflectedRef.current.values()];
-    await Promise.all(pending.map((item) => applyTurn(item.turn, item.target)));
+    await Promise.all(pending.map((item) => applyTurn(item.turn, item.target, item.askedCountAtQuestion)));
   }, [applyTurn]);
 
   /**
@@ -251,7 +271,7 @@ export function useExperienceInterview({
       const turn: BlockUpdateTurn = { turnId, question, answer };
       turnsRef.current = [...turnsRef.current, turn];
 
-      const outcome = await applyTurn(turn, answeredTargetRef.current);
+      const outcome = await applyTurn(turn, answeredTargetRef.current, answeredAskedCountRef.current);
       // 대기하는 동안 언마운트됐으면 다음 대상 계산도, 그에 딸린 상태 갱신도 하지 않습니다(구현검토
       // 2026-09-11 P1-3, R5). 호출부(`useInterviewStream`)의 이어지는 질문 요청은 그쪽 자신의
       // 언마운트 가드가 막습니다.
@@ -293,6 +313,7 @@ export function useExperienceInterview({
       progressRef.current = recordAsked(progressRef.current, next.block, next.element);
       const target: NonNullable<InterviewQuestionTarget> = { targetBlock: next.block, targetElement: next.element };
       answeredTargetRef.current = target;
+      answeredAskedCountRef.current = progressRef.current[next.block].elements[next.element].askedCount;
       return { kind: "ask", target, lastOutcome };
     },
     [applyTurn]

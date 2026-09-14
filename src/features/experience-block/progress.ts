@@ -81,10 +81,16 @@ export function recordAsked(progress: InterviewProgress, block: BlockKind, eleme
 }
 
 /**
- * 답변의 `targetResponse`를 반영합니다. 처음 `unknown`을 받으면 그 시점의 `askedCount`를
- * `firstUnknownAskedCount`로 남겨 둡니다. `askedCount`(총 질문 횟수)로 직접 판정하지 않는 이유는,
- * 그러면 `provided`로 답한 요소를 나중에 다시 물었을 때 그 첫 `unknown`만으로 곧장 소진 처리되기
- * 때문입니다(구현검토 2026-09-11 P1-1, R1).
+ * 답변의 `targetResponse`를 반영합니다. 처음 `unknown`을 받으면 그 질문을 보낸 시점의 `askedCount`를
+ * `firstUnknownAskedCount`로 남겨 둡니다. 호출부가 그 값을 `askedCountAtQuestion`으로 명시해서
+ * 넘겨야 합니다. `progress`의 "지금" `askedCount`를 암묵적으로 쓰지 않는 이유는, 재처리
+ * (`retryAllUnreflected`)로 응답이 늦게 도착하면 그 사이 같은 요소에 더 최근 질문이 나가
+ * `askedCount`가 이미 앞서 있을 수 있고, 그 최신 값을 이 응답의 질문 시점인 것처럼 기록하면 재질문
+ * 예산이 실제보다 넉넉하게 남은 것으로 잘못 계산되기 때문입니다(CodeRabbit PR #117).
+ *
+ * 이미 `firstUnknownAskedCount`가 있는데 더 이른 질문의 `unknown` 응답이 늦게 도착하면 더 작은
+ * 값(더 이른 질문 시점)을 남깁니다. 예산은 "언제 처음 unknown을 받았는가"를 기준으로 계산되므로
+ * 실제로 더 이른 시점이 있었다면 그 값이 맞습니다.
  *
  * 재질문 예산을 다 썼는지는 이 함수가 판정하지 않습니다. `isElementClosed`가 `askedCount`와
  * `firstUnknownAskedCount`만으로 매번 다시 계산합니다. 예전에는 이 함수가 그 시점에 `reaskUsed`
@@ -98,12 +104,17 @@ export function recordResponse(
   progress: InterviewProgress,
   block: BlockKind,
   element: BlockElement,
-  response: TargetResponse
+  response: TargetResponse,
+  askedCountAtQuestion: number
 ): InterviewProgress {
   const blockProgress = progress[block];
   const elementProgress = blockProgress.elements[element];
   const firstUnknownAskedCount =
-    elementProgress.firstUnknownAskedCount ?? (response === "unknown" ? elementProgress.askedCount : null);
+    response !== "unknown"
+      ? elementProgress.firstUnknownAskedCount
+      : elementProgress.firstUnknownAskedCount === null
+        ? askedCountAtQuestion
+        : Math.min(elementProgress.firstUnknownAskedCount, askedCountAtQuestion);
   return {
     ...progress,
     [block]: {

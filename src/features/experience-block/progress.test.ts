@@ -39,16 +39,16 @@ describe("recordAsked·recordResponse", () => {
    */
   function closeElementB(): ReturnType<typeof emptyInterviewProgress> {
     let progress = recordAsked(emptyInterviewProgress(), "problem", "b");
-    progress = recordResponse(progress, "problem", "b", "unknown");
+    progress = recordResponse(progress, "problem", "b", "unknown", progress.problem.elements.b.askedCount);
     progress = recordAsked(progress, "problem", "b");
-    return recordResponse(progress, "problem", "b", "unknown");
+    return recordResponse(progress, "problem", "b", "unknown", progress.problem.elements.b.askedCount);
   }
 
   it("같은 요소에서 unknown을 설정값만큼 받으면 그 요소만 재질문 예산을 소진한다", () => {
     expect(PROGRESS_CONFIG.maxAsksAfterUnknown).toBe(2);
     let progress = closeElementB();
     progress = recordAsked(progress, "problem", "a");
-    progress = recordResponse(progress, "problem", "a", "unknown");
+    progress = recordResponse(progress, "problem", "a", "unknown", progress.problem.elements.a.askedCount);
     // 첫 unknown은 재질문 기회를 아직 남깁니다. b는 이미 닫혀 있으므로 a가 열려 있어야만 뽑힙니다.
     expect(
       selectNextTarget({
@@ -62,7 +62,7 @@ describe("recordAsked·recordResponse", () => {
     ).toEqual({ kind: "ask", block: "problem", element: "a" });
 
     progress = recordAsked(progress, "problem", "a"); // 다른 단서가 있어 다시 묻습니다.
-    progress = recordResponse(progress, "problem", "a", "unknown");
+    progress = recordResponse(progress, "problem", "a", "unknown", progress.problem.elements.a.askedCount);
     // 두 번째 unknown으로 a의 예산도 다 썼습니다. 두 요소 모두 닫혀 다음 블록으로 넘어갑니다.
     expect(
       selectNextTarget({
@@ -79,9 +79,9 @@ describe("recordAsked·recordResponse", () => {
   it("provided로 답한 요소를 다시 물었을 때 첫 unknown만으로는 소진되지 않는다 (구현검토 P1-1, R1)", () => {
     let progress = closeElementB();
     progress = recordAsked(progress, "problem", "a");
-    progress = recordResponse(progress, "problem", "a", "provided");
+    progress = recordResponse(progress, "problem", "a", "provided", progress.problem.elements.a.askedCount);
     progress = recordAsked(progress, "problem", "a"); // 다른 이유로 같은 요소를 한 번 더 묻습니다.
-    progress = recordResponse(progress, "problem", "a", "unknown");
+    progress = recordResponse(progress, "problem", "a", "unknown", progress.problem.elements.a.askedCount);
     expect(progress.problem.elements.a.firstUnknownAskedCount).toBe(2); // 이번이 첫 unknown입니다.
     expect(
       selectNextTarget({
@@ -100,7 +100,7 @@ describe("recordAsked·recordResponse", () => {
     // askedCount는 질문을 보내는 즉시 오르므로, 그 응답을 못 받아도 재질문 예산은 이미 소진돼야 합니다.
     let progress = closeElementB();
     progress = recordAsked(progress, "problem", "a");
-    progress = recordResponse(progress, "problem", "a", "unknown");
+    progress = recordResponse(progress, "problem", "a", "unknown", progress.problem.elements.a.askedCount);
     progress = recordAsked(progress, "problem", "a"); // 재질문을 실제로 보냈습니다.
     // 이 재질문의 블록 갱신 호출이 실패해 recordResponse를 부르지 못했다고 가정합니다.
 
@@ -117,17 +117,42 @@ describe("recordAsked·recordResponse", () => {
     expect(target).toEqual({ kind: "ask", block: "alternatives", element: "a" });
   });
 
+  it("늦게 도착한 이전 질문의 unknown 응답이 그 사이 더 최신 질문의 askedCount를 자기 것으로 삼지 않는다 (CodeRabbit PR #117)", () => {
+    // 요소 a에 재질문(2번째 질문)을 보낸 뒤 그 응답이 오기 전에, 다른 사정으로 같은 요소에 3번째
+    // 질문까지 나갔다고 가정합니다. 그다음 2번째 질문의 응답(unknown)이 뒤늦게 도착합니다.
+    let progress = recordAsked(emptyInterviewProgress(), "problem", "a"); // 1번째 질문, askedCount=1
+    progress = recordAsked(progress, "problem", "a"); // 2번째 질문, askedCount=2
+    progress = recordAsked(progress, "problem", "a"); // 3번째 질문, askedCount=3 (2번째 응답보다 먼저 나감)
+
+    // 2번째 질문 시점의 askedCount(2)를 그대로 넘겨야 합니다. "지금" askedCount(3)를 쓰면 이
+    // 요소가 실제보다 늦게 열린 것처럼 계산됩니다.
+    progress = recordResponse(progress, "problem", "a", "unknown", 2);
+    expect(progress.problem.elements.a.firstUnknownAskedCount).toBe(2);
+
+    // 이 시점에서 재질문 예산(maxAsksAfterUnknown=2)은 이미 소진됩니다. askedCount(3) -
+    // firstUnknownAskedCount(2) = 1 >= maxAsksAfterUnknown(2) - 1 = 1이 성립합니다.
+    const target = selectNextTarget({
+      evaluation: { problem: ASKABLE, alternatives: ASKABLE, action: null, result: null },
+      progress,
+      turnsUsed: 3,
+      maxTurns: 10,
+      isEnded: false,
+      lastTarget: { block: "problem", element: "a" },
+    });
+    expect(target).not.toEqual({ kind: "ask", block: "problem", element: "a" });
+  });
+
   it("unanswered는 unknown과 구분되어 재질문 예산을 쓰지 않는다", () => {
     let progress = recordAsked(emptyInterviewProgress(), "problem", "a");
-    progress = recordResponse(progress, "problem", "a", "unanswered");
+    progress = recordResponse(progress, "problem", "a", "unanswered", progress.problem.elements.a.askedCount);
     progress = recordAsked(progress, "problem", "a");
-    progress = recordResponse(progress, "problem", "a", "unanswered");
+    progress = recordResponse(progress, "problem", "a", "unanswered", progress.problem.elements.a.askedCount);
     expect(progress.problem.elements.a.firstUnknownAskedCount).toBeNull();
   });
 
   it("refused 응답은 그 블록 전체를 닫는다", () => {
     let progress = recordAsked(emptyInterviewProgress(), "alternatives", "b");
-    progress = recordResponse(progress, "alternatives", "b", "refused");
+    progress = recordResponse(progress, "alternatives", "b", "refused", progress.alternatives.elements.b.askedCount);
     expect(progress.alternatives.refused).toBe(true);
   });
 });
@@ -205,9 +230,9 @@ describe("selectNextTarget", () => {
 
   it("재질문 1회 제한: 요소 하나가 재질문 예산을 다 써도 같은 블록의 다른 요소는 계속 물을 수 있다", () => {
     let progress = recordAsked(emptyInterviewProgress(), "problem", "a");
-    progress = recordResponse(progress, "problem", "a", "unknown");
+    progress = recordResponse(progress, "problem", "a", "unknown", progress.problem.elements.a.askedCount);
     progress = recordAsked(progress, "problem", "a");
-    progress = recordResponse(progress, "problem", "a", "unknown"); // a 요소 재질문 소진
+    progress = recordResponse(progress, "problem", "a", "unknown", progress.problem.elements.a.askedCount); // a 요소 재질문 소진
 
     const target = selectNextTarget({
       evaluation: { problem: ASKABLE, alternatives: null, action: null, result: null },
@@ -224,9 +249,9 @@ describe("selectNextTarget", () => {
     let progress = emptyInterviewProgress();
     for (const element of ["a", "b"] as const) {
       progress = recordAsked(progress, "problem", element);
-      progress = recordResponse(progress, "problem", element, "unknown");
+      progress = recordResponse(progress, "problem", element, "unknown", progress.problem.elements[element].askedCount);
       progress = recordAsked(progress, "problem", element);
-      progress = recordResponse(progress, "problem", element, "unknown");
+      progress = recordResponse(progress, "problem", element, "unknown", progress.problem.elements[element].askedCount);
     }
     const target = selectNextTarget({
       evaluation: { problem: ASKABLE, alternatives: null, action: null, result: null },
@@ -241,7 +266,7 @@ describe("selectNextTarget", () => {
 
   it("거절한 주제는 다시 묻지 않고 다음 블록으로 이동한다", () => {
     let progress = recordAsked(emptyInterviewProgress(), "alternatives", "a");
-    progress = recordResponse(progress, "alternatives", "a", "refused");
+    progress = recordResponse(progress, "alternatives", "a", "refused", progress.alternatives.elements.a.askedCount);
 
     const target = selectNextTarget({
       evaluation: { problem: SUFFICIENT, alternatives: ASKABLE, action: null, result: null },
