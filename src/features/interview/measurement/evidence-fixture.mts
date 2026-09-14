@@ -214,7 +214,10 @@ export async function buildSnapshot(
   const candidate = {
     sha: representative.sha,
     relatedShas: related.map(({ sha }) => sha),
+    // 인계 스냅샷은 두 필드를 싣지 않습니다(이슈 #110 Non-goal). 계약을 채우기만 합니다.
+    summary: representative.title,
     evidence: `Pull Request #${pullRequestNumber}의 커밋 ${details.length}개가 같은 문제를 함께 다뤘고, 변경 파일과 diff에서 판단 근거를 확인할 수 있습니다.`,
+    technicalTopics: [],
     citedFilePaths,
     source: "automatic_recommendation" as const,
   };
@@ -224,6 +227,7 @@ export async function buildSnapshot(
     origin: "repository",
     normalizedRelatedShas: candidate.relatedShas,
     normalizedCitedFilePaths: citedFilePaths,
+    normalizedTechnicalTopics: [],
   };
   const data: CandidateDataOutput = {
     allCommits: [],

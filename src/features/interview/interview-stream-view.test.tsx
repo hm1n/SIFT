@@ -3,8 +3,9 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { INTERVIEW_HISTORY_ITEM_MAX_BYTES, INTERVIEW_HISTORY_MAX_ITEMS } from "./history";
-import { InterviewStreamView } from "./interview-stream-view";
+import { emptyExperienceBlockState } from "@/features/experience-block/types";
+import { INTERVIEW_HISTORY_ITEM_MAX_BYTES } from "./history";
+import { DEFAULT_EXPERIENCE_BLOCK_UPDATE_URL, InterviewStreamView } from "./interview-stream-view";
 import { evidenceSnapshotFixture } from "./question-fixture";
 import { encodeSseEvent } from "./sse";
 
@@ -28,6 +29,28 @@ function controllableResponse() {
       controller.close();
     },
   };
+}
+
+/** 이 화면이 답변마다 부르는 블록 갱신(이슈 #90)에 기본 성공 응답을 준다. */
+function blockUpdateResponse(): Response {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => ({ state: emptyExperienceBlockState(), affectedBlocks: [], targetResponse: "provided" }),
+  } as unknown as Response;
+}
+
+/**
+ * 질문 응답을 순서대로 내주는 fetch 목입니다. 블록 갱신 URL로 오는 호출은 이 큐를 소비하지 않고
+ * 항상 기본 성공 응답을 받습니다. 두 endpoint를 하나의 순번 큐로 섞으면(URL을 안 가리면) 블록
+ * 갱신 호출이 다음 질문 응답 자리를 대신 소비해 순서가 어긋납니다.
+ */
+function makeFetchImpl(questionResponses: Response[]) {
+  let index = 0;
+  return vi.fn(async (...args: Parameters<typeof fetch>) => {
+    if (String(args[0]) === DEFAULT_EXPERIENCE_BLOCK_UPDATE_URL) return blockUpdateResponse();
+    return questionResponses[index++];
+  });
 }
 
 /** 프레임 배칭은 별도로 검증하므로 화면 테스트에서는 즉시 실행합니다. */
@@ -266,7 +289,8 @@ describe("InterviewStreamView 실제 생성 경로", () => {
 
     await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
     expect(fetchImpl.mock.calls[0][1].method).toBe("POST");
-    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ snapshot });
+    // 첫 질문은 항상 problem.a를 겨냥합니다(이슈 #90 설계 6절).
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ snapshot, targetBlock: "problem", targetElement: "a" });
   });
 
   it("이어받을 수 없다고 안내하고 다시 시도는 처음부터 새로 만든다", async () => {
@@ -421,8 +445,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       responses: ReturnType<typeof controllableResponse>[],
       props: Partial<React.ComponentProps<typeof InterviewStreamView>> = {}
     ) {
-      const fetchImpl = vi.fn();
-      responses.forEach((response) => fetchImpl.mockResolvedValueOnce(response.response));
+      const fetchImpl = makeFetchImpl(responses.map((response) => response.response));
       render(
         <InterviewStreamView
           fetchImpl={fetchImpl}
@@ -489,13 +512,16 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       expect(screen.getByText("다음 질문을 준비하고 있습니다.")).toBeInTheDocument();
       expect(screen.queryByText("질문을 준비하고 있습니다.")).not.toBeInTheDocument();
 
-      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
-      expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual({
+      // 답변 제출 하나가 블록 갱신 호출 하나(이슈 #90)와 다음 질문 요청 하나를 만듭니다: 첫 질문, 블록 갱신, 둘째 질문 순서로 3회입니다.
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
+      expect(JSON.parse(fetchImpl.mock.calls[2][1]!.body as string)).toEqual({
         snapshot,
         history: [
           { role: "question", text: "첫 질문" },
           { role: "answer", text: "첫 답변" },
         ],
+        targetBlock: "problem",
+        targetElement: "b",
       });
 
       completeQuestion(second, "둘째 질문");
@@ -540,7 +566,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
 
       fireEvent.change(input, { target: { value: "첫 답변" } });
       fireEvent.click(submit);
-      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
       second.push(encodeSseEvent({ type: "chunk", seq: 1, text: "둘째 질문 앞부분" }));
       await screen.findByText("둘째 질문 앞부분");
       second.close();
@@ -552,11 +578,11 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       expect(input).toBeDisabled();
 
       fireEvent.click(retry);
-      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(4));
       expect(screen.queryByText("둘째 질문 앞부분")).not.toBeInTheDocument();
       expect(screen.getByText("첫 질문")).toBeInTheDocument();
       expect(screen.getByRole("article", { name: "내 답변" })).toHaveTextContent("첫 답변");
-      expect(JSON.parse(fetchImpl.mock.calls[2][1].body).history).toHaveLength(2);
+      expect(JSON.parse(fetchImpl.mock.calls[3][1]!.body as string).history).toHaveLength(2);
 
       completeQuestion(third, "둘째 질문 다시");
       await screen.findByText("둘째 질문 다시");
@@ -571,7 +597,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       const { fetchImpl, input, submit } = await renderAfterFirstQuestion([first, second, third]);
       fireEvent.change(input, { target: { value: "첫 답변" } });
       fireEvent.click(submit);
-      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
 
       completeQuestion(second, "가".repeat(INTERVIEW_HISTORY_ITEM_MAX_BYTES / 3 + 10));
 
@@ -583,10 +609,10 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       expect(screen.getByRole("article", { name: "내 답변" })).toHaveTextContent("첫 답변");
 
       fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
-      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(4));
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       expect(screen.getAllByRole("article")).toHaveLength(2);
-      expect(JSON.parse(fetchImpl.mock.calls[2][1].body).history).toHaveLength(2);
+      expect(JSON.parse(fetchImpl.mock.calls[3][1]!.body as string).history).toHaveLength(2);
 
       completeQuestion(third, "둘째 질문 다시");
       await screen.findByText("둘째 질문 다시");
@@ -614,7 +640,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       const { fetchImpl, input, submit } = await renderAfterFirstQuestion([first, second]);
       fireEvent.change(input, { target: { value: "첫 답변" } });
       fireEvent.click(submit);
-      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
 
       // 앞의 답변을 다시 읽으려고 위로 올립니다.
       const log = screen.getByRole("log");
@@ -635,9 +661,19 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       expect(screen.queryByRole("button", { name: "새 메시지 보기" })).not.toBeInTheDocument();
     });
 
-    it("이력에서 앞부분이 빠지면 빠진 자리에 무엇이 빠졌는지 알린다", async () => {
+    /**
+     * CodeRabbit PR #117: 이 화면이 useExperienceInterview를 쓰게 되면서 열 턴 자동 종료가 실제로 적용됩니다.
+     * 이력 절단은 11번째 질문 요청부터 일어나는데(`INTERVIEW_HISTORY_MAX_ITEMS`=18=9턴분,
+     * 10번째이자 마지막 요청이 정확히 18개를 실으므로), 열 턴 상한이 그 11번째 요청 자체를
+     * 막아 이 화면을 통해서는 구조적으로 다시 관찰할 수 없습니다. 이력 절단 자체는
+     * `history.test.ts`(`trimInterviewHistory` 순수 함수)와 `use-interview-stream.test.tsx`의
+     * "이력이 상한을 넘으면..." 테스트가 한 층 아래에서 이미 검증합니다. 이 화면은 대신
+     * 실제로 열 턴까지만 제출되고 그 뒤 종료되는지만 확인합니다.
+     */
+    it("열 턴을 다 채우면 이 화면도 자동으로 종료한다 (CodeRabbit PR #117)", async () => {
       const sources: ReturnType<typeof controllableResponse>[] = [];
-      const fetchImpl = vi.fn().mockImplementation(async () => {
+      const fetchImpl = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+        if (String(input) === DEFAULT_EXPERIENCE_BLOCK_UPDATE_URL) return blockUpdateResponse();
         const source = controllableResponse();
         sources.push(source);
         return source.response;
@@ -651,38 +687,23 @@ describe("InterviewStreamView 실제 생성 경로", () => {
         />
       );
 
-      // 상한까지 채운 뒤 한 턴을 더 진행합니다. 그 턴의 요청에서 두 번째 쌍이 빠집니다.
-      const turns = INTERVIEW_HISTORY_MAX_ITEMS / 2 + 1;
+      const turns = 10;
       const input = screen.getByLabelText("답변");
       for (let turn = 1; turn <= turns; turn += 1) {
-        await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(turn));
+        await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2 * turn - 1));
         completeQuestion(sources[turn - 1], `질문 ${turn}`);
         await waitFor(() => expect(input).toBeEnabled());
         fireEvent.change(input, { target: { value: `답변 ${turn}` } });
         fireEvent.click(screen.getByRole("button", { name: "답변 보내기" }));
       }
-      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(turns + 1));
-      expect(JSON.parse(fetchImpl.mock.calls[turns][1].body).history).toHaveLength(
-        INTERVIEW_HISTORY_MAX_ITEMS
-      );
-      // 마지막 요청까지 완결시킵니다. 열린 스트림을 남기면 다음 테스트가 도는 동안 이 훅의 읽기가
-      // 끝나면서 상태를 건드려 뒤 테스트가 간헐적으로 실패합니다.
-      completeQuestion(sources[turns], `질문 ${turns + 1}`);
-      await screen.findByText(`질문 ${turns + 1}`);
 
-      const notice = screen.getByText(/다음 질문의 이력에서 빠졌습니다/);
-      expect(notice).toHaveTextContent("질문과 답변 1쌍이");
-      expect(notice).toHaveTextContent("AI는 더 이상 이 부분을 보지 못합니다");
-      // 화면의 대화는 자르지 않습니다. 빠진 항목도 그대로 남아 있습니다.
-      expect(screen.getByText("질문 2")).toBeInTheDocument();
-      const articles = screen.getAllByRole("article");
-      expect(articles).toHaveLength(turns * 2 + 1);
-      // 안내는 빠진 구간이 시작되는 자리, 곧 첫 질문·답변 쌍 바로 뒤에 있습니다.
-      expect(notice.previousElementSibling).toBe(articles[1]);
-      // 절단은 오류가 아닙니다. 다시 시도를 권하지 않습니다.
-      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "다시 시도" })).not.toBeInTheDocument();
+      // 열 번째 답변의 블록 갱신까지 끝난 뒤(2*10=20번째 호출) 자동 종료되고, 11번째
+      // 질문 요청은 나가지 않습니다.
+      await screen.findByText("인터뷰를 종료했습니다. 대화는 읽기 전용입니다.");
+      expect(fetchImpl).toHaveBeenCalledTimes(2 * turns);
+      expect(screen.queryByLabelText("답변")).not.toBeInTheDocument();
     });
+
 
     it("종료는 확인을 받고 확인하면 답변 입력을 닫는다", async () => {
       const first = controllableResponse();
@@ -721,7 +742,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       const { fetchImpl, input, submit } = await renderAfterFirstQuestion([first, second]);
       fireEvent.change(input, { target: { value: "첫 답변" } });
       fireEvent.click(submit);
-      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
       second.push(encodeSseEvent({ type: "chunk", seq: 1, text: "둘째 질문 앞부분" }));
       await screen.findByText("둘째 질문 앞부분");
       second.close();
@@ -734,7 +755,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "다시 시도" })).not.toBeInTheDocument();
       expect(screen.getByText("둘째 질문 앞부분")).toBeInTheDocument();
-      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      expect(fetchImpl).toHaveBeenCalledTimes(3);
     });
 
     it("질문이 도착하는 중에 종료하면 준비 안내와 진행 표시를 걷는다", async () => {

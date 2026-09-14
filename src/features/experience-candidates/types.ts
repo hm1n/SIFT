@@ -13,7 +13,24 @@ export type VerifiabilityStatus = "verified" | "unverifiable";
 export interface ExperienceCandidate {
   readonly sha: string;
   readonly relatedShas: readonly string[];
+  /**
+   * 목록 행과 상세 제목에 쓰는 한 줄입니다. 대표 커밋 제목을 그대로 쓰면 conventional commit의
+   * type prefix와 커밋 작성자의 표기가 드러나 후보가 어떤 경험인지 알기 어려웠습니다(이슈 #110).
+   *
+   * 빈 문자열을 허용합니다. `evidence`처럼 `minLength: 1`을 걸면 모델이 한 후보의 제목을
+   * 비웠을 때 후보 전체가 `schema_validation`으로 버려지고, 제목이 조금 아쉬운 것보다 후보가
+   * 사라지는 손해가 큽니다. 비었을 때는 화면이 대표 커밋 제목으로 대신합니다.
+   */
+  readonly summary: string;
   readonly evidence: string;
+  /**
+   * 입력 diff와 커밋 메시지에 나타난 기술 이름입니다. LLM 해석이라 Repository로 확인할 수 없고,
+   * 화면은 `EVIDENCE_VERIFIABILITY_NOTICE`를 함께 붙입니다.
+   *
+   * 원소의 빈 문자열을 허용합니다. 이유는 `summary`와 같습니다. 빈 문자열과 중복은
+   * `createExperienceCandidateListItems`가 걸러 `normalizedTechnicalTopics`로 넘깁니다.
+   */
+  readonly technicalTopics: readonly string[];
   readonly citedFilePaths: readonly string[];
   readonly source: ExperienceCandidateSource;
 }
@@ -24,6 +41,8 @@ export interface ExperienceCandidateListItem {
   readonly origin: EvidenceOrigin;
   readonly normalizedRelatedShas: readonly string[];
   readonly normalizedCitedFilePaths: readonly string[];
+  /** 빈 문자열과 중복을 걸러낸 토픽입니다. 문자열을 React `key`로 쓰므로 중복을 남기지 않습니다. */
+  readonly normalizedTechnicalTopics: readonly string[];
 }
 
 export interface ExperienceCandidateOutput {

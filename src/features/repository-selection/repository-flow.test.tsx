@@ -77,7 +77,9 @@ describe("RepositoryFlow 인터뷰 중 이탈 확인", () => {
   const CANDIDATE = {
     sha: "aaa",
     relatedShas: [],
+    summary: "재시도 큐 도입",
     evidence: "aaa의 Repository 근거입니다.",
+    technicalTopics: [],
     citedFilePaths: [],
     source: "automatic_recommendation",
   } as const;

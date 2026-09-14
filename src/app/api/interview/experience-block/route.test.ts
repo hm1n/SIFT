@@ -19,6 +19,7 @@ function requestBody(overrides: Record<string, unknown> = {}) {
     history: [{ turnId: "t1", question: "질문", answer: "답변" }],
     state: emptyExperienceBlockState(),
     targetBlock: "problem",
+    targetElement: "a",
     answerTurnId: "t1",
     ...overrides,
   };
@@ -71,6 +72,7 @@ describe("POST /api/interview/experience-block", () => {
         },
       ],
       evaluation: [{ block: "problem", sufficient: true, askable: false, reason: "sufficient" }],
+      targetResponse: "provided",
     };
 
     const response = await handleExperienceBlockUpdate(request(requestBody()), {
@@ -90,6 +92,7 @@ describe("POST /api/interview/experience-block", () => {
     ]);
     expect(body.conflicts.problem).toEqual([]);
     expect(body.warnings).toEqual([]);
+    expect(body.targetResponse).toBe("provided");
   });
 
   it("세션이 없으면 401 unauthorized로 거절한다", async () => {
