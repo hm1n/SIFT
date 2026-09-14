@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   fetchAllCommits,
+  fetchAuthenticatedUser,
   fetchAuthenticatedUserLogin,
   fetchAuthoredCommits,
 } from "./commits";
@@ -34,7 +35,7 @@ function jsonResponse(
 
 function mockRepoAndBranch(fetchMock: ReturnType<typeof vi.fn>, headSha = HEAD_SHA) {
   fetchMock
-    .mockResolvedValueOnce(jsonResponse({ login: "octocat" }))
+    .mockResolvedValueOnce(jsonResponse({ id: 44727850, login: "octocat" }))
     .mockResolvedValueOnce(jsonResponse({ default_branch: "main" }))
     .mockResolvedValueOnce(jsonResponse({ commit: { sha: headSha } }));
   return fetchMock;
@@ -94,7 +95,7 @@ describe("fetchAllCommits", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ login: "octocat" }))
+      .mockResolvedValueOnce(jsonResponse({ id: 44727850, login: "octocat" }))
       .mockResolvedValueOnce(jsonResponse({ default_branch: "main" }))
       .mockResolvedValueOnce(jsonResponse({ message: "Branch not found" }, { status: 404 }))
       .mockResolvedValueOnce(jsonResponse({ default_branch: "main" }));
@@ -109,7 +110,7 @@ describe("fetchAllCommits", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ login: "octocat" }))
+      .mockResolvedValueOnce(jsonResponse({ id: 44727850, login: "octocat" }))
       .mockResolvedValueOnce(jsonResponse({ default_branch: "main" }))
       .mockResolvedValueOnce(jsonResponse({ message: "Branch not found" }, { status: 404 }))
       .mockResolvedValueOnce(jsonResponse({ default_branch: "trunk" }))
@@ -129,7 +130,7 @@ describe("fetchAllCommits", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ login: "octocat" }))
+      .mockResolvedValueOnce(jsonResponse({ id: 44727850, login: "octocat" }))
       .mockResolvedValueOnce(jsonResponse({ default_branch: "main" }))
       .mockResolvedValueOnce(jsonResponse({ message: "Branch not found" }, { status: 404 }))
       .mockResolvedValueOnce(jsonResponse({ default_branch: "trunk" }))
@@ -265,7 +266,7 @@ describe("fetchAllCommits", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ login: "octocat" }))
+      .mockResolvedValueOnce(jsonResponse({ id: 44727850, login: "octocat" }))
       .mockResolvedValueOnce(jsonResponse({ message: "Not Found" }, { status: 404 }));
 
     await expect(fetchAllCommits(AUTH)).rejects.toMatchObject({ kind: "repo_not_found" });
@@ -295,7 +296,7 @@ describe("fetchAllCommits", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ login: "octocat" }))
+      .mockResolvedValueOnce(jsonResponse({ id: 44727850, login: "octocat" }))
       .mockResolvedValueOnce(new Response("not json", { status: 200 }));
 
     await expect(fetchAllCommits(AUTH)).rejects.toMatchObject({ kind: "network" });
@@ -306,7 +307,7 @@ describe("fetchAllCommits", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ login: "octocat" }))
+      .mockResolvedValueOnce(jsonResponse({ id: 44727850, login: "octocat" }))
       .mockResolvedValueOnce(jsonResponse({ default_branch: "main" }))
       .mockResolvedValueOnce(new Response("not json", { status: 200 }));
 
@@ -373,11 +374,30 @@ describe("fetchAllCommits", () => {
 
 describe("fetchAuthenticatedUserLogin", () => {
   it("GET /user 응답에서 PAT 소유자의 login을 반환한다", async () => {
-    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ login: "octocat" }));
+    const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse({ id: 44727850, login: "octocat" }));
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(fetchAuthenticatedUserLogin(AUTH.token)).resolves.toBe("octocat");
     expect(fetchMock).toHaveBeenCalledWith("https://api.github.com/user", expect.anything());
+  });
+
+  it("GET /user 응답에서 사용자 번호를 함께 반환한다", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(jsonResponse({ id: 44727850, login: "octocat" })));
+
+    await expect(fetchAuthenticatedUser(AUTH.token)).resolves.toEqual({ id: 44727850, login: "octocat" });
+  });
+
+  // 번호가 빠지거나 정수 범위를 벗어난 응답을 통과시키면 세션 쿠키에 쓸 수 없는 값이 실립니다.
+  it.each([
+    [{ login: "octocat" }],
+    [{ id: 0, login: "octocat" }],
+    [{ id: 1.5, login: "octocat" }],
+    [{ id: Number.MAX_SAFE_INTEGER + 2, login: "octocat" }],
+    [{ id: 44727850, login: "" }],
+  ])("사용자 번호나 아이디가 온전하지 않은 %o 응답을 server_error로 변환한다", async (body) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(jsonResponse(body)));
+
+    await expect(fetchAuthenticatedUser(AUTH.token)).rejects.toMatchObject({ kind: "server_error" });
   });
 
   it.each([

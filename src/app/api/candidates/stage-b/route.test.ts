@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { encryptGitHubToken, GITHUB_SESSION_COOKIE, GITHUB_SESSION_KEY_ENV } from "@/lib/github/auth-session";
+import { encryptGitHubSession, GITHUB_SESSION_COOKIE, GITHUB_SESSION_KEY_ENV } from "@/lib/github/auth-session";
 import { ExperienceCandidateOutputError } from "@/features/experience-candidates/errors";
 import { STAGE_B_MAX_INPUT_COMMITS, STAGE_B_MAX_PATCH_CHARS, STAGE_B_MAX_TOTAL_PATCH_CHARS } from "@/features/experience-candidates/stage-b";
 import { GitHubFetchError } from "@/lib/github/errors";
@@ -10,7 +10,7 @@ const sha = "a".repeat(40);
 const otherSha = "b".repeat(40);
 const candidate = { sha, source: "automatic_recommendation" as const, contributionItem: null };
 function request(value: unknown, authenticated = true) {
-  return new NextRequest("https://example.com/api/candidates/stage-b", { method: "POST", headers: authenticated ? { cookie: `${GITHUB_SESSION_COOKIE}=${encryptGitHubToken("token")}` } : undefined, body: JSON.stringify(value) });
+  return new NextRequest("https://example.com/api/candidates/stage-b", { method: "POST", headers: authenticated ? { cookie: `${GITHUB_SESSION_COOKIE}=${encryptGitHubSession({ token: "token", githubUserId: 4472785 })}` } : undefined, body: JSON.stringify(value) });
 }
 const detail = { sha, title: "a", author: "me", date: "date", parentCount: 1, message: "a", additions: 1, deletions: 0, changedFiles: 1, files: [{ path: "src/a.ts", status: "modified", additions: 1, deletions: 0, changes: 1, patch: "diff" }], pullRequests: [] };
 

@@ -5,7 +5,7 @@ import { emptyExperienceBlockState } from "@/features/experience-block/types";
 import { MAX_EXPERIENCE_BLOCK_BODY_BYTES } from "@/features/experience-block/request";
 import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
 import {
-  encryptGitHubToken,
+  encryptGitHubSession,
   GITHUB_SESSION_COOKIE,
   GITHUB_SESSION_KEY_ENV,
 } from "@/lib/github/auth-session";
@@ -31,7 +31,7 @@ function request(
   return new NextRequest("https://example.com/api/interview/experience-block", {
     method: "POST",
     headers: {
-      ...(authenticated ? { cookie: `${GITHUB_SESSION_COOKIE}=${encryptGitHubToken("token")}` } : {}),
+      ...(authenticated ? { cookie: `${GITHUB_SESSION_COOKIE}=${encryptGitHubSession({ token: "token", githubUserId: 4472785 })}` } : {}),
       ...headers,
     },
     body: typeof body === "string" ? body : JSON.stringify(body),

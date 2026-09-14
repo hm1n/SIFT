@@ -11,11 +11,11 @@ afterEach(() => vi.unstubAllGlobals());
 describe("GitHub route 배치 원시 조회", () => {
   it("다음 배치에서도 첫 요청에서 고정한 head SHA를 사용한다", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(Response.json({ login: "octocat" }))
+      .mockResolvedValueOnce(Response.json({ id: 44727850, login: "octocat" }))
       .mockResolvedValueOnce(Response.json({ default_branch: "main" }))
       .mockResolvedValueOnce(Response.json({ commit: { sha: SHA } }))
       .mockResolvedValueOnce(Response.json([], { headers: { link: `<https://api.github.com/next>; rel="next"` } }))
-      .mockResolvedValueOnce(Response.json({ login: "octocat" }))
+      .mockResolvedValueOnce(Response.json({ id: 44727850, login: "octocat" }))
       .mockResolvedValueOnce(Response.json([]));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -33,7 +33,7 @@ describe("GitHub route 배치 원시 조회", () => {
   it("형태가 유효한 커서의 login 필드를 무시하고 PAT 소유자를 다시 조회한다", async () => {
     const cursor = { headSha: SHA, page: 2, login: "attacker" };
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(Response.json({ login: "octocat" }))
+      .mockResolvedValueOnce(Response.json({ id: 44727850, login: "octocat" }))
       .mockResolvedValueOnce(Response.json([]));
     vi.stubGlobal("fetch", fetchMock);
 

@@ -1,10 +1,10 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { encryptGitHubToken, GITHUB_SESSION_COOKIE, GITHUB_SESSION_KEY_ENV } from "@/lib/github/auth-session";
+import { encryptGitHubSession, GITHUB_SESSION_COOKIE, GITHUB_SESSION_KEY_ENV } from "@/lib/github/auth-session";
 import { GET } from "./route";
 
 function request(authenticated: boolean) {
-  const cookie = authenticated ? `${GITHUB_SESSION_COOKIE}=${encryptGitHubToken("secret")}` : "";
+  const cookie = authenticated ? `${GITHUB_SESSION_COOKIE}=${encryptGitHubSession({ token: "secret", githubUserId: 4472785 })}` : "";
   return new NextRequest("http://localhost/api/github/repositories", {
     method: "GET",
     headers: cookie ? { cookie } : {},
