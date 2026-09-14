@@ -10,10 +10,16 @@ import type { InterviewHistoryMessage } from "@/features/interview/history";
  * 데이터베이스 없이 그대로 돌 수 있습니다. 라우트가 `GenerateBlockUpdate`를 받는 방식과 같습니다.
  *
  * 실제 저장과 복원은 이 이슈의 범위가 아닙니다. Neon 구현체는 첫 호출 지점이 생기는 이슈에서 넣습니다.
+ *
+ * 읽기와 쓰기를 가리지 않고 모든 연산이 `githubUserId`를 받습니다. 정리 작업인
+ * `purgeInterviewsOpenedBefore`만 예외입니다. 소유자 판정을 호출하는 쪽에 맡기지 않고 조회와 갱신
+ * 조건에 함께 넣습니다. 읽고 나서 비교하는 방식이면 비교를 빠뜨린 경로가 하나만 있어도 남의 데이터를
+ * 읽거나 쓰게 됩니다.
  */
 export interface SiftStore {
   saveAnalysis(input: NewAnalysis): Promise<string>;
-  createInterview(input: NewInterview): Promise<string>;
+  /** 분석이 없거나 그 사용자의 것이 아니면 `null`입니다. 남의 분석에 인터뷰를 붙일 수 없습니다. */
+  createInterview(input: NewInterview): Promise<string | null>;
   /**
    * 그 턴에 오간 질문과 답변만 뒤에 이어 붙이고 블록 상태를 덮어씁니다.
    *
@@ -22,6 +28,8 @@ export interface SiftStore {
    *
    * `expectedBlockVersion`이 저장된 값과 다르면 아무것도 쓰지 않고 `version_conflict`를 돌려줍니다.
    * 다른 탭이 먼저 저장한 경우입니다.
+   *
+   * 인터뷰가 없거나 그 사용자의 것이 아니면 `not_found`입니다. 둘을 구분하지 않습니다.
    *
    * 저장에 성공하면 `updatedAt`을 갱신합니다.
    */
@@ -52,6 +60,7 @@ export interface NewAnalysis {
 }
 
 export interface NewInterview {
+  readonly githubUserId: number;
   readonly analysisId: string;
   readonly candidateKey: string;
   readonly title: string;
@@ -59,6 +68,7 @@ export interface NewInterview {
 }
 
 export interface AppendTurn {
+  readonly githubUserId: number;
   readonly interviewId: string;
   readonly turn: readonly InterviewHistoryMessage[];
   readonly blockState: ExperienceBlockState;

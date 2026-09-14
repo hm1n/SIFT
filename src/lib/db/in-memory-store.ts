@@ -67,6 +67,9 @@ export function createInMemoryStore(): SiftStore {
     },
 
     async createInterview(input) {
+      // 남의 분석에 인터뷰를 붙일 수 없습니다. 없는 경우와 남의 것인 경우를 구분하지 않습니다.
+      const analysis = analyses.get(input.analysisId);
+      if (!analysis || analysis.githubUserId !== input.githubUserId) return null;
       const id = randomUUID();
       interviews.set(id, {
         ...input,
@@ -82,9 +85,9 @@ export function createInMemoryStore(): SiftStore {
       return id;
     },
 
-    async appendTurn({ interviewId, turn, blockState, expectedBlockVersion }: AppendTurn): Promise<AppendTurnResult> {
+    async appendTurn({ githubUserId, interviewId, turn, blockState, expectedBlockVersion }: AppendTurn): Promise<AppendTurnResult> {
       const interview = interviews.get(interviewId);
-      if (!interview) return "not_found";
+      if (!interview || !ownedBy(interview, githubUserId)) return "not_found";
       if (interview.blockVersion !== expectedBlockVersion) return "version_conflict";
       interview.history = [...interview.history, ...turn];
       interview.blockState = blockState;

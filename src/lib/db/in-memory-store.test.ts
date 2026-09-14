@@ -20,11 +20,13 @@ async function seed(store: SiftStore, githubUserId = OWNER_ID) {
     stageASummary: {},
   });
   const interviewId = await store.createInterview({
+    githubUserId,
     analysisId,
     candidateKey: "candidate-1",
     title: "스트리밍 렌더링 최적화",
     evidence: { commits: [] },
   });
+  if (interviewId === null) throw new Error("seed failed");
   return { analysisId, interviewId };
 }
 
@@ -43,12 +45,14 @@ describe("메모리 저장 계층", () => {
     const { interviewId } = await seed(store);
 
     await store.appendTurn({
+      githubUserId: OWNER_ID,
       interviewId,
       turn: [{ role: "question", text: "첫 질문" }, { role: "answer", text: "첫 답변" }],
       blockState: blockStateAt(1),
       expectedBlockVersion: 0,
     });
     await store.appendTurn({
+      githubUserId: OWNER_ID,
       interviewId,
       turn: [{ role: "question", text: "둘째 질문" }, { role: "answer", text: "둘째 답변" }],
       blockState: blockStateAt(2),
@@ -63,9 +67,10 @@ describe("메모리 저장 계층", () => {
   it("블록 버전이 어긋나면 아무것도 쓰지 않고 version_conflict를 돌려준다", async () => {
     const store = createInMemoryStore();
     const { interviewId } = await seed(store);
-    await store.appendTurn({ interviewId, turn: [{ role: "question", text: "첫 질문" }], blockState: blockStateAt(1), expectedBlockVersion: 0 });
+    await store.appendTurn({ githubUserId: OWNER_ID, interviewId, turn: [{ role: "question", text: "첫 질문" }], blockState: blockStateAt(1), expectedBlockVersion: 0 });
 
     const result = await store.appendTurn({
+      githubUserId: OWNER_ID,
       interviewId,
       turn: [{ role: "question", text: "다른 탭의 질문" }],
       blockState: blockStateAt(2),
@@ -81,6 +86,7 @@ describe("메모리 저장 계층", () => {
   it("없는 인터뷰에 턴을 붙이면 not_found를 돌려준다", async () => {
     const store = createInMemoryStore();
     const result = await store.appendTurn({
+      githubUserId: OWNER_ID,
       interviewId: "00000000-0000-0000-0000-000000000000",
       turn: [],
       blockState: blockStateAt(1),
@@ -98,6 +104,54 @@ describe("메모리 저장 계층", () => {
     expect(await store.deleteInterview(interviewId, OTHER_ID)).toBe(false);
     expect(await store.listInterviews(OTHER_ID)).toEqual([]);
     expect(await store.getInterview(interviewId, OWNER_ID)).not.toBeNull();
+  });
+
+  // 쓰기도 읽기와 같은 기준을 씁니다. 소유자 판정을 호출하는 쪽에 맡기면 빠뜨린 경로가 남습니다.
+  it("남의 분석에는 인터뷰를 붙일 수 없다", async () => {
+    const store = createInMemoryStore();
+    const { analysisId } = await seed(store);
+
+    const created = await store.createInterview({
+      githubUserId: OTHER_ID,
+      analysisId,
+      candidateKey: "candidate-2",
+      title: "남의 분석에 붙이려는 인터뷰",
+      evidence: {},
+    });
+
+    expect(created).toBeNull();
+    expect(await store.listInterviews(OTHER_ID)).toEqual([]);
+    expect(await store.listInterviews(OWNER_ID)).toHaveLength(1);
+  });
+
+  it("없는 분석에 인터뷰를 붙이면 null을 돌려준다", async () => {
+    const store = createInMemoryStore();
+    const created = await store.createInterview({
+      githubUserId: OWNER_ID,
+      analysisId: "00000000-0000-0000-0000-000000000000",
+      candidateKey: "candidate-1",
+      title: "제목",
+      evidence: {},
+    });
+    expect(created).toBeNull();
+  });
+
+  it("남의 인터뷰에는 턴을 이어 붙일 수 없다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seed(store);
+
+    const result = await store.appendTurn({
+      githubUserId: OTHER_ID,
+      interviewId,
+      turn: [{ role: "answer", text: "남의 인터뷰에 넣으려는 답변" }],
+      blockState: blockStateAt(1),
+      expectedBlockVersion: 0,
+    });
+
+    expect(result).toBe("not_found");
+    const interview = await store.getInterview(interviewId, OWNER_ID);
+    expect(interview?.history).toEqual([]);
+    expect(interview?.blockVersion).toBe(0);
   });
 
   it("주인이 지우면 목록과 조회에서 함께 사라진다", async () => {
@@ -138,7 +192,7 @@ describe("메모리 저장 계층", () => {
       const { interviewId } = await seed(store);
 
       vi.setSystemTime(new Date("2026-09-05T00:00:00Z"));
-      await store.appendTurn({ interviewId, turn: [{ role: "answer", text: "답변" }], blockState: blockStateAt(1), expectedBlockVersion: 0 });
+      await store.appendTurn({ githubUserId: OWNER_ID, interviewId, turn: [{ role: "answer", text: "답변" }], blockState: blockStateAt(1), expectedBlockVersion: 0 });
 
       const [item] = await store.listInterviews(OWNER_ID);
       expect(item.updatedAt).toEqual(new Date("2026-09-05T00:00:00Z"));
@@ -156,7 +210,7 @@ describe("메모리 저장 계층", () => {
       const { interviewId } = await seed(store);
 
       vi.setSystemTime(new Date("2026-09-05T00:00:00Z"));
-      expect(await store.appendTurn({ interviewId, turn: [], blockState: blockStateAt(9), expectedBlockVersion: 7 })).toBe("version_conflict");
+      expect(await store.appendTurn({ githubUserId: OWNER_ID, interviewId, turn: [], blockState: blockStateAt(9), expectedBlockVersion: 7 })).toBe("version_conflict");
 
       const [item] = await store.listInterviews(OWNER_ID);
       expect(item.updatedAt).toEqual(new Date("2026-09-01T00:00:00Z"));
