@@ -129,6 +129,8 @@
  */
 .composerFooter { display: flex; align-items: center; gap: 12px; padding: 0 10px 8px; }
 .answerError { flex: 1; min-width: 0; margin: 0; color: #a3272c; font-size: 11px; line-height: 1.5; }
+/* 지금 채우는 중인 PAAR 블록입니다. 디자인 원본에서 이 줄의 왼쪽이 블록 진행 상태의 자리입니다. */
+.blockProgress { flex-shrink: 0; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); letter-spacing: var(--label-tracking-wide); text-transform: uppercase; }
 .composerActions { display: flex; align-items: center; gap: 12px; flex-shrink: 0; margin-left: auto; }
 .shortcutHint { color: var(--color-scrollbar-hover); font-family: var(--font-mono); font-size: var(--label-size-xs); letter-spacing: var(--label-tracking-wide); }
 
