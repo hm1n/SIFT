@@ -31,6 +31,7 @@ import {
 } from "@/features/interview/block-prompt";
 import { INTERVIEW_QUESTION_TOTAL_TIMEOUT_MS } from "@/features/interview/question-generation";
 import { mapInterviewLlmError } from "@/features/interview/llm-error";
+import type { BlockUpdateSaveStatus } from "@/features/saved-interviews/save-status";
 import { turnsToSave } from "@/features/saved-interviews/turn";
 import { getGitHubSessionFromRequest } from "@/lib/github/auth-session";
 import { GitHubFetchError } from "@/lib/github/errors";
@@ -84,15 +85,6 @@ async function defaultGenerate(
   });
   return object;
 }
-
-/**
- * 그 턴을 저장한 결과입니다(이슈 #115). 저장하지 않았으면 `skipped`입니다.
- *
- * `failed`는 저장 계층이 오류를 던진 경우입니다. 종류를 더 나누지 않는 이유는 화면이 할 일이 같기
- * 때문입니다. 저장하지 못했다고 알리고 대화는 그대로 잇습니다. `version_conflict`만 갈라 둡니다.
- * 다른 탭이 먼저 저장한 경우라 화면이 최신 내용을 다시 불러올지 물어야 합니다.
- */
-export type BlockUpdateSaveStatus = "skipped" | "saved" | "version_conflict" | "not_found" | "failed";
 
 /**
  * 저장 실패를 요청 전체의 실패로 돌리지 않습니다. 블록 갱신은 이미 성공했으므로, 여기서 실패를 올리면

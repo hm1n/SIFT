@@ -15,8 +15,10 @@ import {
   type InterviewQuestionTarget,
   type InterviewStreamState,
 } from "@/features/interview/use-interview-stream";
+import type { BlockUpdateSaveStatus, SavedTurnStatus } from "@/features/saved-interviews/save-status";
 import { BlockUpdateFetchError, fetchBlockUpdate } from "./client";
 import { emptyInterviewProgress, recordAsked, recordResponse, selectNextTarget } from "./progress";
+import type { ExperienceBlockSaveTarget } from "./request";
 import { emptyExperienceBlockState, type ExperienceBlockState, type TargetResponse } from "./types";
 
 /**
@@ -38,6 +40,18 @@ export interface UseExperienceInterviewOptions {
   questionUrl: string;
   blockUpdateUrl: string;
   snapshot: ExperienceEvidenceSnapshot;
+  /**
+   * 이 인터뷰가 저장될 줄입니다. 없으면 저장하지 않고 대화는 그대로 진행합니다(이슈 #115). 경험을
+   * 확정할 때 만든 줄의 식별자를 넘깁니다.
+   */
+  interviewId?: string | null;
+  /**
+   * 마지막으로 저장에 성공한 블록 버전입니다. 새 인터뷰는 0이고, 이어가는 인터뷰는 저장된 값입니다.
+   *
+   * 화면의 `blockState.version`으로 대신하지 않습니다. 앞선 턴에서 저장이 밀리면 화면의 버전만 오르고
+   * 저장된 버전은 그대로여서 둘이 어긋납니다.
+   */
+  savedBlockVersion?: number;
   fetchImpl?: typeof fetch;
   retryDelaysMs?: readonly number[];
   sleep?: (ms: number) => Promise<void>;
@@ -60,6 +74,13 @@ export interface UseExperienceInterviewState extends InterviewStreamState {
   endReason: ExperienceInterviewEndReason | null;
   /** 블록 갱신이 실패해 반영되지 않은 턴의 ID입니다. 없으면 `null`입니다. */
   unreflectedTurnId: string | null;
+  /**
+   * 마지막으로 시도한 저장의 결과입니다. 저장을 시도한 적이 없으면 `null`입니다. 저장 대상이 없어
+   * 저장하지 않은 턴은 이 값을 바꾸지 않습니다. 안 그러면 앞 턴의 실패 안내가 조용히 지워집니다.
+   */
+  saveStatus: SavedTurnStatus | null;
+  /** 아직 저장되지 않은 턴 수입니다. 0이면 화면의 대화가 전부 저장돼 있습니다. */
+  unsavedTurnCount: number;
   /** 미반영 턴의 블록 갱신을 다시 시도합니다. 미반영 턴이 없으면 아무 일도 하지 않습니다. */
   retryUnreflectedBlockUpdate: () => void;
 }
@@ -68,6 +89,8 @@ export function useExperienceInterview({
   questionUrl,
   blockUpdateUrl,
   snapshot,
+  interviewId = null,
+  savedBlockVersion = 0,
   fetchImpl,
   retryDelaysMs,
   sleep,
@@ -89,6 +112,19 @@ export function useExperienceInterview({
   const [isReadyToFinish, setIsReadyToFinish] = useState(false);
   const [endReason, setEndReason] = useState<ExperienceInterviewEndReason | null>(null);
   const [unreflectedTurnId, setUnreflectedTurnId] = useState<string | null>(null);
+
+  const [saveStatus, setSaveStatus] = useState<SavedTurnStatus | null>(null);
+  const [unsavedTurnCount, setUnsavedTurnCount] = useState(0);
+  /**
+   * 저장된 블록 버전입니다. 저장에 성공할 때만 오릅니다. 이 값이 저장된 값과 다르면 다른 탭이 먼저
+   * 저장한 것이므로 서버가 아무것도 쓰지 않습니다.
+   */
+  const savedBlockVersionRef = useRef(savedBlockVersion);
+  /**
+   * 아직 저장되지 않은 턴의 ID입니다. 다음 저장이 성공할 때 이 턴들을 함께 이어 붙입니다. 저장이
+   * 한 번 밀려도 대화의 중간이 비지 않게 하는 장치입니다(이슈 #115 Approach).
+   */
+  const pendingTurnIdsRef = useRef<Set<string>>(new Set());
 
   // 지금까지의 턴 전체입니다. 블록 갱신 호출이 매번 다시 싣습니다(설계 5절).
   const turnsRef = useRef<BlockUpdateTurn[]>([]);
@@ -147,10 +183,52 @@ export function useExperienceInterview({
     setUnreflectedTurnId(oldest.done ? null : oldest.value);
   }, []);
 
-  const optionsRef = useRef({ questionUrl, blockUpdateUrl, snapshot, fetchImpl, retryDelaysMs, sleep, scheduleFrame, cancelFrame });
+  const optionsRef = useRef({ questionUrl, blockUpdateUrl, snapshot, interviewId, fetchImpl, retryDelaysMs, sleep, scheduleFrame, cancelFrame });
   useEffect(() => {
-    optionsRef.current = { questionUrl, blockUpdateUrl, snapshot, fetchImpl, retryDelaysMs, sleep, scheduleFrame, cancelFrame };
+    optionsRef.current = { questionUrl, blockUpdateUrl, snapshot, interviewId, fetchImpl, retryDelaysMs, sleep, scheduleFrame, cancelFrame };
   });
+
+  /**
+   * 이번 요청에 실을 저장 대상입니다. 인터뷰 줄이 없으면 `undefined`이고, 그러면 서버가 저장하지
+   * 않습니다.
+   *
+   * `progress`는 이번 답변을 반영하기 **전**의 값입니다. 반영에 필요한 반응은 모델 출력에서 서버가
+   * 계산하므로 여기서는 알 수 없고, 서버가 받아서 반영합니다.
+   */
+  const buildSaveTarget = useCallback(
+    (turnId: string, askedCountAtQuestion: number): ExperienceBlockSaveTarget | undefined => {
+      const id = optionsRef.current.interviewId;
+      if (id === null || id === undefined) return undefined;
+      return {
+        interviewId: id,
+        expectedBlockVersion: savedBlockVersionRef.current,
+        pendingTurnIds: [...pendingTurnIdsRef.current].filter((pending) => pending !== turnId),
+        progress: progressRef.current,
+        askedCountAtQuestion,
+      };
+    },
+    []
+  );
+
+  /**
+   * 저장 결과를 상태에 반영합니다. 성공하면 함께 보낸 밀린 턴까지 저장된 것이므로 그 표시를 지우고,
+   * 실패하면 이번 턴을 밀린 턴으로 남깁니다.
+   *
+   * 요청이 실패한 경우에도 이번 턴을 밀린 턴으로 남깁니다. 서버가 이미 저장한 뒤에 응답만 잃었다면
+   * 다음 저장이 같은 턴을 한 번 더 보내지만, 그때는 저장된 블록 버전이 이미 올라 있어 조건부 갱신이
+   * 걸러 냅니다. 대화가 겹쳐 저장되는 대신 `version_conflict`가 되어 화면이 다시 불러오기를 묻습니다.
+   */
+  const recordSaveResult = useCallback((turnId: string, sent: ExperienceBlockSaveTarget | undefined, status: BlockUpdateSaveStatus, savedVersion: number | null) => {
+    if (sent === undefined) return;
+    if (status === "saved") {
+      if (savedVersion !== null) savedBlockVersionRef.current = savedVersion;
+      for (const id of [...(sent.pendingTurnIds ?? []), turnId]) pendingTurnIdsRef.current.delete(id);
+    } else {
+      pendingTurnIdsRef.current.add(turnId);
+    }
+    if (status !== "skipped") setSaveStatus(status);
+    setUnsavedTurnCount(pendingTurnIdsRef.current.size);
+  }, []);
 
   /**
    * `answerTurnId`의 답변에 대한 블록 갱신을 실제로 실행합니다. 성공하면 상태와 진행을 갱신하고
@@ -181,6 +259,7 @@ export function useExperienceInterview({
       const controller = new AbortController();
       activeAbortRef.current = controller;
       activeRef.current = { turn, target, askedCountAtQuestion };
+      const save = buildSaveTarget(turn.turnId, askedCountAtQuestion);
       try {
         const result = await fetchBlockUpdate({
           url: current.blockUpdateUrl,
@@ -190,10 +269,12 @@ export function useExperienceInterview({
           targetBlock: target.targetBlock,
           targetElement: target.targetElement,
           answerTurnId: turn.turnId,
+          save,
           fetchImpl: current.fetchImpl,
           signal: controller.signal,
         });
         if (unmountedRef.current) return { ok: false, targetResponse: null };
+        recordSaveResult(turn.turnId, save, result.save, result.state.version);
         setBlockStateBoth(result.state);
         progressRef.current = recordResponse(
           progressRef.current,
@@ -206,6 +287,9 @@ export function useExperienceInterview({
         syncUnreflectedTurnId();
         return { ok: true, targetResponse: result.targetResponse };
       } catch (error) {
+        // 블록 갱신이 실패했으면 저장도 이뤄지지 않았습니다. 이번 턴을 밀린 턴으로 남겨 다음 저장이
+        // 함께 보내게 합니다. 끊긴 호출(`AbortError`)도 같습니다.
+        recordSaveResult(turn.turnId, save, "failed", null);
         if (error instanceof DOMException && error.name === "AbortError") return { ok: false, targetResponse: null };
         // 갱신 실패만으로 같은 블록에 고정하지 않습니다. progress는 건드리지 않고 다음 단계에서
         // 이전 평가 그대로 이동 정책을 적용합니다.
@@ -217,7 +301,7 @@ export function useExperienceInterview({
         activeAbortRef.current = null;
       }
     },
-    [setBlockStateBoth, syncUnreflectedTurnId]
+    [buildSaveTarget, recordSaveResult, setBlockStateBoth, syncUnreflectedTurnId]
   );
 
   /**
@@ -393,6 +477,8 @@ export function useExperienceInterview({
     endReason,
     unreflectedTurnId,
     retryUnreflectedBlockUpdate,
+    saveStatus,
+    unsavedTurnCount,
   };
 }
 

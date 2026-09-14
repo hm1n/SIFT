@@ -5,6 +5,7 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
 import { encodeSseEvent } from "@/features/interview/sse";
+import type { BlockUpdateSaveStatus } from "@/features/saved-interviews/save-status";
 import { useExperienceInterview } from "./use-experience-interview";
 import { emptyExperienceBlockState, type BlockEvaluation, type ExperienceBlockState, type TargetResponse } from "./types";
 
@@ -49,15 +50,22 @@ function blockUpdateBody(
   overrides: {
     evaluation?: Partial<ExperienceBlockState["evaluation"]>;
     targetResponse?: TargetResponse;
+    version?: number;
+    save?: BlockUpdateSaveStatus;
   } = {}
 ) {
   const base = emptyExperienceBlockState();
   const state: ExperienceBlockState = {
     ...base,
-    version: base.version + 1,
+    version: overrides.version ?? base.version + 1,
     evaluation: { ...base.evaluation, ...overrides.evaluation },
   };
-  return { state, affectedBlocks: [], targetResponse: overrides.targetResponse ?? "provided" };
+  return {
+    state,
+    affectedBlocks: [],
+    targetResponse: overrides.targetResponse ?? "provided",
+    save: overrides.save ?? "skipped",
+  };
 }
 
 /** 질문 요청과 블록 갱신 요청을 URL로 갈라 각자의 큐에서 응답을 꺼내는 fetch 목입니다. */
@@ -603,5 +611,183 @@ describe("useExperienceInterview", () => {
     // 구현은 `inner.endInterview()`를 곧장 불러 이 재처리 없이 그대로 끝났습니다.
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(21));
     expect(result.current.unreflectedTurnId).toBeNull();
+  });
+});
+
+const INTERVIEW_ID = "11111111-1111-4111-8111-111111111111";
+
+/**
+ * 이슈 #115의 저장 얹기입니다. 저장 전용 요청을 만들지 않고 블록 갱신 요청에 저장 대상을 실어 보냅니다.
+ * 훅이 들고 있어야 하는 것은 둘입니다. 마지막으로 저장에 성공한 블록 버전과, 아직 저장되지 않은 턴입니다.
+ */
+describe("useExperienceInterview 저장 얹기", () => {
+  /** 질문 하나를 받아 답하고 블록 갱신까지 끝냅니다. 저장 관련 본문만 보는 테스트의 준비 과정입니다. */
+  async function answerOnce(
+    result: { current: ReturnType<typeof useExperienceInterview> },
+    source: ReturnType<typeof controllableResponse>,
+    answer: string
+  ) {
+    completeQuestion(source, "문제 상황을 알려주세요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+    act(() => {
+      result.current.submitAnswer(answer);
+    });
+  }
+
+  function renderWithSave(fetchImpl: ReturnType<typeof makeFetchImpl>, interviewId: string | null = INTERVIEW_ID) {
+    return renderHook(() =>
+      useExperienceInterview({
+        questionUrl: QUESTION_URL,
+        blockUpdateUrl: BLOCK_UPDATE_URL,
+        snapshot,
+        interviewId,
+        fetchImpl,
+        ...immediate,
+      })
+    );
+  }
+
+  it("인터뷰 줄이 있으면 저장 대상을 블록 갱신 요청에 싣는다", async () => {
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    const fetchImpl = makeFetchImpl({
+      questionSources: [q1, q2],
+      blockUpdateResponses: [jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE }, save: "saved" }))],
+    });
+    const { result } = renderWithSave(fetchImpl);
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+
+    await answerOnce(result, q1, "화면이 비어 있었습니다.");
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
+
+    const body = callBody(fetchImpl.mock.calls[1]) as { save: Record<string, unknown> };
+    expect(body.save).toMatchObject({
+      interviewId: INTERVIEW_ID,
+      // 아직 한 번도 저장하지 않았으므로 저장된 버전은 0입니다.
+      expectedBlockVersion: 0,
+      pendingTurnIds: [],
+      askedCountAtQuestion: 1,
+    });
+    // 이번 답변의 반응은 아직 반영하지 않은 값이어야 합니다. 반영은 서버가 합니다.
+    expect(body.save.progress).toMatchObject({
+      problem: { elements: { a: { askedCount: 1, firstUnknownAskedCount: null } } },
+    });
+    await waitFor(() => expect(result.current.saveStatus).toBe("saved"));
+    expect(result.current.unsavedTurnCount).toBe(0);
+  });
+
+  it("인터뷰 줄이 없으면 저장 대상을 싣지 않고 저장 상태도 바꾸지 않는다", async () => {
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    const fetchImpl = makeFetchImpl({
+      questionSources: [q1, q2],
+      blockUpdateResponses: [jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE } }))],
+    });
+    const { result } = renderWithSave(fetchImpl, null);
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+
+    await answerOnce(result, q1, "화면이 비어 있었습니다.");
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
+
+    expect(callBody(fetchImpl.mock.calls[1])).not.toHaveProperty("save");
+    expect(result.current.saveStatus).toBeNull();
+  });
+
+  /**
+   * 저장된 버전을 화면의 `blockState.version`으로 대신하면, 저장이 한 번 밀린 뒤 둘이 어긋나
+   * 이후의 모든 저장이 조건에 걸립니다. 저장에 성공한 버전만 올려야 합니다.
+   */
+  it("저장에 성공하면 다음 요청의 기대 버전이 저장된 버전으로 오른다", async () => {
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    const q3 = controllableResponse();
+    const fetchImpl = makeFetchImpl({
+      questionSources: [q1, q2, q3],
+      blockUpdateResponses: [
+        jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE }, version: 1, save: "saved" })),
+        jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE }, version: 2, save: "saved" })),
+      ],
+    });
+    const { result } = renderWithSave(fetchImpl);
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+
+    await answerOnce(result, q1, "첫 답변");
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
+    await answerOnce(result, q2, "둘째 답변");
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(5));
+
+    const second = callBody(fetchImpl.mock.calls[3]) as { save: Record<string, unknown> };
+    expect(second.save).toMatchObject({ expectedBlockVersion: 1, pendingTurnIds: [] });
+    expect(result.current.unsavedTurnCount).toBe(0);
+  });
+
+  /**
+   * 저장이 밀린 턴은 다음 저장이 함께 이어 붙여야 합니다. 이것을 하지 않으면 저장된 대화의 중간이
+   * 비고, 이어가기로 돌아온 사용자가 자기 답변 하나를 잃습니다.
+   */
+  it("저장이 실패한 턴을 다음 요청의 밀린 턴으로 싣고 기대 버전은 그대로 둔다", async () => {
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    const q3 = controllableResponse();
+    const fetchImpl = makeFetchImpl({
+      questionSources: [q1, q2, q3],
+      blockUpdateResponses: [
+        jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE }, version: 1, save: "failed" })),
+        jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE }, version: 2, save: "saved" })),
+      ],
+    });
+    const { result } = renderWithSave(fetchImpl);
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+
+    await answerOnce(result, q1, "첫 답변");
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(result.current.saveStatus).toBe("failed"));
+    expect(result.current.unsavedTurnCount).toBe(1);
+
+    await answerOnce(result, q2, "둘째 답변");
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(5));
+
+    const second = callBody(fetchImpl.mock.calls[3]) as { save: Record<string, unknown> };
+    expect(second.save).toMatchObject({ expectedBlockVersion: 0, pendingTurnIds: ["t1"] });
+    // 밀린 턴까지 함께 저장됐으므로 표시를 지웁니다.
+    await waitFor(() => expect(result.current.unsavedTurnCount).toBe(0));
+    expect(result.current.saveStatus).toBe("saved");
+  });
+
+  // 블록 갱신 자체가 실패하면 저장도 이뤄지지 않았습니다. 그 턴도 밀린 턴이어야 합니다.
+  it("블록 갱신이 실패한 턴도 밀린 턴으로 남긴다", async () => {
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    const fetchImpl = makeFetchImpl({
+      questionSources: [q1, q2],
+      blockUpdateResponses: [jsonResponse(502, { error: { kind: "block_update_rejected", message: "검증 실패" } })],
+    });
+    const { result } = renderWithSave(fetchImpl);
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+
+    await answerOnce(result, q1, "첫 답변");
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
+
+    expect(result.current.unsavedTurnCount).toBe(1);
+    expect(result.current.saveStatus).toBe("failed");
+  });
+
+  // 다른 탭이 먼저 저장한 경우입니다. 화면이 최신 내용을 다시 불러올지 물어야 하므로 갈라 둡니다.
+  it("버전 충돌을 그대로 올린다", async () => {
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    const fetchImpl = makeFetchImpl({
+      questionSources: [q1, q2],
+      blockUpdateResponses: [
+        jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE }, save: "version_conflict" })),
+      ],
+    });
+    const { result } = renderWithSave(fetchImpl);
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+
+    await answerOnce(result, q1, "첫 답변");
+
+    await waitFor(() => expect(result.current.saveStatus).toBe("version_conflict"));
+    expect(result.current.unsavedTurnCount).toBe(1);
   });
 });

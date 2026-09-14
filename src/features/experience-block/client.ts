@@ -1,6 +1,8 @@
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
 import type { BlockUpdateTurn } from "@/features/interview/block-prompt";
+import type { BlockUpdateSaveStatus } from "@/features/saved-interviews/save-status";
 import type { ExperienceBlockErrorKind } from "./errors";
+import type { ExperienceBlockSaveTarget } from "./request";
 import type { BlockElement, BlockKind, ExperienceBlockState, TargetResponse } from "./types";
 
 /**
@@ -15,6 +17,11 @@ export interface FetchBlockUpdateInput {
   readonly targetBlock: BlockKind;
   readonly targetElement: BlockElement;
   readonly answerTurnId: string;
+  /**
+   * 이 턴을 저장할 대상입니다. 없으면 저장하지 않습니다. 경험을 확정하기 전이거나 인터뷰 줄을 만들지
+   * 못한 경우입니다.
+   */
+  readonly save?: ExperienceBlockSaveTarget;
   readonly fetchImpl?: typeof fetch;
   readonly signal?: AbortSignal;
 }
@@ -23,6 +30,8 @@ export interface FetchBlockUpdateResult {
   readonly state: ExperienceBlockState;
   readonly affectedBlocks: readonly BlockKind[];
   readonly targetResponse: TargetResponse;
+  /** 이 턴을 저장한 결과입니다. 저장 대상을 보내지 않았으면 `skipped`입니다. */
+  readonly save: BlockUpdateSaveStatus;
 }
 
 /** route가 낼 수 없는 전송 실패("network")를 더해 호출부가 한 타입으로 갈라 처리하게 합니다. */
@@ -64,6 +73,9 @@ export async function fetchBlockUpdate(input: FetchBlockUpdateInput): Promise<Fe
         targetBlock: input.targetBlock,
         targetElement: input.targetElement,
         answerTurnId: input.answerTurnId,
+        // 값이 없으면 아예 싣지 않습니다. `save: undefined`는 JSON에서 사라지지만 `save: null`은
+        // 남아, 저장하지 않겠다는 뜻과 값을 잘못 만든 것을 서버가 가를 수 없게 됩니다.
+        ...(input.save === undefined ? {} : { save: input.save }),
       }),
       signal: input.signal,
     });
@@ -91,5 +103,11 @@ export async function fetchBlockUpdate(input: FetchBlockUpdateInput): Promise<Fe
   }
 
   const body = json as FetchBlockUpdateResult;
-  return { state: body.state, affectedBlocks: body.affectedBlocks, targetResponse: body.targetResponse };
+  return {
+    state: body.state,
+    affectedBlocks: body.affectedBlocks,
+    targetResponse: body.targetResponse,
+    // 저장을 얹기 전에 배포된 서버는 이 값을 내지 않습니다. 없으면 저장하지 않은 것으로 봅니다.
+    save: body.save ?? "skipped",
+  };
 }
