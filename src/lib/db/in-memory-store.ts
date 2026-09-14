@@ -109,8 +109,9 @@ export function createInMemoryStore(): SiftStore {
       if (!interview || !ownedBy(interview, githubUserId)) return "not_found";
       if (interview.blockVersion !== expectedBlockVersion) return "version_conflict";
       // 기대 버전만 보면 세 값이 모두 같은 요청이 몇 번이고 성공하고 버전이 오르지 않습니다.
-      // 그러면 다른 탭이 먼저 저장해도 막지 못합니다.
-      if (blockState.version !== expectedBlockVersion + 1) return "version_conflict";
+      // 그러면 다른 탭이 먼저 저장해도 막지 못합니다. 정확히 1 큰 값을 요구하지 않는 이유는
+      // `store.ts`의 `appendTurn` 주석에 있습니다.
+      if (blockState.version <= expectedBlockVersion) return "version_conflict";
       interview.history = [...interview.history, ...asJsonb(turn)];
       interview.blockState = asJsonb(blockState);
       interview.blockVersion = blockState.version;

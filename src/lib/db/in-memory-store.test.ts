@@ -87,7 +87,7 @@ describe("메모리 저장 계층", () => {
    * 기대 버전만 보면 저장된 버전과 기대 버전과 새 버전이 모두 같은 요청이 몇 번이고 성공하고
    * 버전이 오르지 않습니다. 그러면 다른 탭이 먼저 저장해도 막지 못해 턴이 사라집니다.
    */
-  it("새 블록 버전이 기대 버전보다 1 크지 않으면 저장하지 않는다", async () => {
+  it("새 블록 버전이 기대 버전보다 크지 않으면 저장하지 않는다", async () => {
     const store = createInMemoryStore();
     const { interviewId } = await seed(store);
 
@@ -100,18 +100,37 @@ describe("메모리 저장 계층", () => {
     });
     expect(sameVersion).toBe("version_conflict");
 
-    const jumped = await store.appendTurn({
-      githubUserId: OWNER_ID,
-      interviewId,
-      turn: [{ role: "answer", text: "버전을 건너뛴 답변" }],
-      blockState: blockStateAt(2),
-      expectedBlockVersion: 0,
-    });
-    expect(jumped).toBe("version_conflict");
-
     const interview = await store.getInterview(interviewId, OWNER_ID);
     expect(interview?.history).toEqual([]);
     expect(interview?.blockVersion).toBe(0);
+  });
+
+  /**
+   * 저장이 한 번 실패하면 화면의 블록 버전만 오르고 저장된 버전은 그대로 있어, 다음 턴의 새 버전이
+   * 기대 버전보다 2 이상 커집니다. 이것을 거절하면 한 번 실패한 인터뷰는 그 뒤로 영원히 저장되지
+   * 않습니다. 정의서의 "다음 턴에서 저장이 성공하면 밀린 내용까지 함께 저장된다"가 이 자리입니다.
+   */
+  it("저장이 밀렸다가 다시 성공하면 밀린 턴까지 함께 저장한다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seed(store);
+
+    const caughtUp = await store.appendTurn({
+      githubUserId: OWNER_ID,
+      interviewId,
+      turn: [
+        { role: "question", text: "밀린 질문" },
+        { role: "answer", text: "밀린 답변" },
+        { role: "question", text: "이번 질문" },
+        { role: "answer", text: "이번 답변" },
+      ],
+      blockState: blockStateAt(2),
+      expectedBlockVersion: 0,
+    });
+
+    expect(caughtUp).toBe("saved");
+    const interview = await store.getInterview(interviewId, OWNER_ID);
+    expect(interview?.history).toHaveLength(4);
+    expect(interview?.blockVersion).toBe(2);
   });
 
   // 걸러내지 않으면 테스트는 통과하는데 Postgres의 jsonb에서만 실패합니다.
