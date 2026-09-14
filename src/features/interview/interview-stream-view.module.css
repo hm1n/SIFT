@@ -1,5 +1,11 @@
-.stream { display: grid; gap: 12px; margin-top: 24px; }
-.log { display: grid; gap: 4px; max-height: 60vh; overflow-y: auto; border: 1px solid #ecebf0; border-radius: 12px; padding: 16px; background: #fff; overflow-wrap: anywhere; }
+/*
+  #98부터 3열 워크스페이스의 가운데 열에 놓입니다. 열이 준 높이를 채우도록 높이 규칙만 바꿨습니다.
+  로그가 자기 안에서 스크롤한다는 사실, 자동 스크롤 처리(`use-auto-scroll.ts`), 낭독 경계는 그대로
+  입니다. 한 열로 쌓던 시절의 `max-height: 60vh`는 열 높이와 무관한 값이라 열 아래가 비었습니다.
+  세로 쌓기와 같은 gap을 유지하려고 grid 대신 flex를 씁니다.
+*/
+.stream { display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; padding: 16px 0; }
+.log { display: grid; gap: 4px; flex: 1; min-height: 0; overflow-y: auto; border: 1px solid #ecebf0; border-radius: 12px; padding: 16px; background: #fff; overflow-wrap: anywhere; }
 .log:focus-visible { outline: 3px solid rgba(109, 99, 232, .25); outline-offset: 2px; }
 .preparing { color: #777580; font-size: 14px; }
 .message { display: grid; gap: 10px; border-top: 1px solid #f2f1f6; padding: 12px 0; color: #34333d; font-size: 15px; line-height: 1.7; }

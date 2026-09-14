@@ -12,7 +12,7 @@ import {
 } from "./evidence-snapshot";
 
 const CONFIRM_LABEL = "Start interview";
-const BACK_LABEL = "← 후보 목록으로";
+const BACK_LABEL = "← Candidates";
 /** 확정 실패 안내에서 돌아가는 버튼입니다. InterviewScreen 자체의 뒤로가기(BACK_LABEL)와는 다른 버튼입니다. */
 const CANDIDATE_BACK_LABEL = "← Back to candidates";
 
@@ -88,10 +88,12 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
     fireEvent.click(screen.getByRole("button", { name: /재시도 큐 도입/ }));
     fireEvent.click(screen.getByRole("button", { name: CONFIRM_LABEL }));
 
-    expect(screen.getByText("AI 인터뷰")).toBeInTheDocument();
+    expect(screen.getByText("Experience")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "재시도 큐 도입" })).toBeInTheDocument();
     expect(screen.getByText("질문을 준비하고 있습니다.")).toBeInTheDocument();
-    expect(screen.getByText(/대표 커밋 변경 파일 1개/)).toBeInTheDocument();
+    // 근거는 #98부터 왼쪽 코드 패널이 그립니다.
+    expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /aaa\.ts/ })).toBeInTheDocument();
   });
 
   it("목록으로 돌아가 다른 경험을 확정하면 확정 상태가 교체된다", () => {
@@ -106,7 +108,7 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
 
     fireEvent.click(screen.getByRole("button", { name: BACK_LABEL }));
     // 인터뷰 화면의 뒤로가기는 대화가 사라진다는 확인을 한 번 받습니다.
-    fireEvent.click(screen.getByRole("button", { name: "후보 목록으로 돌아가기" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to candidates" }));
     fireEvent.click(screen.getByRole("button", { name: /지연 시간 조정/ }));
     fireEvent.click(screen.getByRole("button", { name: CONFIRM_LABEL }));
 
@@ -187,7 +189,13 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
     expect(action).toHaveAccessibleDescription(/Verified/);
   });
 
-  it("확정 화면은 AI가 고른 개수를 확인 가능으로 표시하지 않는다", () => {
+  /*
+    #98 전에는 확정 화면이 대표 커밋 변경 파일·관련 커밋·인용 파일 개수를 나열하고 개수마다 확인
+    수준 태그를 붙였습니다. 3열 개편으로 그 목록이 사라져 개수별 태그를 확인할 자리가 없습니다.
+    태그 경계 자체(PR #57 1차 리뷰 P2)는 `experience-candidate-detail.test.tsx`가 계속 지키고,
+    여기서는 확정 뒤에도 AI 선택 안내가 화면에 남는지만 봅니다.
+  */
+  it("확정 화면은 관련 커밋의 관련성 판단이 확인 불가라는 안내를 남긴다", () => {
     renderList(
       [candidate("aaa", { relatedShas: ["bbb"], citedFilePaths: ["src/aaa.ts"] })],
       [commit("aaa", "근거 표시 경계"), commit("bbb", "관련 커밋")]
@@ -196,19 +204,12 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
     fireEvent.click(screen.getByRole("button", { name: /근거 표시 경계/ }));
     fireEvent.click(screen.getByRole("button", { name: CONFIRM_LABEL }));
 
-    const relatedItem = screen.getByText(/관련 커밋 1개/, { selector: "li" });
-    expect(relatedItem).toHaveTextContent("AI-selected");
-    expect(relatedItem).not.toHaveTextContent("Verified");
-
-    const citedItem = screen.getByText(/인용 파일 1개/, { selector: "li" });
-    expect(citedItem).toHaveTextContent("AI-selected");
-    expect(citedItem).not.toHaveTextContent("Verified");
-
-    // 관련 커밋 파일까지 합친 개수를 확인 가능으로 표시하면 AI 선택이 Repository 사실로 보입니다.
-    const changedFilesItem = screen.getByText(/대표 커밋 변경 파일 1개/, { selector: "li" });
-    expect(changedFilesItem).toHaveTextContent("Verified");
-    expect(changedFilesItem).not.toHaveTextContent("AI-selected");
-    expect(screen.queryByText(/^변경 파일 2개$/)).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Confirmed only as belonging to the same PR as the representative commit/)
+    ).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Code / Evidence" })).toHaveAccessibleDescription(
+      /Unverifiable · AI-written interpretation/
+    );
   });
 
   it("근거 상한 때문에 patch를 자르면 확정 화면이 그 사실을 알린다", () => {
@@ -237,7 +238,7 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
     fireEvent.click(screen.getByRole("button", { name: /상한 절단/ }));
     fireEvent.click(screen.getByRole("button", { name: CONFIRM_LABEL }));
 
-    expect(screen.getByText(/코드\s*변경 내역 일부를 잘랐습니다/)).toBeInTheDocument();
+    expect(screen.getByText(/trimmed to fit the estimated evidence input limit/)).toBeInTheDocument();
   });
 
   it("파일 단위로 절단 표시된 patch도 인터뷰 화면이 알린다", () => {
@@ -264,7 +265,7 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
     fireEvent.click(screen.getByRole("button", { name: /상위 절단 표시/ }));
     fireEvent.click(screen.getByRole("button", { name: CONFIRM_LABEL }));
 
-    expect(screen.getByText(/일부 코드 변경 내역이 절단되거나 미포함/)).toBeInTheDocument();
+    expect(screen.getByText(/This diff was truncated/)).toBeInTheDocument();
   });
 
   // PR #105 Codex 리뷰 P1: 인터뷰 활성 여부를 상위가 모르면 AppShell 사이드바의 Change repository가
@@ -297,7 +298,7 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
     expect(onInterviewActiveChange).toHaveBeenLastCalledWith(true);
 
     fireEvent.click(screen.getByRole("button", { name: BACK_LABEL }));
-    fireEvent.click(screen.getByRole("button", { name: "후보 목록으로 돌아가기" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to candidates" }));
     expect(onInterviewActiveChange).toHaveBeenLastCalledWith(false);
   });
 

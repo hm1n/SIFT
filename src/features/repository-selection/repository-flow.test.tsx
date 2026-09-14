@@ -106,7 +106,8 @@ describe("RepositoryFlow 인터뷰 중 이탈 확인", () => {
     fireEvent.click(screen.getByRole("button", { name: /Analyze/ }));
     fireEvent.click(await screen.findByRole("button", { name: /재시도 큐 도입/ }));
     fireEvent.click(screen.getByRole("button", { name: /Start interview/ }));
-    await screen.findByText("AI 인터뷰");
+    // 인터뷰 화면이 떴는지는 3열 워크스페이스의 코드 패널로 봅니다.
+    await screen.findByRole("region", { name: "Code / Evidence" });
   }
 
   it("사이드바 Change repository는 바로 나가지 않고 확인을 먼저 받는다", async () => {
@@ -114,11 +115,11 @@ describe("RepositoryFlow 인터뷰 중 이탈 확인", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "← Change repository" }));
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
-    expect(screen.getByText("AI 인터뷰")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "인터뷰 계속하기" }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(screen.getByText("AI 인터뷰")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
   });
 
   it("확인 뒤 Repository 바꾸기를 누르면 선택 화면으로 돌아간다", async () => {
@@ -128,6 +129,6 @@ describe("RepositoryFlow 인터뷰 중 이탈 확인", () => {
     fireEvent.click(screen.getByRole("button", { name: "Repository 바꾸기" }));
 
     await screen.findByRole("heading", { name: "Choose a repository to analyze." });
-    expect(screen.queryByText("AI 인터뷰")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Code / Evidence" })).not.toBeInTheDocument();
   });
 });
