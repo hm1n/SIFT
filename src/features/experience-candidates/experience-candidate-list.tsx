@@ -5,7 +5,7 @@ import type { ExperienceCandidateListItem, StageBCandidateResult } from "./types
 import type { CandidateDataOutput, ReadonlyCommitDetail } from "@/lib/github/types";
 import type { RepositoryRef } from "@/lib/github/types";
 import { VERIFIABILITY_LABEL } from "./evidence-verifiability";
-import { deriveCandidatePeriod } from "./candidate-period";
+import { deriveCandidatePeriod, pluralCount } from "./candidate-period";
 import { ExperienceCandidateDetail } from "./experience-candidate-detail";
 import { InterviewScreen } from "@/features/interview/interview-screen";
 import { confirmExperienceSelection, type ExperienceSelectionState } from "./experience-selection";
@@ -94,7 +94,7 @@ export function ExperienceCandidateList({
       <div className={styles.layout}>
         <div className={styles.listPanel}>
           <p className={styles.eyebrow}>Candidates</p>
-          <p className={styles.listSubtitle}>{`${candidates.candidates.length} experiences found`}</p>
+          <p className={styles.listSubtitle}>{`${pluralCount(candidates.candidates.length, "experience")} found`}</p>
           {candidates.insufficientCandidatesReason ? (
             <p className={styles.insufficientReason}>
               <strong>후보를 더 채우지 않은 이유</strong>
@@ -117,11 +117,14 @@ export function ExperienceCandidateList({
                     className={selected ? styles.selectedRow : styles.row}
                     aria-current={selected ? "true" : undefined}
                     aria-label={indexedTitle}
-                    onClick={() => setSelectedSha(candidate.sha)}
+                    onClick={() => {
+                      setSelectedSha(candidate.sha);
+                      setSelection({ status: "idle" });
+                    }}
                   >
                     <span className={styles.title}>{indexedTitle}</span>
                     <span className={styles.rowMeta}>
-                      <span>{`${commitCount} commits`}</span>
+                      <span>{pluralCount(commitCount, "commit")}</span>
                       {period ? <span>{period.start}</span> : null}
                     </span>
                   </button>

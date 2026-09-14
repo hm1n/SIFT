@@ -8,7 +8,7 @@ import {
   REPOSITORY_VERIFIED_NOTICE,
   VERIFIABILITY_LABEL,
 } from "./evidence-verifiability";
-import { deriveCandidatePeriod, formatCommitDate } from "./candidate-period";
+import { deriveCandidatePeriod, formatCommitDate, pluralCount } from "./candidate-period";
 import { EXPERIENCE_SELECTION_ERROR_COPY } from "./experience-selection";
 import styles from "./experience-candidate-detail.module.css";
 
@@ -47,6 +47,8 @@ interface EvidenceListEntry {
   readonly pullRequests: ReadonlyCommitDetail["pullRequests"];
   /** 대표 커밋 자신의 필드는 확인 가능이고, 관련 커밋은 관계까지만 확인되는 AI 선택입니다. */
   readonly aiSelected: boolean;
+  /** false면 커밋을 색인에서 못 찾은 것입니다. 이때는 Verified·AI-selected 어느 쪽도 사실이 아니라 태그를 그리지 않습니다. */
+  readonly indexed: boolean;
 }
 
 function evidenceEntry(sha: string, commit: ReadonlyCommitDetail | null, aiSelected: boolean): EvidenceListEntry {
@@ -56,6 +58,7 @@ function evidenceEntry(sha: string, commit: ReadonlyCommitDetail | null, aiSelec
     date: commit?.date ?? null,
     pullRequests: commit?.pullRequests ?? [],
     aiSelected,
+    indexed: commit !== null,
   };
 }
 
@@ -91,7 +94,7 @@ export function ExperienceCandidateDetail({
         <h2>{title}</h2>
         {commit === null ? <p className={styles.notice}>Representative commit not found in the commit index.</p> : null}
         <div className={styles.meta}>
-          <span>{`${commitCount} commits`}</span>
+          <span>{pluralCount(commitCount, "commit")}</span>
           {period ? <span>{period.start === period.end ? period.start : `${period.start} – ${period.end}`}</span> : null}
         </div>
       </div>
@@ -117,14 +120,16 @@ export function ExperienceCandidateDetail({
           <div className={styles.evidenceListPanel}>
             <div className={styles.evidenceListHeader}>
               <span>VERIFIED FROM REPOSITORY</span>
-              <span>{`${commitCount} commits`}</span>
+              <span>{pluralCount(commitCount, "commit")}</span>
             </div>
             <ul className={styles.evidenceList}>
               {visibleEvidenceEntries.map((entry) => (
                 <li key={entry.sha}>
-                  <span className={entry.aiSelected ? styles.aiSelectionTag : styles.verifiedTag}>
-                    {entry.aiSelected ? AI_SELECTION_LABEL : VERIFIABILITY_LABEL.verified}
-                  </span>
+                  {entry.indexed ? (
+                    <span className={entry.aiSelected ? styles.aiSelectionTag : styles.verifiedTag}>
+                      {entry.aiSelected ? AI_SELECTION_LABEL : VERIFIABILITY_LABEL.verified}
+                    </span>
+                  ) : null}
                   <a href={commitUrl(repository, entry.sha)} target="_blank" rel="noreferrer">{entry.title}</a>
                   <span className={styles.evidenceListMeta}>
                     <code>{entry.sha.slice(0, 7)}</code>

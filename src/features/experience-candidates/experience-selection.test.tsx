@@ -132,7 +132,7 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
     expect(screen.queryByText("AI 인터뷰")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: CANDIDATE_BACK_LABEL }));
-    expect(screen.getByText("1 experiences found")).toBeInTheDocument();
+    expect(screen.getByText("1 experience found")).toBeInTheDocument();
   });
 
   it("대표 커밋에 변경 파일이 없으면 근거가 없다고 알린다", () => {
@@ -157,6 +157,22 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
     fireEvent.click(screen.getByRole("button", { name: CANDIDATE_BACK_LABEL }));
     fireEvent.click(screen.getByRole("button", { name: /빈 커밋/ }));
 
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("다른 후보를 바로 선택하면(뒤로가기 없이) 이전 후보의 실패 안내가 새 후보에 남지 않는다", () => {
+    renderList(
+      [candidate("aaa"), candidate("bbb")],
+      [commit("aaa", "빈 커밋", []), commit("bbb", "정상 커밋")]
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /빈 커밋/ }));
+    fireEvent.click(screen.getByRole("button", { name: CONFIRM_LABEL }));
+    expect(screen.getByRole("alert")).toHaveAttribute("data-selection-error", "no_repository_evidence");
+
+    fireEvent.click(screen.getByRole("button", { name: /정상 커밋/ }));
+
+    expect(screen.getByRole("heading", { name: "정상 커밋" })).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 

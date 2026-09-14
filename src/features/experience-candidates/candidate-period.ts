@@ -24,3 +24,8 @@ export function deriveCandidatePeriod(dates: readonly string[]): CandidatePeriod
     end: MONTH_YEAR_FORMAT.format(new Date(sorted[sorted.length - 1])),
   };
 }
+
+/** 화면 문구는 디자인대로 영어라 단수·복수를 구분합니다. `count`가 1이면 단수형을 씁니다. */
+export function pluralCount(count: number, noun: string): string {
+  return `${count} ${count === 1 ? noun : `${noun}s`}`;
+}

@@ -85,7 +85,7 @@ describe("ExperienceCandidateDetail", () => {
   it("관련 커밋이 없으면 기간을 대표 커밋 한 달로 표시한다", () => {
     renderDetail({ ...candidate, relatedShas: [] });
 
-    expect(screen.getAllByText("1 commits").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("1 commit").length).toBeGreaterThan(0);
     expect(screen.getByText("Aug 2026")).toBeInTheDocument();
   });
 
@@ -176,6 +176,9 @@ describe("ExperienceCandidateDetail", () => {
     expect(screen.getByRole("heading", { name: `커밋 색인 실패 · ${candidate.sha.slice(0, 7)}` })).toBeInTheDocument();
     expect(screen.getByText("Representative commit not found in the commit index.")).toBeInTheDocument();
     expect(screen.getAllByText("2 commits").length).toBeGreaterThan(0);
+
+    const failedRow = screen.getByRole("link", { name: `커밋 색인 실패 · ${candidate.sha.slice(0, 7)}` }).closest("li");
+    expect(failedRow).not.toHaveTextContent("Verified");
   });
 
   it("확정 실패 안내가 있으면 인터뷰 시작 대신 실패 이유를 보여주고 뒤로가기로 onBack을 부른다", () => {

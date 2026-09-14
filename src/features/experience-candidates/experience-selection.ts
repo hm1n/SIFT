@@ -30,7 +30,11 @@ export type ExperienceSelectionState =
   | { readonly status: "confirmed"; readonly snapshot: ExperienceEvidenceSnapshot }
   | { readonly status: "error"; readonly reason: EvidenceSnapshotFailureReason };
 
-/** 근거 스냅샷을 만들지 못한 이유별 안내입니다. 무엇이 부족한지 알리고 목록 복귀로 유도합니다. */
+/**
+ * 근거 스냅샷을 만들지 못한 이유별 안내입니다. 무엇이 부족한지 알리고 다른 후보 선택으로
+ * 유도합니다. master-detail에서는 목록이 항상 상세와 함께 보이므로 "뒤로가기"가 화면 이동이
+ * 아니라 이 안내를 닫는 것뿐입니다. 문구도 그에 맞춥니다.
+ */
 export const EXPERIENCE_SELECTION_ERROR_COPY: Record<
   EvidenceSnapshotFailureReason,
   { readonly title: string; readonly message: string }
@@ -38,17 +42,17 @@ export const EXPERIENCE_SELECTION_ERROR_COPY: Record<
   representative_commit_not_indexed: {
     title: "Can't start an interview for this experience",
     message:
-      "The representative commit wasn't found in the commit index, so its title, message, PR info, and changed files can't be used as evidence. Go back to the candidate list and choose a different experience.",
+      "The representative commit wasn't found in the commit index, so its title, message, PR info, and changed files can't be used as evidence. Dismiss this message and select a different experience.",
   },
   no_repository_evidence: {
     title: "Can't start an interview for this experience",
     message:
-      "Neither the representative commit nor its related commits have any changed files, so there's no code to ask about. Go back to the candidate list and choose a different experience.",
+      "Neither the representative commit nor its related commits have any changed files, so there's no code to ask about. Dismiss this message and select a different experience.",
   },
   evidence_input_too_large: {
     title: "This experience's evidence exceeds the interview input limit",
     message:
-      "Even without any code changes, the commit messages and changed file list alone exceed the limit. Go back to the candidate list and choose a different experience.",
+      "Even without any code changes, the commit messages and changed file list alone exceed the limit. Dismiss this message and select a different experience.",
   },
 };
 
