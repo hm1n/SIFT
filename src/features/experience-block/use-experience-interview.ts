@@ -17,6 +17,7 @@ import {
 } from "@/features/interview/use-interview-stream";
 import type { BlockUpdateSaveStatus, SavedTurnStatus } from "@/features/saved-interviews/save-status";
 import { BlockUpdateFetchError, fetchBlockUpdate } from "./client";
+import type { InterviewProgress } from "./progress";
 import { emptyInterviewProgress, recordAsked, recordResponse, selectNextTarget } from "./progress";
 import type { ExperienceBlockSaveTarget } from "./request";
 import { emptyExperienceBlockState, type ExperienceBlockState, type TargetResponse } from "./types";
@@ -36,6 +37,54 @@ const FIRST_TARGET: NonNullable<InterviewQuestionTarget> = { targetBlock: "probl
 
 export type ExperienceInterviewEndReason = "user" | "turn_limit";
 
+/** 저장된 인터뷰를 이어갈 때 받는 값입니다. `GET /api/interviews/[id]`의 응답에서 그대로 옵니다. */
+export interface RestoredInterview {
+  readonly history: readonly InterviewHistoryMessage[];
+  readonly blockState: ExperienceBlockState;
+  readonly progress: InterviewProgress;
+}
+
+/**
+ * 이어갈 인터뷰의 첫 질문 대상과, 그 질문을 보낸 것으로 친 진행 상태를 함께 정합니다.
+ *
+ * 대상 계산을 첫 렌더에서 한 번만 합니다. 이어가기는 "저장된 상태에서 다음에 물을 것"을 고르는
+ * 일이고, 그 판단은 저장된 값이 바뀌지 않는 한 달라지지 않습니다.
+ *
+ * `done`은 저장된 상태만으로 더 물을 것이 없는 경우입니다. 이때는 질문을 요청하지 않고 완료 안내를
+ * 보입니다. 요청하면 모델이 이미 충분한 블록을 한 번 더 묻습니다.
+ */
+function initialAsk(restore: RestoredInterview | undefined): {
+  readonly target: NonNullable<InterviewQuestionTarget> | null;
+  readonly progress: InterviewProgress;
+  readonly turnsUsed: number;
+} {
+  if (restore === undefined) {
+    return {
+      target: FIRST_TARGET,
+      progress: recordAsked(emptyInterviewProgress(), FIRST_TARGET.targetBlock, FIRST_TARGET.targetElement),
+      turnsUsed: 0,
+    };
+  }
+  // 저장된 대화는 질문과 답변이 짝을 이루므로 답변 수가 곧 지금까지의 턴 수입니다.
+  const turnsUsed = restore.history.filter((message) => message.role === "answer").length;
+  // `lastTarget`을 넘기지 않습니다. 직전 질문이 어느 블록을 겨냥했는지는 저장하는 값에 없고,
+  // 진행 상태의 `askedCount`로 짐작하는 것은 상태를 직접 나타내지 않는 대리 지표입니다. 그래서
+  // 이어가기는 같은 블록을 이어가는 것을 우선하지 않고, 아직 다루지 않은 블록을 먼저 묻습니다.
+  const next = selectNextTarget({
+    evaluation: restore.blockState.evaluation,
+    progress: restore.progress,
+    turnsUsed,
+    maxTurns: INTERVIEW_MAX_TURNS,
+    isEnded: false,
+  });
+  if (next.kind === "done") return { target: null, progress: restore.progress, turnsUsed };
+  return {
+    target: { targetBlock: next.block, targetElement: next.element },
+    progress: recordAsked(restore.progress, next.block, next.element),
+    turnsUsed,
+  };
+}
+
 export interface UseExperienceInterviewOptions {
   questionUrl: string;
   blockUpdateUrl: string;
@@ -46,12 +95,12 @@ export interface UseExperienceInterviewOptions {
    */
   interviewId?: string | null;
   /**
-   * 마지막으로 저장에 성공한 블록 버전입니다. 새 인터뷰는 0이고, 이어가는 인터뷰는 저장된 값입니다.
+   * 저장된 인터뷰를 이어갈 때 그 인터뷰의 상태입니다. 없으면 빈 상태에서 시작합니다.
    *
-   * 화면의 `blockState.version`으로 대신하지 않습니다. 앞선 턴에서 저장이 밀리면 화면의 버전만 오르고
-   * 저장된 버전은 그대로여서 둘이 어긋납니다.
+   * 셋을 함께 받습니다. 대화만 받으면 블록이 비어 첫 질문부터 다시 묻고, 진행 상태를 빼면 이미
+   * 답하지 못한 요소를 예산만큼 다시 묻습니다.
    */
-  savedBlockVersion?: number;
+  restore?: RestoredInterview;
   fetchImpl?: typeof fetch;
   retryDelaysMs?: readonly number[];
   sleep?: (ms: number) => Promise<void>;
@@ -90,26 +139,32 @@ export function useExperienceInterview({
   blockUpdateUrl,
   snapshot,
   interviewId = null,
-  savedBlockVersion = 0,
+  restore,
   fetchImpl,
   retryDelaysMs,
   sleep,
   scheduleFrame,
   cancelFrame,
 }: UseExperienceInterviewOptions): UseExperienceInterviewState {
-  const [blockState, setBlockState] = useState<ExperienceBlockState>(emptyExperienceBlockState());
+  // 첫 렌더에서 한 번만 정합니다. 이 훅이 시작한 뒤로는 대화와 블록의 주인이 이 훅입니다.
+  const [initial] = useState(() => initialAsk(restore));
+
+  const [blockState, setBlockState] = useState<ExperienceBlockState>(
+    () => restore?.blockState ?? emptyExperienceBlockState()
+  );
   const blockStateRef = useRef(blockState);
   const setBlockStateBoth = useCallback((next: ExperienceBlockState) => {
     blockStateRef.current = next;
     setBlockState(next);
   }, []);
 
-  const progressRef = useRef(recordAsked(emptyInterviewProgress(), FIRST_TARGET.targetBlock, FIRST_TARGET.targetElement));
+  const progressRef = useRef(initial.progress);
 
-  const [turnsUsed, setTurnsUsed] = useState(0);
-  const turnsUsedRef = useRef(0);
+  const [turnsUsed, setTurnsUsed] = useState(initial.turnsUsed);
+  const turnsUsedRef = useRef(initial.turnsUsed);
 
-  const [isReadyToFinish, setIsReadyToFinish] = useState(false);
+  // 저장된 상태만으로 더 물을 것이 없으면 이어가자마자 완료 대기입니다.
+  const [isReadyToFinish, setIsReadyToFinish] = useState(initial.target === null);
   const [endReason, setEndReason] = useState<ExperienceInterviewEndReason | null>(null);
   const [unreflectedTurnId, setUnreflectedTurnId] = useState<string | null>(null);
 
@@ -119,7 +174,7 @@ export function useExperienceInterview({
    * 저장된 블록 버전입니다. 저장에 성공할 때만 오릅니다. 이 값이 저장된 값과 다르면 다른 탭이 먼저
    * 저장한 것이므로 서버가 아무것도 쓰지 않습니다.
    */
-  const savedBlockVersionRef = useRef(savedBlockVersion);
+  const savedBlockVersionRef = useRef(restore?.blockState.version ?? 0);
   /**
    * 아직 저장되지 않은 턴의 ID입니다. 다음 저장이 성공할 때 이 턴들을 함께 이어 붙입니다. 저장이
    * 한 번 밀려도 대화의 중간이 비지 않게 하는 장치입니다(이슈 #115 Approach).
@@ -128,9 +183,11 @@ export function useExperienceInterview({
 
   // 지금까지의 턴 전체입니다. 블록 갱신 호출이 매번 다시 싣습니다(설계 5절).
   const turnsRef = useRef<BlockUpdateTurn[]>([]);
-  const turnSeqRef = useRef(0);
+  // 이어가기로 받은 대화의 턴 수만큼 건너뛰고 셉니다. 0에서 시작하면 새 턴이 저장된 턴과 같은
+  // 식별자를 받아, 밀린 턴을 저장할 때 엉뚱한 턴이 딸려 갑니다.
+  const turnSeqRef = useRef(initial.turnsUsed);
   // 방금 답한 질문이 겨냥했던 대상입니다. 첫 질문은 `initialTarget`과 같은 값으로 시작합니다.
-  const answeredTargetRef = useRef<NonNullable<InterviewQuestionTarget>>(FIRST_TARGET);
+  const answeredTargetRef = useRef<NonNullable<InterviewQuestionTarget>>(initial.target ?? FIRST_TARGET);
   /**
    * 방금 답한 질문을 보낸 시점의, 그 대상 요소 `askedCount`입니다(CodeRabbit PR #117). 첫 질문은
    * `progressRef`의 초깃값이 이미 `recordAsked`를 한 번 거친 값이라 1입니다. `recordResponse`가
@@ -138,7 +195,11 @@ export function useExperienceInterview({
    * 응답이 늦게 도착해도 그 사이 다른 질문이 올린 최신 `askedCount`를 자기 것으로 잘못 기록하지
    * 않습니다.
    */
-  const answeredAskedCountRef = useRef(1);
+  const answeredAskedCountRef = useRef(
+    initial.target === null
+      ? 0
+      : initial.progress[initial.target.targetBlock].elements[initial.target.targetElement].askedCount
+  );
   type PendingTurn = {
     turn: BlockUpdateTurn;
     target: NonNullable<InterviewQuestionTarget>;
@@ -411,7 +472,10 @@ export function useExperienceInterview({
     sleep,
     scheduleFrame,
     cancelFrame,
-    initialTarget: FIRST_TARGET,
+    initialTarget: initial.target,
+    initialMessages: restore?.history,
+    // 더 물을 것이 없는 상태로 이어가면 질문을 요청하지 않습니다.
+    autoStart: initial.target !== null,
     onBeforeQuestion,
   });
 

@@ -726,3 +726,45 @@ describe("useInterviewStream", () => {
     });
   });
 });
+
+/**
+ * 이어가기(이슈 #115)입니다. 저장된 대화를 들고 시작할 수 있어야 하고, 그 대화가 다음 질문 요청의
+ * 이력이 되어야 합니다.
+ */
+describe("useInterviewStream 이어가기", () => {
+  const snapshot = evidenceSnapshotFixture();
+  const restored = [
+    { role: "question" as const, text: "문제 상황을 알려주세요" },
+    { role: "answer" as const, text: "화면이 비어 있었습니다." },
+  ];
+
+  it("저장된 대화를 확정된 메시지로 들고 시작하고 첫 요청의 이력으로 싣는다", async () => {
+    const source = controllableResponse();
+    const fetchImpl = vi.fn().mockResolvedValue(source.response);
+    const { result } = renderHook(() =>
+      useInterviewStream({ url: "/api/interview/stream", snapshot, initialMessages: restored, fetchImpl })
+    );
+
+    expect(result.current.messages.map((message) => ({ role: message.role, text: message.text }))).toEqual(restored);
+    expect(result.current.messages.every((message) => !message.isStreaming)).toBe(true);
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toMatchObject({ history: restored });
+  });
+
+  // 번호를 0부터 다시 세면 새 메시지가 복원된 메시지와 같은 `id`를 받아 React가 둘을 같은 항목으로 봅니다.
+  it("새 메시지의 번호가 저장된 대화 다음부터 이어진다", async () => {
+    const source = controllableResponse();
+    const fetchImpl = vi.fn().mockResolvedValue(source.response);
+    const { result } = renderHook(() =>
+      useInterviewStream({ url: "/api/interview/stream", snapshot, initialMessages: restored, fetchImpl })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      source.push(encodeSseEvent({ type: "chunk", seq: 1, text: "다음 질문" }));
+    });
+
+    await waitFor(() => expect(result.current.messages).toHaveLength(3));
+    expect(new Set(result.current.messages.map((message) => message.id)).size).toBe(3);
+  });
+});

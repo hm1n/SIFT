@@ -79,6 +79,14 @@ export interface UseInterviewStreamOptions {
    */
   initialTarget?: InterviewQuestionTarget;
   /**
+   * 이어가기로 시작할 때 화면에 이미 들어 있어야 하는 대화입니다(이슈 #115). 저장된 질문과 답변을
+   * 순서대로 받습니다. 모두 확정된 메시지이므로 도착 중인 것으로 두지 않습니다.
+   *
+   * 첫 렌더에만 읽습니다. 대화는 그 뒤로 이 훅이 주인이고, 나중에 바뀐 값을 다시 반영하면 사용자가
+   * 방금 쓴 답변이 저장 시점의 값으로 되돌아갑니다.
+   */
+  initialMessages?: readonly InterviewHistoryMessage[];
+  /**
    * 답변 제출 뒤, 질문을 요청하기 전에 끼워 넣을 비동기 작업입니다(이슈 #90 Approach 4, "답변
    * 제출부터 질문 요청까지를 하나의 취소 가능한 작업으로 묶는다"). 블록 갱신 호출과 다음 질문 대상
    * 선택이 여기 들어갑니다.
@@ -147,6 +155,9 @@ export interface InterviewStreamState {
   submitAnswer: (text: string) => boolean;
 }
 
+/** 기본값의 참조가 렌더마다 바뀌지 않게 상수로 둡니다. */
+const EMPTY_HISTORY: readonly InterviewHistoryMessage[] = [];
+
 const defaultScheduleFrame = (callback: () => void): number =>
   typeof requestAnimationFrame === "function"
     ? requestAnimationFrame(() => callback())
@@ -156,6 +167,16 @@ const defaultCancelFrame = (handle: number): void => {
   if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(handle);
   else clearTimeout(handle as unknown as ReturnType<typeof setTimeout>);
 };
+
+/** 이어가기로 받은 대화를 화면 메시지로 옮깁니다. 번호는 이어 붙을 메시지가 그대로 이어 씁니다. */
+function toStreamMessages(history: readonly InterviewHistoryMessage[]): InterviewStreamMessage[] {
+  return history.map((message, index) => ({
+    id: `message-${index + 1}`,
+    role: message.role,
+    text: message.text,
+    isStreaming: false,
+  }));
+}
 
 /** 완료된 메시지만 요청 이력이 됩니다. 도착 중인 질문은 아직 대화가 아닙니다. */
 function toHistory(messages: readonly InterviewStreamMessage[]): InterviewHistoryMessage[] {
@@ -191,9 +212,10 @@ export function useInterviewStream({
   scheduleFrame = defaultScheduleFrame,
   cancelFrame = defaultCancelFrame,
   initialTarget = null,
+  initialMessages = EMPTY_HISTORY,
   onBeforeQuestion,
 }: UseInterviewStreamOptions): InterviewStreamState {
-  const [messages, setMessages] = useState<readonly InterviewStreamMessage[]>([]);
+  const [messages, setMessages] = useState<readonly InterviewStreamMessage[]>(() => toStreamMessages(initialMessages));
   const [status, setStatus] = useState<InterviewStreamPhase>("idle");
   const [error, setError] = useState<InterviewStreamError | null>(null);
   const [receivedSeq, setReceivedSeq] = useState(0);
@@ -201,12 +223,14 @@ export function useInterviewStream({
   const [isLastQuestionTooLong, setIsLastQuestionTooLong] = useState(false);
   const [isEnded, setIsEnded] = useState(false);
 
-  const messagesRef = useRef<readonly InterviewStreamMessage[]>([]);
+  const messagesRef = useRef<readonly InterviewStreamMessage[]>(messages);
   // 상태와 같은 값을 ref에도 둡니다. `retry`가 이벤트 안에서 다음 렌더를 기다리지 않고 읽습니다.
   const isLastQuestionTooLongRef = useRef(false);
   // 종료도 같은 이유로 ref에 둡니다. 종료와 같은 틱에 들어온 제출을 다음 렌더 전에 거절해야 합니다.
   const isEndedRef = useRef(false);
-  const messageCountRef = useRef(0);
+  // 이어가기로 받은 대화가 있으면 그 다음 번호부터 붙입니다. 0에서 시작하면 새 메시지가 복원된
+  // 메시지와 같은 `id`를 받아 React가 둘을 같은 항목으로 봅니다.
+  const messageCountRef = useRef(messages.length);
   const bufferRef = useRef<string[]>([]);
   // 프레임이 잡혀 있는지는 handle 값과 따로 둡니다. 스케줄러가 콜백을 동기로 실행하면 handle을
   // 돌려받기 전에 flush가 끝나므로 handle만으로는 예약 여부를 판별할 수 없습니다.

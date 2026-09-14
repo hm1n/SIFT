@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
 import { encodeSseEvent } from "@/features/interview/sse";
 import type { BlockUpdateSaveStatus } from "@/features/saved-interviews/save-status";
+import { emptyInterviewProgress, recordAsked, recordResponse } from "./progress";
 import { useExperienceInterview } from "./use-experience-interview";
 import { emptyExperienceBlockState, type BlockEvaluation, type ExperienceBlockState, type TargetResponse } from "./types";
 
@@ -789,5 +790,189 @@ describe("useExperienceInterview 저장 얹기", () => {
 
     await waitFor(() => expect(result.current.saveStatus).toBe("version_conflict"));
     expect(result.current.unsavedTurnCount).toBe(1);
+  });
+});
+
+/**
+ * 저장된 인터뷰로 이어가기입니다(이슈 #115). 화면이 빈 상태가 아닌 상태로 시작할 수 있어야 하고,
+ * 그 상태에서 "다음에 물을 것"을 다시 골라야 합니다.
+ */
+describe("useExperienceInterview 이어가기", () => {
+  const HISTORY = [
+    { role: "question" as const, text: "문제 상황을 알려주세요" },
+    { role: "answer" as const, text: "화면이 비어 있었습니다." },
+  ];
+
+  function restoredState(overrides: Partial<ExperienceBlockState["evaluation"]>, version = 1): ExperienceBlockState {
+    const base = emptyExperienceBlockState();
+    return { ...base, version, evaluation: { ...base.evaluation, ...overrides } };
+  }
+
+  function renderRestored(
+    fetchImpl: ReturnType<typeof makeFetchImpl>,
+    restore: {
+      history: typeof HISTORY;
+      blockState: ExperienceBlockState;
+      progress: ReturnType<typeof emptyInterviewProgress>;
+    }
+  ) {
+    return renderHook(() =>
+      useExperienceInterview({
+        questionUrl: QUESTION_URL,
+        blockUpdateUrl: BLOCK_UPDATE_URL,
+        snapshot,
+        interviewId: "11111111-1111-4111-8111-111111111111",
+        restore,
+        fetchImpl,
+        ...immediate,
+      })
+    );
+  }
+
+  it("저장된 대화를 그대로 들고 시작하고 저장된 상태에서 고른 대상으로 묻는다", async () => {
+    const q = controllableResponse();
+    const fetchImpl = makeFetchImpl({ questionSources: [q], blockUpdateResponses: [] });
+    const { result } = renderRestored(fetchImpl, {
+      history: HISTORY,
+      blockState: restoredState({ problem: SUFFICIENT }),
+      progress: recordAsked(emptyInterviewProgress(), "problem", "a"),
+    });
+
+    expect(result.current.messages.map((message) => message.text)).toEqual([
+      "문제 상황을 알려주세요",
+      "화면이 비어 있었습니다.",
+    ]);
+    expect(result.current.turnsUsed).toBe(1);
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    // problem이 이미 충분하므로 이어가기의 첫 질문은 alternatives로 갑니다.
+    expect(callBody(fetchImpl.mock.calls[0])).toMatchObject({
+      history: HISTORY,
+      targetBlock: "alternatives",
+      targetElement: "a",
+    });
+  });
+
+  /**
+   * 진행 상태를 이어받지 않으면 사용자가 이미 "기억나지 않는다"고 답한 요소를 예산만큼 다시 묻습니다.
+   * 저장된 진행 상태가 그 예산을 그대로 들고 있어야 합니다.
+   */
+  it("재질문 예산을 다 쓴 요소는 이어가기에서 다시 묻지 않는다", async () => {
+    const q = controllableResponse();
+    const fetchImpl = makeFetchImpl({ questionSources: [q], blockUpdateResponses: [] });
+    const spent = recordResponse(
+      recordAsked(recordAsked(emptyInterviewProgress(), "problem", "a"), "problem", "a"),
+      "problem",
+      "a",
+      "unknown",
+      1
+    );
+    // 다른 블록은 모두 닫아 둡니다. 열린 블록이 problem 하나뿐이어야 요소 선택을 볼 수 있습니다.
+    renderRestored(fetchImpl, {
+      history: HISTORY,
+      blockState: restoredState({
+        problem: ASKABLE,
+        alternatives: SUFFICIENT,
+        action: SUFFICIENT,
+        result: SUFFICIENT,
+      }),
+      progress: spent,
+    });
+
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    // a는 예산을 다 썼으므로 같은 블록의 b로 갑니다.
+    expect(callBody(fetchImpl.mock.calls[0])).toMatchObject({ targetBlock: "problem", targetElement: "b" });
+  });
+
+  /**
+   * 이어가기는 직전 질문이 어느 블록을 겨냥했는지를 모릅니다. 저장하는 값에 그 정보가 없고, 진행
+   * 상태의 `askedCount`로 짐작하는 것은 대리 지표라 쓰지 않습니다. 그래서 아직 한 번도 다루지 않은
+   * 블록이 있으면 그쪽을 먼저 묻습니다. 이어가기가 대화를 끊고 새 블록으로 넘어가는 것이 아니라,
+   * 남은 블록을 먼저 채우는 것이 이 훅의 원래 선택 규칙입니다.
+   */
+  it("이어가기는 아직 다루지 않은 블록을 먼저 묻는다", async () => {
+    const q = controllableResponse();
+    const fetchImpl = makeFetchImpl({ questionSources: [q], blockUpdateResponses: [] });
+    renderRestored(fetchImpl, {
+      history: HISTORY,
+      blockState: restoredState({ problem: ASKABLE }),
+      progress: recordAsked(emptyInterviewProgress(), "problem", "a"),
+    });
+
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    expect(callBody(fetchImpl.mock.calls[0])).toMatchObject({ targetBlock: "alternatives", targetElement: "a" });
+  });
+
+  /**
+   * 턴 번호가 1부터 다시 시작하면 이어가기의 첫 턴이 저장된 첫 턴과 같은 식별자를 받습니다. 밀린 턴을
+   * 저장할 때 이력에서 턴을 식별자로 고르므로, 겹치면 엉뚱한 턴이 딸려 갑니다.
+   */
+  it("턴 번호를 저장된 턴 수 다음부터 센다", async () => {
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    const fetchImpl = makeFetchImpl({
+      questionSources: [q1, q2],
+      blockUpdateResponses: [jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE }, save: "saved" }))],
+    });
+    const { result } = renderRestored(fetchImpl, {
+      history: HISTORY,
+      blockState: restoredState({ problem: ASKABLE }),
+      progress: recordAsked(emptyInterviewProgress(), "problem", "a"),
+    });
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    completeQuestion(q1, "무엇이 문제였나요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+    act(() => {
+      result.current.submitAnswer("느렸습니다.");
+    });
+
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
+    expect(callBody(fetchImpl.mock.calls[1])).toMatchObject({ answerTurnId: "t2" });
+    expect(result.current.turnsUsed).toBe(2);
+  });
+
+  // 저장된 블록 버전을 기대 버전으로 써야 합니다. 0으로 시작하면 이어가기의 첫 저장이 곧바로 충돌합니다.
+  it("이어가기의 첫 저장은 저장된 블록 버전을 기대 버전으로 싣는다", async () => {
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    const fetchImpl = makeFetchImpl({
+      questionSources: [q1, q2],
+      blockUpdateResponses: [jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE }, version: 4, save: "saved" }))],
+    });
+    const { result } = renderRestored(fetchImpl, {
+      history: HISTORY,
+      blockState: restoredState({ problem: ASKABLE }, 3),
+      progress: recordAsked(emptyInterviewProgress(), "problem", "a"),
+    });
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    completeQuestion(q1, "무엇이 문제였나요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+    act(() => {
+      result.current.submitAnswer("느렸습니다.");
+    });
+
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
+    expect((callBody(fetchImpl.mock.calls[1]) as { save: Record<string, unknown> }).save).toMatchObject({
+      expectedBlockVersion: 3,
+    });
+  });
+
+  // 더 물을 것이 없는 상태를 이어가면서 질문을 요청하면 모델이 이미 충분한 블록을 한 번 더 묻습니다.
+  it("저장된 상태만으로 더 물을 것이 없으면 질문을 요청하지 않고 완료 대기로 시작한다", async () => {
+    const fetchImpl = makeFetchImpl({ questionSources: [], blockUpdateResponses: [] });
+    const { result } = renderRestored(fetchImpl, {
+      history: HISTORY,
+      blockState: restoredState({
+        problem: SUFFICIENT,
+        alternatives: SUFFICIENT,
+        action: SUFFICIENT,
+        result: SUFFICIENT,
+      }),
+      progress: recordAsked(emptyInterviewProgress(), "problem", "a"),
+    });
+
+    await waitFor(() => expect(result.current.isReadyToFinish).toBe(true));
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
