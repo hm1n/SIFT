@@ -53,7 +53,7 @@ export interface EvidenceFileGroup {
  */
 function narrowStatus(status: string): EvidenceFileStatus {
   if (status === "added") return "added";
-  if (status === "removed" || status === "deleted") return "deleted";
+  if (status === "removed") return "deleted";
   return "modified";
 }
 

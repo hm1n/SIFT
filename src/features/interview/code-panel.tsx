@@ -74,10 +74,10 @@ export function CodePanel({ snapshot }: CodePanelProps) {
   const [filesCollapsed, setFilesCollapsed] = useState(false);
 
   // `no_repository_evidence`가 변경 파일 0개인 근거를 확정 단계에서 이미 막으므로 파일은 항상
-  // 하나 이상입니다. 그래도 이 컴포넌트가 스스로 깨지지 않도록 한 줄만 방어하고, 도달하지 않는
-  // 빈 상태 화면은 만들지 않습니다.
-  const selectedFile: EvidenceFile | null =
-    files.find((file) => file.path === selectedPath) ?? files[0] ?? null;
+  // 하나 이상입니다. 여기서 방어하는 것은 빈 목록이 아니라 고른 경로가 목록에 없는 경우
+  // 하나뿐입니다. 도달하지 않는 빈 상태 화면은 만들지 않습니다.
+  const selectedFile: EvidenceFile =
+    files.find((file) => file.path === selectedPath) ?? files[0];
 
   function selectFile(path: string) {
     setSelectedPath(path);
@@ -115,7 +115,7 @@ export function CodePanel({ snapshot }: CodePanelProps) {
         <div className={styles.filesHeader}>
           <span className={styles.sectionLabel}>Files</span>
           <span className={styles.sectionCount}>/ {padded(files.length)}</span>
-          {filesCollapsed && selectedFile !== null ? (
+          {filesCollapsed ? (
             <span className={styles.collapsedFilename}>· {selectedFile.filename}</span>
           ) : null}
           <button
@@ -162,13 +162,15 @@ export function CodePanel({ snapshot }: CodePanelProps) {
         </div>
       </div>
 
-      {selectedFile === null ? null : (
-        <SelectedFileDiff
-          file={selectedFile}
-          commitIndex={Math.min(commitIndex, selectedFile.commits.length - 1)}
-          onCommitIndexChange={setCommitIndex}
-        />
-      )}
+      {/*
+        커밋 번호는 함께 좁힙니다. `selectFile`이 0으로 되돌리지만, 고른 경로가 목록에서
+        사라져 첫 파일로 떨어지는 길은 `selectFile`을 지나지 않아 앞 파일의 번호가 남습니다.
+      */}
+      <SelectedFileDiff
+        file={selectedFile}
+        commitIndex={Math.min(commitIndex, selectedFile.commits.length - 1)}
+        onCommitIndexChange={setCommitIndex}
+      />
 
       {/*
         스냅샷 전체의 상한 절단입니다. 파일 단위 절단과 보는 자리가 달라 하나가 나머지를 감추지

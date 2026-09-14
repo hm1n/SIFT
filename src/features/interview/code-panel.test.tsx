@@ -145,6 +145,47 @@ describe("CodePanel", () => {
     expect(screen.getByRole("button", { name: "Next commit" })).toBeDisabled();
   });
 
+  /*
+   * 겹쳐 있던 빈 목록 방어를 걷고 남긴 한 줄이 막는 길입니다. 고른 경로가 목록에서 사라지면
+   * `selectFile`을 지나지 않고 첫 파일로 떨어지므로, 앞 파일에서 올려 둔 커밋 번호가 그대로
+   * 남습니다. 번호를 함께 좁히지 않으면 없는 커밋을 읽습니다(PR #120 리뷰).
+   */
+  it("고른 경로가 사라지면 첫 파일로 떨어지고 커밋 번호도 함께 좁힌다", () => {
+    const twoCommits = snapshot({
+      representativeCommit: snapshotCommit({
+        files: [
+          snapshotFile({ path: "src/a.ts", patch: "@@ -1,1 +1,1 @@\n+only commit" }),
+          snapshotFile({ path: "src/b.ts", patch: "@@ -1,1 +1,1 @@\n+first commit" }),
+        ],
+      }),
+      relatedCommits: [
+        snapshotCommit({
+          sha: FIXTURE_RELATED_SHA,
+          role: "related",
+          files: [snapshotFile({ path: "src/b.ts", patch: "@@ -1,1 +1,1 @@\n+second commit" })],
+        }),
+      ],
+    });
+    const { rerender } = render(<CodePanel snapshot={twoCommits} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /b\.ts/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Next commit" }));
+    expect(screen.getByText("second commit")).toBeInTheDocument();
+
+    rerender(
+      <CodePanel
+        snapshot={snapshot({
+          representativeCommit: snapshotCommit({
+            files: [snapshotFile({ path: "src/a.ts", patch: "@@ -1,1 +1,1 @@\n+only commit" })],
+          }),
+        })}
+      />
+    );
+
+    expect(screen.getByText("only commit")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Next commit" })).not.toBeInTheDocument();
+  });
+
   it("커밋이 하나뿐인 파일에는 커밋 선택기를 두지 않는다", () => {
     render(<CodePanel snapshot={snapshot()} />);
 
