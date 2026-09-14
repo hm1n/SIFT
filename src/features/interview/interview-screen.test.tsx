@@ -3,22 +3,37 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { emptyExperienceBlockState } from "@/features/experience-block/types";
 import { InterviewScreen } from "./interview-screen";
+import { DEFAULT_EXPERIENCE_BLOCK_UPDATE_URL } from "@/features/experience-block/use-experience-interview";
 import { evidenceSnapshotFixture, FIXTURE_REPRESENTATIVE_SHA } from "./question-fixture";
 import { createTestStream, type TestStreamScenario } from "./test-stream";
 
 afterEach(cleanup);
 
-/**
- * 스트림 응답만 갈아 끼웁니다. 화면은 실제 생성 경로와 같은 요청을 만들고, 응답 본문만 결정적인
- * 테스트 스트림에서 옵니다. `snapshot`을 넘기는 것과 무관하게 동작합니다.
- */
-const testStreamFetch = (scenario: TestStreamScenario) =>
-  vi.fn().mockImplementation(async () => ({
+/** 이 화면이 답변마다 부르는 블록 갱신에 항상 성공 응답을 준비해 둡니다(이슈 #90). */
+function defaultBlockUpdateResponse(): Response {
+  return {
     ok: true,
     status: 200,
-    body: createTestStream({ scenario, delayMs: 0 }),
-  }) as unknown as Response);
+    json: async () => ({ state: emptyExperienceBlockState(), affectedBlocks: [], targetResponse: "provided" }),
+  } as unknown as Response;
+}
+
+/**
+ * 스트림 응답만 갈아 끼웁니다. 화면은 실제 생성 경로와 같은 요청을 만들고, 응답 본문만 결정적인
+ * 테스트 스트림에서 옵니다. `snapshot`을 넘기는 것과 무관하게 동작합니다. 블록 갱신 URL로 오는
+ * 호출은 이 스트림 응답 대신 기본 성공 응답을 받습니다.
+ */
+const testStreamFetch = (scenario: TestStreamScenario) =>
+  vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+    if (String(input) === DEFAULT_EXPERIENCE_BLOCK_UPDATE_URL) return defaultBlockUpdateResponse();
+    return {
+      ok: true,
+      status: 200,
+      body: createTestStream({ scenario, delayMs: 0 }),
+    } as unknown as Response;
+  });
 
 const pendingFetch = () => vi.fn().mockReturnValue(new Promise<Response>(() => {}));
 
@@ -87,7 +102,12 @@ describe("InterviewScreen", () => {
     const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("/api/interview/stream");
     expect(init.method).toBe("POST");
-    expect(JSON.parse(String(init.body))).toEqual({ snapshot: evidenceSnapshotFixture() });
+    // 첫 질문은 항상 problem.a를 겨냥합니다(이슈 #90 설계 6절).
+    expect(JSON.parse(String(init.body))).toEqual({
+      snapshot: evidenceSnapshotFixture(),
+      targetBlock: "problem",
+      targetElement: "a",
+    });
   });
 
   it("경험이 다르면 다른 스냅샷을 보낸다", () => {
@@ -335,8 +355,10 @@ describe("InterviewScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
     expect(screen.getByRole("article", { name: "You" })).toHaveTextContent("첫 답변");
-    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
-    const body = JSON.parse(fetchImpl.mock.calls[1][1].body);
+    // 답변 제출 하나가 블록 갱신 호출 하나(이슈 #90)와 다음 질문 요청 하나를 만듭니다: 첫 질문,
+    // 블록 갱신, 둘째 질문 요청 순서로 3회입니다.
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
+    const body = JSON.parse(fetchImpl.mock.calls[2][1].body);
     expect(body.history.at(-1)).toEqual({ role: "answer", text: "첫 답변" });
   });
 });

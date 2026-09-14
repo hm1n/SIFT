@@ -145,7 +145,7 @@ export async function handleInterviewQuestionStream(
      * 두 갈래를 모두 남기는 이유는 아래 갈래도 도달하기 때문입니다.
      *
      * 쿠키가 없으면 `auth_revoked`입니다. 쿠키가 있는데 `GITHUB_SESSION_ENCRYPTION_KEY`가 없거나
-     * 32바이트가 아니면 `decryptGitHubToken`이 그 `server_error`를 그대로 올립니다. 두 경우는
+     * 32바이트가 아니면 `decryptGitHubSession`이 그 `server_error`를 그대로 올립니다. 두 경우는
      * 사용자가 할 수 있는 일이 다릅니다. 앞은 다시 로그인이고 뒤는 사용자가 할 수 있는 일이
      * 없습니다.
      *
@@ -188,13 +188,13 @@ export async function handleInterviewQuestionStream(
   if (!parsed.ok) {
     return errorResponse(parsed.kind, parsed.message, REQUEST_ERROR_STATUS[parsed.kind]);
   }
-  const { snapshot, history } = parsed.body;
+  const { snapshot, history, targetBlock, targetElement, lastOutcome } = parsed.body;
 
   // 모델에 실제로 실리는 프롬프트를 서버에서 접어 보고 상한을 확인합니다. 스냅샷을 만드는 쪽에
   // 이미 상한이 있지만 이 route는 클라이언트가 보낸 값을 그대로 받으므로 여기서 한 번 더 봅니다.
   // Stage A route가 같은 이유로 같은 가드를 둡니다.
   const promptBytes = interviewQuestionPromptBytes(
-    buildInterviewQuestionPrompt(snapshot, { history, variant: options.variant })
+    buildInterviewQuestionPrompt(snapshot, { history, variant: options.variant, targetBlock, targetElement, lastOutcome })
   );
   if (promptBytes > INTERVIEW_QUESTION_MAX_PROMPT_BYTES) {
     return invalidRequest("The question evidence is over the size limit for a single request.");
@@ -204,6 +204,9 @@ export async function handleInterviewQuestionStream(
     const question = await startInterviewQuestionStream(snapshot, {
       ...options,
       history,
+      targetBlock,
+      targetElement,
+      lastOutcome,
       signal: request.signal,
     });
     return new Response(createQuestionSseStream(question, { signal: request.signal }), {

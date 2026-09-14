@@ -6,6 +6,8 @@
     "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
+    // scripts/*.mts를 Node가 그대로 실행합니다. Node의 타입 제거는 확장자가 붙은 지정자를 요구합니다.
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",

@@ -16,7 +16,9 @@
 
 기여 항목 일치/자동 추천 출처 라벨은 디자인에 대응 자리가 없어 화면에서 완전히 뺐습니다(데이터·타입은 그대로 유지, `origin`·`source` 필드는 지우지 않았습니다). 필요해지면 다시 판단합니다.
 
-행의 접근성 이름은 `aria-label={indexedTitle}`로 보이는 제목과 똑같습니다. 예전에는 `제목 · 출처: Repository`를 이름으로, 근거 문장·안내·지표 전체를 `aria-describedby`로 얹었지만, 행 콘텐츠 자체가 제목·커밋 수·기간뿐이라 더 얹을 설명이 없습니다.
+행의 접근성 이름은 `aria-label`로 보이는 제목과 똑같습니다. 예전에는 `제목 · 출처: Repository`를 이름으로, 근거 문장·안내·지표 전체를 `aria-describedby`로 얹었지만, 행 콘텐츠에 더 얹을 설명이 없습니다.
+
+> 2026-09-14 갱신(이슈 #110): 행에 토픽 줄이 하나 늘어 제목 + `{commitCount} commits · {period 시작}` + `토픽 두 개`가 되었습니다. 제목도 대표 커밋 제목이 아니라 `summary`를 씁니다. 접근성 이름은 여전히 보이는 제목과 같습니다. 토픽 줄은 `aria-label`에 넣지 않습니다. 계약은 `wiki/2026-09-14-경험후보-요약문장과-기술토픽.md`에 있습니다.
 
 ## 3. 커밋 수·기간 유도 — `candidate-period.ts`로 공유
 
@@ -24,7 +26,11 @@
 
 ## 4. 스키마 공백 처리
 
-디자인의 `CANDIDATE_WHY`(에세이형 "Why worth discussing")와 `CANDIDATE_TOPICS`(태그 배열 "Technical topics")는 대응하는 스키마 필드가 없습니다. 이슈 Non-goal이 "후보 생성 로직과 스키마 변경"을 막아 두었고, `citedFilePaths`·`source`는 성격이 달라 대체할 수 없다고 판단해, **사용자가 두 섹션 모두 "No corresponding data in the Repository schema to display this." 안내문으로 표시하기로 결정**했습니다. 디자인의 레이아웃(두 섹션의 자리)은 유지하되 내용은 채우지 않습니다.
+디자인의 `CANDIDATE_WHY`(에세이형 "Why worth discussing")와 `CANDIDATE_TOPICS`(태그 배열 "Technical topics")는 대응하는 스키마 필드가 없었습니다. 이슈 Non-goal이 "후보 생성 로직과 스키마 변경"을 막아 두었고, `citedFilePaths`·`source`는 성격이 달라 대체할 수 없다고 판단해, **사용자가 두 섹션 모두 "No corresponding data in the Repository schema to display this." 안내문으로 표시하기로 결정**했습니다. 디자인의 레이아웃(두 섹션의 자리)은 유지하되 내용은 채우지 않았습니다.
+
+실제 구현에서는 "Why worth discussing"이 `evidence`를 표시했고 안내문은 "Technical topics" 한 곳에만 남았습니다(10절의 중복분 제거).
+
+> 2026-09-14 갱신(이슈 #110): 이 결정은 끝났습니다. `ExperienceCandidate`에 `summary`와 `technicalTopics`가 생겨 "Technical topics"가 칩을 표시하고, `SCHEMA_GAP_NOTICE` 상수는 사용처가 없어져 지웠습니다. 토픽이 빈 배열인 후보는 스키마 공백이 아니라 "이 후보에서 고를 것이 없었다"는 다른 문장(`TOPICS_EMPTY_NOTICE`)을 표시합니다. 계약은 `wiki/2026-09-14-경험후보-요약문장과-기술토픽.md`에 있습니다.
 
 ## 5. Repository evidence 목록
 

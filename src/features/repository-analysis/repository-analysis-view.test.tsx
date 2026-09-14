@@ -146,7 +146,7 @@ describe("RepositoryAnalysisView 시맨틱 구조", () => {
       status: "success",
       data: RETRY_POINT.data,
       candidates: {
-        candidates: [{ sha: "sha-a-40", relatedShas: [], evidence: "근거입니다.", citedFilePaths: [], source: "automatic_recommendation" }],
+        candidates: [{ sha: "sha-a-40", relatedShas: [], summary: "경험 요약입니다.", evidence: "근거입니다.", technicalTopics: [], citedFilePaths: [], source: "automatic_recommendation" }],
         insufficientCandidatesReason: "하나뿐입니다.",
         diffs: [],
       },
@@ -455,8 +455,8 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
       data: RETRY_POINT.data,
       candidates: {
         candidates: [
-          { sha: "a1b2c3d4e5", relatedShas: [], evidence: "상태 머신을 구현했습니다.", citedFilePaths: [], source: "contribution_match" },
-          { sha: "f6e5d4c3b2", relatedShas: [], evidence: "오류 계약을 정의했습니다.", citedFilePaths: [], source: "automatic_recommendation" },
+          { sha: "a1b2c3d4e5", relatedShas: [], summary: "분석 상태 머신 구현", evidence: "상태 머신을 구현했습니다.", technicalTopics: [], citedFilePaths: [], source: "contribution_match" },
+          { sha: "f6e5d4c3b2", relatedShas: [], summary: "오류 계약 정의", evidence: "오류 계약을 정의했습니다.", technicalTopics: [], citedFilePaths: [], source: "automatic_recommendation" },
         ],
         insufficientCandidatesReason: "나머지 커밋은 diff 근거가 부족합니다.",
         diffs: [],
@@ -478,7 +478,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
       status: "success",
       data: RETRY_POINT.data,
       candidates: {
-        candidates: [{ sha, relatedShas: [], evidence: "근거입니다.", citedFilePaths: [], source: "automatic_recommendation" }],
+        candidates: [{ sha, relatedShas: [], summary: "경험 요약입니다.", evidence: "근거입니다.", technicalTopics: [], citedFilePaths: [], source: "automatic_recommendation" }],
         insufficientCandidatesReason: "하나뿐입니다.",
         diffs: [],
       },
@@ -494,7 +494,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
   });
 
   it("후보가 3개이면 부족 사유 안내 없이 후보 목록을 표시한다", async () => {
-    const candidate = { relatedShas: [], evidence: "근거입니다.", citedFilePaths: [], source: "automatic_recommendation" } as const;
+    const candidate = { relatedShas: [], summary: "경험 요약입니다.", evidence: "근거입니다.", technicalTopics: [], citedFilePaths: [], source: "automatic_recommendation" } as const;
     mockState({
       status: "success",
       data: RETRY_POINT.data,

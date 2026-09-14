@@ -1,0 +1,119 @@
+import type { ExperienceBlockState } from "@/features/experience-block/types";
+import type { InterviewHistoryMessage } from "@/features/interview/history";
+
+/**
+ * 저장 계층의 계약입니다. 표 두 개의 모양은 기능 정의서 `인터뷰 저장과 이어가기`에 있고, 여기 있는
+ * 연산은 그 문서의 "저장 시점" 표에서 그대로 옵니다.
+ *
+ * 인터페이스를 두는 이유는 테스트 때문입니다. 지금 `vitest` 테스트는 외부 상태 없이 돕니다. 라우트가
+ * 이 타입을 매개변수로 받고 기본값으로 실제 구현을 쓰면, 테스트는 `createInMemoryStore()`를 넘겨
+ * 데이터베이스 없이 그대로 돌 수 있습니다. 라우트가 `GenerateBlockUpdate`를 받는 방식과 같습니다.
+ *
+ * 실제 저장과 복원은 이 이슈의 범위가 아닙니다. Neon 구현체는 첫 호출 지점이 생기는 이슈에서 넣습니다.
+ *
+ * `unknown`으로 둔 칸은 표의 jsonb로 갑니다. `JSON.stringify`가 그대로 다룰 수 있는 값이어야 합니다.
+ * `undefined`와 `bigint`와 함수와 순환 참조는 들어갈 수 없습니다. 타입으로 막지 않고 메모리 구현이
+ * 저장할 때 JSON을 한 번 거쳐 걸러냅니다. `JsonValue` 같은 재귀 타입을 쓰면 기존 인터페이스가 그
+ * 타입에 대입되지 않아 호출하는 쪽마다 캐스팅이 붙고, 캐스팅이 붙는 순간 검사가 무력해집니다.
+ *
+ * 읽기와 쓰기를 가리지 않고 모든 연산이 `githubUserId`를 받습니다. 정리 작업인
+ * `purgeInterviewsOpenedBefore`만 예외입니다. 소유자 판정을 호출하는 쪽에 맡기지 않고 조회와 갱신
+ * 조건에 함께 넣습니다. 읽고 나서 비교하는 방식이면 비교를 빠뜨린 경로가 하나만 있어도 남의 데이터를
+ * 읽거나 쓰게 됩니다.
+ */
+export interface SiftStore {
+  saveAnalysis(input: NewAnalysis): Promise<string>;
+  /** 분석이 없거나 그 사용자의 것이 아니면 `null`입니다. 남의 분석에 인터뷰를 붙일 수 없습니다. */
+  createInterview(input: NewInterview): Promise<string | null>;
+  /**
+   * 그 턴에 오간 질문과 답변만 뒤에 이어 붙이고 블록 상태를 덮어씁니다.
+   *
+   * 이어 붙이는 이유는 서버가 매 턴 받는 이력이 최근 것만 실린 것일 수 있기 때문입니다. 받은 그대로
+   * 덮어쓰면 저장된 대화의 중간이 사라집니다.
+   *
+   * `expectedBlockVersion`이 저장된 값과 다르면 아무것도 쓰지 않고 `version_conflict`를 돌려줍니다.
+   * 다른 탭이 먼저 저장한 경우입니다.
+   *
+   * `blockState.version`이 `expectedBlockVersion`보다 정확히 1 큰 값이 아닐 때도 `version_conflict`입니다.
+   * 기대 버전만 보면 저장된 버전과 기대 버전과 새 버전이 모두 같은 요청이 몇 번이고 성공하고 버전이
+   * 오르지 않습니다. 그러면 다른 탭이 먼저 저장해도 막지 못합니다.
+   *
+   * 인터뷰가 없거나 그 사용자의 것이 아니면 `not_found`입니다. 둘을 구분하지 않습니다.
+   *
+   * 저장에 성공하면 `updatedAt`을 갱신합니다.
+   */
+  appendTurn(input: AppendTurn): Promise<AppendTurnResult>;
+  /** 마지막으로 이어간 시각이 최근인 순서입니다. */
+  listInterviews(githubUserId: number): Promise<InterviewListItem[]>;
+  /**
+   * 다른 사용자의 것이면 `null`입니다. 읽은 뒤에 비교하지 않고 조회 조건에 사용자 번호를 넣습니다.
+   *
+   * 읽기이지만 `openedAt`을 갱신하고 갱신된 값을 돌려줍니다. 이 호출이 곧 "인터뷰를 여는 것"이고,
+   * `openedAt`이 90일 자동 정리의 기준이기 때문입니다. 갱신하지 않으면 매일 여는 인터뷰도 만든 지
+   * 90일이면 지워집니다.
+   */
+  getInterview(id: string, githubUserId: number): Promise<StoredInterview | null>;
+  /** 지운 것이 없으면 `false`입니다. 없는 경우와 남의 것인 경우를 구분하지 않습니다. */
+  deleteInterview(id: string, githubUserId: number): Promise<boolean>;
+  /** 마지막으로 연 시각이 `before`보다 오래된 인터뷰를 지우고 지운 수를 돌려줍니다. */
+  purgeInterviewsOpenedBefore(before: Date): Promise<number>;
+}
+
+export interface NewAnalysis {
+  readonly githubUserId: number;
+  readonly repoOwner: string;
+  readonly repoName: string;
+  readonly contributionItems: unknown;
+  readonly candidates: unknown;
+  readonly stageASummary: unknown;
+}
+
+export interface NewInterview {
+  readonly githubUserId: number;
+  readonly analysisId: string;
+  readonly candidateKey: string;
+  readonly title: string;
+  readonly evidence: unknown;
+}
+
+export interface AppendTurn {
+  readonly githubUserId: number;
+  readonly interviewId: string;
+  readonly turn: readonly InterviewHistoryMessage[];
+  readonly blockState: ExperienceBlockState;
+  readonly expectedBlockVersion: number;
+}
+
+export type AppendTurnResult = "saved" | "version_conflict" | "not_found";
+
+export type InterviewStatus = "in_progress" | "completed";
+
+/**
+ * 시간 칸이 셋이고 뜻이 각각 다릅니다. 표의 `created_at`, `updated_at`, `opened_at`에 맞닿습니다.
+ *
+ * - `createdAt`은 인터뷰를 만든 때입니다. 바뀌지 않습니다.
+ * - `updatedAt`은 마지막으로 이어간 때입니다. `appendTurn`이 갱신하고, 목록이 화면에 보이는 값입니다.
+ * - `openedAt`은 마지막으로 연 때입니다. `getInterview`가 갱신하고, 90일 자동 정리의 기준입니다.
+ *
+ * 하나로 합치지 않는 이유는 둘의 쓰임이 다르기 때문입니다. 목록에서 고르기만 하고 답을 달지 않아도
+ * 사용자는 그 인터뷰를 쓰고 있으므로 정리 대상이 아니어야 합니다.
+ */
+export interface InterviewListItem {
+  readonly id: string;
+  readonly repoOwner: string;
+  readonly repoName: string;
+  readonly title: string;
+  readonly status: InterviewStatus;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+  readonly openedAt: Date;
+}
+
+export interface StoredInterview extends InterviewListItem {
+  readonly analysisId: string;
+  readonly candidateKey: string;
+  readonly evidence: unknown;
+  readonly history: readonly InterviewHistoryMessage[];
+  readonly blockState: ExperienceBlockState;
+  readonly blockVersion: number;
+}

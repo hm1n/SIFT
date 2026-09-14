@@ -109,11 +109,13 @@ export interface AuthoredCommitsResult {
   repositoryHasCommits: boolean;
 }
 
-interface AuthenticatedUser {
+export interface AuthenticatedUser {
+  /** 세션 쿠키와 저장 계층이 쓰는 식별자입니다. login은 사용자가 바꿀 수 있어서 키로 쓰지 않습니다. */
+  id: number;
   login: string;
 }
 
-export async function fetchAuthenticatedUserLogin(token: string): Promise<string> {
+export async function fetchAuthenticatedUser(token: string): Promise<AuthenticatedUser> {
   const response = await githubFetch(`${GITHUB_API_BASE}/user`, token);
   if (!response.ok) {
     throw new GitHubFetchError(
@@ -121,11 +123,18 @@ export async function fetchAuthenticatedUserLogin(token: string): Promise<string
       `Could not fetch the authenticated user (${response.status})`
     );
   }
-  const data = await parseJson<AuthenticatedUser>(
+  const data = await parseJson<Partial<AuthenticatedUser>>(
     response,
     "Could not parse the authenticated user response"
   );
-  return data.login;
+  if (!Number.isSafeInteger(data.id) || (data.id ?? 0) <= 0 || typeof data.login !== "string" || data.login === "") {
+    throw new GitHubFetchError("server_error", "인증 사용자 응답에 사용자 번호나 아이디가 없습니다");
+  }
+  return { id: data.id as number, login: data.login };
+}
+
+export async function fetchAuthenticatedUserLogin(token: string): Promise<string> {
+  return (await fetchAuthenticatedUser(token)).login;
 }
 
 export async function fetchRepoInfo({ owner, repo, token }: GitHubAuth): Promise<RepoInfo> {

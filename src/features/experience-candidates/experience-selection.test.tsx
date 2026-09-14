@@ -36,10 +36,18 @@ const commit = (
   pullRequests: [],
 });
 
+/**
+ * 이 파일의 관심은 확정 전이와 근거 스냅샷이라 행을 커밋 제목으로 찾습니다. `summary`를 비워
+ * 제목이 대표 커밋 제목으로 떨어지게 두면 선택자를 바꾸지 않고 그 관심만 볼 수 있습니다.
+ * 제목을 `summary`가 정한다는 계약 자체는 `experience-candidate-list.test.tsx`와
+ * `experience-candidate-detail.test.tsx`가 봅니다.
+ */
 const candidate = (sha: string, overrides: Partial<ExperienceCandidate> = {}): ExperienceCandidate => ({
   sha,
   relatedShas: [],
+  summary: "",
   evidence: `${sha}의 Repository 근거입니다.`,
+  technicalTopics: [],
   citedFilePaths: [],
   source: "automatic_recommendation",
   ...overrides,

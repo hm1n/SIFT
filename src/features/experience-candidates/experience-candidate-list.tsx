@@ -5,7 +5,8 @@ import type { ExperienceCandidateListItem, StageBCandidateResult } from "./types
 import type { CandidateDataOutput, ReadonlyCommitDetail } from "@/lib/github/types";
 import type { RepositoryRef } from "@/lib/github/types";
 import { VERIFIABILITY_LABEL } from "./evidence-verifiability";
-import { commitTitle, deriveCandidatePeriod, pluralCount } from "./candidate-period";
+import { candidateTitle, deriveCandidatePeriod, pluralCount } from "./candidate-period";
+import { MAX_TECHNICAL_TOPICS } from "./schema";
 import { ExperienceCandidateDetail } from "./experience-candidate-detail";
 import { InterviewScreen } from "@/features/interview/interview-screen";
 import { confirmExperienceSelection, type ExperienceSelectionState } from "./experience-selection";
@@ -30,6 +31,9 @@ export interface StageASelectionDisplay {
   readonly unjudgedShas: readonly string[];
 }
 
+/** 행에 보여줄 토픽 수입니다. 디자인 목록 행은 제목·커밋 수·기간까지라 두 개 넘으면 빽빽해집니다. */
+const ROW_TOPIC_COUNT = 2;
+
 export function createExperienceCandidateListItems(
   data: CandidateDataOutput,
   candidates: StageBCandidateResult
@@ -41,6 +45,11 @@ export function createExperienceCandidateListItems(
     origin: "repository",
     normalizedRelatedShas: [...new Set(candidate.relatedShas.filter((sha) => sha !== candidate.sha))],
     normalizedCitedFilePaths: [...new Set(candidate.citedFilePaths)],
+    // 스키마가 빈 문자열과 개수 초과를 거부하지 않으므로(이유는 `MAX_TECHNICAL_TOPICS`) 여기서
+    // 거릅니다. 토픽 문자열을 React `key`로 쓰기 때문에 중복 제거가 필요합니다.
+    normalizedTechnicalTopics: [
+      ...new Set(candidate.technicalTopics.map((topic) => topic.trim()).filter((topic) => topic.length > 0)),
+    ].slice(0, MAX_TECHNICAL_TOPICS),
   }));
 }
 
@@ -102,8 +111,8 @@ export function ExperienceCandidateList({
             </p>
           ) : null}
           <ul className={styles.candidateList} aria-label="Candidates">
-            {items.map(({ candidate, commit, normalizedRelatedShas }) => {
-              const indexedTitle = commitTitle(commit, candidate.sha);
+            {items.map(({ candidate, commit, normalizedRelatedShas, normalizedTechnicalTopics }) => {
+              const title = candidateTitle(candidate, commit);
               const selected = candidate.sha === selectedSha;
               const commitCount = 1 + normalizedRelatedShas.length;
               const relatedDates = normalizedRelatedShas
@@ -116,17 +125,24 @@ export function ExperienceCandidateList({
                     type="button"
                     className={selected ? styles.selectedRow : styles.row}
                     aria-current={selected ? "true" : undefined}
-                    aria-label={indexedTitle}
+                    aria-label={title}
                     onClick={() => {
                       setSelectedSha(candidate.sha);
                       setSelection({ status: "idle" });
                     }}
                   >
-                    <span className={styles.title}>{indexedTitle}</span>
+                    <span className={styles.title}>{title}</span>
                     <span className={styles.rowMeta}>
                       <span>{pluralCount(commitCount, "commit")}</span>
                       {period ? <span>{period.start}</span> : null}
                     </span>
+                    {/* 토픽이 없는 후보는 줄 자체를 그리지 않습니다. 행 높이가 후보마다 달라지는 편이
+                        빈 줄로 자리를 잡아 두는 것보다 낫습니다. 없다는 사실은 상세가 알립니다. */}
+                    {normalizedTechnicalTopics.length > 0 ? (
+                      <span className={styles.rowTopics}>
+                        {normalizedTechnicalTopics.slice(0, ROW_TOPIC_COUNT).join(" · ")}
+                      </span>
+                    ) : null}
                   </button>
                 </li>
               );

@@ -6,7 +6,7 @@ import { CodePanel } from "./code-panel";
 import { InterviewStreamView } from "./interview-stream-view";
 import { PAAR_BLOCK_COUNT, PaarPanel } from "./paar-panel";
 import { ResizeHandle } from "./resize-handle";
-import { useInterviewStream } from "./use-interview-stream";
+import { useExperienceInterview } from "@/features/experience-block/use-experience-interview";
 import styles from "./interview-screen.module.css";
 
 export interface InterviewScreenProps {
@@ -74,7 +74,7 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
    * 종료 조작이 오른쪽 PAAR 패널 아래에 있고 종료 상태를 읽는 것은 가운데 대화 열입니다. 두 열은
    * 형제라 한쪽이 훅을 들면 다른 쪽이 볼 수 없습니다. 공통 부모인 여기서 들고 양쪽에 나눠 줍니다.
    */
-  const stream = useInterviewStream({ snapshot, fetchImpl });
+  const stream = useExperienceInterview({ snapshot, fetchImpl });
 
   const title =
     snapshot.representativeCommit.title ??

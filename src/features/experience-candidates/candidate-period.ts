@@ -1,4 +1,5 @@
 import type { ReadonlyCommitDetail } from "@/lib/github/types";
+import type { ExperienceCandidate } from "./types";
 
 /**
  * 디자인의 `Candidate.period`·`commitCount`에 대응하는 값을 스키마 변경 없이 화면에서 유도합니다.
@@ -32,7 +33,21 @@ export function pluralCount(count: number, noun: string): string {
   return `${count} ${count === 1 ? noun : `${noun}s`}`;
 }
 
-/** 목록 행·상세가 공통으로 쓰는 표시용 제목입니다. 색인에서 커밋을 못 찾으면 SHA 7자리로 대신합니다. */
+/** 근거 목록의 커밋 한 줄에 쓰는 제목입니다. 색인에서 커밋을 못 찾으면 SHA 7자리로 대신합니다. */
 export function commitTitle(commit: ReadonlyCommitDetail | null, sha: string): string {
   return commit?.title ?? `Commit not indexed · ${sha.slice(0, 7)}`;
+}
+
+/**
+ * 목록 행과 상세 `h2`가 공통으로 쓰는 후보 제목입니다.
+ *
+ * 대표 커밋 제목을 그대로 쓰면 conventional commit의 type prefix가 드러나 후보가 어떤 경험인지
+ * 알기 어려워 `summary`로 바꿨습니다(이슈 #110). 스키마가 빈 `summary`를 허용하므로 비었을 때는
+ * 이전대로 대표 커밋 제목을 씁니다. 목록과 상세가 서로 다른 제목을 보이지 않도록 한 곳에 둡니다.
+ */
+export function candidateTitle(
+  candidate: Pick<ExperienceCandidate, "sha" | "summary">,
+  commit: ReadonlyCommitDetail | null
+): string {
+  return candidate.summary.trim() || commitTitle(commit, candidate.sha);
 }

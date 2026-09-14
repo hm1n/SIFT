@@ -1,4 +1,5 @@
-import { createGitHubSessionCookie, encryptGitHubToken } from "@/lib/github/auth-session";
+import { createGitHubSessionCookie, encryptGitHubSession, type GitHubSession } from "@/lib/github/auth-session";
+import { fetchAuthenticatedUser } from "@/lib/github/commits";
 import { GitHubFetchError } from "@/lib/github/errors";
 import {
   GITHUB_OAUTH_STATE_COOKIE,
@@ -29,19 +30,26 @@ export async function GET(request: NextRequest): Promise<Response> {
     return redirect(request, "state_mismatch", false);
   }
   if (query.has("error")) return redirect(request, "access_denied");
-  let token: string;
+  let session: GitHubSession;
   try {
     const config = getGitHubOAuthConfig(request.url);
     const code = query.get("code");
     if (!code) throw new Error("GitHub OAuth code is missing");
-    token = await exchangeGitHubCode(config, code);
+    const token = await exchangeGitHubCode(config, code);
+    /**
+     * 사용자 번호 조회를 쿠키를 굽는 단계와 나눠 둡니다. 아래 단계의 `server_error`는 암호화 키가
+     * 없거나 32바이트가 아닌 경우뿐이라 `config_missing`이 맞지만, `/user` 실패의 `server_error`는
+     * 로그인 설정 문제가 아닙니다. 한 갈래로 묶으면 GitHub이 잠시 답하지 않을 때 사용자가 서버
+     * 설정을 고치라는 안내를 받습니다.
+     */
+    session = { token, githubUserId: (await fetchAuthenticatedUser(token)).id };
   } catch (error) {
     if (error instanceof GitHubOAuthConfigError) return redirect(request, "config_missing");
     return redirect(request, "exchange_failed");
   }
   try {
     const headers = new Headers({ Location: new URL("/", request.url).toString() });
-    headers.append("Set-Cookie", createGitHubSessionCookie(encryptGitHubToken(token)));
+    headers.append("Set-Cookie", createGitHubSessionCookie(encryptGitHubSession(session)));
     headers.append("Set-Cookie", deleteOAuthStateCookie());
     return new Response(null, { status: 302, headers });
   } catch (error) {

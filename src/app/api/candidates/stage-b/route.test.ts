@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
-import { encryptGitHubToken, GITHUB_SESSION_COOKIE, GITHUB_SESSION_KEY_ENV } from "@/lib/github/auth-session";
+import { encryptGitHubSession, GITHUB_SESSION_COOKIE, GITHUB_SESSION_KEY_ENV } from "@/lib/github/auth-session";
 import { ExperienceCandidateOutputError } from "@/features/experience-candidates/errors";
 import { STAGE_B_MAX_INPUT_COMMITS, STAGE_B_MAX_PATCH_CHARS, STAGE_B_MAX_TOTAL_PATCH_CHARS } from "@/features/experience-candidates/stage-b";
 import { GitHubFetchError } from "@/lib/github/errors";
@@ -10,7 +10,7 @@ const sha = "a".repeat(40);
 const otherSha = "b".repeat(40);
 const candidate = { sha, source: "automatic_recommendation" as const, contributionItem: null };
 function request(value: unknown, authenticated = true) {
-  return new NextRequest("https://example.com/api/candidates/stage-b", { method: "POST", headers: authenticated ? { cookie: `${GITHUB_SESSION_COOKIE}=${encryptGitHubToken("token")}` } : undefined, body: JSON.stringify(value) });
+  return new NextRequest("https://example.com/api/candidates/stage-b", { method: "POST", headers: authenticated ? { cookie: `${GITHUB_SESSION_COOKIE}=${encryptGitHubSession({ token: "token", githubUserId: 4472785 })}` } : undefined, body: JSON.stringify(value) });
 }
 const detail = { sha, title: "a", author: "me", date: "date", parentCount: 1, message: "a", additions: 1, deletions: 0, changedFiles: 1, files: [{ path: "src/a.ts", status: "modified", additions: 1, deletions: 0, changes: 1, patch: "diff" }], pullRequests: [] };
 
@@ -30,7 +30,7 @@ describe("POST /api/candidates/stage-b", () => {
   });
 
   it("최종 후보에 포함된 SHA의 diff만 반환한다", async () => {
-    const response = await handleStageB(request({ owner: "o", repo: "r", candidates: [candidate] }), async () => ({ candidates: [{ sha, relatedShas: [], evidence: "근거", citedFilePaths: ["src/a.ts"], source: "automatic_recommendation" }], insufficientCandidatesReason: "하나뿐" }), undefined, async () => detail);
+    const response = await handleStageB(request({ owner: "o", repo: "r", candidates: [candidate] }), async () => ({ candidates: [{ sha, relatedShas: [], summary: "경험 요약 한 줄", evidence: "근거", technicalTopics: ["TypeScript"], citedFilePaths: ["src/a.ts"], source: "automatic_recommendation" }], insufficientCandidatesReason: "하나뿐" }), undefined, async () => detail);
     expect(response.status).toBe(200);
     expect((await response.json()).diffs).toEqual([{ sha, files: detail.files }]);
   });
@@ -125,7 +125,7 @@ describe("POST /api/candidates/stage-b", () => {
       path: `src/${index}.ts`,
       patch: "x".repeat(index === 0 ? STAGE_B_MAX_PATCH_CHARS + 1 : STAGE_B_MAX_PATCH_CHARS),
     }));
-    const response = await handleStageB(request({ owner: "o", repo: "r", candidates: [candidate] }), async () => ({ candidates: [{ sha, relatedShas: [], evidence: "근거", citedFilePaths: ["src/0.ts"], source: candidate.source }], insufficientCandidatesReason: "부족" }), undefined, async () => ({ ...detail, files }));
+    const response = await handleStageB(request({ owner: "o", repo: "r", candidates: [candidate] }), async () => ({ candidates: [{ sha, relatedShas: [], summary: "경험 요약 한 줄", evidence: "근거", technicalTopics: ["TypeScript"], citedFilePaths: ["src/0.ts"], source: candidate.source }], insufficientCandidatesReason: "부족" }), undefined, async () => ({ ...detail, files }));
     const body = await response.json();
     expect(body.diffs[0].files[0].patchTruncated).toBe(true);
     expect(body.diffs[0].files.at(-1).patchTruncated).toBe(true);

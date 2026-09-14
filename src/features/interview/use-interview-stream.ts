@@ -7,9 +7,38 @@ import {
   interviewHistoryItemBytes,
   trimInterviewHistory,
   type InterviewHistoryMessage,
+  type InterviewLastOutcome,
 } from "./history";
 import { runInterviewStream, type InterviewStreamStatus } from "./interview-stream-client";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
+import type { BlockElement, BlockKind } from "@/features/experience-block/types";
+
+/** 질문이 겨냥하는 블록·요소입니다(이슈 #90). `null`은 대상 없는 일반 질문입니다. */
+export type InterviewQuestionTarget = { readonly targetBlock: BlockKind; readonly targetElement: BlockElement } | null;
+
+/**
+ * `onBeforeQuestion`의 결과입니다(이슈 #90, 구현검토 2026-09-11 P1-5·P1-4 재검증).
+ *
+ * - `"ask"`: 대상으로 다음 질문을 요청합니다. `lastOutcome`은 눈에 띄는 결과가 있을 때만
+ *   호출부가 채웁니다.
+ * - `"ready_to_finish"`: 더 물을 유효한 후보가 없습니다(설계 6-2절 6번). 새 질문을 생성하는 대신
+ *   완료 대기 안내를 "질문" 자리에 넣어 질문·답변이 번갈아 나오는 이력 계약을 지킵니다. 이 자리가
+ *   없으면 종료 전 보충 답변을 받을 때 마지막 두 메시지가 답변·답변이 되어, 그다음 진짜 질문을
+ *   요청할 때 서버가 이력 모양을 거절합니다(구현검토 2026-09-11 P1-4, 재검증에서 발견한 회귀).
+ * - `"stop"`: 언마운트·상한 도달처럼 안내 없이 그대로 멈춰야 합니다.
+ */
+export type InterviewQuestionOutcome =
+  | { readonly kind: "ask"; readonly target: NonNullable<InterviewQuestionTarget>; readonly lastOutcome: InterviewLastOutcome | null }
+  | { readonly kind: "ready_to_finish" }
+  | { readonly kind: "stop" };
+
+/**
+ * `"ready_to_finish"`일 때 질문 자리에 넣는 완료 대기 안내입니다. 실제 모델이 만든 질문이
+ * 아니라 이 훅이 고정 문구로 채우는 것이라, 질문·답변 교대 이력 계약을 깨지 않으면서도 종료 전
+ * 보충 답변을 받을 자리를 만듭니다(설계 6-2절 6번, 6-3절, 구현검토 2026-09-11 P1-4 재검증).
+ */
+export const READY_TO_FINISH_PROMPT =
+  "지금까지 답변으로 확인할 내용은 충분합니다. 더 남기고 싶은 내용이 있다면 이어서 답해 주세요. 없다면 종료를 눌러 마무리할 수 있습니다.";
 
 export type InterviewStreamPhase = "idle" | InterviewStreamStatus;
 
@@ -44,6 +73,24 @@ export interface UseInterviewStreamOptions {
   /** 테스트에서 프레임 스케줄러를 대체하기 위한 통로입니다. */
   scheduleFrame?: (callback: () => void) => number;
   cancelFrame?: (handle: number) => void;
+  /**
+   * 첫 질문이 겨냥할 블록·요소입니다(이슈 #90). 이력이 없는 첫 `start()` 호출에만 씁니다. 첫
+   * 질문의 대상은 항상 problem.a로 정해져 있어(설계 6절) 비동기 계산이 필요 없으므로 값을 그대로
+   * 받습니다.
+   */
+  initialTarget?: InterviewQuestionTarget;
+  /**
+   * 답변 제출 뒤, 질문을 요청하기 전에 끼워 넣을 비동기 작업입니다(이슈 #90 Approach 4, "답변
+   * 제출부터 질문 요청까지를 하나의 취소 가능한 작업으로 묶는다"). 블록 갱신 호출과 다음 질문 대상
+   * 선택이 여기 들어갑니다.
+   *
+   * `"ask"`이면 그 대상(과, 있으면 직전 처리 결과)으로 질문을 요청합니다. `"ready_to_finish"`면 새 질문을 생성하는 대신 완료 대기 안내를 질문 자리에 넣고(설계 6-2절 6번, 6-3절 보충 답변) 상태를 `"done"`으로 둡니다. `"stop"`이면 안내 없이 그대로 멈추고 상태만 `"done"`으로 둡니다. 이 콜백은 실패를 던지지 않는 것을 전제합니다. 블록 갱신이 실패해도 질문은 그대로 요청해야 하므로(설계 9절), 실패 처리는 호출자가 안에서 끝내고 그래도 유효한 결과를 돌려줘야 합니다.
+   *
+   * 없으면 이전 계약처럼 답변 제출과 동시에 대상 없는 질문을 요청합니다.
+   */
+  onBeforeQuestion?: (context: {
+    readonly history: readonly InterviewHistoryMessage[];
+  }) => Promise<InterviewQuestionOutcome>;
 }
 
 export interface InterviewStreamState {
@@ -152,6 +199,8 @@ export function useInterviewStream({
   sleep,
   scheduleFrame = defaultScheduleFrame,
   cancelFrame = defaultCancelFrame,
+  initialTarget = null,
+  onBeforeQuestion,
 }: UseInterviewStreamOptions): InterviewStreamState {
   const [messages, setMessages] = useState<readonly InterviewStreamMessage[]>([]);
   const [status, setStatus] = useState<InterviewStreamPhase>("idle");
@@ -174,6 +223,27 @@ export function useInterviewStream({
   const frameRef = useRef<number | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const lastSeqRef = useRef(0);
+  /**
+   * 언마운트됐는지입니다. `onBeforeQuestion`은 이 훅이 사라진 뒤에도 끝날 수 있는데(그 안의
+   * 블록 갱신은 자신의 언마운트 가드로 멈추지만, 이 콜백 자체는 그 훅이 던지지 않는 한 계속
+   * 기다려집니다), 이미 내려간 화면에서 다음 질문 `start()`를 부르면 안 됩니다(구현검토
+   * 2026-09-11 P1-3, R5). `isEndedRef`로는 이 경우를 잡지 못합니다. 언마운트는 종료가 아니고
+   * `submissionSeqRef` 비교도 새 제출이 없으면 그대로 통과하기 때문입니다.
+   */
+  const unmountedRef = useRef(false);
+  // 다음 `start()` 호출이 실을 대상입니다. `submitAnswer`가 `onBeforeQuestion`에서 정해 두고
+  // `start()`가 한 번 읽고 비웁니다. 첫 호출(이력 없음)에는 `initialTarget`을 그대로 씁니다.
+  const pendingTargetRef = useRef<InterviewQuestionTarget>(initialTarget);
+  /**
+   * 다음 `start()` 호출이 함께 실을 직전 처리 결과입니다(이슈 #90, 구현검토 2026-09-11 P1-5).
+   * `pendingTargetRef`와 같은 자리에서 같은 방식으로 씁니다. `retry()`도 이 값을 그대로 읽으므로
+   * 재시도가 다른 맥락을 겨냥하는 일은 없습니다.
+   */
+  const pendingLastOutcomeRef = useRef<InterviewLastOutcome | null>(null);
+  // `onBeforeQuestion` 진행 중에 새 제출이나 종료가 오면 그 결과를 버려야 합니다(이슈 #90 Approach
+  // 4, "이전 작업의 늦은 응답은 반영하지 않는다"). 제출마다 값을 올려 이 응답이 최신 제출의
+  // 것인지 확인합니다.
+  const submissionSeqRef = useRef(0);
   const optionsRef = useRef({
     url,
     snapshot,
@@ -182,11 +252,12 @@ export function useInterviewStream({
     sleep,
     scheduleFrame,
     cancelFrame,
+    onBeforeQuestion,
   });
   // 실행 중인 스트림이 최신 옵션을 보게 하되 옵션이 바뀔 때마다 스트림을 다시 시작하지는
   // 않습니다. ref 갱신은 렌더 도중이 아니라 렌더가 끝난 뒤에 합니다.
   useEffect(() => {
-    optionsRef.current = { url, snapshot, fetchImpl, retryDelaysMs, sleep, scheduleFrame, cancelFrame };
+    optionsRef.current = { url, snapshot, fetchImpl, retryDelaysMs, sleep, scheduleFrame, cancelFrame, onBeforeQuestion };
   });
 
   const updateMessages = useCallback(
@@ -263,15 +334,24 @@ export function useInterviewStream({
       cancelScheduledFrame();
       setReceivedSeq(0);
 
+      // 이번 요청이 겨냥할 대상입니다. `submitAnswer`의 `onBeforeQuestion`이 정해 두거나(꼬리
+      // 질문), `initialTarget`에서 왔습니다(첫 질문). `retry`도 같은 값을 그대로 읽으므로 재시도가
+      // 다른 블록을 겨냥하는 일은 없습니다.
+      const target = pendingTargetRef.current;
+      const targetFields = target === null ? {} : { targetBlock: target.targetBlock, targetElement: target.targetElement };
+      // 이력이 없는 첫 질문에는 직전 처리 결과가 있을 수 없습니다(구현검토 2026-09-11 P1-5).
+      const lastOutcome = pendingLastOutcomeRef.current;
+      const lastOutcomeFields = lastOutcome === null ? {} : { lastOutcome };
+
       const history = toHistory(messagesRef.current);
       if (history.length === 0) {
-        // 첫 질문입니다. 이슈 #76 이전과 같은 본문을 보냅니다.
+        // 첫 질문입니다. 이슈 #76 이전과 같은 본문을 보냅니다(대상이 없을 때).
         setRemovedHistory([]);
-        body = JSON.stringify({ snapshot: current.snapshot });
+        body = JSON.stringify({ snapshot: current.snapshot, ...targetFields });
       } else {
         const trimmed = trimInterviewHistory(history);
         setRemovedHistory(trimmed.removed);
-        body = JSON.stringify({ snapshot: current.snapshot, history: trimmed.history });
+        body = JSON.stringify({ snapshot: current.snapshot, history: trimmed.history, ...targetFields, ...lastOutcomeFields });
       }
     }
 
@@ -346,7 +426,10 @@ export function useInterviewStream({
    * 없습니다.
    */
   const endInterview = useCallback(() => {
-    if (isEndedRef.current) return;
+    // 언마운트 뒤 호출되면(예: 부모 훅의 상한 종료 effect가 정리 전 마지막으로 부르는 경우) 상태
+    // 갱신을 하지 않습니다. 새 요청을 일으키지는 않는 경로라 P3지만, 수정 비용이 작아 함께
+    // 반영합니다(구현검토 2026-09-11 P1-3 재검증).
+    if (unmountedRef.current || isEndedRef.current) return;
     isEndedRef.current = true;
     setIsEnded(true);
     abortRef.current?.abort();
@@ -361,6 +444,11 @@ export function useInterviewStream({
     setIsLastQuestionTooLong(false);
   }, [flushNow, updateMessages]);
 
+  // 마지막 메시지가 "질문"이어야 한다는 조건은 그대로 둡니다. 완료 대기 상태에서도 이 불변식이
+  // 깨지지 않도록 `onBeforeQuestion`이 "ready_to_finish"를 돌려주면 완료 대기 안내를 질문 자리에
+  // 넣습니다(아래 `.then()` 참고). 답변을 답변 뒤에 그대로 이어 붙이면 질문·답변 교대 이력 계약이
+  // 깨져, 그다음 실제 질문 요청에서 서버가 이력 모양을 거절합니다(구현검토 2026-09-11 P1-4 1차
+  // 수정의 회귀, 재검증에서 발견).
   const canSubmitAnswer =
     !isEnded &&
     snapshot !== undefined &&
@@ -396,7 +484,34 @@ export function useInterviewStream({
         return [...previous, { id: `message-${messageCountRef.current}`, ...answer, isStreaming: false }];
       });
       setStatus("connecting");
-      start();
+      const onBeforeQuestion = optionsRef.current.onBeforeQuestion;
+      if (onBeforeQuestion === undefined) {
+        start();
+        return true;
+      }
+      // 답변 제출부터 질문 요청까지를 하나의 취소 가능한 작업으로 묶습니다(이슈 #90 Approach 4).
+      // 이 사이 새 제출이나 종료가 오면 이 결과는 버립니다.
+      const submissionId = ++submissionSeqRef.current;
+      const historyForBeforeQuestion = toHistory(messagesRef.current);
+      void onBeforeQuestion({ history: historyForBeforeQuestion }).then((outcome) => {
+        if (unmountedRef.current || isEndedRef.current || submissionSeqRef.current !== submissionId) return;
+        if (outcome.kind === "stop") {
+          setStatus("done");
+          return;
+        }
+        if (outcome.kind === "ready_to_finish") {
+          // 유효한 질문 후보가 없습니다(설계 6-2절 6번). 완료 대기 안내를 "질문" 자리에 넣어 종료 전 보충 답변을 받을 때도(설계 6-3절) 질문·답변 교대 계약이 깨지지 않게 합니다.
+          updateMessages((previous) => {
+            messageCountRef.current += 1;
+            return [...previous, { id: `message-${messageCountRef.current}`, role: "question", text: READY_TO_FINISH_PROMPT, isStreaming: false }];
+          });
+          setStatus("done");
+          return;
+        }
+        pendingTargetRef.current = outcome.target;
+        pendingLastOutcomeRef.current = outcome.lastOutcome;
+        start();
+      });
       return true;
     },
     [start, updateMessages]
@@ -409,6 +524,14 @@ export function useInterviewStream({
       cancelScheduledFrame();
     };
   }, [autoStart, cancelScheduledFrame, start]);
+
+  // 진짜 언마운트만 잡습니다. 빈 의존성 배열이라 위 effect처럼 `start`가 바뀔 때마다 다시 돌지
+  // 않습니다. 같이 두면 재실행마다 "언마운트됨"으로 잘못 표시합니다.
+  useEffect(() => {
+    return () => {
+      unmountedRef.current = true;
+    };
+  }, []);
 
   return {
     messages,

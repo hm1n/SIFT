@@ -6,7 +6,9 @@ import { isExperienceEvidenceSnapshot, SNAPSHOT_BODY_BYTES } from "@/features/in
 import { byteLength, CLAIMS_STATE_MAX_BYTES, evidenceIndex } from "./reducer";
 import {
   BLOCK_KINDS,
+  isBlockElement,
   isBlockKind,
+  type BlockElement,
   type BlockEvaluation,
   type BlockKind,
   type Claim,
@@ -30,6 +32,12 @@ export interface ExperienceBlockRequestBody {
   readonly history: readonly BlockUpdateTurn[];
   readonly state: ExperienceBlockState;
   readonly targetBlock: BlockKind;
+  /**
+   * 이번 질문이 겨냥한 블록 목적의 두 요소 중 하나입니다(`BLOCK_ELEMENT_PURPOSES`). 이슈 #90의
+   * "같은 부족 요소에 최대 1회 재질문" 규칙을 추적하는 최소 단위이고, 이 값 자체는 클라이언트 훅이
+   * 다음 질문을 고를 때 결정합니다. 이 route는 프롬프트에 실어 모델에게 초점을 알리는 데만 씁니다.
+   */
+  readonly targetElement: BlockElement;
   readonly answerTurnId: string;
 }
 
@@ -258,6 +266,9 @@ export function parseExperienceBlockRequestBody(value: unknown): ExperienceBlock
   if (!isBlockKind(value.targetBlock)) {
     return { ok: false, kind: "invalid_request", message: "대상 블록이 올바르지 않습니다." };
   }
+  if (!isBlockElement(value.targetElement)) {
+    return { ok: false, kind: "invalid_request", message: "대상 요소가 올바르지 않습니다." };
+  }
   if (!isNonEmptyString(value.answerTurnId)) {
     return { ok: false, kind: "invalid_request", message: "처리할 답변의 턴 ID가 필요합니다." };
   }
@@ -300,6 +311,7 @@ export function parseExperienceBlockRequestBody(value: unknown): ExperienceBlock
       history,
       state: value.state,
       targetBlock: value.targetBlock,
+      targetElement: value.targetElement,
       answerTurnId: value.answerTurnId,
     },
   };

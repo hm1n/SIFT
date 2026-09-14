@@ -65,7 +65,9 @@ const related: ReadonlyCommitDetail = {
 const candidate: ExperienceCandidate = {
   sha: representative.sha,
   relatedShas: [related.sha],
+  summary: "경험 요약 한 줄",
   evidence: "재시도 큐를 도입해 알림 유실을 줄인 경험입니다.",
+  technicalTopics: ["TypeScript"],
   citedFilePaths: ["src/queue.ts"],
   source: "contribution_match",
 };
@@ -86,6 +88,7 @@ function listItem(
     origin: "repository",
     normalizedRelatedShas: [...new Set(target.relatedShas.filter((sha) => sha !== target.sha))],
     normalizedCitedFilePaths: [...new Set(target.citedFilePaths)],
+    normalizedTechnicalTopics: [...new Set(target.technicalTopics)],
     ...overrides,
   };
 }

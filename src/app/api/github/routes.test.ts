@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { encryptGitHubToken, GITHUB_SESSION_COOKIE, GITHUB_SESSION_KEY_ENV } from "@/lib/github/auth-session";
+import { encryptGitHubSession, GITHUB_SESSION_COOKIE, GITHUB_SESSION_KEY_ENV } from "@/lib/github/auth-session";
 import { POST as commits } from "./commits/route";
 import { POST as details } from "./commit-details/route";
 import { POST as metadata } from "./repository-meta/route";
@@ -14,7 +14,7 @@ function request(body: unknown) {
 }
 
 function authenticatedRequest(body: unknown) {
-  const cookie = `${GITHUB_SESSION_COOKIE}=${encryptGitHubToken("secret")}`;
+  const cookie = `${GITHUB_SESSION_COOKIE}=${encryptGitHubSession({ token: "secret", githubUserId: 4472785 })}`;
   return new NextRequest("http://localhost/api/github/test", {
     method: "POST",
     headers: { "Content-Type": "application/json", cookie },
@@ -23,7 +23,7 @@ function authenticatedRequest(body: unknown) {
 }
 
 function rawRequest(body: string, authenticated = false) {
-  const cookie = authenticated ? `${GITHUB_SESSION_COOKIE}=${encryptGitHubToken("secret")}` : "";
+  const cookie = authenticated ? `${GITHUB_SESSION_COOKIE}=${encryptGitHubSession({ token: "secret", githubUserId: 4472785 })}` : "";
   return new NextRequest("http://localhost/api/github/test", {
     method: "POST",
     headers: { "Content-Type": "application/json", ...(cookie ? { cookie } : {}) },

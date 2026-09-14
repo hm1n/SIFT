@@ -8,6 +8,7 @@ import {
   STAGE_B_MAX_PATCH_CHARS,
   STAGE_B_MAX_TOTAL_PATCH_CHARS,
 } from "./stage-b";
+import { MAX_TECHNICAL_TOPICS } from "./schema";
 
 // `createStageBGenerate`가 실제로 보내는 시스템 프롬프트를 가로채기 위한 부분 모킹입니다.
 // `generateObject`만 대체하고 나머지(`APICallError`, `RetryError`)는 실제 구현을 씁니다.
@@ -41,7 +42,7 @@ describe("Stage B", () => {
 
   it("정상 후보와 부족 사유를 검증하고 입력 근거만 허용한다", async () => {
     const output = await selectStageBCandidates(commits, candidates, async () => ({
-      candidates: [{ sha: "a", relatedShas: [], evidence: "diff 근거", citedFilePaths: ["src/a.ts"], source: "contribution_match" }],
+      candidates: [{ sha: "a", relatedShas: [], summary: "경험 요약 한 줄", evidence: "diff 근거", technicalTopics: ["TypeScript"], citedFilePaths: ["src/a.ts"], source: "contribution_match" }],
       insufficientCandidatesReason: "독립적인 경험이 하나뿐입니다.",
     }));
     expect(output.candidates).toHaveLength(1);
@@ -143,7 +144,7 @@ describe("Stage B", () => {
       },
     ];
     const output = await selectStageBCandidates(threeCommits, threeCandidates, async () => ({
-      candidates: threeCandidates.map(({ sha, source }) => ({ sha, relatedShas: [], evidence: "근거", citedFilePaths: [`src/${sha}.ts`], source })),
+      candidates: threeCandidates.map(({ sha, source }) => ({ sha, relatedShas: [], summary: "경험 요약 한 줄", evidence: "근거", technicalTopics: ["TypeScript"], citedFilePaths: [`src/${sha}.ts`], source })),
       insufficientCandidatesReason: null,
     }));
     expect(output.candidates).toHaveLength(3);
@@ -165,7 +166,9 @@ describe("Stage B", () => {
         candidates: units.map(({ sha }) => ({
           sha,
           relatedShas: [],
+          summary: "경험 요약 한 줄",
           evidence: "근거",
+          technicalTopics: ["TypeScript"],
           citedFilePaths: [`src/${sha}.ts`],
           source: "automatic_recommendation" as const,
         })),
@@ -183,7 +186,9 @@ describe("Stage B", () => {
         candidates: commits.map(({ sha }) => ({
           sha,
           relatedShas: [],
+          summary: "경험 요약 한 줄",
           evidence: "근거",
+          technicalTopics: ["TypeScript"],
           citedFilePaths: [`src/${sha}.ts`],
           source: "automatic_recommendation" as const,
         })),
@@ -220,7 +225,9 @@ describe("Stage B", () => {
           candidates: manyCommits.map(({ sha }) => ({
             sha,
             relatedShas: [],
+            summary: "경험 요약 한 줄",
             evidence: "근거",
+            technicalTopics: ["TypeScript"],
             citedFilePaths: [`src/${sha}.ts`],
             source: "automatic_recommendation" as const,
           })),
@@ -239,7 +246,9 @@ describe("Stage B", () => {
     const rawCandidate = {
       sha: "a",
       relatedShas: [] as string[],
+      summary: "경험 요약 한 줄",
       evidence: "근거",
+      technicalTopics: ["TypeScript"],
       citedFilePaths: ["src/a.ts"],
       source: "contribution_match" as const,
     };
@@ -259,16 +268,16 @@ describe("Stage B", () => {
   });
 
   it("입력 밖 SHA와 다른 PR 관련 SHA를 전체 거부한다", async () => {
-    await expect(selectStageBCandidates(commits, candidates, async () => ({ candidates: [{ sha: "z", relatedShas: [], evidence: "근거", citedFilePaths: ["src/a.ts"], source: "contribution_match" }], insufficientCandidatesReason: "부족" }))).rejects.toMatchObject({ kind: "unknown_sha" });
-    await expect(selectStageBCandidates(commits, candidates, async () => ({ candidates: [{ sha: "a", relatedShas: ["b"], evidence: "근거", citedFilePaths: ["src/a.ts"], source: "contribution_match" }], insufficientCandidatesReason: "부족" }))).rejects.toMatchObject({ kind: "unrelated_sha" });
+    await expect(selectStageBCandidates(commits, candidates, async () => ({ candidates: [{ sha: "z", relatedShas: [], summary: "경험 요약 한 줄", evidence: "근거", technicalTopics: ["TypeScript"], citedFilePaths: ["src/a.ts"], source: "contribution_match" }], insufficientCandidatesReason: "부족" }))).rejects.toMatchObject({ kind: "unknown_sha" });
+    await expect(selectStageBCandidates(commits, candidates, async () => ({ candidates: [{ sha: "a", relatedShas: ["b"], summary: "경험 요약 한 줄", evidence: "근거", technicalTopics: ["TypeScript"], citedFilePaths: ["src/a.ts"], source: "contribution_match" }], insufficientCandidatesReason: "부족" }))).rejects.toMatchObject({ kind: "unrelated_sha" });
   });
 
   it("diff에 없는 인용 경로를 전체 거부한다", async () => {
-    await expect(selectStageBCandidates(commits, candidates, async () => ({ candidates: [{ sha: "a", relatedShas: [], evidence: "근거", citedFilePaths: ["src/unknown.ts"], source: "contribution_match" }], insufficientCandidatesReason: "부족" }))).rejects.toMatchObject({ kind: "unknown_file_path" });
+    await expect(selectStageBCandidates(commits, candidates, async () => ({ candidates: [{ sha: "a", relatedShas: [], summary: "경험 요약 한 줄", evidence: "근거", technicalTopics: ["TypeScript"], citedFilePaths: ["src/unknown.ts"], source: "contribution_match" }], insufficientCandidatesReason: "부족" }))).rejects.toMatchObject({ kind: "unknown_file_path" });
   });
 
   it("모델의 source를 Stage A 값으로 교정한다", async () => {
-    const output = await selectStageBCandidates(commits, candidates, async () => ({ candidates: [{ sha: "a", relatedShas: [], evidence: "근거", citedFilePaths: ["src/a.ts"], source: "automatic_recommendation" }], insufficientCandidatesReason: "부족" }));
+    const output = await selectStageBCandidates(commits, candidates, async () => ({ candidates: [{ sha: "a", relatedShas: [], summary: "경험 요약 한 줄", evidence: "근거", technicalTopics: ["TypeScript"], citedFilePaths: ["src/a.ts"], source: "automatic_recommendation" }], insufficientCandidatesReason: "부족" }));
     expect(output.candidates[0].source).toBe("contribution_match");
   });
 
@@ -377,7 +386,9 @@ describe("Stage B 최종 후보의 PR 중복 정리", () => {
   const toRawCandidate = ({ sha }: { sha: string }) => ({
     sha,
     relatedShas: [],
+    summary: "경험 요약 한 줄",
     evidence: "근거",
+    technicalTopics: ["TypeScript"],
     citedFilePaths: [`src/${sha}.ts`],
     source: "automatic_recommendation" as const,
   });
@@ -471,7 +482,10 @@ describe("출력 계약 프롬프트", () => {
       new AbortController().signal
     );
 
-    return generateObjectMock.mock.calls.at(-1)![0].system ?? "";
+    const { system } = generateObjectMock.mock.calls.at(-1)![0];
+    // `system`은 문자열 한 덩어리로 조립해 넘깁니다. 문구의 등장 순서를 보는 테스트가 있어
+    // 여기서 문자열로 좁혀 둡니다.
+    return typeof system === "string" ? system : "";
   }
 
   /**
@@ -521,5 +535,42 @@ describe("출력 계약 프롬프트", () => {
       "citedFilePaths에는 sha와 relatedShas에 적은 커밋의 files[].path만 넣습니다"
     );
     expect(system).toContain("relatedShas에 먼저 넣으세요");
+  });
+
+  /**
+   * 이슈 #110 회귀입니다. 두 필드는 `assertCandidateEvidence` 같은 대조 검증이 없어, 프롬프트가
+   * 유일한 규칙입니다. 여기서 규칙이 빠지면 커밋 type prefix가 그대로 실린 제목이나 입력에 없는
+   * 기술 이름이 화면까지 그대로 갑니다.
+   *
+   * technicalTopics 쪽 네 문장은 2026-09-14에 실측으로 하나씩 붙인 것이라 함께 봅니다. 특히
+   * "어느 프로젝트에나 해당하는 말"을 막는 문장이 빠지면 토픽이 `오류 처리`·`상태 관리`로
+   * 되돌아가 후보를 구분하지 못합니다. 회차별 수치는
+   * `llm-wiki/raw/2026-09-14-경험후보-요약문장과-기술토픽-session-log.md` §4에 있습니다.
+   */
+  it("summary와 technicalTopics의 작성 규칙을 프롬프트에 적는다", async () => {
+    const system = await capturedSystemPrompt(3);
+
+    expect(system).toContain("명사형으로 끝내고 40자를 넘기지 마세요");
+    expect(system).toContain("type prefix(feat, fix, chore 같은 말머리)와 SHA, PR 번호는 넣지 마세요");
+    expect(system).toContain(`기술적 문제와 기법을 최대 ${MAX_TECHNICAL_TOPICS}개`);
+    expect(system).toContain("두세 낱말짜리 명사구로 짧게 적습니다");
+    expect(system).toContain("어느 프로젝트에나 해당하는 말은 항목으로 쓰지 말고");
+    expect(system).toContain("summary에 쓴 문장을 그대로 옮기지 마세요");
+    expect(system).toContain("summary와 technicalTopics 두 필드만은 커밋 메시지와 같은 언어로 적습니다");
+    expect(system).toContain("뒤에 나오는 응답 언어 지시보다 우선합니다");
+    expect(system).toContain("넣을 것이 없으면 빈 배열로 두세요");
+  });
+
+  /**
+   * PR #118 CodeRabbit 리뷰 회귀입니다. 프롬프트 끝의 "한국어로 답하세요"는 응답 전체에 걸리므로,
+   * 두 필드의 언어 규칙이 그보다 앞에 있고 우선한다고 적혀 있어야 영어 저장소에서 제목과 토픽이
+   * 한국어로 끌려가지 않습니다. 순서가 뒤집히면 문구가 남아 있어도 효력을 잃습니다.
+   */
+  it("두 필드의 언어 규칙이 전체 응답 언어 지시보다 앞에 온다", async () => {
+    const system = await capturedSystemPrompt(3);
+
+    expect(system.indexOf("커밋 메시지와 같은 언어로 적습니다")).toBeLessThan(
+      system.indexOf("한국어로 답하세요")
+    );
   });
 });

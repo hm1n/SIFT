@@ -35,7 +35,9 @@ const related = commit("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "관련 근�
 const candidate: ExperienceCandidate = {
   sha: representative.sha,
   relatedShas: [related.sha],
+  summary: "후보 상세 화면 구현",
   evidence: "상세 근거를 표시합니다.",
+  technicalTopics: ["React", "CSS Modules"],
   citedFilePaths: ["src/detail.tsx"],
   source: "automatic_recommendation",
 };
@@ -62,6 +64,7 @@ function renderDetail(
         origin: "repository",
         normalizedRelatedShas: [...new Set(candidateOverride.relatedShas.filter((sha) => sha !== candidateOverride.sha))],
         normalizedCitedFilePaths: [...new Set(candidateOverride.citedFilePaths)],
+        normalizedTechnicalTopics: [...new Set(candidateOverride.technicalTopics)],
       }}
       onBack={vi.fn()}
       onConfirm={vi.fn()}
@@ -74,10 +77,13 @@ function renderDetail(
 afterEach(cleanup);
 
 describe("ExperienceCandidateDetail", () => {
+  // 제목은 대표 커밋 제목이 아니라 `summary`입니다(이슈 #110). 대표 커밋 제목("후보 상세 구현")은
+  // 아래 Repository evidence 목록의 커밋 한 줄에만 남습니다.
   it("제목과 유도한 커밋 수·기간을 메타데이터로 표시한다", () => {
     renderDetail();
 
-    expect(screen.getByRole("heading", { name: "후보 상세 구현" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: candidate.summary })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "후보 상세 구현" })).not.toBeInTheDocument();
     expect(screen.getAllByText("2 commits").length).toBeGreaterThan(0);
     expect(screen.getByText("Aug 2026 – Sep 2026")).toBeInTheDocument();
   });
@@ -89,19 +95,50 @@ describe("ExperienceCandidateDetail", () => {
     expect(screen.getByText("Aug 2026")).toBeInTheDocument();
   });
 
-  it("Why worth discussing에 evidence 문장과 확인 불가 안내, 스키마 공백 안내를 함께 둔다", () => {
+  it("Why worth discussing에 evidence 문장과 확인 불가 안내를 함께 둔다", () => {
     renderDetail();
 
     expect(screen.getByText("Why worth discussing")).toBeInTheDocument();
     expect(screen.getByText("상세 근거를 표시합니다.")).toBeInTheDocument();
-    expect(screen.getByText("Unverifiable · AI-written interpretation")).toBeInTheDocument();
-    expect(screen.getAllByText("No corresponding data in the Repository schema to display this.").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Unverifiable · AI-written interpretation").length).toBeGreaterThan(0);
   });
 
-  it("Technical topics는 스키마에 대응 값이 없어 스키마 공백 안내만 표시한다", () => {
+  /**
+   * 이슈 #110 회귀입니다. #97은 이 자리에 스키마 공백 안내
+   * ("No corresponding data in the Repository schema to display this.")를 뒀습니다. 필드가
+   * 생겼으므로 그 문구가 남아 있으면 안 됩니다.
+   */
+  it("Technical topics를 칩으로 표시하고 확인 불가 안내를 함께 둔다", () => {
     renderDetail();
 
     expect(screen.getByText("Technical topics")).toBeInTheDocument();
+    expect(screen.getByText("React")).toBeInTheDocument();
+    expect(screen.getByText("CSS Modules")).toBeInTheDocument();
+    expect(screen.queryByText(/No corresponding data in the Repository schema/)).not.toBeInTheDocument();
+    // 토픽은 LLM 해석이므로 Why worth discussing과 같은 안내가 하나 더 붙습니다.
+    expect(screen.getAllByText("Unverifiable · AI-written interpretation")).toHaveLength(2);
+  });
+
+  /** 토픽이 빈 배열로 와도 화면이 정상 동작하고, 없다는 사실을 문장으로 알립니다. */
+  it("토픽이 없으면 칩 대신 Empty 문구를 표시한다", () => {
+    renderDetail({ ...candidate, technicalTopics: [] });
+
+    expect(screen.getByText("Technical topics")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "No technical topics were identified from the diffs and commit messages of this candidate."
+      )
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * 이슈 #110 폴백 회귀입니다. 스키마가 빈 `summary`를 허용하므로(후보를 버리지 않으려고)
+   * 비었을 때 제목이 사라지지 않고 대표 커밋 제목으로 떨어져야 합니다.
+   */
+  it("summary가 비어 있으면 제목을 대표 커밋 제목으로 대신한다", () => {
+    renderDetail({ ...candidate, summary: "" });
+
+    expect(screen.getByRole("heading", { name: "후보 상세 구현" })).toBeInTheDocument();
   });
 
   it("Repository evidence 목록에 대표 커밋은 Verified로, 관련 커밋은 AI-selected로 표시한다", () => {
@@ -159,6 +196,7 @@ describe("ExperienceCandidateDetail", () => {
           origin: "repository",
           normalizedRelatedShas: [related.sha],
           normalizedCitedFilePaths: candidate.citedFilePaths,
+          normalizedTechnicalTopics: candidate.technicalTopics,
         }}
         onBack={vi.fn()}
         onConfirm={vi.fn()}
@@ -173,7 +211,7 @@ describe("ExperienceCandidateDetail", () => {
   it("대표 커밋을 커밋 색인에서 찾지 못하면 계약 파손을 드러내고 커밋 수만 유도한다", () => {
     renderDetail(candidate, null);
 
-    expect(screen.getByRole("heading", { name: `Commit not indexed · ${candidate.sha.slice(0, 7)}` })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: candidate.summary })).toBeInTheDocument();
     expect(screen.getByText("Representative commit not found in the commit index.")).toBeInTheDocument();
     expect(screen.getAllByText("2 commits").length).toBeGreaterThan(0);
 
@@ -193,6 +231,7 @@ describe("ExperienceCandidateDetail", () => {
           origin: "repository",
           normalizedRelatedShas: [related.sha],
           normalizedCitedFilePaths: candidate.citedFilePaths,
+          normalizedTechnicalTopics: candidate.technicalTopics,
         }}
         onBack={onBack}
         onConfirm={vi.fn()}

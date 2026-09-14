@@ -8,7 +8,7 @@ import {
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  encryptGitHubToken,
+  encryptGitHubSession,
   GITHUB_SESSION_COOKIE,
   GITHUB_SESSION_KEY_ENV,
 } from "@/lib/github/auth-session";
@@ -108,7 +108,7 @@ function request(value: unknown, authenticated = true) {
   return new NextRequest("https://example.com/api/candidates/stage-a", {
     method: "POST",
     headers: authenticated
-      ? { cookie: `${GITHUB_SESSION_COOKIE}=${encryptGitHubToken("token")}` }
+      ? { cookie: `${GITHUB_SESSION_COOKIE}=${encryptGitHubSession({ token: "token", githubUserId: 4472785 })}` }
       : undefined,
     body: JSON.stringify(value),
   });

@@ -5,7 +5,7 @@ import { emptyExperienceBlockState } from "@/features/experience-block/types";
 import { MAX_EXPERIENCE_BLOCK_BODY_BYTES } from "@/features/experience-block/request";
 import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
 import {
-  encryptGitHubToken,
+  encryptGitHubSession,
   GITHUB_SESSION_COOKIE,
   GITHUB_SESSION_KEY_ENV,
 } from "@/lib/github/auth-session";
@@ -19,6 +19,7 @@ function requestBody(overrides: Record<string, unknown> = {}) {
     history: [{ turnId: "t1", question: "질문", answer: "답변" }],
     state: emptyExperienceBlockState(),
     targetBlock: "problem",
+    targetElement: "a",
     answerTurnId: "t1",
     ...overrides,
   };
@@ -31,7 +32,7 @@ function request(
   return new NextRequest("https://example.com/api/interview/experience-block", {
     method: "POST",
     headers: {
-      ...(authenticated ? { cookie: `${GITHUB_SESSION_COOKIE}=${encryptGitHubToken("token")}` } : {}),
+      ...(authenticated ? { cookie: `${GITHUB_SESSION_COOKIE}=${encryptGitHubSession({ token: "token", githubUserId: 4472785 })}` } : {}),
       ...headers,
     },
     body: typeof body === "string" ? body : JSON.stringify(body),
@@ -71,6 +72,7 @@ describe("POST /api/interview/experience-block", () => {
         },
       ],
       evaluation: [{ block: "problem", sufficient: true, askable: false, reason: "sufficient" }],
+      targetResponse: "provided",
     };
 
     const response = await handleExperienceBlockUpdate(request(requestBody()), {
@@ -90,6 +92,7 @@ describe("POST /api/interview/experience-block", () => {
     ]);
     expect(body.conflicts.problem).toEqual([]);
     expect(body.warnings).toEqual([]);
+    expect(body.targetResponse).toBe("provided");
   });
 
   it("세션이 없으면 401 unauthorized로 거절한다", async () => {

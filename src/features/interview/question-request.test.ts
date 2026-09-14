@@ -8,8 +8,10 @@ import {
 import {
   INTERVIEW_HISTORY_ITEM_MAX_BYTES,
   INTERVIEW_HISTORY_MAX_ITEMS,
+  INTERVIEW_LAST_OUTCOME_MAX_BYTES,
 } from "./history";
 import {
+  INTERVIEW_STREAM_TARGET_META_BYTES,
   MAX_INTERVIEW_STREAM_BODY_BYTES,
   isExperienceEvidenceSnapshot,
   parseInterviewStreamRequestBody,
@@ -181,13 +183,124 @@ describe("parseInterviewStreamRequestBody", () => {
 
     expect(parsed).toMatchObject({ ok: false, kind: "history_too_large" });
   });
+
+  it("targetBlock·targetElement가 없으면 대상 없는 일반 질문 요청으로 받아들인다", () => {
+    const parsed = parseInterviewStreamRequestBody({ snapshot: evidenceSnapshotFixture() });
+
+    expect(parsed.ok && parsed.body.targetBlock).toBeUndefined();
+  });
+
+  it("targetBlock과 targetElement를 함께 받으면 그대로 담는다", () => {
+    const parsed = parseInterviewStreamRequestBody({
+      snapshot: evidenceSnapshotFixture(),
+      targetBlock: "problem",
+      targetElement: "b",
+    });
+
+    expect(parsed).toMatchObject({ ok: true, body: { targetBlock: "problem", targetElement: "b" } });
+  });
+
+  it("targetBlock과 targetElement 중 하나만 있으면 invalid_request로 거절한다", () => {
+    expect(
+      parseInterviewStreamRequestBody({ snapshot: evidenceSnapshotFixture(), targetBlock: "problem" })
+    ).toMatchObject({ ok: false, kind: "invalid_request" });
+    expect(
+      parseInterviewStreamRequestBody({ snapshot: evidenceSnapshotFixture(), targetElement: "a" })
+    ).toMatchObject({ ok: false, kind: "invalid_request" });
+  });
+
+  it("targetBlock이나 targetElement 값이 올바르지 않으면 invalid_request로 거절한다", () => {
+    expect(
+      parseInterviewStreamRequestBody({
+        snapshot: evidenceSnapshotFixture(),
+        targetBlock: "unknown",
+        targetElement: "a",
+      })
+    ).toMatchObject({ ok: false, kind: "invalid_request" });
+    expect(
+      parseInterviewStreamRequestBody({
+        snapshot: evidenceSnapshotFixture(),
+        targetBlock: "problem",
+        targetElement: "c",
+      })
+    ).toMatchObject({ ok: false, kind: "invalid_request" });
+  });
+
+  describe("lastOutcome (구현검토 2026-09-11 P1-5)", () => {
+    it("lastOutcome이 없으면 대상 없는 요청으로 받아들인다", () => {
+      const parsed = parseInterviewStreamRequestBody({ snapshot: evidenceSnapshotFixture() });
+      expect(parsed.ok && parsed.body.lastOutcome).toBeUndefined();
+    });
+
+    it("올바른 lastOutcome은 그대로 담는다", () => {
+      const lastOutcome = {
+        blockUpdateFailed: true,
+        targetResponse: null,
+        conflicts: [{ observation: "근거는 fetch 기반 수신을 보여 줍니다." }],
+      };
+      const parsed = parseInterviewStreamRequestBody({ snapshot: evidenceSnapshotFixture(), lastOutcome });
+      expect(parsed).toMatchObject({ ok: true, body: { lastOutcome } });
+    });
+
+    it("targetResponse가 알려진 값이 아니면 invalid_request로 거절한다", () => {
+      const parsed = parseInterviewStreamRequestBody({
+        snapshot: evidenceSnapshotFixture(),
+        lastOutcome: { blockUpdateFailed: false, targetResponse: "made_up", conflicts: [] },
+      });
+      expect(parsed).toMatchObject({ ok: false, kind: "invalid_request" });
+    });
+
+    it("conflicts가 상한 개수를 넘으면 invalid_request로 거절한다", () => {
+      const parsed = parseInterviewStreamRequestBody({
+        snapshot: evidenceSnapshotFixture(),
+        lastOutcome: {
+          blockUpdateFailed: false,
+          targetResponse: "provided",
+          conflicts: Array.from({ length: 4 }, () => ({ observation: "a" })),
+        },
+      });
+      expect(parsed).toMatchObject({ ok: false, kind: "invalid_request" });
+    });
+
+    it("conflicts 관찰 문장이 바이트 상한을 넘으면 invalid_request로 거절한다", () => {
+      const parsed = parseInterviewStreamRequestBody({
+        snapshot: evidenceSnapshotFixture(),
+        lastOutcome: {
+          blockUpdateFailed: false,
+          targetResponse: "provided",
+          conflicts: [{ observation: "가".repeat(100) }],
+        },
+      });
+      expect(parsed).toMatchObject({ ok: false, kind: "invalid_request" });
+    });
+
+    it("blockUpdateFailed와 targetResponse가 서로 모순되면 invalid_request로 거절한다 (CodeRabbit PR #117)", () => {
+      // 실패한 블록 갱신에는 분류할 응답이 없습니다. blockUpdateFailed:true인데 targetResponse가
+      // 있거나, blockUpdateFailed:false인데 targetResponse가 없으면 다음 질문 생성에 앞뒤가 안 맞는
+      // 직전 결과가 전달됩니다.
+      const failedWithResponse = parseInterviewStreamRequestBody({
+        snapshot: evidenceSnapshotFixture(),
+        lastOutcome: { blockUpdateFailed: true, targetResponse: "provided", conflicts: [] },
+      });
+      expect(failedWithResponse).toMatchObject({ ok: false, kind: "invalid_request" });
+
+      const succeededWithoutResponse = parseInterviewStreamRequestBody({
+        snapshot: evidenceSnapshotFixture(),
+        lastOutcome: { blockUpdateFailed: false, targetResponse: null, conflicts: [] },
+      });
+      expect(succeededWithoutResponse).toMatchObject({ ok: false, kind: "invalid_request" });
+    });
+  });
 });
 
 describe("MAX_INTERVIEW_STREAM_BODY_BYTES", () => {
-  it("근거 몫에 이력 몫을 더한 값이다", () => {
+  it("근거 몫에 이력 몫과 대상 메타 몫, 직전 결과 몫을 더한 값이다", () => {
     // 근거 몫을 그대로 두고 더하기만 하므로 첫 질문 요청의 통과 여부가 바뀌지 않습니다.
     expect(MAX_INTERVIEW_STREAM_BODY_BYTES).toBe(
-      64 * 1024 + INTERVIEW_HISTORY_MAX_ITEMS * INTERVIEW_HISTORY_ITEM_MAX_BYTES
+      64 * 1024 +
+        INTERVIEW_HISTORY_MAX_ITEMS * INTERVIEW_HISTORY_ITEM_MAX_BYTES +
+        INTERVIEW_STREAM_TARGET_META_BYTES +
+        INTERVIEW_LAST_OUTCOME_MAX_BYTES
     );
   });
 });

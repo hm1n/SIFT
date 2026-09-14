@@ -1,12 +1,12 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { encryptGitHubToken, GITHUB_SESSION_COOKIE, GITHUB_SESSION_KEY_ENV } from "@/lib/github/auth-session";
+import { encryptGitHubSession, GITHUB_SESSION_COOKIE, GITHUB_SESSION_KEY_ENV } from "@/lib/github/auth-session";
 import { POST } from "./route";
 
 const SHA = "a".repeat(40);
 
 function request() {
-  const cookie = `${GITHUB_SESSION_COOKIE}=${encryptGitHubToken("secret")}`;
+  const cookie = `${GITHUB_SESSION_COOKIE}=${encryptGitHubSession({ token: "secret", githubUserId: 4472785 })}`;
   return new NextRequest("http://localhost/api/github/commits", {
     method: "POST",
     headers: { "Content-Type": "application/json", cookie },
@@ -16,7 +16,7 @@ function request() {
 
 function setupUntilCommit(response: Response) {
   vi.stubGlobal("fetch", vi.fn()
-    .mockResolvedValueOnce(Response.json({ login: "octocat" }))
+    .mockResolvedValueOnce(Response.json({ id: 44727850, login: "octocat" }))
     .mockResolvedValueOnce(Response.json({ default_branch: "main" }))
     .mockResolvedValueOnce(Response.json({ commit: { sha: SHA } }))
     .mockResolvedValueOnce(response));
@@ -64,7 +64,7 @@ describe("POST /api/github/commits", () => {
   it("후속 페이지 실패에서 이미 받은 커밋과 근본 원인을 보존한다", async () => {
     const first = Response.json([{ sha: SHA, commit: { message: "feat", author: null }, author: null, parents: [] }], { headers: { link: `<next>; rel="next"` } });
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(Response.json({ login: "octocat" }))
+      .mockResolvedValueOnce(Response.json({ id: 44727850, login: "octocat" }))
       .mockResolvedValueOnce(Response.json({ default_branch: "main" }))
       .mockResolvedValueOnce(Response.json({ commit: { sha: SHA } }))
       .mockResolvedValueOnce(first)
