@@ -14,13 +14,18 @@ import { DatabaseError, getSql } from "../src/lib/db/client.ts";
 
 const projectRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** Vercel처럼 환경변수를 직접 주입하는 곳에는 이 파일이 없습니다. 없으면 그대로 진행합니다. */
+/**
+ * Vercel처럼 환경변수를 직접 주입하는 곳에는 이 파일이 없습니다. 없으면 그대로 진행합니다.
+ *
+ * 넘기는 것은 파일이 없는 경우뿐입니다. 권한 오류나 읽기 오류까지 삼키면, 읽으려던 파일을 못 읽은 채
+ * 다른 파일이나 셸에 남은 `DATABASE_URL`로 넘어가 엉뚱한 데이터베이스에 DDL을 적용하게 됩니다.
+ */
 function loadLocalEnv(): void {
   for (const file of [".env.local", ".env"]) {
     try {
       process.loadEnvFile(join(projectRoot, file));
-    } catch {
-      // 파일이 없는 경우입니다.
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
   }
 }
