@@ -8,6 +8,7 @@ import {
   STAGE_B_MAX_PATCH_CHARS,
   STAGE_B_MAX_TOTAL_PATCH_CHARS,
 } from "./stage-b";
+import { MAX_TECHNICAL_TOPICS } from "./schema";
 
 // `createStageBGenerate`가 실제로 보내는 시스템 프롬프트를 가로채기 위한 부분 모킹입니다.
 // `generateObject`만 대체하고 나머지(`APICallError`, `RetryError`)는 실제 구현을 씁니다.
@@ -531,5 +532,19 @@ describe("출력 계약 프롬프트", () => {
       "citedFilePaths에는 sha와 relatedShas에 적은 커밋의 files[].path만 넣습니다"
     );
     expect(system).toContain("relatedShas에 먼저 넣으세요");
+  });
+
+  /**
+   * 이슈 #110 회귀입니다. 두 필드는 `assertCandidateEvidence` 같은 대조 검증이 없어, 프롬프트가
+   * 유일한 규칙입니다. 여기서 규칙이 빠지면 커밋 type prefix가 그대로 실린 제목이나 입력에 없는
+   * 기술 이름이 화면까지 그대로 갑니다.
+   */
+  it("summary와 technicalTopics의 작성 규칙을 프롬프트에 적는다", async () => {
+    const system = await capturedSystemPrompt(3);
+
+    expect(system).toContain("명사형으로 끝내고 40자를 넘기지 마세요");
+    expect(system).toContain("type prefix(feat, fix, chore 같은 말머리)와 SHA, PR 번호는 넣지 마세요");
+    expect(system).toContain(`실제로 나타난 기술 이름만 최대 ${MAX_TECHNICAL_TOPICS}개`);
+    expect(system).toContain("넣을 것이 없으면 빈 배열로 두세요");
   });
 });

@@ -17,6 +17,7 @@ import {
 import {
   assertCandidateEvidence,
   createExperienceCandidateOutputSchema,
+  MAX_TECHNICAL_TOPICS,
   validateExperienceCandidateOutput,
 } from "./schema";
 import type { ExperienceCandidateOutput, StageACandidate } from "./types";
@@ -335,6 +336,12 @@ function outputContractText(candidateLimit: number): string {
     "citedFilePaths에는 sha와 relatedShas에 적은 커밋의 files[].path만 넣습니다. 같은 workUnits " +
     "항목이라도 relatedShas에 적지 않은 커밋의 경로를 인용하면 응답 전체가 거부되므로, 인용할 경로가 " +
     "있는 커밋은 relatedShas에 먼저 넣으세요. 입력에 없는 경로를 기억이나 추측으로 쓰지 마세요. " +
+    // summary와 technicalTopics는 대조 검증이 없습니다. 위 문장들이 `assertCandidateEvidence`의
+    // 판정과 한 줄씩 대응하는 것과 성격이 달라 뒤에 따로 모읍니다.
+    "summary에는 그 후보가 어떤 경험인지 한 줄로 적습니다. 명사형으로 끝내고 40자를 넘기지 마세요. " +
+    "커밋 메시지의 type prefix(feat, fix, chore 같은 말머리)와 SHA, PR 번호는 넣지 마세요. " +
+    `technicalTopics에는 입력으로 준 diff와 커밋 메시지에 실제로 나타난 기술 이름만 최대 ${MAX_TECHNICAL_TOPICS}개 ` +
+    "넣습니다. 일반 지식으로 추측해 채우지 말고, 넣을 것이 없으면 빈 배열로 두세요. " +
     "후보를 하나도 고르지 못하면 insufficientCandidatesReason에 그 이유를 반드시 채우세요. " +
     `후보를 하나 이상 골랐으면 insufficientCandidatesReason은 null이어도 됩니다. ${candidateLimit}개보다 ` +
     "적게 골랐고 설명할 이유가 있으면 그 이유를 적으세요. "
