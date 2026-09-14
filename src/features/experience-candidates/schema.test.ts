@@ -3,6 +3,7 @@ import {
   assertCandidateEvidence,
   assertCandidateShas,
   createExperienceCandidateOutputSchema,
+  MAX_TECHNICAL_TOPICS,
   validateExperienceCandidateOutput,
 } from "./schema";
 import { ExperienceCandidateOutputError } from "./errors";
@@ -13,21 +14,27 @@ const VALID_OUTPUT: ExperienceCandidateOutput = {
     {
       sha: "representative",
       relatedShas: ["related"],
+      summary: "파서와 오류 처리 동시 구현",
       evidence: "PR 안에서 파서와 오류 처리를 함께 구현했습니다.",
+      technicalTopics: ["TypeScript", "파서"],
       citedFilePaths: ["src/parser.ts"],
       source: "contribution_match",
     },
     {
       sha: "automatic",
       relatedShas: [],
+      summary: "스트리밍 경계 분리",
       evidence: "스트리밍 경계를 명확하게 분리했습니다.",
+      technicalTopics: ["Streaming"],
       citedFilePaths: ["src/stream.ts"],
       source: "automatic_recommendation",
     },
     {
       sha: "third",
       relatedShas: [],
+      summary: "실패 상태 타입 구분",
       evidence: "실패 상태를 타입으로 구분했습니다.",
+      technicalTopics: [],
       citedFilePaths: ["src/errors.ts"],
       source: "automatic_recommendation",
     },
@@ -117,6 +124,67 @@ describe("경험 후보 출력 검증", () => {
         kind: "schema_validation",
       })
     );
+  });
+
+  /**
+   * 이슈 #110 회귀 4건입니다. `hasOnlyKeys`가 키 목록을 정확히 대조하므로, JSON Schema의
+   * `required`만 고치고 런타임 목록을 빠뜨리면 필드가 빠진 응답이 그대로 통과합니다. 반대로
+   * 런타임 목록만 고치면 두 필드를 채운 정상 응답이 거부됩니다. 네 방향을 모두 잠급니다.
+   */
+  const without = (key: string) => (candidate: Record<string, unknown>) =>
+    Object.fromEntries(Object.entries(candidate).filter(([name]) => name !== key));
+
+  it.each([
+    ["summary가 없으면", without("summary")],
+    ["technicalTopics가 없으면", without("technicalTopics")],
+    ["summary가 문자열이 아니면", (candidate: Record<string, unknown>) => ({ ...candidate, summary: 3 })],
+    ["technicalTopics가 배열이 아니면", (candidate: Record<string, unknown>) => ({
+      ...candidate,
+      technicalTopics: "React",
+    })],
+  ])("%s 거부한다", (_label, mutate) => {
+    expect(() =>
+      validateExperienceCandidateOutput({
+        candidates: [mutate({ ...VALID_OUTPUT.candidates[0] })],
+        insufficientCandidatesReason: null,
+      }, 3)
+    ).toThrowError(
+      expect.objectContaining<Partial<ExperienceCandidateOutputError>>({
+        kind: "schema_validation",
+      })
+    );
+  });
+
+  /**
+   * 이슈 #110 Constraint 회귀입니다. 두 필드에 `minLength`·`minItems`·`maxItems`를 런타임으로
+   * 걸면, 한 후보의 제목이 비었다는 이유만으로 응답 전체(후보 최대 `STAGE_B_MAX_CANDIDATES`개)가
+   * 버려집니다. 빈 값과 상한 초과는 화면 정규화가 처리하고 검증은 통과시켜야 합니다.
+   */
+  it.each([
+    ["summary가 빈 문자열이어도", { summary: "" }],
+    ["technicalTopics가 빈 배열이어도", { technicalTopics: [] }],
+    ["technicalTopics에 빈 문자열이 섞여 있어도", { technicalTopics: ["React", ""] }],
+    ["technicalTopics가 상한을 넘겨도", {
+      technicalTopics: ["a", "b", "c", "d", "e", "f", "g"],
+    }],
+  ])("%s 후보를 버리지 않는다", (_label, patch) => {
+    const output = validateExperienceCandidateOutput({
+      candidates: [{ ...VALID_OUTPUT.candidates[0], ...patch }],
+      insufficientCandidatesReason: null,
+    }, 3);
+
+    expect(output.candidates).toHaveLength(1);
+  });
+
+  /** 모델에 보내는 계약에는 개수 상한이 있어야 합니다. 런타임에서 세지 않는 만큼 여기서만 요청합니다. */
+  it("JSON Schema가 technicalTopics의 개수 상한을 요청한다", () => {
+    const { jsonSchema } = createExperienceCandidateOutputSchema(3);
+
+    expect(
+      (jsonSchema as {
+        properties: { candidates: { items: { properties: { technicalTopics: { maxItems: number } } } } };
+      }).properties.candidates.items.properties.technicalTopics.maxItems
+    ).toBe(MAX_TECHNICAL_TOPICS);
   });
 
   it("같은 대표 SHA를 여러 후보로 반복하면 거부한다", () => {

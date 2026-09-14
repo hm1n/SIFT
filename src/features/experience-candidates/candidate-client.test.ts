@@ -629,7 +629,7 @@ describe("assertStageARequestWithinLimits", () => {
 describe("fetchStageBCandidatesFromApi", () => {
   const output = {
     candidates: [
-      { sha: "sha-1", relatedShas: [], evidence: "근거입니다.", citedFilePaths: ["src/a.ts"], source: "contribution_match" },
+      { sha: "sha-1", relatedShas: [], summary: "경험 요약 한 줄", evidence: "근거입니다.", technicalTopics: ["TypeScript"], citedFilePaths: ["src/a.ts"], source: "contribution_match" },
     ],
     insufficientCandidatesReason: "후보로 판단할 수 있는 커밋이 1개뿐입니다.",
     diffs: [{ sha: "sha-1", files: [{ path: "src/a.ts", status: "modified", additions: 10, deletions: 2, changes: 12 }] }],

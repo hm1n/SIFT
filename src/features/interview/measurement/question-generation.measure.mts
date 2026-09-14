@@ -206,7 +206,10 @@ async function buildSnapshot(pullRequestNumber: number): Promise<ExperienceEvide
   const candidate = {
     sha: representative.sha,
     relatedShas: related.map(({ sha }) => sha),
+    // 인계 스냅샷은 두 필드를 싣지 않습니다(이슈 #110 Non-goal). 계약을 채우기만 합니다.
+    summary: representative.title,
     evidence: `Pull Request #${pullRequestNumber}의 커밋 ${details.length}개가 같은 문제를 함께 다뤘고, 변경 파일과 diff에서 판단 근거를 확인할 수 있습니다.`,
+    technicalTopics: [],
     citedFilePaths,
     source: "automatic_recommendation" as const,
   };
@@ -217,6 +220,7 @@ async function buildSnapshot(pullRequestNumber: number): Promise<ExperienceEvide
     origin: "repository",
     normalizedRelatedShas: candidate.relatedShas,
     normalizedCitedFilePaths: citedFilePaths,
+    normalizedTechnicalTopics: [],
   };
   // 커밋 제목·메시지·PR·변경 파일 목록은 patch가 벗겨진 상태로 오고 patch 본문은 diff에만 있습니다.
   // 운영 경로와 같은 출처 분기를 그대로 재현합니다.

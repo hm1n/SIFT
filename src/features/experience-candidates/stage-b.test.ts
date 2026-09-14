@@ -41,7 +41,7 @@ describe("Stage B", () => {
 
   it("정상 후보와 부족 사유를 검증하고 입력 근거만 허용한다", async () => {
     const output = await selectStageBCandidates(commits, candidates, async () => ({
-      candidates: [{ sha: "a", relatedShas: [], evidence: "diff 근거", citedFilePaths: ["src/a.ts"], source: "contribution_match" }],
+      candidates: [{ sha: "a", relatedShas: [], summary: "경험 요약 한 줄", evidence: "diff 근거", technicalTopics: ["TypeScript"], citedFilePaths: ["src/a.ts"], source: "contribution_match" }],
       insufficientCandidatesReason: "독립적인 경험이 하나뿐입니다.",
     }));
     expect(output.candidates).toHaveLength(1);
@@ -143,7 +143,7 @@ describe("Stage B", () => {
       },
     ];
     const output = await selectStageBCandidates(threeCommits, threeCandidates, async () => ({
-      candidates: threeCandidates.map(({ sha, source }) => ({ sha, relatedShas: [], evidence: "근거", citedFilePaths: [`src/${sha}.ts`], source })),
+      candidates: threeCandidates.map(({ sha, source }) => ({ sha, relatedShas: [], summary: "경험 요약 한 줄", evidence: "근거", technicalTopics: ["TypeScript"], citedFilePaths: [`src/${sha}.ts`], source })),
       insufficientCandidatesReason: null,
     }));
     expect(output.candidates).toHaveLength(3);
@@ -165,7 +165,9 @@ describe("Stage B", () => {
         candidates: units.map(({ sha }) => ({
           sha,
           relatedShas: [],
+          summary: "경험 요약 한 줄",
           evidence: "근거",
+          technicalTopics: ["TypeScript"],
           citedFilePaths: [`src/${sha}.ts`],
           source: "automatic_recommendation" as const,
         })),
@@ -183,7 +185,9 @@ describe("Stage B", () => {
         candidates: commits.map(({ sha }) => ({
           sha,
           relatedShas: [],
+          summary: "경험 요약 한 줄",
           evidence: "근거",
+          technicalTopics: ["TypeScript"],
           citedFilePaths: [`src/${sha}.ts`],
           source: "automatic_recommendation" as const,
         })),
@@ -220,7 +224,9 @@ describe("Stage B", () => {
           candidates: manyCommits.map(({ sha }) => ({
             sha,
             relatedShas: [],
+            summary: "경험 요약 한 줄",
             evidence: "근거",
+            technicalTopics: ["TypeScript"],
             citedFilePaths: [`src/${sha}.ts`],
             source: "automatic_recommendation" as const,
           })),
@@ -239,7 +245,9 @@ describe("Stage B", () => {
     const rawCandidate = {
       sha: "a",
       relatedShas: [] as string[],
+      summary: "경험 요약 한 줄",
       evidence: "근거",
+      technicalTopics: ["TypeScript"],
       citedFilePaths: ["src/a.ts"],
       source: "contribution_match" as const,
     };
@@ -259,16 +267,16 @@ describe("Stage B", () => {
   });
 
   it("입력 밖 SHA와 다른 PR 관련 SHA를 전체 거부한다", async () => {
-    await expect(selectStageBCandidates(commits, candidates, async () => ({ candidates: [{ sha: "z", relatedShas: [], evidence: "근거", citedFilePaths: ["src/a.ts"], source: "contribution_match" }], insufficientCandidatesReason: "부족" }))).rejects.toMatchObject({ kind: "unknown_sha" });
-    await expect(selectStageBCandidates(commits, candidates, async () => ({ candidates: [{ sha: "a", relatedShas: ["b"], evidence: "근거", citedFilePaths: ["src/a.ts"], source: "contribution_match" }], insufficientCandidatesReason: "부족" }))).rejects.toMatchObject({ kind: "unrelated_sha" });
+    await expect(selectStageBCandidates(commits, candidates, async () => ({ candidates: [{ sha: "z", relatedShas: [], summary: "경험 요약 한 줄", evidence: "근거", technicalTopics: ["TypeScript"], citedFilePaths: ["src/a.ts"], source: "contribution_match" }], insufficientCandidatesReason: "부족" }))).rejects.toMatchObject({ kind: "unknown_sha" });
+    await expect(selectStageBCandidates(commits, candidates, async () => ({ candidates: [{ sha: "a", relatedShas: ["b"], summary: "경험 요약 한 줄", evidence: "근거", technicalTopics: ["TypeScript"], citedFilePaths: ["src/a.ts"], source: "contribution_match" }], insufficientCandidatesReason: "부족" }))).rejects.toMatchObject({ kind: "unrelated_sha" });
   });
 
   it("diff에 없는 인용 경로를 전체 거부한다", async () => {
-    await expect(selectStageBCandidates(commits, candidates, async () => ({ candidates: [{ sha: "a", relatedShas: [], evidence: "근거", citedFilePaths: ["src/unknown.ts"], source: "contribution_match" }], insufficientCandidatesReason: "부족" }))).rejects.toMatchObject({ kind: "unknown_file_path" });
+    await expect(selectStageBCandidates(commits, candidates, async () => ({ candidates: [{ sha: "a", relatedShas: [], summary: "경험 요약 한 줄", evidence: "근거", technicalTopics: ["TypeScript"], citedFilePaths: ["src/unknown.ts"], source: "contribution_match" }], insufficientCandidatesReason: "부족" }))).rejects.toMatchObject({ kind: "unknown_file_path" });
   });
 
   it("모델의 source를 Stage A 값으로 교정한다", async () => {
-    const output = await selectStageBCandidates(commits, candidates, async () => ({ candidates: [{ sha: "a", relatedShas: [], evidence: "근거", citedFilePaths: ["src/a.ts"], source: "automatic_recommendation" }], insufficientCandidatesReason: "부족" }));
+    const output = await selectStageBCandidates(commits, candidates, async () => ({ candidates: [{ sha: "a", relatedShas: [], summary: "경험 요약 한 줄", evidence: "근거", technicalTopics: ["TypeScript"], citedFilePaths: ["src/a.ts"], source: "automatic_recommendation" }], insufficientCandidatesReason: "부족" }));
     expect(output.candidates[0].source).toBe("contribution_match");
   });
 
@@ -377,7 +385,9 @@ describe("Stage B 최종 후보의 PR 중복 정리", () => {
   const toRawCandidate = ({ sha }: { sha: string }) => ({
     sha,
     relatedShas: [],
+    summary: "경험 요약 한 줄",
     evidence: "근거",
+    technicalTopics: ["TypeScript"],
     citedFilePaths: [`src/${sha}.ts`],
     source: "automatic_recommendation" as const,
   });
