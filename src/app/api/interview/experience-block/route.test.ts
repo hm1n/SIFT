@@ -9,6 +9,9 @@ import {
   GITHUB_SESSION_COOKIE,
   GITHUB_SESSION_KEY_ENV,
 } from "@/lib/github/auth-session";
+import { DatabaseError } from "@/lib/db/client";
+import { createInMemoryStore } from "@/lib/db/in-memory-store";
+import type { SiftStore } from "@/lib/db/store";
 import { handleExperienceBlockUpdate, type GenerateBlockUpdate } from "./route";
 
 const snapshot = evidenceSnapshotFixture();
@@ -193,5 +196,180 @@ describe("POST /api/interview/experience-block", () => {
 
     expect(response.status).toBe(502);
     await expect(response.json()).resolves.toMatchObject({ error: { kind: "schema_validation" } });
+  });
+});
+
+/**
+ * 이슈 #115가 이 경로에 얹은 저장입니다. 저장 전용 API를 새로 만들지 않고 이미 있는 이 요청에
+ * 얹었습니다. 무상태 서버라 클라이언트가 이미 매 턴 근거와 이력과 블록 상태를 전부 보내고 있습니다.
+ */
+describe("POST /api/interview/experience-block 저장", () => {
+  const OWNER_ID = 4472785;
+
+  /**
+   * `emptyOutput`은 `targetBlock` 평가가 없어 검증에서 거절됩니다. 저장은 블록 갱신이 성공한 뒤에만
+   * 일어나므로 여기서는 통과하는 출력을 씁니다.
+   */
+  const acceptedOutput = {
+    ops: [],
+    display: [],
+    evaluation: [{ block: "problem", sufficient: false, askable: true, reason: "askable" }],
+    targetResponse: "provided",
+  };
+
+  async function seed(store: SiftStore) {
+    const analysisId = await store.saveAnalysis({
+      githubUserId: OWNER_ID,
+      repoOwner: "hm1n",
+      repoName: "SIFT",
+      contributionItems: [],
+      candidates: {},
+      stageASummary: {},
+    });
+    const interviewId = await store.createInterview({
+      githubUserId: OWNER_ID,
+      analysisId,
+      candidateKey: "c1",
+      title: "제목",
+      evidence: {},
+    });
+    if (interviewId === null) throw new Error("seed failed");
+    return interviewId;
+  }
+
+  it("save가 없으면 저장하지 않고 skipped를 돌려준다", async () => {
+    const store = createInMemoryStore();
+    const response = await handleExperienceBlockUpdate(request(requestBody()), {
+      generate: alwaysOutput(acceptedOutput),
+      store,
+    });
+
+    await expect(response.json()).resolves.toMatchObject({ save: "skipped" });
+    expect(await store.listInterviews(OWNER_ID)).toEqual([]);
+  });
+
+  it("save가 있으면 그 턴을 이어 붙이고 saved를 돌려준다", async () => {
+    const store = createInMemoryStore();
+    const interviewId = await seed(store);
+
+    const response = await handleExperienceBlockUpdate(
+      request(requestBody({ save: { interviewId, expectedBlockVersion: 0 } })),
+      { generate: alwaysOutput(acceptedOutput), store }
+    );
+
+    await expect(response.json()).resolves.toMatchObject({ save: "saved" });
+    const stored = await store.getInterview(interviewId, OWNER_ID);
+    expect(stored?.history).toEqual([
+      { role: "question", text: "질문" },
+      { role: "answer", text: "답변" },
+    ]);
+    expect(stored?.blockVersion).toBe(1);
+  });
+
+  it("밀린 턴을 함께 이어 붙인다", async () => {
+    const store = createInMemoryStore();
+    const interviewId = await seed(store);
+    const history = [
+      { turnId: "t0", question: "밀린 질문", answer: "밀린 답변" },
+      { turnId: "t1", question: "질문", answer: "답변" },
+    ];
+
+    await handleExperienceBlockUpdate(
+      request(requestBody({ history, save: { interviewId, expectedBlockVersion: 0, pendingTurnIds: ["t0"] } })),
+      { generate: alwaysOutput(acceptedOutput), store }
+    );
+
+    const stored = await store.getInterview(interviewId, OWNER_ID);
+    expect(stored?.history.map((message) => message.text)).toEqual(["밀린 질문", "밀린 답변", "질문", "답변"]);
+  });
+
+  /**
+   * 블록 갱신은 이미 성공했습니다. 여기서 실패를 올리면 사용자는 방금 화면에 그려진 답변과 블록을
+   * 잃습니다. 저장 실패는 응답에 실어 화면이 안내만 하게 합니다.
+   */
+  it("저장이 실패해도 요청은 성공하고 갱신된 상태를 그대로 돌려준다", async () => {
+    const failing = {
+      ...createInMemoryStore(),
+      appendTurn: async () => {
+        throw new DatabaseError("query_failed", "흉내 낸 오류");
+      },
+    } as unknown as SiftStore;
+
+    const response = await handleExperienceBlockUpdate(
+      request(requestBody({ save: { interviewId: "11111111-1111-4111-8111-111111111111", expectedBlockVersion: 0 } })),
+      { generate: alwaysOutput(acceptedOutput), store: failing }
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.save).toBe("failed");
+    expect(body.state.version).toBe(1);
+  });
+
+  it("다른 탭이 먼저 저장했으면 version_conflict를 돌려준다", async () => {
+    const store = createInMemoryStore();
+    const interviewId = await seed(store);
+    await store.appendTurn({
+      githubUserId: OWNER_ID,
+      interviewId,
+      turn: [{ role: "answer", text: "다른 탭의 답변" }],
+      blockState: { ...emptyExperienceBlockState(), version: 1 },
+      expectedBlockVersion: 0,
+    });
+
+    const response = await handleExperienceBlockUpdate(
+      request(requestBody({ save: { interviewId, expectedBlockVersion: 0 } })),
+      { generate: alwaysOutput(acceptedOutput), store }
+    );
+
+    await expect(response.json()).resolves.toMatchObject({ save: "version_conflict" });
+    const stored = await store.getInterview(interviewId, OWNER_ID);
+    expect(stored?.history.map((message) => message.text)).toEqual(["다른 탭의 답변"]);
+  });
+
+  it("남의 인터뷰에 저장하려 하면 not_found를 돌려준다", async () => {
+    const store = createInMemoryStore();
+    const analysisId = await store.saveAnalysis({
+      githubUserId: 99_999_999,
+      repoOwner: "other",
+      repoName: "repo",
+      contributionItems: [],
+      candidates: {},
+      stageASummary: {},
+    });
+    const theirs = await store.createInterview({
+      githubUserId: 99_999_999, analysisId, candidateKey: "c", title: "남의 것", evidence: {},
+    });
+
+    const response = await handleExperienceBlockUpdate(
+      request(requestBody({ save: { interviewId: theirs, expectedBlockVersion: 0 } })),
+      { generate: alwaysOutput(acceptedOutput), store }
+    );
+
+    await expect(response.json()).resolves.toMatchObject({ save: "not_found" });
+  });
+
+  // 조용히 넘기면 밀렸다고 보고한 턴이 저장되지 않은 채로 요청만 성공하고, 사용자는 밀린 대화가
+  // 저장된 줄 압니다.
+  it("밀린 턴 식별자가 이력에 없으면 422다", async () => {
+    const response = await handleExperienceBlockUpdate(
+      request(requestBody({ save: { interviewId: "x", expectedBlockVersion: 0, pendingTurnIds: ["없는턴"] } })),
+      { generate: alwaysOutput(acceptedOutput), store: createInMemoryStore() }
+    );
+
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toMatchObject({ error: { kind: "invalid_request" } });
+  });
+
+  it.each([
+    ["interviewId가 없으면", { expectedBlockVersion: 0 }],
+    ["기대 버전이 음수면", { interviewId: "x", expectedBlockVersion: -1 }],
+    ["기대 버전이 정수가 아니면", { interviewId: "x", expectedBlockVersion: 1.5 }],
+  ])("save에서 %s 422다", async (_label, save) => {
+    const response = await handleExperienceBlockUpdate(request(requestBody({ save })), {
+      generate: alwaysOutput(acceptedOutput),
+      store: createInMemoryStore(),
+    });
+    expect(response.status).toBe(422);
   });
 });
