@@ -18,6 +18,8 @@ export type EvidenceFileStatus = "added" | "modified" | "deleted";
 export interface EvidenceFileCommit {
   readonly sha: string;
   readonly role: EvidenceCommitRole;
+  /** 커밋 색인에서 찾은 커밋인지입니다. false면 제목·메시지·PR 정보를 확인할 수 없습니다. */
+  readonly indexed: boolean;
   readonly title: string | null;
   readonly message: string | null;
   /** 그 커밋이 실어 온 이 파일의 변경입니다. patch 본문과 절단·부재 표시가 커밋마다 다릅니다. */
@@ -88,6 +90,7 @@ export function collectEvidenceFiles(
       const entry: EvidenceFileCommit = {
         sha: commit.sha,
         role: commit.role,
+        indexed: commit.indexed,
         title: commit.title,
         message: commit.message,
         file,

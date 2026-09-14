@@ -116,6 +116,16 @@ describe("collectEvidenceFiles", () => {
     expect(files[0].commits[1].file.patchOmittedReason).toBe("budget_exhausted");
   });
 
+  // 색인에서 못 찾은 커밋은 제목·메시지·PR을 확인할 수 없다는 사실을 diff 뷰어가 알려야 합니다.
+  it("커밋의 색인 여부를 커밋 항목에 싣는다", () => {
+    const files = collectEvidenceFiles([
+      snapshotCommit({ indexed: false, title: null, message: null, files: [snapshotFile()] }),
+    ]);
+
+    expect(files[0].commits[0].indexed).toBe(false);
+    expect(files[0].commits[0].title).toBeNull();
+  });
+
   it("경로를 디렉터리와 파일명으로 나누고 루트 파일의 디렉터리는 빈 문자열이다", () => {
     const files = collectEvidenceFiles([
       snapshotCommit({
