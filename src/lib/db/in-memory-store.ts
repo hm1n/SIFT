@@ -27,6 +27,18 @@ interface InterviewRow extends NewInterview {
 }
 
 /**
+ * 표의 jsonb 칸으로 가는 값을 저장할 때 JSON을 한 번 거칩니다.
+ *
+ * 두 가지를 실제 구현과 맞춥니다. 첫째, `undefined`와 `bigint`와 함수와 순환 참조처럼 jsonb가 받지
+ * 못하는 값이 여기서 걸립니다. 걸러내지 않으면 테스트는 통과하는데 Postgres에서만 실패합니다.
+ * 둘째, 호출한 쪽의 객체를 그대로 붙들지 않고 사본을 남깁니다. 참조를 붙들면 호출한 쪽이 나중에
+ * 그 객체를 고칠 때 저장된 값이 함께 바뀌는데, 데이터베이스는 그렇게 동작하지 않습니다.
+ */
+function asJsonb<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+/**
  * 테스트가 쓰는 저장 계층입니다. 프로세스 메모리에만 있고 파일도 연결도 만들지 않습니다.
  *
  * 실제 구현과 같은 판정을 하도록 두 가지를 흉내 냅니다. 사용자 번호가 맞지 않으면 없는 것으로 보고,
@@ -62,7 +74,13 @@ export function createInMemoryStore(): SiftStore {
   return {
     async saveAnalysis(input) {
       const id = randomUUID();
-      analyses.set(id, { ...input, id });
+      analyses.set(id, {
+        ...input,
+        id,
+        contributionItems: asJsonb(input.contributionItems),
+        candidates: asJsonb(input.candidates),
+        stageASummary: asJsonb(input.stageASummary),
+      });
       return id;
     },
 
@@ -74,6 +92,7 @@ export function createInMemoryStore(): SiftStore {
       interviews.set(id, {
         ...input,
         id,
+        evidence: asJsonb(input.evidence),
         history: [],
         blockState: emptyExperienceBlockState(),
         blockVersion: 0,
@@ -89,8 +108,11 @@ export function createInMemoryStore(): SiftStore {
       const interview = interviews.get(interviewId);
       if (!interview || !ownedBy(interview, githubUserId)) return "not_found";
       if (interview.blockVersion !== expectedBlockVersion) return "version_conflict";
-      interview.history = [...interview.history, ...turn];
-      interview.blockState = blockState;
+      // 기대 버전만 보면 세 값이 모두 같은 요청이 몇 번이고 성공하고 버전이 오르지 않습니다.
+      // 그러면 다른 탭이 먼저 저장해도 막지 못합니다.
+      if (blockState.version !== expectedBlockVersion + 1) return "version_conflict";
+      interview.history = [...interview.history, ...asJsonb(turn)];
+      interview.blockState = asJsonb(blockState);
       interview.blockVersion = blockState.version;
       interview.updatedAt = new Date();
       return "saved";

@@ -11,6 +11,11 @@ import type { InterviewHistoryMessage } from "@/features/interview/history";
  *
  * 실제 저장과 복원은 이 이슈의 범위가 아닙니다. Neon 구현체는 첫 호출 지점이 생기는 이슈에서 넣습니다.
  *
+ * `unknown`으로 둔 칸은 표의 jsonb로 갑니다. `JSON.stringify`가 그대로 다룰 수 있는 값이어야 합니다.
+ * `undefined`와 `bigint`와 함수와 순환 참조는 들어갈 수 없습니다. 타입으로 막지 않고 메모리 구현이
+ * 저장할 때 JSON을 한 번 거쳐 걸러냅니다. `JsonValue` 같은 재귀 타입을 쓰면 기존 인터페이스가 그
+ * 타입에 대입되지 않아 호출하는 쪽마다 캐스팅이 붙고, 캐스팅이 붙는 순간 검사가 무력해집니다.
+ *
  * 읽기와 쓰기를 가리지 않고 모든 연산이 `githubUserId`를 받습니다. 정리 작업인
  * `purgeInterviewsOpenedBefore`만 예외입니다. 소유자 판정을 호출하는 쪽에 맡기지 않고 조회와 갱신
  * 조건에 함께 넣습니다. 읽고 나서 비교하는 방식이면 비교를 빠뜨린 경로가 하나만 있어도 남의 데이터를
@@ -28,6 +33,10 @@ export interface SiftStore {
    *
    * `expectedBlockVersion`이 저장된 값과 다르면 아무것도 쓰지 않고 `version_conflict`를 돌려줍니다.
    * 다른 탭이 먼저 저장한 경우입니다.
+   *
+   * `blockState.version`이 `expectedBlockVersion`보다 정확히 1 큰 값이 아닐 때도 `version_conflict`입니다.
+   * 기대 버전만 보면 저장된 버전과 기대 버전과 새 버전이 모두 같은 요청이 몇 번이고 성공하고 버전이
+   * 오르지 않습니다. 그러면 다른 탭이 먼저 저장해도 막지 못합니다.
    *
    * 인터뷰가 없거나 그 사용자의 것이 아니면 `not_found`입니다. 둘을 구분하지 않습니다.
    *

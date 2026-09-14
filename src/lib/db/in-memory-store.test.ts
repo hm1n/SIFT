@@ -83,6 +83,75 @@ describe("메모리 저장 계층", () => {
     expect(interview?.blockVersion).toBe(1);
   });
 
+  /**
+   * 기대 버전만 보면 저장된 버전과 기대 버전과 새 버전이 모두 같은 요청이 몇 번이고 성공하고
+   * 버전이 오르지 않습니다. 그러면 다른 탭이 먼저 저장해도 막지 못해 턴이 사라집니다.
+   */
+  it("새 블록 버전이 기대 버전보다 1 크지 않으면 저장하지 않는다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seed(store);
+
+    const sameVersion = await store.appendTurn({
+      githubUserId: OWNER_ID,
+      interviewId,
+      turn: [{ role: "answer", text: "버전을 올리지 않는 답변" }],
+      blockState: blockStateAt(0),
+      expectedBlockVersion: 0,
+    });
+    expect(sameVersion).toBe("version_conflict");
+
+    const jumped = await store.appendTurn({
+      githubUserId: OWNER_ID,
+      interviewId,
+      turn: [{ role: "answer", text: "버전을 건너뛴 답변" }],
+      blockState: blockStateAt(2),
+      expectedBlockVersion: 0,
+    });
+    expect(jumped).toBe("version_conflict");
+
+    const interview = await store.getInterview(interviewId, OWNER_ID);
+    expect(interview?.history).toEqual([]);
+    expect(interview?.blockVersion).toBe(0);
+  });
+
+  // 걸러내지 않으면 테스트는 통과하는데 Postgres의 jsonb에서만 실패합니다.
+  it.each([
+    ["bigint", BigInt(1)],
+    ["함수", () => "x"],
+    ["undefined", undefined],
+  ])("jsonb가 받지 못하는 %s 값은 저장할 때 걸러낸다", async (_label, evidence) => {
+    const store = createInMemoryStore();
+    const { analysisId } = await seed(store);
+
+    await expect(
+      store.createInterview({ githubUserId: OWNER_ID, analysisId, candidateKey: "c", title: "제목", evidence })
+    ).rejects.toThrow();
+  });
+
+  it("순환 참조가 있는 값은 저장할 때 걸러낸다", async () => {
+    const store = createInMemoryStore();
+    const { analysisId } = await seed(store);
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+
+    await expect(
+      store.createInterview({ githubUserId: OWNER_ID, analysisId, candidateKey: "c", title: "제목", evidence: circular })
+    ).rejects.toThrow();
+  });
+
+  // 데이터베이스는 호출한 쪽의 객체를 붙들지 않습니다. 메모리 구현도 사본을 남겨야 같은 판정이 됩니다.
+  it("저장한 뒤 호출한 쪽이 원본을 고쳐도 저장된 값은 그대로다", async () => {
+    const store = createInMemoryStore();
+    const { analysisId } = await seed(store);
+    const evidence: Record<string, unknown> = { commits: ["sha-1"] };
+    const interviewId = await store.createInterview({ githubUserId: OWNER_ID, analysisId, candidateKey: "c", title: "제목", evidence });
+
+    evidence.commits = ["바뀐 값"];
+
+    const interview = await store.getInterview(interviewId as string, OWNER_ID);
+    expect(interview?.evidence).toEqual({ commits: ["sha-1"] });
+  });
+
   it("없는 인터뷰에 턴을 붙이면 not_found를 돌려준다", async () => {
     const store = createInMemoryStore();
     const result = await store.appendTurn({
