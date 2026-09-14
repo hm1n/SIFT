@@ -538,13 +538,22 @@ describe("출력 계약 프롬프트", () => {
    * 이슈 #110 회귀입니다. 두 필드는 `assertCandidateEvidence` 같은 대조 검증이 없어, 프롬프트가
    * 유일한 규칙입니다. 여기서 규칙이 빠지면 커밋 type prefix가 그대로 실린 제목이나 입력에 없는
    * 기술 이름이 화면까지 그대로 갑니다.
+   *
+   * technicalTopics 쪽 네 문장은 2026-09-14에 실측으로 하나씩 붙인 것이라 함께 봅니다. 특히
+   * "어느 프로젝트에나 해당하는 말"을 막는 문장이 빠지면 토픽이 `오류 처리`·`상태 관리`로
+   * 되돌아가 후보를 구분하지 못합니다. 회차별 수치는
+   * `llm-wiki/raw/2026-09-14-경험후보-요약문장과-기술토픽-session-log.md` §4에 있습니다.
    */
   it("summary와 technicalTopics의 작성 규칙을 프롬프트에 적는다", async () => {
     const system = await capturedSystemPrompt(3);
 
     expect(system).toContain("명사형으로 끝내고 40자를 넘기지 마세요");
     expect(system).toContain("type prefix(feat, fix, chore 같은 말머리)와 SHA, PR 번호는 넣지 마세요");
-    expect(system).toContain(`실제로 나타난 기술 이름만 최대 ${MAX_TECHNICAL_TOPICS}개`);
+    expect(system).toContain(`기술적 문제와 기법을 최대 ${MAX_TECHNICAL_TOPICS}개`);
+    expect(system).toContain("두세 낱말짜리 명사구로 짧게 적습니다");
+    expect(system).toContain("어느 프로젝트에나 해당하는 말은 항목으로 쓰지 말고");
+    expect(system).toContain("summary에 쓴 문장을 그대로 옮기지 마세요");
+    expect(system).toContain("한글이면 한글로, 영어면 영어로");
     expect(system).toContain("넣을 것이 없으면 빈 배열로 두세요");
   });
 });
