@@ -19,7 +19,7 @@ export async function POST(request: NextRequest): Promise<Response> {
   try {
     const { body, auth } = await readGitHubRouteRequest(request);
     if (!Array.isArray(body.commits) || !body.commits.every(isCommitSummary) || body.commits.length > GITHUB_BATCH_LIMITS.commitDetails) {
-      throw new GitHubRouteRequestError("invalid_request", `commits는 최대 ${GITHUB_BATCH_LIMITS.commitDetails}개여야 합니다.`, 422);
+      throw new GitHubRouteRequestError("invalid_request", `commits must be at most ${GITHUB_BATCH_LIMITS.commitDetails}.`, 422);
     }
     total = body.commits.length;
     const commits = await fetchCommitDetailsBatch(auth, body.commits);

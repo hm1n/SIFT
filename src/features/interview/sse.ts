@@ -52,7 +52,7 @@ function parseRecord(record: string): InterviewStreamEvent | null {
   try {
     payload = JSON.parse(dataLines.join("\n"));
   } catch (cause) {
-    throw new InterviewStreamError("stream_interrupted", "스트림 데이터를 해석하지 못했습니다.", {
+    throw new InterviewStreamError("stream_interrupted", "Could not parse the stream data.", {
       cause,
     });
   }

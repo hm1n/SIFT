@@ -68,7 +68,7 @@ export async function githubFetch(url: string, token: string): Promise<Response>
   try {
     return await fetch(url, { headers: githubHeaders(token) });
   } catch {
-    throw new GitHubFetchError("network", `GitHub API 요청에 실패했습니다: ${url}`);
+    throw new GitHubFetchError("network", `The GitHub API request failed: ${url}`);
   }
 }
 
@@ -118,12 +118,12 @@ export async function fetchAuthenticatedUserLogin(token: string): Promise<string
   if (!response.ok) {
     throw new GitHubFetchError(
       response.status === 404 ? "server_error" : await classifyErrorResponse(response),
-      `인증 사용자 정보를 가져오지 못했습니다 (${response.status})`
+      `Could not fetch the authenticated user (${response.status})`
     );
   }
   const data = await parseJson<AuthenticatedUser>(
     response,
-    "인증 사용자 응답을 해석하지 못했습니다"
+    "Could not parse the authenticated user response"
   );
   return data.login;
 }
@@ -133,12 +133,12 @@ export async function fetchRepoInfo({ owner, repo, token }: GitHubAuth): Promise
   if (!response.ok) {
     throw new GitHubFetchError(
       await classifyErrorResponse(response),
-      `Repository 정보를 가져오지 못했습니다: ${owner}/${repo} (${response.status})`
+      `Could not fetch repository info: ${owner}/${repo} (${response.status})`
     );
   }
   const data = await parseJson<{ default_branch: string }>(
     response,
-    `Repository 정보 응답을 해석하지 못했습니다: ${owner}/${repo}`
+    `Could not parse the repository info response: ${owner}/${repo}`
   );
   return { defaultBranch: data.default_branch };
 }
@@ -182,12 +182,12 @@ export async function resolveBranchHeadSha(
   if (!response.ok) {
     throw new GitHubFetchError(
       await classifyErrorResponse(response),
-      `기본 브랜치 정보를 가져오지 못했습니다: ${owner}/${repo}@${branch} (${response.status})`
+      `Could not fetch default branch info: ${owner}/${repo}@${branch} (${response.status})`
     );
   }
   const data = await parseJson<{ commit: { sha: string } }>(
     response,
-    `기본 브랜치 응답을 해석하지 못했습니다: ${owner}/${repo}@${branch}`
+    `Could not parse the default branch response: ${owner}/${repo}@${branch}`
   );
   return data.commit.sha;
 }
@@ -230,7 +230,7 @@ export async function fetchAuthoredCommits(auth: GitHubAuth): Promise<AuthoredCo
       if (commits.length > 0) {
         throw new GitHubFetchError(
           "partial_failure",
-          `커밋 목록 조회 중 저장소 상태가 변경되어 실패했습니다 (409)`,
+          `The repository changed while listing commits, so the request failed (409)`,
           commits
         );
       }
@@ -238,7 +238,7 @@ export async function fetchAuthoredCommits(auth: GitHubAuth): Promise<AuthoredCo
     }
 
     if (!response.ok) {
-      const message = `커밋 목록 조회에 실패했습니다 (${response.status})`;
+      const message = `Could not list commits (${response.status})`;
       const cause = new GitHubFetchError(await classifyErrorResponse(response), message);
       if (commits.length > 0) {
         throw new GitHubFetchError("partial_failure", message, commits, { cause });
@@ -247,7 +247,7 @@ export async function fetchAuthoredCommits(auth: GitHubAuth): Promise<AuthoredCo
     }
 
     try {
-      const page = await parseJson<RawCommit[]>(response, "커밋 목록 응답을 해석하지 못했습니다");
+      const page = await parseJson<RawCommit[]>(response, "Could not parse the commit list response");
       commits.push(...page.map(toCommitSummary));
     } catch (error) {
       const cause =
@@ -255,7 +255,7 @@ export async function fetchAuthoredCommits(auth: GitHubAuth): Promise<AuthoredCo
           ? error
           : new GitHubFetchError(
               "network",
-              `커밋 목록 응답을 해석하지 못했습니다: ${(error as Error).message}`,
+              `Could not parse the commit list response: ${(error as Error).message}`,
               undefined,
               { cause: error }
             );
@@ -308,13 +308,13 @@ export async function fetchAuthoredCommitsBatch(
       if (commits.length === 0 && page === 1) {
         return { commits: [], repositoryHasCommits: false, cursor: null };
       }
-      const cause = new GitHubFetchError("server_error", "커밋 목록 조회 중 저장소 상태가 변경되어 실패했습니다 (409)");
+      const cause = new GitHubFetchError("server_error", "The repository changed while listing commits, so the request failed (409)");
       throw new GitHubFetchError("partial_failure", cause.message, commits, { cause });
     }
     if (!response.ok) {
       const cause = new GitHubFetchError(
         await classifyErrorResponse(response),
-        `커밋 목록 조회에 실패했습니다 (${response.status})`
+        `Could not list commits (${response.status})`
       );
       if (commits.length > 0) {
         throw new GitHubFetchError("partial_failure", cause.message, commits, { cause });
@@ -322,7 +322,7 @@ export async function fetchAuthoredCommitsBatch(
       throw cause;
     }
     try {
-      const batch = await parseJson<RawCommit[]>(response, "커밋 목록 응답을 해석하지 못했습니다");
+      const batch = await parseJson<RawCommit[]>(response, "Could not parse the commit list response");
       commits.push(...batch.map(toCommitSummary));
     } catch (error) {
       if (commits.length === 0) throw error;

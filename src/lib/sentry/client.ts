@@ -74,7 +74,7 @@ export function initSentryClient(): boolean {
     return true;
   } catch (error) {
     // 계측이 죽는 것은 앱이 죽는 것보다 낫습니다. 원인을 콘솔에 남깁니다.
-    console.error("[sentry] 클라이언트 초기화에 실패했습니다.", error);
+    console.error("[sentry] Client initialization failed.", error);
     return false;
   }
 }
