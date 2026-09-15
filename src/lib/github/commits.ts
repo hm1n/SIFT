@@ -65,26 +65,12 @@ export async function classifyErrorResponse(response: Response): Promise<GitHubF
 }
 
 export async function githubFetch(url: string, token: string): Promise<Response> {
-  const startedAt = Date.now();
   try {
     return await fetch(url, { headers: githubHeaders(token) });
   } catch (error) {
-    if (process.env.NODE_ENV === "development") {
-      // 요청 헤더와 예외 원문 대신 연결 오류 코드만 기록합니다.
-      const cause = error instanceof Error ? error.cause : undefined;
-      const codes = (value: unknown): unknown =>
-        typeof value === "object" && value !== null && "code" in value && typeof value.code === "string"
-          ? value.code
-          : undefined;
-      console.error("[githubFetch] network failure", {
-        url,
-        elapsedMs: Date.now() - startedAt,
-        name: error instanceof Error ? error.name : undefined,
-        code: codes(error),
-        causeCode: codes(cause),
-        ...(cause instanceof AggregateError ? { causeCodes: cause.errors.map(codes) } : {}),
-      });
-    }
+    // 잡은 예외를 `cause`로 넘깁니다. 연결 실패의 원인(`UND_ERR_CONNECT_TIMEOUT`, `ECONNRESET` 등)이
+    // 여기서 사라지면 호출부에는 network라는 분류만 남아, 같은 증상을 다시 조사할 때 원인을 처음부터
+    // 다시 재현해야 합니다(2026-09-15 GitHub 수집 실패 조사).
     throw new GitHubFetchError("network", `The GitHub API request failed: ${url}`, undefined, { cause: error });
   }
 }
