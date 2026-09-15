@@ -5,6 +5,7 @@ import type {
   AnalysisStage,
   RecoveryAction,
 } from "@/features/repository-analysis/repository-analysis";
+import type { ExperienceInterviewEndReason } from "@/features/experience-block/use-experience-interview";
 
 /**
  * GA4로 나가는 퍼널 이벤트의 어휘입니다. 전송은 `lib/analytics/ga.ts`가 하고 여기는 무엇을 어떤
@@ -15,9 +16,11 @@ import type {
  * 계측 전용 문자열을 따로 지으면 분류가 늘거나 바뀔 때 화면 안내와 계측이 조용히 갈라지고, 타입에서
  * 유도하면 컴파일이 누락을 잡습니다(이슈 #125 Approach).
  *
- * 이슈 #125는 1차 범위인 퍼널 이벤트 12종 가운데 10종을 다룹니다. `candidate_confirmed`와
- * `interview_started`는 화면 구조에 직접 붙어 있어 화면 개편 확정 뒤로 미뤘습니다. 경위는
- * `llm-wiki/wiki/2026-09-15-GA4-계측-후속-backlog.md` 2번에 있습니다.
+ * 이슈 #125가 1차 퍼널 10종을 담고 이슈 #126이 인터뷰 안쪽을 잇습니다. `candidate_confirmed`와
+ * 후보 탐색 2종은 아직 없습니다. 셋 다 후보 화면의 구조에 직접 붙는데 그 화면이 master-detail로
+ * 바뀌면서 첫 후보가 자동으로 선택되어, "상세를 열었다"가 사용자의 액션이 아니게 되었습니다.
+ * 화면 개편이 확정된 뒤에 정의부터 다시 잡습니다
+ * (`llm-wiki/wiki/2026-09-15-GA4-계측-후속-backlog.md` 2번).
  */
 
 /** 재시도가 후보 생성부터인지 분석 전체부터인지입니다. 화면의 재시도 라벨과 같은 근거로 갈립니다. */
@@ -64,7 +67,18 @@ export type AnalyticsEvent =
    * 어느 경로로 왔는지는 파라미터로 싣지 않습니다. `entry_path`가 공통 파라미터라 이 이벤트에도
    * 그대로 붙습니다(`repo_visibility`를 `analysis_requested`에 싣지 않는 것과 같은 이유).
    */
-  | { name: "interview_started"; turn: number };
+  | { name: "interview_started"; turn: number }
+  /**
+   * 대화가 끝난 자리입니다. 셋을 가려 세면 나가려다 돌아온 비율과, 그만둔 시점의 성과가 함께
+   * 보입니다.
+   *
+   * `filled_blocks`는 그 시점에 문장이 들어 있는 경험 블록 수입니다. 채운 뒤에 떠났다면 목적을
+   * 이루고 나간 것이고 비어 있다면 인터뷰가 실패한 것이라, 이 값이 없으면 이탈 건수를 해석할 수
+   * 없습니다(이슈 #126 Why). 화면의 `PAAR n/4`와 같은 함수를 봅니다.
+   */
+  | { name: "interview_completed"; end_reason: ExperienceInterviewEndReason; turn: number; filled_blocks: number }
+  | { name: "interview_abandoned"; turn: number; filled_blocks: number }
+  | { name: "interview_leave_canceled"; turn: number; filled_blocks: number };
 
 /**
  * 이벤트 하나를 보냅니다. 화면 컴포넌트는 이 함수와 아래 세터만 부르고 `window.gtag`를 직접 부르지

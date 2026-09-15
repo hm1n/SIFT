@@ -5,7 +5,7 @@ import { AppShell } from "@/components/shell/app-shell";
 import { Button } from "@/components/shell/button";
 import { StatusScreen } from "@/components/shell/status-screen";
 import { clearFlow, startFlow, trackEvent } from "@/features/analytics/events";
-import { InterviewScreen } from "@/features/interview/interview-screen";
+import { InterviewScreen, type InterviewProgressSnapshot } from "@/features/interview/interview-screen";
 import { RepositoryAnalysisView } from "@/features/repository-analysis/repository-analysis-view";
 import { SavedInterviewList } from "@/features/saved-interviews/saved-interview-list";
 import { SavedInterviewScreen } from "@/features/saved-interviews/saved-interview-screen";
@@ -79,6 +79,18 @@ export function RepositoryFlow() {
   const setUnsaved = useCallback((value: boolean) => {
     hasUnsavedRef.current = value;
   }, []);
+  /**
+   * 열려 있는 대화의 진행 상황입니다(이슈 #126). 이탈을 셀 때 몇 번째 턴이었는지와 그때 블록이 몇 개
+   * 채워져 있었는지를 함께 남깁니다. 두 값이 없으면 이탈 건수를 해석할 수 없습니다. 채운 뒤에 떠난
+   * 것은 목적을 이루고 나간 것이고 비어 있는 채로 떠난 것은 인터뷰가 실패한 것입니다.
+   *
+   * 위 둘과 같은 이유로 ref입니다. 그리는 데 쓰지 않는 값이라 상태로 두면 턴마다 이 흐름 전체가
+   * 다시 그려지고, 스트리밍 중 리렌더 범위를 최소로 둔다는 이 서비스의 제약과 정면으로 부딪힙니다.
+   */
+  const progressRef = useRef<InterviewProgressSnapshot>({ turn: 0, filledBlocks: 0, isEnded: false });
+  const setProgress = useCallback((progress: InterviewProgressSnapshot) => {
+    progressRef.current = progress;
+  }, []);
   /** 확인을 받은 뒤에 할 이동입니다. 확인 중이 아니면 `null`입니다. */
   const [pendingNavigation, setPendingNavigation] = useState<{ run: () => void } | null>(null);
   const leaveConfirmTitleId = useId();
@@ -98,6 +110,19 @@ export function RepositoryFlow() {
   ) {
     const wasInterviewOpen = interviewActiveRef.current;
     const run = () => {
+      /*
+       * 열려 있던 대화를 떠나면 이탈로 셉니다(이슈 #126). 이동이 전부 이 함수를 지나므로, 사이드바로
+       * 다른 인터뷰를 고르는 것도 새 경험 찾기도 여기서 한 번에 잡힙니다.
+       *
+       * 이미 끝낸 대화를 떠나는 것은 이탈이 아닙니다. 끝난 사건은 `interview_completed`가 이미
+       * 셌고, 여기서 또 세면 끝까지 한 사용자가 중도 이탈로도 한 번 잡혀 두 수가 모두 틀립니다.
+       * 판정은 훅이 올려 준 `isEnded`를 그대로 씁니다. 확인 대화를 건너뛰었는지 같은 이동 방식으로
+       * 미루어 보지 않습니다. 끝내기 말고도 확인을 건너뛰는 경로가 있기 때문입니다.
+       */
+      if (wasInterviewOpen && !progressRef.current.isEnded) {
+        const { turn, filledBlocks } = progressRef.current;
+        trackEvent({ name: "interview_abandoned", turn, filled_blocks: filledBlocks });
+      }
       interviewActiveRef.current = false;
       hasUnsavedRef.current = false;
       // 이동이 확정된 뒤에만 실행합니다. 다시 읽기처럼 이동에 딸린 조작을 호출부에서 먼저 하면,
@@ -218,6 +243,7 @@ export function RepositoryFlow() {
             onInterviewCreated={interviews.reload}
             onLoadLatestInterview={loadLatest}
             onUnsavedInterviewChange={setUnsaved}
+            onInterviewProgressChange={setProgress}
             onInterviewEnded={showEndedInterview}
           />
         ) : null}
@@ -231,6 +257,7 @@ export function RepositoryFlow() {
             onBackToReview={() => setMode({ ...mode, stage: "review" })}
             onInterviewActiveChange={setActive}
             onUnsavedChange={setUnsaved}
+            onProgressChange={setProgress}
             onLoadLatest={() => loadLatest(mode.interviewId)}
             onEnded={() => showEndedInterview(mode.interviewId)}
           />
@@ -262,7 +289,17 @@ export function RepositoryFlow() {
               >
                 Leave
               </Button>
-              <Button variant="secondary" onClick={() => setPendingNavigation(null)}>Continue the interview</Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  // 나가려다 돌아온 것입니다. 이탈과 가려 세야 확인 대화가 실제로 붙잡는지 보입니다.
+                  const { turn, filledBlocks } = progressRef.current;
+                  trackEvent({ name: "interview_leave_canceled", turn, filled_blocks: filledBlocks });
+                  setPendingNavigation(null);
+                }}
+              >
+                Continue the interview
+              </Button>
             </div>
           </div>
         </div>
@@ -306,6 +343,7 @@ function ResumedInterview({
   onBackToReview,
   onInterviewActiveChange,
   onUnsavedChange,
+  onProgressChange,
   onLoadLatest,
   onEnded,
 }: {
@@ -316,6 +354,7 @@ function ResumedInterview({
   onBackToReview: () => void;
   onInterviewActiveChange: (active: boolean) => void;
   onUnsavedChange: (hasUnsaved: boolean) => void;
+  onProgressChange: (progress: InterviewProgressSnapshot) => void;
   onLoadLatest: () => void;
   onEnded: () => void;
 }) {
@@ -370,6 +409,7 @@ function ResumedInterview({
       onBack={onBackToReview}
       onInterviewActiveChange={onInterviewActiveChange}
       onUnsavedChange={onUnsavedChange}
+      onProgressChange={onProgressChange}
       onLoadLatest={onLoadLatest}
       onEnded={onEnded}
     />
@@ -383,6 +423,7 @@ function ResumedInterviewScreen({
   onBack,
   onInterviewActiveChange,
   onUnsavedChange,
+  onProgressChange,
   onLoadLatest,
   onEnded,
 }: {
@@ -391,6 +432,7 @@ function ResumedInterviewScreen({
   onBack: () => void;
   onInterviewActiveChange: (active: boolean) => void;
   onUnsavedChange: (hasUnsaved: boolean) => void;
+  onProgressChange: (progress: InterviewProgressSnapshot) => void;
   onLoadLatest: () => void;
   onEnded: () => void;
 }) {
@@ -412,6 +454,7 @@ function ResumedInterviewScreen({
       }}
       onLoadLatest={onLoadLatest}
       onUnsavedChange={onUnsavedChange}
+      onProgressChange={onProgressChange}
       onEnded={onEnded}
       onBack={onBack}
     />

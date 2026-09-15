@@ -286,6 +286,39 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
     await screen.findByRole("heading", { name: "Choose a repository to analyze." });
     expect(screen.queryByRole("region", { name: "Code / Evidence" })).not.toBeInTheDocument();
   });
+
+  /**
+   * 확인 대화가 뜨지 않는 경로가 이탈의 대부분입니다. 저장이 끝난 상태로 나가는 경우인데, 이것을
+   * 세지 않으면 이탈 건수가 "저장 안 된 답변을 버린 경우"만 세게 되어 이슈 #126의 Goal인 "중도
+   * 종료가 몇 번째 턴에 몰리는지"에 답하지 못합니다.
+   */
+  it("확인 없이 나가도 이탈로 센다", async () => {
+    await renderWithConfirmedInterview();
+
+    fireEvent.click(screen.getByRole("button", { name: "← Change repository" }));
+
+    await screen.findByRole("heading", { name: "Choose a repository to analyze." });
+    expect(trackEvent).toHaveBeenCalledWith({ name: "interview_abandoned", turn: 0, filled_blocks: 0 });
+  });
+
+  /** 나가려다 돌아온 비율을 보려면 두 선택지를 가려 세야 합니다. */
+  it("확인 대화에서 계속하기를 누르면 이탈이 아니라 취소로 센다", async () => {
+    await renderWithConfirmedInterview({
+      "/api/interview/experience-block": () =>
+        Response.json({ error: { kind: "storage_failed", message: "끊김" } }, { status: 503 }),
+    });
+    const answer = await screen.findByRole("textbox", { name: /Answer/ });
+    fireEvent.change(answer, { target: { value: "화면이 비어 있었습니다." } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText("Your last answer wasn't saved.");
+
+    fireEvent.click(screen.getByRole("button", { name: "← Change repository" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue the interview" }));
+
+    const names = trackEvent.mock.calls.map(([event]) => (event as { name: string }).name);
+    expect(names).toContain("interview_leave_canceled");
+    expect(names).not.toContain("interview_abandoned");
+  });
 });
 
 /**
@@ -402,6 +435,20 @@ describe("RepositoryFlow 이어가기", () => {
     // 끝난 인터뷰라 버튼 문구가 이어가기가 아니라 다시 보기입니다.
     expect(await screen.findByRole("button", { name: /Review interview/ })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Code / Evidence" })).not.toBeInTheDocument();
+
+    /*
+     * 끝낸 사건은 종료로만 셉니다. 끝낸 직후에도 요약 화면으로 옮기느라 `navigate`를 한 번 더
+     * 지나는데, 거기서 이탈로도 세면 끝까지 한 사용자가 중도 이탈로 한 번 더 잡혀 두 수가 모두
+     * 틀립니다.
+     */
+    const names = trackEvent.mock.calls.map(([event]) => (event as { name: string }).name);
+    expect(trackEvent).toHaveBeenCalledWith({
+      name: "interview_completed",
+      end_reason: "user",
+      turn: 1,
+      filled_blocks: 0,
+    });
+    expect(names).not.toContain("interview_abandoned");
   });
 
   // 끝난 인터뷰를 다시 열면 대화가 다시 자라나면 안 됩니다.
