@@ -109,6 +109,20 @@ async function handleBlockEdit(
   }
 
   const blockVersion = interview.blockVersion + 1;
+  /*
+   * 고친 블록의 미해소 충돌도 함께 지웁니다(PR #127 리뷰).
+   *
+   * 충돌은 모델이 낸 주장과 저장소 관찰이 어긋난 지점이라 특정 주장에 매여 있습니다. 사용자가 그 블록을
+   * 자기 문장으로 바꾸면 그 주장은 화면에서 사라지는데, 충돌만 남기면 다시 열었을 때 쓴 적 없는 문장에
+   * 대한 경고가 뜹니다. 화면은 편집 직후에만 충돌을 숨기므로(`effectiveConflicts`) 저장된 값에서
+   * 지우지 않으면 그 성질이 다시 읽는 순간 깨집니다(설계 8절).
+   *
+   * 주장 자체는 남깁니다. 표시 문장이 더 이상 그 주장을 참조하지 않아 화면에 나오지 않고, 그 블록이
+   * 무엇을 근거로 쌓였는지는 저장된 기록으로 남겨 두는 편이 낫습니다.
+   */
+  const editedClaimIds = new Set(
+    interview.blockState.claims.filter((claim) => claim.block === parsed.body.block).map((claim) => claim.id)
+  );
   const result = await store.appendTurn({
     githubUserId: userId,
     interviewId: id,
@@ -117,6 +131,7 @@ async function handleBlockEdit(
       ...interview.blockState,
       version: blockVersion,
       display: { ...interview.blockState.display, [parsed.body.block]: blockEditSentences(parsed.body) },
+      conflicts: interview.blockState.conflicts.filter((conflict) => !editedClaimIds.has(conflict.claimId)),
     },
     progress: interview.progress,
     expectedBlockVersion: interview.blockVersion,

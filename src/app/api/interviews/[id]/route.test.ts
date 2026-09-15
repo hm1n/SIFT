@@ -409,4 +409,51 @@ describe("PATCH /api/interviews/[id] 블록 편집", () => {
 
     expect(response.status).toBe(503);
   });
+
+  /**
+   * 고친 블록의 충돌을 저장할 상태에서도 지웁니다(PR #127 리뷰). 화면은 편집 직후에만 충돌을
+   * 숨기므로, 저장된 값에 남겨 두면 다시 읽는 순간 쓴 적 없는 문장에 대한 경고가 돌아옵니다.
+   */
+  it("고친 블록의 충돌을 저장된 상태에서도 지운다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seed(store);
+    const claim = {
+      id: "c1",
+      block: "problem" as const,
+      text: "모델이 쓴 주장",
+      sources: [{ source: "user" as const }],
+      status: "conflicted" as const,
+      turnId: "t1",
+    };
+    const other = { ...claim, id: "c2", block: "action" as const };
+    await store.appendTurn({
+      githubUserId: OWNER_ID,
+      interviewId,
+      turn: [],
+      blockState: {
+        ...emptyExperienceBlockState(),
+        version: 1,
+        claims: [claim, other],
+        conflicts: [
+          { claimId: "c1", observation: "커밋에는 그 변경이 없습니다", turnId: "t1" },
+          { claimId: "c2", observation: "다른 블록의 충돌", turnId: "t1" },
+        ],
+      },
+      progress: emptyInterviewProgress(),
+      expectedBlockVersion: 0,
+    });
+    await store.completeInterview(interviewId, OWNER_ID);
+
+    await handlePatchInterview(
+      request({ method: "PATCH", body: { blockEdit: { block: "problem", sentences: ["내가 쓴 문장"], expectedBlockVersion: 1 } } }),
+      interviewId,
+      store
+    );
+
+    const saved = await store.getInterview(interviewId, OWNER_ID);
+    // 고친 블록의 충돌만 사라지고 다른 블록의 충돌은 그대로입니다.
+    expect(saved?.blockState.conflicts).toEqual([
+      { claimId: "c2", observation: "다른 블록의 충돌", turnId: "t1" },
+    ]);
+  });
 });
