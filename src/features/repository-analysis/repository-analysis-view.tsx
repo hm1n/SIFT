@@ -9,6 +9,7 @@ import { ExperienceCandidateList, StageAExclusions } from "@/features/experience
 import { advanceAnalysisTracker, createAnalysisTracker, type AnalysisTracker } from "@/features/analytics/analysis-events";
 import { trackEvent } from "@/features/analytics/events";
 import {
+  ANALYSIS_STAGES,
   analysisStageOf,
   analyzeRepository,
   generateCandidates,
@@ -29,15 +30,21 @@ const INITIAL_STATE: AnalysisState = { status: "idle" };
  * 갈라지므로 매핑이 필요하고, 그 매핑(`analysisStageOf`)과 단계 목록은 `repository-analysis.ts`에
  * 있습니다. 여기서는 라벨만 붙입니다. 매핑을 이 파일에 두면 화면 개편이 `analysis_stage_done`의
  * 단계 어휘까지 바꾸게 되므로, 화면과 계측이 같은 함수를 보게 옮겼습니다(이슈 #125).
+ *
+ * 라벨을 `Record<AnalysisStage, string>`로 두고 목록은 `ANALYSIS_STAGES`에서 폅니다. 배열을 따로
+ * 들면 단계가 하나 늘 때 체크리스트에서 조용히 빠지고 화면만 뒤처집니다. 이 형태는 라벨이 빠진
+ * 단계를 컴파일이 잡고, 순서도 `ANALYSIS_STAGES` 한 곳에서만 정해집니다.
  */
-const CHECKLIST_STEPS: readonly { readonly key: AnalysisStage; readonly label: string }[] = [
-  { key: "commits", label: "Fetching commit history" },
-  { key: "commit_details", label: "Fetching commit details" },
-  { key: "repository_metadata", label: "Fetching repository metadata" },
-  { key: "deriving", label: "Computing derived metrics" },
-  { key: "stage_a", label: "Selecting experience candidates" },
-  { key: "stage_b", label: "Finalizing candidates" },
-];
+const CHECKLIST_LABELS: Record<AnalysisStage, string> = {
+  commits: "Fetching commit history",
+  commit_details: "Fetching commit details",
+  repository_metadata: "Fetching repository metadata",
+  deriving: "Computing derived metrics",
+  stage_a: "Selecting experience candidates",
+  stage_b: "Finalizing candidates",
+};
+
+const CHECKLIST_STEPS = ANALYSIS_STAGES.map((key) => ({ key, label: CHECKLIST_LABELS[key] }));
 
 /**
  * ✓·●·○ 기호는 `aria-hidden`이고 완료·진행·대기 구분이 `data-state`와 CSS에만 있어 스크린리더에는
