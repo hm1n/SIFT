@@ -1,12 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/shell/button";
 import { StatusScreen } from "@/components/shell/status-screen";
 import { SESSION_PATH } from "@/lib/github/auth-paths";
 import type { RepositorySummary } from "@/lib/github/types";
 import { ExperienceCandidateList, StageAExclusions } from "@/features/experience-candidates/experience-candidate-list";
+import { advanceAnalysisTracker, createAnalysisTracker, type AnalysisTracker } from "@/features/analytics/analysis-events";
+import { trackEvent } from "@/features/analytics/events";
 import type { ConfirmedExperience } from "@/features/experience-candidates/experience-selection";
 import {
   createSavedInterview,
@@ -18,10 +20,13 @@ import {
 import type { StoredAnalysisPayload } from "@/features/saved-interviews/payload";
 import { buildStoredAnalysis } from "./analysis-snapshot";
 import {
+  ANALYSIS_STAGES,
+  analysisStageOf,
   analyzeRepository,
   generateCandidates,
+  type AnalysisEmptyKind,
+  type AnalysisStage,
   type AnalysisState,
-  type EmptyKind,
   type LoadingPhase,
   type StageASelectionState,
 } from "./repository-analysis";
@@ -46,18 +51,24 @@ type LookupState =
  * Loading 체크리스트가 그리는 6개 실제 분석 단계입니다. 순서는 `route-client.ts`의
  * `fetchContributionsFromApi`가 실제로 보고하는 순서(commit_details 완료 뒤 repository_metadata)와 같습니다.
  * `LoadingPhase`의 `details` 스텝 하나가 `commit_details`·`repository_metadata` 두 체크리스트 항목으로
- * 갈라지므로 여기서만 매핑하고 `repository-analysis.ts`의 실제 단계 수·순서는 바꾸지 않습니다.
+ * 갈라지므로 매핑이 필요하고, 그 매핑(`analysisStageOf`)과 단계 목록은 `repository-analysis.ts`에
+ * 있습니다. 여기서는 라벨만 붙입니다. 매핑을 이 파일에 두면 화면 개편이 `analysis_stage_done`의
+ * 단계 어휘까지 바꾸게 되므로, 화면과 계측이 같은 함수를 보게 옮겼습니다(이슈 #125).
+ *
+ * 라벨을 `Record<AnalysisStage, string>`로 두고 목록은 `ANALYSIS_STAGES`에서 폅니다. 배열을 따로
+ * 들면 단계가 하나 늘 때 체크리스트에서 조용히 빠지고 화면만 뒤처집니다. 이 형태는 라벨이 빠진
+ * 단계를 컴파일이 잡고, 순서도 `ANALYSIS_STAGES` 한 곳에서만 정해집니다.
  */
-const CHECKLIST_STEPS = [
-  { key: "commits", label: "Fetching commit history" },
-  { key: "commit_details", label: "Fetching commit details" },
-  { key: "repository_metadata", label: "Fetching repository metadata" },
-  { key: "deriving", label: "Computing derived metrics" },
-  { key: "stage_a", label: "Selecting experience candidates" },
-  { key: "stage_b", label: "Finalizing candidates" },
-] as const;
+const CHECKLIST_LABELS: Record<AnalysisStage, string> = {
+  commits: "Fetching commit history",
+  commit_details: "Fetching commit details",
+  repository_metadata: "Fetching repository metadata",
+  deriving: "Computing derived metrics",
+  stage_a: "Selecting experience candidates",
+  stage_b: "Finalizing candidates",
+};
 
-type ChecklistKey = (typeof CHECKLIST_STEPS)[number]["key"];
+const CHECKLIST_STEPS = ANALYSIS_STAGES.map((key) => ({ key, label: CHECKLIST_LABELS[key] }));
 
 /**
  * ✓·●·○ 기호는 `aria-hidden`이고 완료·진행·대기 구분이 `data-state`와 CSS에만 있어 스크린리더에는
@@ -70,13 +81,6 @@ const CHECKLIST_STATUS_TEXT: Record<"done" | "active" | "pending", string> = {
   active: "In progress:",
   pending: "Pending:",
 };
-
-function checklistKeyFor(loading: LoadingPhase): ChecklistKey {
-  if (loading.step === "details") {
-    return loading.phase === "repository_metadata" ? "repository_metadata" : "commit_details";
-  }
-  return loading.step;
-}
 
 /**
  * `AppShell`의 사이드바 메타 표기(`ShellRepository` 기준 `visibility`·`language`)와 같은 형식입니다.
@@ -182,6 +186,30 @@ export function RepositoryAnalysisView({
    * 상태로 두는 이유는 비우는 일이 사용자의 조작(다시 분석)에서 오기 때문입니다.
    */
   const requestedAnalysisIdRef = useRef<string | undefined>(analysisId);
+  /**
+   * 계측이 직전 단계를 기억하는 자리입니다. 상세 조회 단계는 커밋마다 상태를 갱신하므로, 기억하지
+   * 않으면 `analysis_stage_done`이 저장소 하나에 수백 건 나갑니다. 판정은 순수 함수
+   * `advanceAnalysisTracker`가 하고 여기서는 그 결과를 들고만 있습니다.
+   */
+  const trackerRef = useRef<AnalysisTracker | null>(null);
+
+  /**
+   * 전체를 try/catch로 감쌉니다. 이 함수는 분석 상태를 화면에 반영하기 직전에 실행되므로, 여기서
+   * 던지면 `setState`에 닿지 못해 화면이 로딩에 멈춥니다. 전송부(`lib/analytics/ga.ts`)가 이미
+   * 예외를 삼키지만 이 경로에는 전송 말고도 상태 판정과 파라미터 구성이 함께 있습니다. 계측 실패가
+   * 서비스 오류로 보이면 안 된다는 이슈 #125의 제약을 이 자리에서 한 번 더 지킵니다.
+   */
+  const reportAnalysis = useCallback((next: AnalysisState) => {
+    try {
+      const tracker = trackerRef.current;
+      if (!tracker) return;
+      const advanced = advanceAnalysisTracker(tracker, next, Date.now());
+      trackerRef.current = advanced.tracker;
+      advanced.events.forEach(trackEvent);
+    } catch {
+      // 계측이 죽는 것이 화면이 죽는 것보다 낫습니다.
+    }
+  }, []);
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -240,6 +268,14 @@ export function RepositoryAnalysisView({
       return;
     }
 
+    /**
+     * 계측 기준점은 분석을 실제로 시작하는 이 자리에서 잡습니다(이슈 #125·#116).
+     *
+     * 이슈 #125에서는 화면이 마운트되면 곧바로 분석했으므로 기준점도 그때 잡았습니다. 이슈 #116에서
+     * 저장된 분석을 먼저 찾게 되면서 분석이 아예 시작되지 않는 길이 생겼습니다. 마운트 시점에 잡으면
+     * 저장된 분석을 그린 화면이 분석 하나를 돌린 것으로 집계됩니다.
+     */
+    trackerRef.current = createAnalysisTracker(Date.now());
     await analyzeRepository(
       { owner: repository.owner, repo: repository.name },
       contributionItems,
@@ -253,10 +289,14 @@ export function RepositoryAnalysisView({
    * 저장 시점이 정의서가 정한 자리입니다. 확정 시점까지 미루면 경험을 하나도 고르지 않고 나간
    * 사용자가 다시 들어왔을 때 후보 목록이 없고, Stage B가 쓰는 모델은 하루 요청 수가 프로젝트 전체
    * 20회라 다시 분석하는 것이 사실상 막혀 있습니다.
+   *
+   * 계측도 이 실행 번호 안에 둡니다(이슈 #125). 버려진 실행이 늦게 돌려주는 결과는 화면에 그리지
+   * 않으므로 이벤트로도 세지 않습니다.
    */
   function stateSinkFor(run: number) {
     return (next: AnalysisState) => {
       if (runRef.current !== run) return;
+      reportAnalysis(next);
       setState(next);
       if (next.status === "success") void storedAnalysisId(next, run);
     };
@@ -369,6 +409,7 @@ export function RepositoryAnalysisView({
      * `Analyze again`, Error 상태의 다시 시도).
      */
     setLookup({ status: "done" });
+    trackerRef.current = createAnalysisTracker(Date.now());
     // 다시 분석하면 앞 분석의 줄을 가리키는 식별자는 더 이상 이 화면의 결과가 아닙니다.
     analysisIdRef.current = null;
     savingAnalysisRef.current = null;
@@ -377,10 +418,24 @@ export function RepositoryAnalysisView({
   }
 
   function retry() {
-    if (state.status === "error" && state.retryPoint) {
-      return generateCandidates(state.retryPoint, stateSinkFor(runRef.current));
-    }
-    return restart();
+    if (state.status !== "error") return restart();
+    /**
+     * 재시도 범위는 화면의 재시도 라벨과 같은 근거로 갈립니다. `retryPoint`가 있으면 후보 생성부터,
+     * 없으면 분석 전체를 다시 합니다.
+     *
+     * 이벤트를 먼저 보내고 시작합니다. 아래에서 시작한 재분석이 곧바로 상태를 바꾸므로, 순서를
+     * 바꾸면 `analysis_retried`가 그 분석의 첫 단계 이벤트보다 뒤에 놓입니다.
+     */
+    trackEvent({
+      name: "analysis_retried",
+      error_kind: state.error.kind,
+      retry_scope: state.retryPoint ? "candidate_generation" : "full_analysis",
+    });
+    if (!state.retryPoint) return restart();
+    // 이번 시도의 소요 시간을 재려고 기준점을 다시 잡습니다. 그대로 두면 실패한 앞 시도와 사용자가
+    // 재시도를 누르기까지 머문 시간이 `analysis_succeeded`의 `duration_ms`에 섞입니다.
+    trackerRef.current = createAnalysisTracker(Date.now());
+    return generateCandidates(state.retryPoint, stateSinkFor(runRef.current));
   }
 
   async function reauthenticate() {
@@ -522,7 +577,7 @@ function LoadingChecklist({
   loading: LoadingPhase;
   onSelectRepository: () => void;
 }) {
-  const activeKey = checklistKeyFor(loading);
+  const activeKey = analysisStageOf(loading);
   const activeIndex = CHECKLIST_STEPS.findIndex((step) => step.key === activeKey);
   const meta = analysisMeta(repository);
 
@@ -572,7 +627,7 @@ function LoadingChecklist({
   );
 }
 
-const EMPTY_COPY: Record<EmptyKind | "no_final_candidates", { code: string; label: string; description: string }> = {
+const EMPTY_COPY: Record<AnalysisEmptyKind, { code: string; label: string; description: string }> = {
   no_commits: {
     code: "No Commits",
     label: "No commits found to analyze.",
@@ -609,7 +664,7 @@ function EmptyState({
   stageASelection,
   onSelectRepository,
 }: {
-  kind: EmptyKind | "no_final_candidates";
+  kind: AnalysisEmptyKind;
   reason?: string;
   // Stage A 전에 나는 no_commits·no_author_commits·no_analyzable_commits는 선별 정보가 없어 생략됩니다.
   // no_stage_a_candidates·no_final_candidates는 후보가 0개일 때가 제외 사유를 가장 알아야 할 순간이라

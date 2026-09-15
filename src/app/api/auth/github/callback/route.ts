@@ -18,7 +18,13 @@ export const runtime = "nodejs";
  * 지우면 아무나 이 엔드포인트를 크로스사이트로 호출해 진행 중인 남의 로그인을 끊을 수 있습니다.
  */
 function redirect(request: Request, code?: string, clearState = true): Response {
-  const headers = new Headers({ Location: new URL(code ? `/?auth_error=${code}` : "/", request.url).toString() });
+  /**
+   * 실패도 성공처럼 `login` 표시를 함께 붙입니다. `auth_error`만으로 실패를 세면 그 주소를
+   * 새로고침할 때마다 같은 로그인 실패가 다시 세어집니다. `auth_error`는 로그인 화면이 안내를
+   * 그리는 근거라 남고, 계측이 읽고 지우는 것은 `login`뿐입니다(PR #129 리뷰).
+   */
+  const location = code ? `/?auth_error=${code}&login=failed` : "/";
+  const headers = new Headers({ Location: new URL(location, request.url).toString() });
   if (clearState) headers.append("Set-Cookie", deleteOAuthStateCookie());
   return new Response(null, { status: 302, headers });
 }
@@ -48,7 +54,14 @@ export async function GET(request: NextRequest): Promise<Response> {
     return redirect(request, "exchange_failed");
   }
   try {
-    const headers = new Headers({ Location: new URL("/", request.url).toString() });
+    /**
+     * 성공도 실패처럼 쿼리로 표시합니다. 실패는 이미 `?auth_error=`로 돌아가는데 성공만 표시가
+     * 없어서, 계측이 "세션이 있는 첫 렌더"를 로그인 성공으로 볼 수밖에 없었습니다. 세션 쿠키는
+     * 8시간을 살고 새로고침마다 그 조건이 성립하므로 그 판정으로는 로그인 성공 수가 아니라 페이지
+     * 로드 수가 세어집니다. 이 표시를 읽고 지우는 일은 `features/analytics/analytics-session.tsx`가
+     * 합니다(이슈 #125).
+     */
+    const headers = new Headers({ Location: new URL("/?login=success", request.url).toString() });
     headers.append("Set-Cookie", createGitHubSessionCookie(encryptGitHubSession(session)));
     headers.append("Set-Cookie", deleteOAuthStateCookie());
     return new Response(null, { status: 302, headers });

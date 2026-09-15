@@ -1,21 +1,13 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useEffect, useRef } from "react";
+import { trackEvent } from "@/features/analytics/events";
+import { AUTH_ERROR_COPY, toAuthErrorParam } from "./auth-error";
 import { LoginLink, useAuthTransition } from "@/components/shell/auth-transition";
 import { SiftMark } from "@/components/shell/sift-mark";
 import { StatusScreen } from "@/components/shell/status-screen";
 import styles from "./login-screen.module.css";
-
-/**
- * OAuth 라우트가 `?auth_error=`로 돌려보내는 오류 종류별 안내입니다. 종류는 콜백 라우트와 로그인 라우트가 정합니다.
- * 이슈 #94 Constraint대로 종류를 합쳐 한 문구로 만들지 않습니다. 제목은 디자인의 한 문장으로 고정하고 여기 문구를 sub에 씁니다.
- */
-export const AUTH_ERROR_COPY: Record<string, string> = {
-  access_denied: "You cancelled the GitHub authorization. You can log in again.",
-  state_mismatch: "We couldn't verify the login request. Start the login again from the beginning.",
-  exchange_failed: "GitHub authentication didn't complete. Try again in a moment.",
-  config_missing: "The server has no GitHub login configuration. A server administrator needs to complete the setup.",
-};
 
 export interface LoginScreenProps {
   /** `page.tsx`가 `searchParams.auth_error`에서 읽어 넘기는 오류 종류입니다. 표에 없는 값은 안내로 취급하지 않습니다. */
@@ -35,6 +27,19 @@ export interface LoginScreenProps {
 export function LoginScreen({ authError }: LoginScreenProps) {
   const router = useRouter();
   const { isAuthenticating } = useAuthTransition();
+  // 개발 모드의 StrictMode는 effect를 두 번 실행합니다. 한 번 들어온 화면을 두 번 세지 않습니다.
+  const viewReportedRef = useRef(false);
+
+  // 퍼널의 첫 마디입니다. 세 상태(기본·인증 중·오류) 가운데 무엇을 그리든 화면에 들어온 것은 한 번이므로
+  // 마운트에 한 번만 보냅니다. `Try again`으로 오류 쿼리를 지우는 전환은 같은 진입 안에서 일어납니다.
+  useEffect(() => {
+    if (viewReportedRef.current) return;
+    viewReportedRef.current = true;
+    trackEvent({
+      name: "login_view",
+      ...(authError === undefined ? {} : { auth_error: toAuthErrorParam(authError) }),
+    });
+  }, [authError]);
 
   if (isAuthenticating) {
     return (
