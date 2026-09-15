@@ -2,6 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
 import { encodeSseEvent } from "@/features/interview/sse";
@@ -662,6 +663,44 @@ describe("useExperienceInterview", () => {
     // 질문 10회 + 블록 갱신 10회 + 상한 종료가 시도한 마지막 재처리 1회 = 21회입니다. 이전
     // 구현은 `inner.endInterview()`를 곧장 불러 이 재처리 없이 그대로 끝났습니다.
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(21));
+    expect(result.current.unreflectedTurnId).toBeNull();
+  });
+
+  it("Strict Mode로 두 번 마운트해도 첫 답변의 블록 갱신을 보낸다", async () => {
+    // Strict Mode는 개발에서 effect를 setup → cleanup → setup으로 실행합니다. 언마운트 표시를
+    // setup에서 되돌리지 않으면 첫 cleanup이 남긴 값 때문에 마운트된 훅이 스스로를 언마운트됐다고
+    // 판단합니다. 그러면 답변을 제출해도 블록 갱신 요청을 보내지 않고 그 턴을 미반영으로 남긴 뒤
+    // 다음 질문도 시작하지 않아, 화면이 첫 답변 뒤 로딩에서 멈춥니다.
+    const questions: ReturnType<typeof controllableResponse>[] = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === QUESTION_URL) {
+        const source = controllableResponse();
+        questions.push(source);
+        return source.response;
+      }
+      return jsonResponse(200, blockUpdateBody({ evaluation: { problem: SUFFICIENT } }));
+    });
+    const { result } = renderHook(
+      () => useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate }),
+      { wrapper: StrictMode }
+    );
+    await waitFor(() => expect(questions.length).toBeGreaterThan(0));
+    // 앞선 마운트의 스트림은 cleanup이 끊었으므로 마지막 요청만 살아 있습니다.
+    completeQuestion(questions[questions.length - 1], "문제 상황을 알려주세요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+    act(() => {
+      result.current.submitAnswer("화면이 비어 있었습니다.");
+    });
+
+    await waitFor(() =>
+      expect(fetchImpl.mock.calls.filter(([input]) => String(input) === BLOCK_UPDATE_URL)).toHaveLength(1)
+    );
+    // 다음 질문 요청까지 이어져야 로딩이 풀립니다.
+    await waitFor(() =>
+      expect(result.current.currentTarget).toEqual({ targetBlock: "alternatives", targetElement: "a" })
+    );
     expect(result.current.unreflectedTurnId).toBeNull();
   });
 });

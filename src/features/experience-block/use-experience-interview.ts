@@ -174,6 +174,10 @@ export function useExperienceInterview({
    */
   const unmountedRef = useRef(false);
   useEffect(() => {
+    // Strict Mode는 개발에서 effect를 setup → cleanup → setup으로 두 번 실행합니다. setup에서
+    // 되돌리지 않으면 첫 cleanup이 남긴 `true`가 그대로 살아 있어, 마운트된 훅이 스스로를
+    // 언마운트됐다고 판단합니다. 그러면 첫 답변부터 블록 갱신 요청을 아예 보내지 않습니다.
+    unmountedRef.current = false;
     return () => {
       unmountedRef.current = true;
       activeAbortRef.current?.abort();

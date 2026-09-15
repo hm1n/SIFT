@@ -528,6 +528,9 @@ export function useInterviewStream({
   // 진짜 언마운트만 잡습니다. 빈 의존성 배열이라 위 effect처럼 `start`가 바뀔 때마다 다시 돌지
   // 않습니다. 같이 두면 재실행마다 "언마운트됨"으로 잘못 표시합니다.
   useEffect(() => {
+    // Strict Mode의 두 번째 setup에서 되돌립니다. 없으면 첫 cleanup이 남긴 `true` 때문에
+    // `onBeforeQuestion`의 결과를 항상 버려 다음 질문 요청이 시작되지 않습니다.
+    unmountedRef.current = false;
     return () => {
       unmountedRef.current = true;
     };
