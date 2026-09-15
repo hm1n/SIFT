@@ -1,5 +1,6 @@
 "use client";
 
+import { answerLengthBucket, trackEvent } from "@/features/analytics/events";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { InterviewStreamError } from "./errors";
 import {
@@ -106,6 +107,14 @@ export interface UseInterviewStreamOptions {
   onBeforeQuestion?: (context: {
     readonly history: readonly InterviewHistoryMessage[];
   }) => Promise<InterviewQuestionOutcome>;
+  /**
+   * 지금까지 확정된 턴 수입니다. 계측이 이벤트에 실을 값이고 화면 동작에는 쓰지 않습니다(이슈 #126).
+   *
+   * 세는 규칙을 이 훅이 다시 적지 않고 받습니다. 완료 대기 안내에 대한 보충 답변은 턴으로 세지
+   * 않는데(설계 6-1절) 그 판정은 `useExperienceInterview`에 있습니다. 여기서 메시지를 다시 세면 두
+   * 곳이 갈라져 화면은 멀쩡한데 계측만 조용히 틀립니다.
+   */
+  turnsUsed?: number;
 }
 
 export interface InterviewStreamState {
@@ -231,6 +240,7 @@ export function useInterviewStream({
   initialMessages = EMPTY_HISTORY,
   initiallyEnded = false,
   onBeforeQuestion,
+  turnsUsed = 0,
 }: UseInterviewStreamOptions): InterviewStreamState {
   const [messages, setMessages] = useState<readonly InterviewStreamMessage[]>(() => toStreamMessages(initialMessages));
   const [status, setStatus] = useState<InterviewStreamPhase>("idle");
@@ -276,6 +286,19 @@ export function useInterviewStream({
   // 4, "이전 작업의 늦은 응답은 반영하지 않는다"). 제출마다 값을 올려 이 응답이 최신 제출의
   // 것인지 확인합니다.
   const submissionSeqRef = useRef(0);
+  /**
+   * 계측이 쓰는 시각입니다(이슈 #126). 요청을 보낸 시점과, 그 요청의 첫 조각이 도착한 시점입니다.
+   *
+   * 상태가 아니라 ref입니다. 그리는 데 쓰지 않는 값이라 상태로 두면 조각이 올 때마다 다시 그리게
+   * 되고, 스트리밍 중 리렌더 범위를 최소로 둔다는 이 서비스의 제약과 정면으로 부딪힙니다.
+   *
+   * `questionShownAt`은 요청 경계를 넘어 남습니다. 답변을 제출할 때 "질문을 읽기 시작한 뒤 얼마나
+   * 지났는지"를 재는 기준점이고, 그 시점은 직전 질문의 첫 조각이기 때문입니다.
+   */
+  const requestStartedAtRef = useRef<number | null>(null);
+  const questionShownAtRef = useRef<number | null>(null);
+  /** 이번 요청의 첫 조각을 이미 셌는지입니다. 조각마다 세면 질문 하나가 여러 건이 됩니다. */
+  const questionReportedRef = useRef(false);
   const optionsRef = useRef({
     url,
     snapshot,
@@ -285,11 +308,12 @@ export function useInterviewStream({
     scheduleFrame,
     cancelFrame,
     onBeforeQuestion,
+    turnsUsed,
   });
   // 실행 중인 스트림이 최신 옵션을 보게 하되 옵션이 바뀔 때마다 스트림을 다시 시작하지는
   // 않습니다. ref 갱신은 렌더 도중이 아니라 렌더가 끝난 뒤에 합니다.
   useEffect(() => {
-    optionsRef.current = { url, snapshot, fetchImpl, retryDelaysMs, sleep, scheduleFrame, cancelFrame, onBeforeQuestion };
+    optionsRef.current = { url, snapshot, fetchImpl, retryDelaysMs, sleep, scheduleFrame, cancelFrame, onBeforeQuestion, turnsUsed };
   });
 
   const updateMessages = useCallback(
@@ -357,6 +381,14 @@ export function useInterviewStream({
     abortRef.current = controller;
 
     const current = optionsRef.current;
+    /*
+     * 이번 요청이 겨냥한 대상입니다. 아래 본문 조립과 계측이 같은 값을 봐야 해서 여기서 한 번만
+     * 읽습니다. 계측이 따로 읽으면 그 사이에 값이 바뀔 때 질문과 다른 블록이 실립니다.
+     */
+    const target = pendingTargetRef.current;
+    // 계측이 첫 조각까지의 시간을 재는 기준점입니다(이슈 #126). 재시도는 그 시도부터 다시 잽니다.
+    requestStartedAtRef.current = Date.now();
+    questionReportedRef.current = false;
     let body: string | undefined;
     if (current.snapshot !== undefined) {
       // 실제 생성 경로는 요청마다 새 스트림입니다. 앞 질문의 seq를 이어 쓰면 새 질문의 도착 순서
@@ -366,10 +398,9 @@ export function useInterviewStream({
       cancelScheduledFrame();
       setReceivedSeq(0);
 
-      // 이번 요청이 겨냥할 대상입니다. `submitAnswer`의 `onBeforeQuestion`이 정해 두거나(꼬리
-      // 질문), `initialTarget`에서 왔습니다(첫 질문). `retry`도 같은 값을 그대로 읽으므로 재시도가
-      // 다른 블록을 겨냥하는 일은 없습니다.
-      const target = pendingTargetRef.current;
+      // 대상은 `submitAnswer`의 `onBeforeQuestion`이 정해 두거나(꼬리 질문) `initialTarget`에서
+      // 왔습니다(첫 질문). `retry`도 같은 값을 그대로 읽으므로 재시도가 다른 블록을 겨냥하는 일은
+      // 없습니다.
       const targetFields = target === null ? {} : { targetBlock: target.targetBlock, targetElement: target.targetElement };
       // 이력이 없는 첫 질문에는 직전 처리 결과가 있을 수 없습니다(구현검토 2026-09-11 P1-5).
       const lastOutcome = pendingLastOutcomeRef.current;
@@ -402,6 +433,33 @@ export function useInterviewStream({
           if (!controller.signal.aborted) setStatus(next);
         },
         onChunk: ({ seq, text }) => {
+          /*
+           * 질문의 첫 조각입니다(이슈 #126). 질문이 다 도착한 시점이 아니라 여기서 셉니다. 사용자가
+           * 읽기 시작할 수 있는 시점이 여기이고, 답변까지 걸린 시간도 이 시점부터 재야 질문을 읽고
+           * 망설인 시간이 빠지지 않습니다.
+           *
+           * 인자 계산까지 try 안에 둡니다. `trackEvent`가 자기 예외를 삼키지만 시각 계산은 그
+           * 바깥이고, 여기서 던지면 도착한 조각이 화면에 붙지 못해 질문이 끊깁니다.
+           */
+          if (!questionReportedRef.current) {
+            questionReportedRef.current = true;
+            try {
+              const now = Date.now();
+              questionShownAtRef.current = now;
+              const startedAt = requestStartedAtRef.current;
+              if (target !== null && startedAt !== null) {
+                trackEvent({
+                  name: "question_shown",
+                  turn: current.turnsUsed,
+                  block: target.targetBlock,
+                  element: target.targetElement,
+                  ttft_ms: now - startedAt,
+                });
+              }
+            } catch {
+              // 계측이 죽는 것이 질문이 끊기는 것보다 낫습니다.
+            }
+          }
           lastSeqRef.current = seq;
           bufferRef.current.push(text);
           if (!frameScheduledRef.current) {
@@ -417,6 +475,13 @@ export function useInterviewStream({
           // 이미 도착한 내용은 지우지 않습니다. 버퍼에 남은 청크도 화면에 반영한 뒤 알립니다.
           flushNow();
           setError(streamError);
+          // 자동 재연결이 끝내 실패한 것만 여기 옵니다. 재연결 중에는 오류를 세우지 않으므로
+          // 이 건수는 사용자가 실제로 오류 안내를 본 횟수와 같습니다.
+          try {
+            trackEvent({ name: "interview_stream_failed", turn: current.turnsUsed, error_kind: streamError.kind });
+          } catch {
+            // 계측이 죽는 것이 오류 안내를 잃는 것보다 낫습니다.
+          }
         },
       }
     );
@@ -511,6 +576,26 @@ export function useInterviewStream({
       // 제출과 함께 잠급니다. 스트림의 첫 상태 콜백이 오기 전에 두 번 눌러도 답변이 두 개 들어가지
       // 않습니다.
       canSubmitRef.current = false;
+      /*
+       * 답변을 제출했습니다(이슈 #126). 텍스트는 보내지 않고 길이 버킷만 보냅니다.
+       *
+       * 생각한 시간은 질문의 첫 조각이 도착한 시점부터 잽니다. 그 시점을 모르는 경우(완료 대기
+       * 안내처럼 스트림 없이 질문 자리를 채운 경우)에는 싣지 않습니다. 0으로 채우면 즉답과
+       * 구분되지 않습니다.
+       *
+       * 인자 계산까지 try 안에 둡니다. 여기서 던지면 답변이 대화에 들어가지 못하고 사라집니다.
+       */
+      try {
+        const shownAt = questionShownAtRef.current;
+        trackEvent({
+          name: "answer_submitted",
+          turn: optionsRef.current.turnsUsed + 1,
+          answer_length_bucket: answerLengthBucket(text.length),
+          ...(shownAt === null ? {} : { think_time_ms: Date.now() - shownAt }),
+        });
+      } catch {
+        // 계측이 죽는 것이 답변을 잃는 것보다 낫습니다.
+      }
       updateMessages((previous) => {
         messageCountRef.current += 1;
         return [...previous, { id: `message-${messageCountRef.current}`, ...answer, isStreaming: false }];

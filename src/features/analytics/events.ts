@@ -6,6 +6,13 @@ import type {
   RecoveryAction,
 } from "@/features/repository-analysis/repository-analysis";
 import type { ExperienceInterviewEndReason } from "@/features/experience-block/use-experience-interview";
+import type {
+  BlockElement,
+  BlockKind,
+  ProgressReason,
+  TargetResponse,
+} from "@/features/experience-block/types";
+import type { InterviewStreamErrorKind } from "@/features/interview/errors";
 
 /**
  * GA4로 나가는 퍼널 이벤트의 어휘입니다. 전송은 `lib/analytics/ga.ts`가 하고 여기는 무엇을 어떤
@@ -78,7 +85,39 @@ export type AnalyticsEvent =
    */
   | { name: "interview_completed"; end_reason: ExperienceInterviewEndReason; turn: number; filled_blocks: number }
   | { name: "interview_abandoned"; turn: number; filled_blocks: number }
-  | { name: "interview_leave_canceled"; turn: number; filled_blocks: number };
+  | { name: "interview_leave_canceled"; turn: number; filled_blocks: number }
+  /**
+   * 질문의 첫 조각이 도착한 순간입니다. `ttft_ms`는 요청을 보낸 시점부터 그 조각까지입니다.
+   *
+   * 질문이 다 도착한 시점이 아니라 첫 조각으로 잽니다. 사용자가 읽기 시작할 수 있는 시점이 거기고,
+   * 답변 포기와 관계있는지 보려는 것이 이 값의 용도입니다(이슈 #126 Goal).
+   */
+  | { name: "question_shown"; turn: number; block: BlockKind; element: BlockElement; ttft_ms: number }
+  /**
+   * 답변을 제출한 순간입니다. 답변 텍스트는 보내지 않습니다(이슈 #126 Constraint). 얼마나 성의
+   * 있게 답했는지의 대략적 분포만 필요하므로 길이를 버킷으로 바꿔 싣습니다.
+   *
+   * `think_time_ms`는 질문의 첫 조각이 도착한 시점부터 잽니다. 입력을 시작한 시점부터 재면 질문을
+   * 읽고 망설인 시간이 빠져, 질문이 답하기 어려운지를 판단할 수 없습니다(이슈 #126 Approach).
+   * 첫 조각 시점을 모르는 경우(이어가기 직후의 보충 답변처럼)에는 싣지 않습니다.
+   */
+  | { name: "answer_submitted"; turn: number; answer_length_bucket: AnswerLengthBucket; think_time_ms?: number }
+  /**
+   * 답변 하나가 블록에 반영된 결과입니다. 블록 문장은 보내지 않고 분류만 보냅니다.
+   *
+   * `response`는 이번 질문 하나에 대한 반응이고 `evaluation`은 그 블록의 누적 진행 사유입니다. 둘을
+   * 함께 싣습니다. 블록이 충분한지는 `sufficient` 하나로 판단하지 않는다는 것이 이 도메인의 결정이라
+   * (`ProgressReason`), 사유를 빼면 왜 더 묻지 않았는지가 사라집니다.
+   */
+  | {
+      name: "block_progressed";
+      block: BlockKind;
+      element: BlockElement;
+      response: TargetResponse;
+      evaluation?: ProgressReason;
+    }
+  /** 질문 스트림이 실패한 순간입니다. 오류 분류는 화면 안내가 쓰는 것과 같은 유니온입니다. */
+  | { name: "interview_stream_failed"; turn: number; error_kind: InterviewStreamErrorKind };
 
 /**
  * 이벤트 하나를 보냅니다. 화면 컴포넌트는 이 함수와 아래 세터만 부르고 `window.gtag`를 직접 부르지
@@ -229,4 +268,18 @@ export function commitCountBucket(count: number): CommitCountBucket {
   if (count <= 200) return "51-200";
   if (count <= 1000) return "201-1000";
   return "1000+";
+}
+
+/**
+ * 답변 길이 버킷입니다. 답변 텍스트는 어떤 형태로도 보내지 않으므로(이슈 #126 Constraint) 길이만
+ * 보내고, 그마저 원값을 보내면 GA4 리포트에서 other로 뭉쳐 쓸 수 없게 되므로 버킷으로 바꿉니다.
+ */
+export type AnswerLengthBucket = "0-100" | "101-500" | "501-2000" | "2000+";
+
+/** 경계는 0-100, 101-500, 501-2000, 2000+입니다. 2000은 `501-2000`이고 2001부터 `2000+`입니다. */
+export function answerLengthBucket(length: number): AnswerLengthBucket {
+  if (length <= 100) return "0-100";
+  if (length <= 500) return "101-500";
+  if (length <= 2000) return "501-2000";
+  return "2000+";
 }

@@ -663,6 +663,29 @@ export function useExperienceInterview({
       // 충돌은 사용자 진술과 근거가 어긋난 지점이라는 사실 자체가 바뀌지 않으므로).
       const lastOutcome = buildLastOutcome(outcome, blockStateRef.current.conflicts);
 
+      /*
+       * 이번 답변이 블록에 어떻게 반영됐는지 남깁니다(이슈 #126). 블록 문장은 보내지 않고 분류만
+       * 보냅니다. 반영이 실패한 턴은 `targetResponse`가 없으므로 세지 않습니다. 실패는
+       * `interview_stream_failed`가 아니라 화면의 미반영 안내가 다루는 별개 사건입니다.
+       *
+       * 인자 계산까지 try 안에 둡니다. 여기서 던지면 다음 질문 요청까지 함께 멈춥니다.
+       */
+      try {
+        const answered = answeredTargetRef.current;
+        const evaluation = blockStateRef.current.evaluation[answered.targetBlock];
+        if (outcome.targetResponse !== null) {
+          trackEvent({
+            name: "block_progressed",
+            block: answered.targetBlock,
+            element: answered.targetElement,
+            response: outcome.targetResponse,
+            ...(evaluation === null ? {} : { evaluation: evaluation.reason }),
+          });
+        }
+      } catch {
+        // 계측이 죽는 것이 대화가 멈추는 것보다 낫습니다.
+      }
+
       const nextTurnsUsed = isSupplementaryAnswer ? turnsUsedRef.current : turnsUsedRef.current + 1;
       if (!isSupplementaryAnswer) {
         turnsUsedRef.current = nextTurnsUsed;
@@ -717,6 +740,8 @@ export function useExperienceInterview({
     // 더 물을 것이 없는 상태로 이어가면 질문을 요청하지 않습니다.
     autoStart: initial.target !== null,
     onBeforeQuestion,
+    // 계측이 실을 턴 번호입니다. 세는 규칙이 이 훅에 있으므로 스트림 훅이 다시 세지 않습니다.
+    turnsUsed,
   });
 
   /**

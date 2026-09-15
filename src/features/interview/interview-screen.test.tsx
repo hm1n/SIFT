@@ -516,3 +516,121 @@ describe("InterviewScreen 계측", () => {
     expect(trackEvent.mock.calls.map(([event]) => event.name)).not.toContain("interview_started");
   });
 });
+
+/**
+ * 인터뷰 안쪽 4종입니다(이슈 #126). 배선 지점과 파라미터, 그리고 금지 값이 실리지 않는다는 것을
+ * 함께 고정합니다.
+ */
+describe("InterviewScreen 턴 계측", () => {
+  /** 이 테스트가 보내는 답변과, 테스트 스트림이 만드는 질문에 들어 있는 낱말입니다. */
+  const ANSWER = "화면이 비어 있었습니다. 재시도 큐를 두고 순서를 지켰습니다.";
+
+  function eventsNamed(name: string) {
+    return trackEvent.mock.calls
+      .map(([event]) => event as { name: string })
+      .filter((event) => event.name === name);
+  }
+
+  it("질문의 첫 조각이 도착하면 그 질문이 겨냥한 블록과 함께 남긴다", async () => {
+    render(
+      <InterviewScreen
+        snapshot={evidenceSnapshotFixture()}
+        onBack={vi.fn()}
+        fetchImpl={testStreamFetch("normal")}
+      />
+    );
+
+    await screen.findByText("The question has fully arrived.");
+    // 첫 질문은 항상 problem.a를 겨냥합니다(이슈 #90 설계 6절).
+    expect(trackEvent).toHaveBeenCalledWith({
+      name: "question_shown",
+      turn: 0,
+      block: "problem",
+      element: "a",
+      ttft_ms: expect.any(Number),
+    });
+    // 조각마다 세면 질문 하나가 여러 건이 됩니다.
+    expect(eventsNamed("question_shown")).toHaveLength(1);
+  });
+
+  it("답변을 제출하면 길이 버킷과 생각한 시간을 남기고 텍스트는 보내지 않는다", async () => {
+    render(
+      <InterviewScreen
+        snapshot={evidenceSnapshotFixture()}
+        onBack={vi.fn()}
+        fetchImpl={testStreamFetch("normal")}
+      />
+    );
+    const answer = await screen.findByRole("textbox", { name: /Answer/ });
+    fireEvent.change(answer, { target: { value: ANSWER } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(eventsNamed("answer_submitted")).toHaveLength(1));
+    expect(trackEvent).toHaveBeenCalledWith({
+      name: "answer_submitted",
+      turn: 1,
+      answer_length_bucket: "0-100",
+      think_time_ms: expect.any(Number),
+    });
+  });
+
+  it("답변이 블록에 반영되면 그 블록과 반응을 남긴다", async () => {
+    render(
+      <InterviewScreen
+        snapshot={evidenceSnapshotFixture()}
+        onBack={vi.fn()}
+        fetchImpl={testStreamFetch("normal")}
+      />
+    );
+    const answer = await screen.findByRole("textbox", { name: /Answer/ });
+    fireEvent.change(answer, { target: { value: ANSWER } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    await waitFor(() => expect(eventsNamed("block_progressed")).toHaveLength(1));
+    // 기본 응답은 빈 블록 상태에 `targetResponse: "provided"`입니다. 평가가 없으면 싣지 않습니다.
+    expect(trackEvent).toHaveBeenCalledWith({
+      name: "block_progressed",
+      block: "problem",
+      element: "a",
+      response: "provided",
+    });
+  });
+
+  it("질문 스트림이 실패하면 오류 분류를 남긴다", async () => {
+    render(
+      <InterviewScreen
+        snapshot={evidenceSnapshotFixture()}
+        onBack={vi.fn()}
+        fetchImpl={testStreamFetch("error")}
+      />
+    );
+
+    await screen.findByRole("alert");
+    await waitFor(() => expect(eventsNamed("interview_stream_failed")).toHaveLength(1));
+  });
+
+  /**
+   * 사용자 답변 텍스트와 AI가 만든 질문 문장은 어떤 이벤트에도 실리지 않습니다(이슈 #126
+   * Constraint). 길이 버킷과 블록 식별자만 보냅니다.
+   */
+  it("답변 텍스트와 질문 문장을 어떤 파라미터로도 보내지 않는다", async () => {
+    render(
+      <InterviewScreen
+        snapshot={evidenceSnapshotFixture()}
+        onBack={vi.fn()}
+        fetchImpl={testStreamFetch("normal")}
+      />
+    );
+    const answer = await screen.findByRole("textbox", { name: /Answer/ });
+    fireEvent.change(answer, { target: { value: ANSWER } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(eventsNamed("answer_submitted")).toHaveLength(1));
+
+    const sent = JSON.stringify(trackEvent.mock.calls);
+    expect(sent).not.toContain("재시도 큐");
+    expect(sent).not.toContain("청크 경계");
+    // 근거 스냅샷의 커밋 SHA와 파일 경로도 금지 값입니다.
+    expect(sent).not.toContain(FIXTURE_REPRESENTATIVE_SHA);
+    expect(sent).not.toContain(".ts");
+  });
+});

@@ -9,7 +9,7 @@ vi.mock("@/lib/analytics/ga", () => ({
   setGaParams: (...args: unknown[]) => setGaParams(...args),
 }));
 
-const { clearFlow, commitCountBucket, setAnalyticsUser, startFlow, trackEvent } =
+const { answerLengthBucket, clearFlow, commitCountBucket, setAnalyticsUser, startFlow, trackEvent } =
   await import("./events");
 
 beforeEach(() => {
@@ -29,6 +29,21 @@ describe("commitCountBucket", () => {
     [1001, "1000+"],
   ])("maps %i to %s", (count, bucket) => {
     expect(commitCountBucket(count)).toBe(bucket);
+  });
+});
+
+describe("answerLengthBucket", () => {
+  // 경계값입니다. 0-100, 101-500, 501-2000, 2000+이므로 2000은 아래 칸이고 2001부터 위 칸입니다.
+  it.each([
+    [0, "0-100"],
+    [100, "0-100"],
+    [101, "101-500"],
+    [500, "101-500"],
+    [501, "501-2000"],
+    [2000, "501-2000"],
+    [2001, "2000+"],
+  ])("maps %i to %s", (length, bucket) => {
+    expect(answerLengthBucket(length)).toBe(bucket);
   });
 });
 
@@ -226,6 +241,13 @@ const EVENT_SAMPLES: readonly AnalyticsEvent[] = [
   { name: "analysis_failed", error_kind: "llm_hallucination_rejected", recovery: "retry", stage: "stage_b" },
   { name: "analysis_retried", error_kind: "rate_limit", retry_scope: "candidate_generation" },
   { name: "interview_started", turn: 3 },
+  { name: "interview_completed", end_reason: "turn_limit", turn: 10, filled_blocks: 4 },
+  { name: "interview_abandoned", turn: 2, filled_blocks: 1 },
+  { name: "interview_leave_canceled", turn: 2, filled_blocks: 1 },
+  { name: "question_shown", turn: 3, block: "action", element: "b", ttft_ms: 820 },
+  { name: "answer_submitted", turn: 3, answer_length_bucket: "101-500", think_time_ms: 14000 },
+  { name: "block_progressed", block: "result", element: "a", response: "provided", evaluation: "sufficient" },
+  { name: "interview_stream_failed", turn: 3, error_kind: "stream_interrupted" },
 ];
 
 describe("GA4 한도", () => {
