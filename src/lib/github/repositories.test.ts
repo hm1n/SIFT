@@ -124,8 +124,9 @@ describe("fetchUserRepositories", () => {
     await expectKind(fetchUserRepositories("token"), "server_error");
   });
 
+  // 재시도까지 전부 실패해야 network입니다. 한 번만 실패시키면 재시도가 성공해 이 경로를 못 봅니다.
   it("fetch 자체가 실패하면 network다", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValueOnce(new TypeError("offline")));
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
     await expectKind(fetchUserRepositories("token"), "network");
   });
 

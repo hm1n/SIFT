@@ -71,7 +71,7 @@ describe("GET /api/github/repositories", () => {
   });
 
   it("GitHub 연결 자체가 실패하면 network 502를 반환한다", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValueOnce(new TypeError("offline")));
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
     const response = await GET(request(true));
     expect(response.status).toBe(502);
     expect(await response.json()).toMatchObject({ error: { kind: "network" } });
