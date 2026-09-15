@@ -178,10 +178,43 @@
   min-height: 0;
 }
 
+/*
+ * 저장된 분석으로 그린 화면이라는 알림입니다(이슈 #116). 후보 목록 위에 한 줄로 놓입니다.
+ *
+ * 경고색을 쓰지 않습니다. 저장된 결과를 보는 것은 잘못된 상태가 아니라 이 기능이 의도한 기본 동작이고,
+ * 색으로 위험을 말하면 사용자가 다시 분석해야 한다고 읽습니다. 실제로 다시 분석할 수 있는 횟수는
+ * 하루 전체에서 20회뿐입니다.
+ */
+.savedNotice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 32px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-muted);
+}
+
+.savedNoticeCode {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  letter-spacing: var(--label-tracking);
+  color: var(--color-muted-foreground);
+}
+
+.savedNoticeText {
+  flex: 1;
+  min-width: 220px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-muted-foreground);
+}
+
 @media (max-width: 560px) {
   .header,
   .checklistStatus,
   .footer,
+  .savedNotice,
   .exclusionsPad {
     padding-left: 16px;
     padding-right: 16px;

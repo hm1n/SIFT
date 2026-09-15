@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { DatabaseError, getSql } from "./client";
 import type {
+  AppendHistory,
+  AppendHistoryResult,
   AppendTurn,
   AppendTurnResult,
   InterviewListItem,
@@ -8,6 +10,7 @@ import type {
   NewAnalysis,
   NewInterview,
   SiftStore,
+  StoredAnalysisRecord,
   StoredInterview,
 } from "./store";
 import type { InterviewProgress } from "@/features/experience-block/progress";
@@ -114,6 +117,18 @@ const STORED_CANDIDATE_SQL = `(select candidate
            where candidate ->> 'sha' = s.candidate_key
            limit 1) as candidate`;
 
+function toAnalysisRecord(row: Record<string, unknown>): StoredAnalysisRecord {
+  return {
+    id: row.id as string,
+    repoOwner: row.repo_owner as string,
+    repoName: row.repo_name as string,
+    contributionItems: row.contribution_items,
+    candidates: row.candidates,
+    stageASummary: row.stage_a_summary,
+    createdAt: row.created_at as Date,
+  };
+}
+
 function toListItem(row: Record<string, unknown>): InterviewListItem {
   return {
     id: row.id as string,
@@ -164,6 +179,41 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
         ]
       );
       return id;
+    },
+
+    async getAnalysis(id: string, githubUserId: number): Promise<StoredAnalysisRecord | null> {
+      // uuid가 아닌 값을 `uuid` 칸에 넘기면 Postgres가 `22P02`를 던집니다. 이유는 `isUuid` 주석과 같습니다.
+      if (!isUuid(id)) return null;
+      const rows = await run(
+        `select id, repo_owner, repo_name, contribution_items, candidates, stage_a_summary, created_at
+           from repository_analysis
+          where id = $1::uuid and github_user_id = $2::bigint`,
+        [id, githubUserId]
+      );
+      return rows.length > 0 ? toAnalysisRecord(rows[0]) : null;
+    },
+
+    /**
+     * 저장소 이름으로 찾습니다. 같은 저장소를 여러 번 분석했으면 마지막 것입니다.
+     *
+     * 이름 비교를 대소문자까지 그대로 봅니다. GitHub의 저장소 이름은 대소문자를 가리지 않고 같은 곳을
+     * 가리키지만, 여기 들어오는 이름은 사용자가 손으로 친 것이 아니라 저장소 목록 조회가 준 정식
+     * 표기를 그대로 다시 보낸 값입니다. 가리지 않게 만들면 인덱스를 타지 못하면서 얻는 것이 없습니다.
+     */
+    async getLatestAnalysisByRepo(
+      githubUserId: number,
+      repoOwner: string,
+      repoName: string
+    ): Promise<StoredAnalysisRecord | null> {
+      const rows = await run(
+        `select id, repo_owner, repo_name, contribution_items, candidates, stage_a_summary, created_at
+           from repository_analysis
+          where github_user_id = $1::bigint and repo_owner = $2::text and repo_name = $3::text
+          order by created_at desc, id desc
+          limit 1`,
+        [githubUserId, repoOwner, repoName]
+      );
+      return rows.length > 0 ? toAnalysisRecord(rows[0]) : null;
     },
 
     /**
@@ -253,6 +303,47 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
       return existing.length > 0 ? "version_conflict" : "not_found";
     },
 
+    /**
+     * 이력만 이어 붙입니다(이슈 #116, backlog 7번). `block_state`와 `block_version`과 `progress`는
+     * 건드리지 않습니다.
+     *
+     * 블록 버전 조건은 `appendTurn`과 똑같이 둡니다. 덮어쓸 값이 없으니 조건도 필요 없어 보이지만,
+     * 버전이 어긋났다는 것은 다른 탭이 이미 저장했다는 뜻이고 그 저장에 여기 붙이려는 턴이 들어
+     * 있습니다. 조건을 빼면 같은 질문과 답변이 대화에 두 번 남습니다. 소유자 판정은 다른 연산과
+     * 같이 `where`에 둡니다.
+     */
+    async appendHistory({
+      githubUserId,
+      interviewId,
+      turn,
+      expectedBlockVersion,
+    }: AppendHistory): Promise<AppendHistoryResult> {
+      if (!isUuid(interviewId)) return "not_found";
+      const updated = await run(
+        `update interview_session s
+            set history = s.history || $3::jsonb,
+                updated_at = now()
+           from repository_analysis ra
+          where s.id = $1
+            and s.analysis_id = ra.id
+            and ra.github_user_id = $2
+            and s.block_version = $4
+         returning s.id`,
+        [interviewId, githubUserId, toJsonb(turn, "history"), expectedBlockVersion]
+      );
+      if (updated.length > 0) return "saved";
+
+      // 한 줄도 바뀌지 않은 이유가 둘입니다. `appendTurn`과 같은 순서로 갈라 둡니다.
+      const existing = await run(
+        `select 1
+           from interview_session s
+           join repository_analysis ra on ra.id = s.analysis_id
+          where s.id = $1 and ra.github_user_id = $2`,
+        [interviewId, githubUserId]
+      );
+      return existing.length > 0 ? "version_conflict" : "not_found";
+    },
+
     async listInterviews(githubUserId: number): Promise<InterviewListItem[]> {
       const rows = await run(
         `select s.id, s.title, s.status, s.created_at, s.updated_at, s.opened_at,
@@ -332,10 +423,26 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
       return rows.length > 0;
     },
 
-    /** 정리 작업만 사용자 번호를 받지 않습니다. 실제로 부르는 자리는 이슈 #116에서 만듭니다. */
+    /** 정리 작업만 사용자 번호를 받지 않습니다. 부르는 자리는 `/api/cron/purge`입니다(이슈 #116). */
     async purgeInterviewsOpenedBefore(before: Date): Promise<number> {
       const rows = await run(
         `delete from interview_session where opened_at < $1 returning id`,
+        [before]
+      );
+      return rows.length;
+    },
+
+    /**
+     * 한 문장으로 짭니다. 드라이버가 HTTP 한 번에 한 문장을 보내고 그 한 문장이 한 트랜잭션입니다.
+     * 먼저 고아 분석을 고른 뒤 따로 지우면 그 사이에 새 인터뷰가 붙은 분석까지 지우게 되고, 그
+     * 분석에 `on delete cascade`로 딸린 인터뷰가 함께 사라집니다.
+     */
+    async purgeAnalysesWithoutInterviews(before: Date): Promise<number> {
+      const rows = await run(
+        `delete from repository_analysis ra
+          where ra.created_at < $1
+            and not exists (select 1 from interview_session s where s.analysis_id = ra.id)
+         returning ra.id`,
         [before]
       );
       return rows.length;

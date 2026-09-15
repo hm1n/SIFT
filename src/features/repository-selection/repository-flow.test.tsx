@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { analyzeRepository } from "@/features/repository-analysis/repository-analysis";
 import { emptyInterviewProgress } from "@/features/experience-block/progress";
@@ -9,6 +9,13 @@ import { emptyExperienceBlockState } from "@/features/experience-block/types";
 import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
 import { encodeSseEvent } from "@/features/interview/sse";
 import { RepositoryFlow } from "./repository-flow";
+
+/**
+ * 기다리는 시간을 늘립니다. 이 파일은 화면과 라우트와 저장 계층을 한 번에 지나고, 이슈 #116부터
+ * 분석 화면이 저장된 분석을 먼저 찾는 단계가 하나 더 붙었습니다. 기본값 1초로는 전체 스위트를 함께
+ * 돌릴 때 간헐적으로 넘습니다(2026-09-15에 서로 다른 테스트가 두 번 흔들렸습니다).
+ */
+configure({ asyncUtilTimeout: 5_000 });
 
 vi.mock("@/features/repository-analysis/repository-analysis", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/features/repository-analysis/repository-analysis")>();
@@ -54,6 +61,13 @@ function stubFetch(handlers: Record<string, () => Promise<Response> | Response> 
     calls.push(url);
     for (const [prefix, handler] of Object.entries(handlers)) {
       if (url.includes(prefix)) return Promise.resolve(handler());
+    }
+    // 저장된 분석이 없는 것이 기본입니다(이슈 #116). 분석 화면은 저장된 것을 먼저 찾아보고 없을
+    // 때만 분석합니다.
+    if (url.includes("/api/analyses")) {
+      return Promise.resolve(
+        Response.json({ error: { kind: "not_found", message: "저장된 분석이 없습니다." } }, { status: 404 })
+      );
     }
     if (url.includes("/api/interviews")) return Promise.resolve(Response.json({ interviews: [] }));
     return Promise.resolve(Response.json(LIST));
@@ -217,7 +231,7 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
     analyzeMock.mockImplementation(async (_repo, _items, onStateChange) => {
       onStateChange({
         status: "success",
-        data: { allCommits: [COMMIT], includedCommits: [COMMIT], repository: { fileTree: [], treeTruncated: false, languages: {} } },
+        data: { includedCommits: [COMMIT] },
         candidates: { candidates: [CANDIDATE], insufficientCandidatesReason: null, diffs: [] },
         stageASelection: { excludedUnits: [], thresholdScore: 0, selectedUnitCount: 1, unjudgedShas: [] },
       });
@@ -303,6 +317,7 @@ describe("RepositoryFlow 이어가기", () => {
     completedBlockCount: 1,
     createdAt: "2026-09-10T00:00:00.000Z",
     updatedAt: "2026-09-12T09:00:00.000Z",
+    openedAt: new Date().toISOString(),
   };
   const STORED = {
     ...LIST_ITEM,
@@ -491,5 +506,68 @@ describe("RepositoryFlow 이어가기", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Continue interview/ }));
 
     expect(await screen.findByText("Couldn't open this interview.")).toBeInTheDocument();
+  });
+
+  /**
+   * 한 분석에서 경험을 여러 개 고를 수 있습니다(이슈 #116). 저장된 인터뷰에서 그 분석으로 돌아가는
+   * 길이 없으면 사용자는 같은 저장소를 다시 분석해야 하는데, Stage B가 쓰는 모델은 하루 요청 수가
+   * 프로젝트 전체에서 20회라 그 길이 사실상 막혀 있습니다.
+   */
+  it("이어가기 화면에서 그 인터뷰가 나온 분석의 후보 목록으로 간다", async () => {
+    const savedAnalysis = {
+      id: STORED.analysisId,
+      createdAt: "2026-09-10T00:00:00.000Z",
+      repoOwner: "octocat",
+      repoName: "hello-world",
+      contributionItems: [],
+      candidates: {
+        candidates: {
+          candidates: [
+            {
+              sha: "bbb",
+              relatedShas: [],
+              summary: "다른 경험 후보입니다.",
+              evidence: "근거입니다.",
+              technicalTopics: [],
+              citedFilePaths: [],
+              source: "automatic_recommendation",
+            },
+          ],
+          insufficientCandidatesReason: null,
+          diffs: [],
+        },
+        includedCommits: [
+          {
+            sha: "bbb",
+            title: "다른 커밋",
+            author: "octocat",
+            date: "2026-08-25T00:00:00Z",
+            parentCount: 1,
+            message: "다른 커밋",
+            additions: 3,
+            deletions: 1,
+            changedFiles: 1,
+            files: [{ path: "src/bbb.ts", status: "modified", additions: 3, deletions: 1, changes: 4 }],
+            pullRequests: [],
+          },
+        ],
+      },
+      stageASummary: { excludedUnits: [], selectedUnitCount: 1, thresholdScore: 0, unjudgedShas: [] },
+    };
+    const { calls } = stubFetch({
+      [`/api/interviews/${INTERVIEW_ID}`]: () => Response.json({ interview: STORED }),
+      "/api/interviews": () => Response.json({ interviews: [LIST_ITEM] }),
+      [`/api/analyses/${STORED.analysisId}`]: () => Response.json({ analysis: savedAnalysis }),
+    });
+    render(<RepositoryFlow />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Other experiences from this analysis" }));
+
+    expect((await screen.findAllByText("다른 경험 후보입니다."))[0]).toBeInTheDocument();
+    // 저장된 분석을 그대로 그립니다. 다시 분석하지 않습니다.
+    expect(analyzeMock).not.toHaveBeenCalled();
+    // 저장소 이름이 아니라 그 인터뷰가 가리키는 분석 식별자로 엽니다.
+    expect(calls.some((url) => url.includes(`/api/analyses/${STORED.analysisId}`))).toBe(true);
   });
 });

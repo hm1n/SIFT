@@ -56,6 +56,8 @@ describe("Neon 저장 계층", () => {
      */
     const operations: Array<[string, (store: SiftStore) => Promise<unknown>]> = [
       ["saveAnalysis", (store) => store.saveAnalysis(NEW_ANALYSIS)],
+      ["getAnalysis", (store) => store.getAnalysis(ANALYSIS_ID, OWNER_ID)],
+      ["getLatestAnalysisByRepo", (store) => store.getLatestAnalysisByRepo(OWNER_ID, "hm1n", "SIFT")],
       ["createInterview", (store) => store.createInterview(NEW_INTERVIEW)],
       [
         "appendTurn",
@@ -66,6 +68,16 @@ describe("Neon 저장 계층", () => {
             turn: [],
             blockState: blockStateAt(1),
             progress: emptyInterviewProgress(),
+            expectedBlockVersion: 0,
+          }),
+      ],
+      [
+        "appendHistory",
+        (store) =>
+          store.appendHistory({
+            githubUserId: OWNER_ID,
+            interviewId: INTERVIEW_ID,
+            turn: [],
             expectedBlockVersion: 0,
           }),
       ],
@@ -86,13 +98,30 @@ describe("Neon 저장 계층", () => {
       }
     });
 
-    it("정리 작업만 사용자 번호를 받지 않는다", async () => {
+    it.each([
+      ["purgeInterviewsOpenedBefore", (store: SiftStore, before: Date) => store.purgeInterviewsOpenedBefore(before)],
+      ["purgeAnalysesWithoutInterviews", (store: SiftStore, before: Date) => store.purgeAnalysesWithoutInterviews(before)],
+    ])("정리 작업인 %s만 사용자 번호를 받지 않는다", async (_name, run) => {
       const { execute, calls } = fakeExecute();
       const before = new Date("2026-06-16T00:00:00Z");
-      await neonStore(execute).purgeInterviewsOpenedBefore(before);
+      await run(neonStore(execute), before);
 
       expect(calls[0].text).not.toContain("github_user_id");
       expect(calls[0].params).toEqual([before]);
+    });
+
+    /**
+     * 고아 분석을 고르는 일과 지우는 일을 한 문장에 둡니다. 드라이버가 HTTP 한 번에 한 문장을 보내고
+     * 그 한 문장이 한 트랜잭션이라, 둘로 나누면 그 사이에 새 인터뷰가 붙은 분석까지 지우게 됩니다.
+     * 그 분석에 cascade로 딸린 인터뷰가 함께 사라집니다.
+     */
+    it("고아 분석 정리는 한 문장으로 지운다", async () => {
+      const { execute, calls } = fakeExecute();
+      await neonStore(execute).purgeAnalysesWithoutInterviews(new Date("2026-06-16T00:00:00Z"));
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].text).toContain("not exists");
+      expect(calls[0].text).toContain("created_at <");
     });
   });
 
@@ -131,6 +160,126 @@ describe("Neon 저장 계층", () => {
       expect(await store.getInterview("x", OWNER_ID)).toBeNull();
       expect(await store.deleteInterview("x", OWNER_ID)).toBe(false);
       expect(calls).toHaveLength(0);
+    });
+
+    // 분석 식별자도 요청 경로에서 그대로 옵니다(이슈 #116).
+    it("분석 조회도 없는 것으로 보고 질의하지 않는다", async () => {
+      const { execute, calls } = fakeExecute();
+
+      expect(await neonStore(execute).getAnalysis("분석", OWNER_ID)).toBeNull();
+      expect(calls).toHaveLength(0);
+    });
+  });
+
+  describe("이력만 이어 붙이기", () => {
+    /** 블록을 건드리지 않는 저장입니다. 쓰는 칸이 둘(이력과 갱신 시각)뿐인지 봅니다. */
+    it("이력과 갱신 시각만 쓰고 블록 버전을 조건에 넣는다", async () => {
+      const { execute, calls } = fakeExecute([[{ id: INTERVIEW_ID }]]);
+
+      const result = await neonStore(execute).appendHistory({
+        githubUserId: OWNER_ID,
+        interviewId: INTERVIEW_ID,
+        turn: [{ role: "answer", text: "답변" }],
+        expectedBlockVersion: 3,
+      });
+
+      expect(result).toBe("saved");
+      expect(calls).toHaveLength(1);
+      expect(calls[0].text).toContain("history = s.history || $3::jsonb");
+      expect(calls[0].text).not.toContain("block_state =");
+      expect(calls[0].text).not.toContain("progress =");
+      expect(calls[0].text).toContain("s.block_version = $4");
+    });
+
+    it("한 줄도 바뀌지 않으면 존재를 한 번 더 물어 갈라 답한다", async () => {
+      const conflict = fakeExecute([[], [{ "?column?": 1 }]]);
+      expect(
+        await neonStore(conflict.execute).appendHistory({
+          githubUserId: OWNER_ID,
+          interviewId: INTERVIEW_ID,
+          turn: [],
+          expectedBlockVersion: 3,
+        })
+      ).toBe("version_conflict");
+
+      const missing = fakeExecute([[], []]);
+      expect(
+        await neonStore(missing.execute).appendHistory({
+          githubUserId: OWNER_ID,
+          interviewId: INTERVIEW_ID,
+          turn: [],
+          expectedBlockVersion: 3,
+        })
+      ).toBe("not_found");
+    });
+
+    it("uuid가 아니면 질의하지 않는다", async () => {
+      const { execute, calls } = fakeExecute();
+
+      expect(
+        await neonStore(execute).appendHistory({
+          githubUserId: OWNER_ID,
+          interviewId: "없는-값",
+          turn: [],
+          expectedBlockVersion: 0,
+        })
+      ).toBe("not_found");
+      expect(calls).toHaveLength(0);
+    });
+  });
+
+  describe("저장된 분석 읽기", () => {
+    const ROW = {
+      id: ANALYSIS_ID,
+      repo_owner: "hm1n",
+      repo_name: "SIFT",
+      contribution_items: ["스트리밍"],
+      candidates: { candidates: { candidates: [] } },
+      stage_a_summary: { selectedUnitCount: 3 },
+      created_at: new Date("2026-09-15T00:00:00Z"),
+    };
+
+    it("칸 이름을 화면이 쓰는 이름으로 옮기고 사용자 번호는 돌려주지 않는다", async () => {
+      const { execute } = fakeExecute([[ROW]]);
+
+      const analysis = await neonStore(execute).getAnalysis(ANALYSIS_ID, OWNER_ID);
+
+      expect(analysis).toEqual({
+        id: ANALYSIS_ID,
+        repoOwner: "hm1n",
+        repoName: "SIFT",
+        contributionItems: ["스트리밍"],
+        candidates: { candidates: { candidates: [] } },
+        stageASummary: { selectedUnitCount: 3 },
+        createdAt: ROW.created_at,
+      });
+      expect(analysis).not.toHaveProperty("githubUserId");
+    });
+
+    it("없으면 null이다", async () => {
+      const { execute } = fakeExecute([[]]);
+
+      expect(await neonStore(execute).getAnalysis(ANALYSIS_ID, OWNER_ID)).toBeNull();
+    });
+
+    /**
+     * 같은 저장소를 여러 번 분석하면 줄이 여럿입니다. 앞선 분석은 그때의 커밋만 담고 있어 다시 그릴
+     * 화면으로는 낡은 값이므로, 고르는 일을 코드가 아니라 질의에 맡깁니다.
+     */
+    it("저장소로 찾을 때는 최근 것 한 줄만 질의한다", async () => {
+      const { execute, calls } = fakeExecute([[ROW]]);
+
+      await neonStore(execute).getLatestAnalysisByRepo(OWNER_ID, "hm1n", "SIFT");
+
+      expect(calls[0].text).toContain("order by created_at desc");
+      expect(calls[0].text).toContain("limit 1");
+      expect(calls[0].params).toEqual([OWNER_ID, "hm1n", "SIFT"]);
+    });
+
+    it("저장소로 찾을 때 없으면 null이다", async () => {
+      const { execute } = fakeExecute([[]]);
+
+      expect(await neonStore(execute).getLatestAnalysisByRepo(OWNER_ID, "hm1n", "SIFT")).toBeNull();
     });
   });
 

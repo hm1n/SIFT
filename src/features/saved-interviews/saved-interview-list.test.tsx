@@ -4,6 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { InterviewListItemPayload } from "./payload";
+import { RETENTION_DAYS } from "./retention";
 import { SavedInterviewList } from "./saved-interview-list";
 
 afterEach(cleanup);
@@ -18,6 +19,8 @@ function item(overrides: Partial<InterviewListItemPayload> = {}): InterviewListI
     completedBlockCount: 2,
     createdAt: "2026-09-10T00:00:00.000Z",
     updatedAt: "2026-09-12T09:00:00.000Z",
+    // 기본값은 방금 연 것입니다. 기한이 가까운 경우는 그 테스트가 직접 넘깁니다.
+    openedAt: new Date().toISOString(),
     ...overrides,
   };
 }
@@ -120,5 +123,60 @@ describe("SavedInterviewList", () => {
     expect(screen.getByText("Couldn't load interviews.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  describe("자동 삭제까지 남은 기간", () => {
+    const DAY_MS = 86_400_000;
+    const openedDaysAgo = (days: number) => new Date(Date.now() - days * DAY_MS).toISOString();
+
+    it("기한이 가까운 행에만 D-n 배지를 붙인다", () => {
+      renderList({
+        status: "ready",
+        interviews: [
+          item({ id: "soon", title: "곧 지워짐", openedAt: openedDaysAgo(RETENTION_DAYS - 3) }),
+          item({ id: "fresh", title: "여유 있음", openedAt: openedDaysAgo(1) }),
+        ],
+      });
+
+      expect(screen.getByText("D-3")).toBeInTheDocument();
+      expect(screen.queryByText(`D-${RETENTION_DAYS - 1}`)).not.toBeInTheDocument();
+    });
+
+    // 배지의 설명 문구도 같은 자리입니다(PR #130 리뷰).
+    it("하루가 남으면 배지 설명을 단수형으로 적는다", () => {
+      renderList({
+        status: "ready",
+        interviews: [item({ id: "soon", title: "곧 지워짐", openedAt: openedDaysAgo(RETENTION_DAYS - 1) })],
+      });
+
+      expect(screen.getByTitle("Automatically deleted in 1 day")).toBeInTheDocument();
+    });
+
+    /**
+     * 정리 작업은 하루에 한 번 돌고 호출 시각도 한 시간 안에서 흔들립니다. 기한이 지난 줄이 잠시
+     * 남는데, 그것을 눌러 열면 기준 시각이 갱신돼 다시 90일을 사는 인터뷰가 됩니다.
+     */
+    it("기한이 지난 인터뷰는 그리지 않고 개수에도 세지 않는다", () => {
+      renderList({
+        status: "ready",
+        interviews: [
+          item({ id: "expired", title: "기한이 지남", openedAt: openedDaysAgo(RETENTION_DAYS + 1) }),
+          item({ id: "fresh", title: "남아 있음", openedAt: openedDaysAgo(1) }),
+        ],
+      });
+
+      expect(screen.queryByText("기한이 지남")).not.toBeInTheDocument();
+      expect(screen.getByText("남아 있음")).toBeInTheDocument();
+      expect(screen.getByText("1")).toBeInTheDocument();
+    });
+
+    it("전부 기한이 지났으면 비어 있는 것으로 안내한다", () => {
+      renderList({
+        status: "ready",
+        interviews: [item({ openedAt: openedDaysAgo(RETENTION_DAYS + 5) })],
+      });
+
+      expect(screen.getByText("No interviews yet. Select an experience candidate to begin.")).toBeInTheDocument();
+    });
   });
 });

@@ -429,4 +429,148 @@ describe("메모리 저장 계층", () => {
     expect(await store.purgeInterviewsOpenedBefore(new Date(Date.now() + 1000))).toBe(1);
     expect(await store.listInterviews(OWNER_ID)).toEqual([]);
   });
+
+  describe("이력만 이어 붙이기", () => {
+    /**
+     * 모델 호출이 실패한 턴은 블록이 그대로라 `appendTurn`의 버전 조건에 걸립니다. 그 대화를 남길
+     * 길이 이 연산입니다(이슈 #116, backlog 7번).
+     */
+    it("블록 상태와 버전을 건드리지 않고 대화만 붙인다", async () => {
+      const store = createInMemoryStore();
+      const { interviewId } = await seed(store);
+
+      const result = await store.appendHistory({
+        githubUserId: OWNER_ID,
+        interviewId,
+        turn: [{ role: "question", text: "질문" }, { role: "answer", text: "답변" }],
+        expectedBlockVersion: 0,
+      });
+
+      expect(result).toBe("saved");
+      const interview = await store.getInterview(interviewId, OWNER_ID);
+      expect(interview?.history.map((message) => message.text)).toEqual(["질문", "답변"]);
+      expect(interview?.blockVersion).toBe(0);
+      expect(interview?.blockState).toEqual(emptyExperienceBlockState());
+    });
+
+    /** 다른 곳이 먼저 저장했으면 그 턴들이 이미 들어 있을 수 있습니다. 두 번 붙이지 않습니다. */
+    it("저장된 버전이 기대 버전과 다르면 붙이지 않는다", async () => {
+      const store = createInMemoryStore();
+      const { interviewId } = await seed(store);
+      await store.appendTurn({
+        githubUserId: OWNER_ID,
+        interviewId,
+        turn: [{ role: "question", text: "먼저 저장된 질문" }],
+        blockState: blockStateAt(1),
+        progress: emptyInterviewProgress(),
+        expectedBlockVersion: 0,
+      });
+
+      const result = await store.appendHistory({
+        githubUserId: OWNER_ID,
+        interviewId,
+        turn: [{ role: "question", text: "먼저 저장된 질문" }],
+        expectedBlockVersion: 0,
+      });
+
+      expect(result).toBe("version_conflict");
+      expect((await store.getInterview(interviewId, OWNER_ID))?.history).toHaveLength(1);
+    });
+
+    it("남의 인터뷰에는 붙이지 못한다", async () => {
+      const store = createInMemoryStore();
+      const { interviewId } = await seed(store);
+
+      expect(
+        await store.appendHistory({ githubUserId: OTHER_ID, interviewId, turn: [], expectedBlockVersion: 0 })
+      ).toBe("not_found");
+    });
+  });
+
+  describe("고아 분석 정리", () => {
+    it("딸린 인터뷰가 모두 사라진 오래된 분석을 지운다", async () => {
+      const store = createInMemoryStore();
+      const { analysisId, interviewId } = await seed(store);
+      await store.deleteInterview(interviewId, OWNER_ID);
+
+      expect(await store.purgeAnalysesWithoutInterviews(new Date(Date.now() + 1000))).toBe(1);
+      expect(await store.getAnalysis(analysisId, OWNER_ID)).toBeNull();
+    });
+
+    it("인터뷰가 남아 있는 분석은 지우지 않는다", async () => {
+      const store = createInMemoryStore();
+      const { analysisId } = await seed(store);
+
+      expect(await store.purgeAnalysesWithoutInterviews(new Date(Date.now() + 1000))).toBe(0);
+      expect(await store.getAnalysis(analysisId, OWNER_ID)).not.toBeNull();
+    });
+
+    /** 경험을 아직 고르지 않은 분석입니다. 후보를 고르는 사이에 사라지면 안 됩니다. */
+    it("기준 시각보다 최근에 저장한 분석은 인터뷰가 없어도 남긴다", async () => {
+      const store = createInMemoryStore();
+      const analysisId = await store.saveAnalysis({
+        githubUserId: OWNER_ID,
+        repoOwner: "hm1n",
+        repoName: "SIFT",
+        contributionItems: [],
+        candidates: [],
+        stageASummary: {},
+      });
+
+      expect(await store.purgeAnalysesWithoutInterviews(new Date(Date.now() - 1000))).toBe(0);
+      expect(await store.getAnalysis(analysisId, OWNER_ID)).not.toBeNull();
+    });
+  });
+
+  describe("저장된 분석 읽기", () => {
+    it("저장한 값을 그대로 돌려주고 사용자 번호는 싣지 않는다", async () => {
+      const store = createInMemoryStore();
+      const { analysisId } = await seed(store);
+
+      const analysis = await store.getAnalysis(analysisId, OWNER_ID);
+
+      expect(analysis).toMatchObject({ id: analysisId, repoOwner: "hm1n", repoName: "SIFT" });
+      expect(analysis?.createdAt).toBeInstanceOf(Date);
+      expect(analysis).not.toHaveProperty("githubUserId");
+    });
+
+    it("남의 분석은 없는 것으로 본다", async () => {
+      const store = createInMemoryStore();
+      const { analysisId } = await seed(store);
+
+      expect(await store.getAnalysis(analysisId, OTHER_ID)).toBeNull();
+    });
+
+    it("없는 분석은 null이다", async () => {
+      const store = createInMemoryStore();
+
+      expect(await store.getAnalysis("11111111-1111-4111-8111-111111111111", OWNER_ID)).toBeNull();
+    });
+
+    /**
+     * 같은 저장소를 다시 분석하면 줄이 하나 더 생깁니다. 앞선 분석은 그때의 커밋만 담고 있어 다시
+     * 그릴 화면으로는 낡은 값입니다. 실제 구현과 같은 값을 고르는지 봅니다.
+     */
+    it("저장소로 찾으면 마지막에 저장한 분석을 돌려준다", async () => {
+      const store = createInMemoryStore();
+      await seed(store);
+      const { analysisId: latest } = await seed(store);
+
+      expect(await store.getLatestAnalysisByRepo(OWNER_ID, "hm1n", "SIFT")).toMatchObject({ id: latest });
+    });
+
+    it("저장소로 찾을 때 남의 분석은 세지 않는다", async () => {
+      const store = createInMemoryStore();
+      await seed(store, OTHER_ID);
+
+      expect(await store.getLatestAnalysisByRepo(OWNER_ID, "hm1n", "SIFT")).toBeNull();
+    });
+
+    it("분석한 적 없는 저장소는 null이다", async () => {
+      const store = createInMemoryStore();
+      await seed(store);
+
+      expect(await store.getLatestAnalysisByRepo(OWNER_ID, "hm1n", "other-repo")).toBeNull();
+    });
+  });
 });

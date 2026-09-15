@@ -15,6 +15,7 @@ import { isRestorableBlockState, type StoredInterviewPayload } from "@/features/
 import { isExperienceEvidenceSnapshot } from "@/features/interview/question-request";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
 import type { RepositorySummary } from "@/lib/github/types";
+import type { AnalyzedRepository } from "@/features/repository-analysis/repository-analysis-view";
 import { RepositorySelectScreen } from "./repository-select-screen";
 import styles from "./repository-flow.module.css";
 
@@ -32,7 +33,16 @@ import styles from "./repository-flow.module.css";
  */
 type Mode =
   | { readonly kind: "select" }
-  | { readonly kind: "analysis"; readonly summary: RepositorySummary; readonly contributionItems: readonly string[] }
+  | {
+      readonly kind: "analysis";
+      readonly summary: AnalyzedRepository;
+      readonly contributionItems: readonly string[];
+      /**
+       * 저장된 인터뷰에서 그 분석의 후보 목록으로 들어올 때 옵니다(이슈 #116). 이 값이 있으면 분석
+       * 화면은 저장소 이름으로 찾지 않고 이 분석을 엽니다.
+       */
+      readonly analysisId?: string;
+    }
   | { readonly kind: "resume"; readonly interviewId: string; readonly stage: "review" | "interview" };
 
 /** 저장된 인터뷰를 읽지 못한 이유별 안내입니다. 없어진 인터뷰와 연결 실패는 사용자가 할 일이 다릅니다. */
@@ -178,6 +188,24 @@ export function RepositoryFlow() {
     );
   }
 
+  /**
+   * 이어가기 화면에서 그 인터뷰가 나온 분석의 후보 목록으로 갑니다(이슈 #116).
+   *
+   * 저장소 이름이 아니라 인터뷰가 가리키는 분석 식별자로 엽니다. 이름으로 찾으면 그 사이에 같은
+   * 저장소를 다시 분석한 결과가 있을 때 사용자가 보던 것과 다른 후보 목록이 열립니다.
+   */
+  function openAnalysis() {
+    if (resumeState.status !== "ready") return;
+    const { interview } = resumeState;
+    navigate({
+      kind: "analysis",
+      summary: { owner: interview.repoOwner, name: interview.repoName },
+      // 저장된 분석을 여는 길이라 이번에 적을 기여 항목이 없습니다. 기여 항목은 분석을 새로 돌릴 때만 쓰입니다.
+      contributionItems: [],
+      analysisId: interview.analysisId,
+    });
+  }
+
   const sidebarInterviews = (
     <SavedInterviewList
       state={interviews.state}
@@ -204,7 +232,14 @@ export function RepositoryFlow() {
 
         {mode.kind === "analysis" ? (
           <RepositoryAnalysisView
+            /**
+             * 분석 화면을 분석마다 새로 만듭니다. 저장된 분석을 열어 둔 채 다른 분석으로 옮기면 화면이
+             * 들고 있는 분석 식별자와 후보가 앞 분석의 것으로 남습니다. 그 상태로 경험을 확정하면 엉뚱한
+             * 분석에 인터뷰가 붙습니다.
+             */
+            key={mode.analysisId ?? `${mode.summary.owner}/${mode.summary.name}`}
             repository={mode.summary}
+            analysisId={mode.analysisId}
             contributionItems={mode.contributionItems}
             onSelectRepository={() => navigate({ kind: "select" })}
             onInterviewActiveChange={setActive}
@@ -221,6 +256,7 @@ export function RepositoryFlow() {
             state={resumeState}
             onRetry={() => setResumeAttempt((count) => count + 1)}
             onResume={() => setMode({ ...mode, stage: "interview" })}
+            onOpenAnalysis={openAnalysis}
             onBackToReview={() => setMode({ ...mode, stage: "review" })}
             onInterviewActiveChange={setActive}
             onUnsavedChange={setUnsaved}
@@ -296,6 +332,7 @@ function ResumedInterview({
   state,
   onRetry,
   onResume,
+  onOpenAnalysis,
   onBackToReview,
   onInterviewActiveChange,
   onUnsavedChange,
@@ -306,6 +343,8 @@ function ResumedInterview({
   state: ReturnType<typeof useSavedInterview>;
   onRetry: () => void;
   onResume: () => void;
+  /** 이 인터뷰가 나온 분석의 후보 목록을 엽니다(이슈 #116). */
+  onOpenAnalysis: () => void;
   onBackToReview: () => void;
   onInterviewActiveChange: (active: boolean) => void;
   onUnsavedChange: (hasUnsaved: boolean) => void;
@@ -340,7 +379,14 @@ function ResumedInterview({
    */
   const snapshot = isExperienceEvidenceSnapshot(interview.evidence) ? interview.evidence : null;
   if (mode.stage === "review") {
-    return <SavedInterviewScreen interview={interview} onResume={onResume} onLoadLatest={onLoadLatest} />;
+    return (
+      <SavedInterviewScreen
+        interview={interview}
+        onResume={onResume}
+        onLoadLatest={onLoadLatest}
+        onOpenAnalysis={onOpenAnalysis}
+      />
+    );
   }
   if (snapshot === null || !isRestorableBlockState(interview.blockState)) {
     // 이어갈 수 없다고 알립니다. 요약 화면에 그냥 남기면 사용자가 버튼을 눌러도 아무 일도 일어나지

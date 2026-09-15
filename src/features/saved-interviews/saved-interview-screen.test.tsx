@@ -8,6 +8,7 @@ import { BLOCK_MAX_BYTES, BLOCK_MAX_STATEMENTS } from "@/features/experience-blo
 import { emptyExperienceBlockState, type Claim } from "@/features/experience-block/types";
 import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
 import type { StoredInterviewPayload } from "./payload";
+import { RETENTION_DAYS } from "./retention";
 import { SavedInterviewScreen } from "./saved-interview-screen";
 
 afterEach(cleanup);
@@ -46,6 +47,7 @@ function payload(overrides: Partial<StoredInterviewPayload> = {}): StoredIntervi
     completedBlockCount: 1,
     createdAt: "2026-09-10T00:00:00.000Z",
     updatedAt: "2026-09-12T09:00:00.000Z",
+    openedAt: new Date().toISOString(),
     evidence: evidenceSnapshotFixture(),
     history: [
       { role: "question", text: "문제 상황을 알려주세요" },
@@ -76,6 +78,35 @@ describe("SavedInterviewScreen", () => {
     expect(screen.getByRole("heading", { level: 1, name: "스트리밍 렌더링 최적화" })).toBeInTheDocument();
     expect(screen.getByText("hm1n / SIFT")).toBeInTheDocument();
     expect(screen.getAllByText(/Sep 12/)[0]).toBeInTheDocument();
+  });
+
+  describe("자동 삭제까지 남은 기간", () => {
+    const DAY_MS = 86_400_000;
+    const openedDaysAgo = (days: number) => new Date(Date.now() - days * DAY_MS).toISOString();
+
+    /** 저장이 영구적이지 않다는 사실은 기한이 멀어도 알려야 합니다. */
+    it("기한이 멀어도 남은 날수를 알린다", () => {
+      render(<SavedInterviewScreen interview={payload({ openedAt: openedDaysAgo(0) })} onResume={vi.fn()} />);
+
+      expect(screen.getByText(`${RETENTION_DAYS} days until automatic deletion. Opening an interview resets the countdown.`)).toBeInTheDocument();
+    });
+
+    it("기한이 가까우면 지워진다는 사실을 앞세운다", () => {
+      render(
+        <SavedInterviewScreen interview={payload({ openedAt: openedDaysAgo(RETENTION_DAYS - 2) })} onResume={vi.fn()} />
+      );
+
+      expect(screen.getByText("This interview will be automatically deleted in 2 days.")).toBeInTheDocument();
+    });
+
+    /** 만료를 알리는 자리라 문구가 어색하면 안 됩니다. 1일 사례는 경고 구간 안이라 실제로 납니다(PR #130 리뷰). */
+    it("하루가 남으면 단수형으로 적는다", () => {
+      render(
+        <SavedInterviewScreen interview={payload({ openedAt: openedDaysAgo(RETENTION_DAYS - 1) })} onResume={vi.fn()} />
+      );
+
+      expect(screen.getByText("This interview will be automatically deleted in 1 day.")).toBeInTheDocument();
+    });
   });
 
   /** 근거 스냅샷에는 없는 값입니다. 저장된 분석에서 그 후보 하나를 골라 함께 받아 그립니다. */

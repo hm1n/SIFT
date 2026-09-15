@@ -5,8 +5,11 @@ import {
   toStageAUnits,
   type CandidateStage,
   type StageACandidateResult,
-  type StageASelectionSummary,
 } from "@/features/experience-candidates/candidate-client";
+import {
+  toExcludedUnitSummary,
+  type ExcludedUnitSummary,
+} from "@/features/experience-candidates/work-unit-selection";
 import type {
   StageBCandidateResult,
 } from "@/features/experience-candidates/types";
@@ -16,6 +19,7 @@ import type { AuthoredCommitsResult } from "@/lib/github/commits";
 import { GitHubFetchError, type GitHubFetchErrorKind } from "@/lib/github/errors";
 import { fetchAuthoredCommitsFromApi, fetchContributionsFromApi } from "@/lib/github/route-client";
 import type {
+  CandidateCommitIndex,
   CandidateDataOutput,
   CommitSummary,
   ContributionFetchProgress,
@@ -116,7 +120,19 @@ export interface CandidateRetryPoint {
  * 이미 있지만 성공 경로에서는 그동안 어디에도 실리지 않았습니다. 화면이 "판단 불가" 건수를
  * 보여주려면(Task 9-2) 이 값이 성공 상태까지 와야 합니다.
  */
-export interface StageASelectionState extends StageASelectionSummary {
+export interface StageASelectionState {
+  /**
+   * 점수 선별에서 빠진 묶음입니다. 화면이 그리는 필드만 남긴 모양입니다(이슈 #116).
+   *
+   * Stage A가 돌려주는 `ExcludedWorkUnit`은 묶음 안의 커밋 상세를 통째로 들고 있습니다. 화면은 그
+   * 커밋을 한 번도 읽지 않고, 저장된 분석도 이 모양으로 저장합니다. 여기서 줄여 두면 저장된 분석으로
+   * 후보 화면을 다시 그릴 때 모양을 맞추는 코드가 따로 필요 없습니다.
+   */
+  readonly excludedUnits: readonly ExcludedUnitSummary[];
+  /** 선택된 묶음 중 가장 낮은 점수입니다. */
+  readonly thresholdScore: number;
+  /** 점수 선별을 통과해 실제로 모델에 보낸 묶음 수입니다. */
+  readonly selectedUnitCount: number;
   readonly unjudgedShas: readonly string[];
 }
 
@@ -147,7 +163,11 @@ export type AnalysisState =
   | { status: "error"; error: AnalysisError; retryPoint?: CandidateRetryPoint }
   | {
       status: "success";
-      data: CandidateDataOutput;
+      /**
+       * 후보 화면이 읽는 커밋 색인입니다. 저장된 분석으로 이 상태를 다시 만들 수 있어야 하므로
+       * `CandidateDataOutput` 전체가 아니라 화면이 쓰는 만큼만 싣습니다(이슈 #116).
+       */
+      data: CandidateCommitIndex;
       candidates: StageBCandidateResult;
       stageASelection: StageASelectionState;
     };
@@ -333,7 +353,7 @@ export async function generateCandidates(
     // 세 상태(빈 둘·성공)가 같은 선별 값을 싣도록 여기서 한 번만 만듭니다. 후보가 0개일 때가 제외
     // 사유를 가장 알아야 할 순간이라 두 빈 갈래에도 성공 경로와 동일한 객체를 실어 보냅니다(이슈 #58 P1-2).
     const stageASelection: StageASelectionState = {
-      excludedUnits: stageA.excludedUnits,
+      excludedUnits: stageA.excludedUnits.map(toExcludedUnitSummary),
       thresholdScore: stageA.thresholdScore,
       selectedUnitCount: stageA.selectedUnitCount,
       unjudgedShas: stageA.unjudgedShas,

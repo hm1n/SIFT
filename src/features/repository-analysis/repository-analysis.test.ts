@@ -203,7 +203,16 @@ describe("generateCandidates", () => {
 
   it("Stage A 후보가 0개이면 Stage B 호출 없이 no_stage_a_candidates로 끝낸다", async () => {
     const deps = dependencies({
-      fetchStageACandidates: vi.fn().mockResolvedValue({ candidates: [], unclassifiedShas: ["sha-1"] }),
+      // Stage A 결과는 선별 요약을 언제나 함께 냅니다(`fetchStageACandidatesFromApi`). 그 값이 빠진
+      // 흉내 값을 쓰면 실제로는 없는 경로를 테스트하게 됩니다.
+      fetchStageACandidates: vi.fn().mockResolvedValue({
+        candidates: [],
+        unclassifiedShas: ["sha-1"],
+        unjudgedShas: [],
+        excludedUnits: [],
+        thresholdScore: 0,
+        selectedUnitCount: 0,
+      }),
     });
     const states: AnalysisState[] = [];
     await generateCandidates(retryPoint, (state) => states.push(state), deps);

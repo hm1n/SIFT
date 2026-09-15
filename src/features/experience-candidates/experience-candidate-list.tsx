@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { ExperienceCandidateListItem, StageBCandidateResult } from "./types";
-import type { CandidateDataOutput, ReadonlyCommitDetail } from "@/lib/github/types";
+import type { CandidateCommitIndex } from "@/lib/github/types";
 import type { RepositoryRef } from "@/lib/github/types";
 import { VERIFIABILITY_LABEL } from "./evidence-verifiability";
 import { candidateTitle, deriveCandidatePeriod, pluralCount } from "./candidate-period";
@@ -16,7 +16,7 @@ import {
 } from "./experience-selection";
 import {
   WORK_UNIT_SELECTION_EXCLUSION_COPY,
-  type ExcludedWorkUnit,
+  type ExcludedUnitSummary,
 } from "./work-unit-selection";
 import { WORK_UNIT_SIGNAL_COPY } from "./work-unit-score";
 import { modelFacingUnitId } from "./work-unit";
@@ -28,7 +28,7 @@ import styles from "./experience-candidate-list.module.css";
  * 상위 계층이기 때문입니다. 여기서 가져오면 역방향 의존이 생깁니다.
  */
 export interface StageASelectionDisplay {
-  readonly excludedUnits: readonly ExcludedWorkUnit<ReadonlyCommitDetail>[];
+  readonly excludedUnits: readonly ExcludedUnitSummary[];
   readonly thresholdScore: number;
   /** 점수 선별을 통과해 실제로 판단한 묶음 수입니다. 전체 대비 얼마인지 말하려면 필요합니다. */
   readonly selectedUnitCount: number;
@@ -39,7 +39,7 @@ export interface StageASelectionDisplay {
 const ROW_TOPIC_COUNT = 2;
 
 export function createExperienceCandidateListItems(
-  data: CandidateDataOutput,
+  data: CandidateCommitIndex,
   candidates: StageBCandidateResult
 ): readonly ExperienceCandidateListItem[] {
   const commitsBySha = new Map(data.includedCommits.map((commit) => [commit.sha, commit]));
@@ -59,7 +59,7 @@ export function createExperienceCandidateListItems(
 
 interface ExperienceCandidateListProps {
   repository: RepositoryRef;
-  data: CandidateDataOutput;
+  data: CandidateCommitIndex;
   candidates: StageBCandidateResult;
   /** 생략하면 제외 요약을 표시하지 않습니다. 실제 화면은 항상 값을 넘깁니다. */
   stageASelection?: StageASelectionDisplay;
@@ -230,9 +230,9 @@ export function ExperienceCandidateList({
  * (이슈 #58 Codex 리뷰 P1-2).
  */
 /** Pull Request 묶음은 번호로, 단일 커밋은 SHA 7자리로 사람이 읽을 라벨을 만듭니다. */
-function unitLabel(unit: ExcludedWorkUnit<ReadonlyCommitDetail>["unit"]): string {
-  return unit.kind === "pull_request"
-    ? `PR #${unit.pullRequest.number}`
+function unitLabel(unit: ExcludedUnitSummary): string {
+  return unit.kind === "pull_request" && unit.pullRequestNumber !== null
+    ? `PR #${unit.pullRequestNumber}`
     : `Commit ${modelFacingUnitId(unit.unitId).slice("commit:".length)}`;
 }
 
@@ -285,15 +285,15 @@ export function StageAExclusions({
             <span className={styles.heuristicNotice}> The score is an automatically computed heuristic, not a fact from the Repository.</span>
           </p>
           <ul className={`${styles.exclusionList} ${styles.scrollableList}`}>
-            {overInputBudget.map(({ unit, score, signals }) => (
+            {overInputBudget.map((unit) => (
               <li key={unit.unitId}>
                 <span className={styles.verifiedTag}>{VERIFIABILITY_LABEL.verified}</span>
                 <span>{unitLabel(unit)}</span>
                 <span>{unit.title}</span>
-                <span className={styles.heuristicScore}>{`${score} · heuristic`}</span>
-                {signals.length > 0 ? (
+                <span className={styles.heuristicScore}>{`${unit.score} · heuristic`}</span>
+                {unit.signals.length > 0 ? (
                   <span className={styles.signalList}>
-                    {signals.map((signal) => <span key={signal}>{WORK_UNIT_SIGNAL_COPY[signal]}</span>)}
+                    {unit.signals.map((signal) => <span key={signal}>{WORK_UNIT_SIGNAL_COPY[signal]}</span>)}
                   </span>
                 ) : null}
               </li>
@@ -309,15 +309,15 @@ export function StageAExclusions({
           </summary>
           <p className={styles.exclusionReason}>{WORK_UNIT_SELECTION_EXCLUSION_COPY.over_byte_budget}</p>
           <ul className={`${styles.exclusionList} ${styles.scrollableList}`}>
-            {overBudget.map(({ unit, score, signals }) => (
+            {overBudget.map((unit) => (
               <li key={unit.unitId}>
                 <span className={styles.verifiedTag}>{VERIFIABILITY_LABEL.verified}</span>
                 <span>{unitLabel(unit)}</span>
                 <span>{unit.title}</span>
-                <span className={styles.heuristicScore}>{`${score} · heuristic`}</span>
-                {signals.length > 0 ? (
+                <span className={styles.heuristicScore}>{`${unit.score} · heuristic`}</span>
+                {unit.signals.length > 0 ? (
                   <span className={styles.signalList}>
-                    {signals.map((signal) => <span key={signal}>{WORK_UNIT_SIGNAL_COPY[signal]}</span>)}
+                    {unit.signals.map((signal) => <span key={signal}>{WORK_UNIT_SIGNAL_COPY[signal]}</span>)}
                   </span>
                 ) : null}
               </li>
