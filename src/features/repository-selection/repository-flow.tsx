@@ -3,6 +3,7 @@
 import { useId, useState } from "react";
 import { AppShell } from "@/components/shell/app-shell";
 import { Button } from "@/components/shell/button";
+import { clearAnalysisFlow, startAnalysisFlow, trackEvent } from "@/features/analytics/events";
 import { RepositoryAnalysisView } from "@/features/repository-analysis/repository-analysis-view";
 import type { RepositorySummary } from "@/lib/github/types";
 import { RepositorySelectScreen } from "./repository-select-screen";
@@ -30,12 +31,26 @@ export function RepositoryFlow() {
   const leaveConfirmTitleId = useId();
   const leaveConfirmDescId = useId();
 
+  /**
+   * 분석 한 번을 묶는 `flow_id`를 여기서 발급합니다. 저장소를 고른 순간이 아니라 분석을 시작하는
+   * 순간입니다. `flow_id`의 정의가 "분석 한 번"이고, 화면 순서가 바뀌어도 분석 시작이라는 액션은
+   * 남기 때문입니다. `repo_visibility`와 `repo_language`도 같은 시점부터 공통 파라미터로 붙습니다.
+   *
+   * 재시도는 같은 `flow_id`를 그대로 씁니다. 실패한 분석과 그 재시도는 한 번의 분석 시도이고,
+   * 저장소를 바꾸면 선택이 비워지면서 다음 분석에 새 값이 발급됩니다.
+   */
+  function startAnalysis(summary: RepositorySummary, contributionItems: readonly string[]) {
+    startAnalysisFlow({
+      flowId: crypto.randomUUID(),
+      repoVisibility: summary.visibility,
+      repoLanguage: summary.language,
+    });
+    trackEvent({ name: "analysis_requested", contribution_item_count: contributionItems.length });
+    setSelection({ summary, contributionItems });
+  }
+
   if (selection === null) {
-    return (
-      <RepositorySelectScreen
-        onAnalyze={(summary, contributionItems) => setSelection({ summary, contributionItems })}
-      />
-    );
+    return <RepositorySelectScreen onAnalyze={startAnalysis} />;
   }
 
   const { summary, contributionItems } = selection;
@@ -44,6 +59,9 @@ export function RepositoryFlow() {
     setConfirmingLeave(false);
     setInterviewActive(false);
     setSelection(null);
+    // 저장소를 바꾸면 이 분석의 묶음이 끝납니다. 비우지 않으면 다음 분석을 시작하기 전에 일어나는
+    // 이벤트(`repo_list_loaded`)가 지난 분석의 `flow_id`를 달고 나갑니다.
+    clearAnalysisFlow();
   }
 
   /** 인터뷰가 활성 상태면 바로 나가지 않고 확인을 먼저 받습니다. */
