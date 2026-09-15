@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { analyzeRepository } from "@/features/repository-analysis/repository-analysis";
 import { emptyInterviewProgress } from "@/features/experience-block/progress";
@@ -9,6 +9,13 @@ import { emptyExperienceBlockState } from "@/features/experience-block/types";
 import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
 import { encodeSseEvent } from "@/features/interview/sse";
 import { RepositoryFlow } from "./repository-flow";
+
+/**
+ * 기다리는 시간을 늘립니다. 이 파일은 화면과 라우트와 저장 계층을 한 번에 지나고, 이슈 #116부터
+ * 분석 화면이 저장된 분석을 먼저 찾는 단계가 하나 더 붙었습니다. 기본값 1초로는 전체 스위트를 함께
+ * 돌릴 때 간헐적으로 넘습니다(2026-09-15에 서로 다른 테스트가 두 번 흔들렸습니다).
+ */
+configure({ asyncUtilTimeout: 5_000 });
 
 vi.mock("@/features/repository-analysis/repository-analysis", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/features/repository-analysis/repository-analysis")>();
