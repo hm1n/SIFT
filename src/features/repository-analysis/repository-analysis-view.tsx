@@ -338,9 +338,17 @@ export function RepositoryAnalysisView({
           onInterviewCreated?.();
           return;
         } catch (error) {
-          const missing = error instanceof SavedInterviewFetchError && error.kind === "not_found";
-          if (attempt === 1 || !missing) return;
-          analysisIdRef.current = null;
+          if (attempt === 1) return;
+          /**
+           * 한 번 더 시도합니다(backlog 10번). 여기서 포기하면 인터뷰 줄이 없는 채로 대화가 시작되고,
+           * 그 뒤의 턴은 화면에만 남습니다. "다시 저장"도 붙일 줄이 없어 아무 일도 하지 않습니다.
+           *
+           * 가리킨 분석이 사라진 경우(`not_found`)에만 분석부터 다시 저장합니다. 연결이 잠시 끊긴
+           * 경우까지 분석을 다시 저장하면 같은 분석이 여러 줄로 쌓입니다.
+           */
+          if (error instanceof SavedInterviewFetchError && error.kind === "not_found") {
+            analysisIdRef.current = null;
+          }
         }
       }
     })();

@@ -815,6 +815,21 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
       expect(saveAnalysis).toHaveBeenCalledTimes(2);
     });
 
+    /** 연결이 잠시 끊긴 경우입니다. 분석을 다시 저장하지 않고 같은 줄에 한 번 더 붙입니다(backlog 10번). */
+    it("줄 만들기가 한 번 실패하면 같은 분석에 다시 시도한다", async () => {
+      const createInterview = vi
+        .fn<typeof createSavedInterview>()
+        .mockRejectedValueOnce(new SavedInterviewFetchError("network", "끊겼습니다"))
+        .mockResolvedValue({ interviewId: "i2", analysisId: "a1" });
+      const saveAnalysis = savedAnalysis();
+
+      await confirmExperience(createInterview, saveAnalysis);
+
+      await waitFor(() => expect(createInterview).toHaveBeenCalledTimes(2));
+      expect(createInterview.mock.calls[1][0].analysisId).toBe("a1");
+      expect(saveAnalysis).toHaveBeenCalledTimes(1);
+    });
+
     /** 두 번째도 실패하면 저장 계층이 응답하지 않는 것이므로 같은 요청을 계속 보내지 않습니다. */
     it("다시 붙이기도 실패하면 더 시도하지 않는다", async () => {
       const createInterview = vi
