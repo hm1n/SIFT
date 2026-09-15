@@ -304,11 +304,13 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
     },
 
     /**
-     * 이력만 이어 붙입니다. 블록 버전 조건이 없습니다(이슈 #116, backlog 7번).
+     * 이력만 이어 붙입니다(이슈 #116, backlog 7번). `block_state`와 `block_version`과 `progress`는
+     * 건드리지 않습니다.
      *
-     * 조건이 필요한 이유는 두 탭이 같은 블록을 서로 덮어쓰는 것을 막기 위해서인데, 이 문장은
-     * `block_state`와 `block_version`과 `progress`를 건드리지 않고 이력 뒤에만 붙이므로 덮어쓸 것이
-     * 없습니다. 소유자 판정은 다른 연산과 같이 `where`에 둡니다.
+     * 블록 버전 조건은 `appendTurn`과 똑같이 둡니다. 덮어쓸 값이 없으니 조건도 필요 없어 보이지만,
+     * 버전이 어긋났다는 것은 다른 탭이 이미 저장했다는 뜻이고 그 저장에 여기 붙이려는 턴이 들어
+     * 있습니다. 조건을 빼면 같은 질문과 답변이 대화에 두 번 남습니다. 소유자 판정은 다른 연산과
+     * 같이 `where`에 둡니다.
      */
     async appendHistory({
       githubUserId,
