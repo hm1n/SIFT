@@ -18,11 +18,6 @@ import styles from "./paar-panel.module.css";
 /** PAAR 블록은 PROBLEM·ANALYZE·ACTION·RESULT 넷입니다. */
 export const PAAR_BLOCK_COUNT = BLOCK_KINDS.length;
 
-/**
- * 문장이 참조한 주장 가운데 사용자 진술만 근거인 것이 있을 때의 문구입니다. 저장소 인용이 함께
- * 있어도 붙습니다. 인용이 존재한다는 것과 그 인용이 문장을 뒷받침한다는 것은 다릅니다(설계 8절).
- */
-const USER_STATEMENT_MARK = "Your statement · not verified in the repository";
 /** 사용자 주장과 저장소 관찰이 어긋난 상태입니다. 문장 안이 아니라 밖에 그립니다(설계 8절). */
 const CONFLICT_MARK = "Conflicts with the evidence · needs checking";
 
@@ -114,7 +109,6 @@ function BlockCard({ block, stream, edits, onEditBlock }: BlockCardProps) {
             // 없고, 본문을 키로 쓰면 같은 문장이 두 번 나올 때 깨집니다.
             <li key={index} className={styles.sentence}>
               <p className={styles.sentenceText}>{mark.text}</p>
-              {mark.userStatement ? <p className={styles.userMark}>{USER_STATEMENT_MARK}</p> : null}
               {mark.repositorySources.length > 0 ? (
                 <ul className={styles.sources}>
                   {uniqueSources(mark.repositorySources).map((source) => (

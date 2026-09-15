@@ -32,7 +32,6 @@
 .sentenceText { margin: 0; color: var(--color-foreground); font-size: 12px; line-height: 1.6; }
 
 /* 사용자 진술 표시입니다. 글자가 본문이고 왼쪽 선은 훑어볼 때의 표지입니다. */
-.userMark { margin: 0; border-left: 2px solid var(--color-scrollbar); padding-left: 6px; color: var(--color-muted-foreground); font-size: 11px; line-height: 1.5; }
 
 .sources { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
 .source { display: flex; gap: 6px; min-width: 0; font-family: var(--font-mono); font-size: 11px; }

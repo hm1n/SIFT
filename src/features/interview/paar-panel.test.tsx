@@ -138,7 +138,7 @@ describe("PaarPanel 블록 상태", () => {
 });
 
 describe("PaarPanel 출처와 충돌 표시", () => {
-  it("사용자 진술만 근거인 문장에 글자로 표시를 붙인다", () => {
+  it("저장소 근거가 없는 문장에는 아무 표시도 붙이지 않는다", () => {
     render(
       <PanelHarness
         stream={baseStream({
@@ -150,7 +150,10 @@ describe("PaarPanel 출처와 충돌 표시", () => {
       />
     );
 
-    expect(screen.getByText("Your statement · not verified in the repository")).toBeInTheDocument();
+    // 근거 목록이 있느냐 없느냐만으로 확인 여부를 구분합니다. 문장 자체는 그대로 보여 줍니다.
+    expect(screen.getByText("직접 말한 수치")).toBeInTheDocument();
+    expect(screen.queryByText(/not verified in the repository/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Your statement/)).not.toBeInTheDocument();
   });
 
   it("저장소 인용을 커밋과 파일로 보여 주고 검증 완료로 적지 않는다", () => {
@@ -247,7 +250,7 @@ describe("PaarPanel 종료 후 편집", () => {
     expect(screen.getAllByRole("button", { name: "Edit" })).toHaveLength(4);
   });
 
-  it("고치면 저장소 인용을 잃고 사용자 진술로 바뀐다", () => {
+  it("고치면 저장소 인용을 잃는다", () => {
     render(<PanelHarness stream={baseStream({ blockState: filled, isEnded: true, endReason: "user" })} />);
     expect(screen.getByText("abc1234")).toBeInTheDocument();
 
@@ -256,7 +259,7 @@ describe("PaarPanel 종료 후 편집", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(screen.getByText("사용자가 고친 문장")).toBeInTheDocument();
-    expect(screen.getByText("Your statement · not verified in the repository")).toBeInTheDocument();
+    expect(screen.queryByText(/not verified in the repository/)).not.toBeInTheDocument();
     expect(screen.queryByText("abc1234")).not.toBeInTheDocument();
     expect(screen.queryByText("src/log.tsx")).not.toBeInTheDocument();
   });

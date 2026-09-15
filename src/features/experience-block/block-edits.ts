@@ -76,9 +76,9 @@ export function effectiveDisplay(
  * 문장별 출처 표시입니다. 고치지 않은 블록은 `markDisplay`가 주장에서 계산하고, 고친 블록은 모든
  * 문장이 사용자 진술입니다.
  *
- * 고친 블록을 `markDisplay`에 넘기지 않습니다. 편집본의 `claimIds`가 비어 있어 참조된 주장이 하나도
- * 없고, `userStatement`를 정하는 `.some()`은 빈 목록에서 거짓입니다. 그대로 넘기면 사용자가 직접 쓴
- * 문장에 아무 표시도 붙지 않아, 출처를 밝히지 않은 문장이 검증된 문장과 같은 모습이 됩니다.
+ * 고친 블록을 `markDisplay`에 넘기지 않습니다. `markDisplay`는 `state.display`를 읽으므로 편집 전
+ * 문장을 그대로 돌려주고, 그 문장에 붙어 있던 저장소 인용까지 함께 남깁니다. 사용자가 고친 문장에
+ * 예전 인용이 따라붙으면 확인되지 않은 문장이 확인된 것처럼 보입니다(설계 8절).
  */
 export function blockMarks(
   state: ExperienceBlockState,
