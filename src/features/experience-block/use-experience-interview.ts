@@ -17,7 +17,7 @@ import {
 } from "@/features/interview/use-interview-stream";
 import { completeSavedInterview } from "@/features/saved-interviews/client";
 import type { BlockUpdateSaveStatus, SavedTurnStatus } from "@/features/saved-interviews/save-status";
-import { BlockUpdateFetchError, fetchBlockUpdate, fetchSaveOnly } from "./client";
+import { BlockUpdateFetchError, fetchBlockUpdate, fetchSaveOnly, type BlockUpdateFetchErrorKind } from "./client";
 import type { InterviewProgress } from "./progress";
 import { emptyInterviewProgress, recordAsked, recordResponse, selectNextTarget } from "./progress";
 import type { ExperienceBlockSaveTarget } from "./request";
@@ -180,6 +180,15 @@ export interface UseExperienceInterviewState extends InterviewStreamState {
   /** 블록 갱신이 실패해 반영되지 않은 턴의 ID입니다. 없으면 `null`입니다. */
   unreflectedTurnId: string | null;
   /**
+   * 마지막 블록 갱신이 실패한 이유입니다. 실패한 적이 없거나 그 뒤에 성공했으면 `null`입니다.
+   *
+   * 화면이 "반영되지 않았습니다"만 적으면 무엇을 해야 하는지 알 수 없습니다. 2026-09-15에 `.env`의
+   * 키 이름이 어긋나 블록 갱신이 매번 인증 실패로 끝났는데, 화면에는 반영되지 않았다는 말만 떠서
+   * 설정 문제라는 것이 드러나기까지 대화가 통째로 사라졌습니다. 분류는 그대로 올려 보내고 문구는
+   * 화면이 정합니다.
+   */
+  unreflectedReason: BlockUpdateFetchErrorKind | null;
+  /**
    * 마지막으로 시도한 저장의 결과입니다. 저장을 시도한 적이 없으면 `null`입니다. 저장 대상이 없어
    * 저장하지 않은 턴은 이 값을 바꾸지 않습니다. 안 그러면 앞 턴의 실패 안내가 조용히 지워집니다.
    */
@@ -241,6 +250,7 @@ export function useExperienceInterview({
   );
   const [unreflectedTurnId, setUnreflectedTurnId] = useState<string | null>(null);
   const [unreflectedBlocks, setUnreflectedBlocks] = useState<readonly BlockKind[]>([]);
+  const [unreflectedReason, setUnreflectedReason] = useState<BlockUpdateFetchErrorKind | null>(null);
 
   const [saveStatus, setSaveStatus] = useState<SavedTurnStatus | null>(null);
   const [unsavedTurnCount, setUnsavedTurnCount] = useState(0);
@@ -481,12 +491,17 @@ export function useExperienceInterview({
         );
         unreflectedRef.current.delete(turn.turnId);
         syncUnreflectedTurnId();
+        // 성공했으므로 앞선 실패의 이유를 지웁니다. 남겨 두면 이미 풀린 문제를 계속 알립니다.
+        setUnreflectedReason(null);
         return { ok: true, targetResponse: result.targetResponse };
       } catch (error) {
         // 블록 갱신이 실패했으면 저장도 이뤄지지 않았습니다. 이번 턴을 밀린 턴으로 남겨 다음 저장이
         // 함께 보내게 합니다. 끊긴 호출(`AbortError`)도 같습니다.
         recordSaveResult(turn.turnId, save, "failed", null);
         if (error instanceof DOMException && error.name === "AbortError") return { ok: false, targetResponse: null };
+        // 실패한 이유를 화면까지 올립니다. 분류를 모르는 오류는 서버 문제로 뭉뚱그리지 않고 `null`로
+        // 둡니다. 화면이 일반 문구를 쓰는 편이, 틀린 원인을 단정하는 것보다 낫습니다.
+        setUnreflectedReason(error instanceof BlockUpdateFetchError ? error.kind : null);
         // 갱신 실패만으로 같은 블록에 고정하지 않습니다. progress는 건드리지 않고 다음 단계에서
         // 이전 평가 그대로 이동 정책을 적용합니다.
         unreflectedRef.current.set(turn.turnId, { turn, target, askedCountAtQuestion });
@@ -761,6 +776,7 @@ export function useExperienceInterview({
     updatingBlock,
     unreflectedTurnId,
     unreflectedBlocks,
+    unreflectedReason,
     retryUnreflectedBlockUpdate,
     saveStatus,
     unsavedTurnCount,

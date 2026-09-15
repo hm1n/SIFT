@@ -52,3 +52,6 @@
 .endButton:focus-visible,
 .endCancelButton:focus-visible,
 .unreflectedRetry:focus-visible { outline: 2px solid var(--color-foreground); outline-offset: 2px; }
+
+/* 반영이 실패한 이유입니다. 안내 문장 바로 아래에 같은 색으로 둡니다. */
+.unreflectedCause { margin: 0; color: #7a5320; font-size: 11px; line-height: 1.5; }

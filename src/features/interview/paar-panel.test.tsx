@@ -40,6 +40,7 @@ function baseStream(overrides: Partial<UseExperienceInterviewState> = {}): UseEx
     updatingBlock: null,
     unreflectedTurnId: null,
     unreflectedBlocks: [],
+    unreflectedReason: null,
     retryUnreflectedBlockUpdate: vi.fn(),
     saveStatus: null,
     unsavedTurnCount: 0,
@@ -327,5 +328,48 @@ describe("PaarPanel 낭독 경계", () => {
     expect(container.querySelectorAll("[aria-live]")).toHaveLength(0);
     expect(container.querySelectorAll("[role='alert']")).toHaveLength(0);
     expect(container.querySelectorAll("[role='status']")).toHaveLength(0);
+  });
+});
+
+/**
+ * 반영 실패의 이유 표시입니다. 2026-09-15에 `.env` 키 이름이 어긋나 블록 갱신이 매번 인증 실패로
+ * 끝났는데, 화면이 "반영되지 않았습니다"만 적어 설정 문제라는 것이 드러나지 않았습니다. 저장이 이
+ * 요청에 얹혀 가므로 그동안 대화도 함께 사라졌습니다.
+ */
+describe("PaarPanel 반영 실패 이유", () => {
+  it("설정 문제는 서버가 고쳐야 한다고 적는다", () => {
+    render(
+      <PanelHarness
+        stream={baseStream({ unreflectedTurnId: "t1", unreflectedReason: "llm_auth" })}
+      />
+    );
+
+    expect(screen.getByText(/server configuration problem/)).toBeInTheDocument();
+  });
+
+  it("모델 출력이 흔들린 경우와 설정 문제를 다른 문장으로 적는다", () => {
+    render(
+      <PanelHarness
+        stream={baseStream({ unreflectedTurnId: "t1", unreflectedReason: "block_update_rejected" })}
+      />
+    );
+
+    expect(screen.getByText(/did not pass validation/)).toBeInTheDocument();
+    expect(screen.queryByText(/server configuration problem/)).not.toBeInTheDocument();
+  });
+
+  // 틀린 원인을 단정하는 것보다 원인을 말하지 않는 편이 낫습니다.
+  it("모르는 이유에는 일반 문구를 적는다", () => {
+    render(<PanelHarness stream={baseStream({ unreflectedTurnId: "t1", unreflectedReason: null })} />);
+
+    expect(screen.getByText("The block update didn't finish.")).toBeInTheDocument();
+  });
+
+  // 반영 실패가 곧 저장 실패라는 사실을 안내가 말해야 합니다. 둘을 따로 읽으면 사용자는 대화가
+  // 남아 있다고 믿습니다.
+  it("저장도 되지 않았다고 함께 알린다", () => {
+    render(<PanelHarness stream={baseStream({ unreflectedTurnId: "t1" })} />);
+
+    expect(screen.getByText(/hasn't been saved either/)).toBeInTheDocument();
   });
 });
