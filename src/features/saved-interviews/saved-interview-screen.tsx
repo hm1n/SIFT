@@ -21,6 +21,7 @@ import {
 import { isExperienceEvidenceSnapshot } from "@/features/interview/question-request";
 import { SavedInterviewFetchError, saveSavedInterviewBlock } from "./client";
 import { isRestorableBlockState, type StoredInterviewPayload } from "./payload";
+import { pluralCount } from "@/features/experience-candidates/candidate-period";
 import { daysUntilDeletion, DELETION_WARNING_DAYS } from "./retention";
 import styles from "./saved-interview-screen.module.css";
 
@@ -137,8 +138,8 @@ function DeletionNotice({ openedAt }: { openedAt: string }) {
       <span className={styles.deletionSymbol} aria-hidden="true">⚠</span>
       <p className={styles.deletionText}>
         {expiringSoon
-          ? `This interview will be automatically deleted in ${daysLeft} days.`
-          : `${daysLeft} days until automatic deletion. Opening an interview resets the countdown.`}
+          ? `This interview will be automatically deleted in ${pluralCount(daysLeft, "day")}.`
+          : `${pluralCount(daysLeft, "day")} until automatic deletion. Opening an interview resets the countdown.`}
       </p>
     </div>
   );

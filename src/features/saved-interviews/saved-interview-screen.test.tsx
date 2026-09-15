@@ -98,6 +98,15 @@ describe("SavedInterviewScreen", () => {
 
       expect(screen.getByText("This interview will be automatically deleted in 2 days.")).toBeInTheDocument();
     });
+
+    /** 만료를 알리는 자리라 문구가 어색하면 안 됩니다. 1일 사례는 경고 구간 안이라 실제로 납니다(PR #130 리뷰). */
+    it("하루가 남으면 단수형으로 적는다", () => {
+      render(
+        <SavedInterviewScreen interview={payload({ openedAt: openedDaysAgo(RETENTION_DAYS - 1) })} onResume={vi.fn()} />
+      );
+
+      expect(screen.getByText("This interview will be automatically deleted in 1 day.")).toBeInTheDocument();
+    });
   });
 
   /** 근거 스냅샷에는 없는 값입니다. 저장된 분석에서 그 후보 하나를 골라 함께 받아 그립니다. */

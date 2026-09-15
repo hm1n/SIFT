@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { BLOCK_KINDS } from "@/features/experience-block/types";
 import type { InterviewListItemPayload } from "./payload";
+import { pluralCount } from "@/features/experience-candidates/candidate-period";
 import { daysUntilDeletion, DELETION_WARNING_DAYS } from "./retention";
 import styles from "./saved-interview-list.module.css";
 
@@ -59,7 +60,7 @@ function DeletionBadge({ openedAt }: { openedAt: string }) {
   const daysLeft = daysUntilDeletion(openedAt);
   if (daysLeft > DELETION_WARNING_DAYS) return null;
   return (
-    <span className={styles.deletionBadge} title={`Automatically deleted in ${daysLeft} days`}>
+    <span className={styles.deletionBadge} title={`Automatically deleted in ${pluralCount(daysLeft, "day")}`}>
       D-{daysLeft}
     </span>
   );

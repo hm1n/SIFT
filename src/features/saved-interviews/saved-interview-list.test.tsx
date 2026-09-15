@@ -142,6 +142,16 @@ describe("SavedInterviewList", () => {
       expect(screen.queryByText(`D-${RETENTION_DAYS - 1}`)).not.toBeInTheDocument();
     });
 
+    // 배지의 설명 문구도 같은 자리입니다(PR #130 리뷰).
+    it("하루가 남으면 배지 설명을 단수형으로 적는다", () => {
+      renderList({
+        status: "ready",
+        interviews: [item({ id: "soon", title: "곧 지워짐", openedAt: openedDaysAgo(RETENTION_DAYS - 1) })],
+      });
+
+      expect(screen.getByTitle("Automatically deleted in 1 day")).toBeInTheDocument();
+    });
+
     /**
      * 정리 작업은 하루에 한 번 돌고 호출 시각도 한 시간 안에서 흔들립니다. 기한이 지난 줄이 잠시
      * 남는데, 그것을 눌러 열면 기준 시각이 갱신돼 다시 90일을 사는 인터뷰가 됩니다.
