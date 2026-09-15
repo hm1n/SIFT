@@ -3,7 +3,14 @@
  * 대신 AppShell의 사이드바와 나란히 놓이는 전체 폭 패널로 그립니다. 색과 라운드와 폰트는 `globals.css`
  * 토큰만 씁니다(디자인 개편 공통 결정).
  */
+/*
+ * `position: relative`는 스크린리더 전용 문구(`.visuallyHidden` 계열) 때문입니다. 그 요소들은
+ * `position: absolute`인데 위치 잡을 조상이 없으면 초기 컨테이닝 블록을 기준으로 놓입니다. 그러면
+ * 스크롤 영역 안에 있어도 잘리지 않고, 정적 위치가 아래로 갈수록 문서 자체가 길어져 화면 아래에
+ * 빈 스크롤 영역이 생깁니다(2026-09-15 실측: body.scrollHeight 422, html.scrollHeight 1036).
+ */
 .screen {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;

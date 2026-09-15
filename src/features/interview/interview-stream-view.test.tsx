@@ -2,7 +2,10 @@
 
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { BlockEdits } from "@/features/experience-block/block-edits";
+import { BLOCK_LABELS } from "@/features/experience-block/block-labels";
 import { emptyExperienceBlockState } from "@/features/experience-block/types";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
 import { INTERVIEW_HISTORY_ITEM_MAX_BYTES } from "./history";
@@ -14,7 +17,7 @@ import { InterviewStreamView } from "./interview-stream-view";
 import { PaarPanel } from "./paar-panel";
 import { evidenceSnapshotFixture } from "./question-fixture";
 import { encodeSseEvent } from "./sse";
-import { useInterviewStream, type InterviewStreamState } from "./use-interview-stream";
+import { useInterviewStream } from "./use-interview-stream";
 
 afterEach(cleanup);
 
@@ -45,19 +48,32 @@ function StreamViewHarness(options: HarnessOptions) {
   );
 }
 
+/**
+ * 테스트용 스트림 경로에는 PAAR 패널을 그리지 않습니다. 그 패널은 블록 상태를 읽는데
+ * `useInterviewStream`에는 블록이 없고, 실제 화면(`InterviewScreen`)도 언제나 근거 스냅샷을 넘겨
+ * `useExperienceInterview`만 씁니다. 종료 흐름을 확인하는 테스트는 모두 스냅샷을 넘깁니다.
+ */
 function TestStreamHarness(options: HarnessOptions) {
-  return <HarnessBody stream={useInterviewStream(options)} />;
+  return <InterviewStreamView stream={useInterviewStream(options)} />;
 }
 
 function ExperienceHarness(options: HarnessOptions & { snapshot: ExperienceEvidenceSnapshot }) {
-  return <HarnessBody stream={useExperienceInterview(options)} />;
-}
-
-function HarnessBody({ stream }: { stream: InterviewStreamState }) {
+  const stream = useExperienceInterview(options);
+  // 편집 상태를 `InterviewScreen`과 같은 자리에 둡니다. 개수 표시가 같은 값을 봐야 하기 때문입니다.
+  const [edits, setEdits] = useState<BlockEdits>({});
   return (
     <>
-      <InterviewStreamView stream={stream} />
-      <PaarPanel isEnded={stream.isEnded} onEnd={stream.endInterview} />
+      <InterviewStreamView
+        stream={stream}
+        currentBlockLabel={
+          stream.isReadyToFinish ? undefined : BLOCK_LABELS[stream.currentTarget.targetBlock]
+        }
+      />
+      <PaarPanel
+        stream={stream}
+        edits={edits}
+        onEditBlock={(block, sentences) => setEdits((current) => ({ ...current, [block]: sentences }))}
+      />
     </>
   );
 }
@@ -557,6 +573,24 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       fireEvent.change(input, { target: { value: "가".repeat(INTERVIEW_HISTORY_ITEM_MAX_BYTES) } });
       expect(described()).not.toBeNull();
       expect(described()).toHaveTextContent("over the size limit for a single message");
+    });
+
+    /*
+     * 디자인에서 입력부 푸터 왼쪽은 PAAR 블록 진행 상태의 자리입니다(이슈 #91 Approach 6). 답변 안내가
+     * 같은 줄을 쓰므로 둘이 서로를 밀어내지 않는지 함께 봅니다.
+     */
+    it("답변 입력 아래에 지금 채우는 블록을 적는다", async () => {
+      const first = controllableResponse();
+      const { input } = await renderAfterFirstQuestion([first]);
+
+      expect(screen.getByText("PAAR · Problem")).toBeInTheDocument();
+
+      // 상한을 넘으면 같은 줄을 오류 문장이 씁니다. 둘을 나란히 두면 오류가 잘립니다.
+      fireEvent.change(input, { target: { value: "가".repeat(INTERVIEW_HISTORY_ITEM_MAX_BYTES) } });
+      expect(screen.queryByText("PAAR · Problem")).not.toBeInTheDocument();
+      expect(
+        document.getElementById(input.getAttribute("aria-describedby") ?? "")
+      ).toHaveTextContent("over the size limit for a single message");
     });
 
     it("보낼 수 없는 상태에서는 단축키도 보내지 않는다", async () => {

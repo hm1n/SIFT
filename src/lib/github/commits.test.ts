@@ -72,6 +72,8 @@ describe("githubFetch", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  // 잡은 예외를 버리면 호출부에 network라는 분류만 남아, 같은 증상을 다시 조사할 때 원인을
+  // 처음부터 재현해야 합니다(2026-09-15 GitHub 수집 실패 조사).
   it("재시도까지 실패하면 network 오류로 바꾸고 마지막 예외를 cause로 남긴다", async () => {
     const lastFailure = new TypeError("second failure");
     const fetchMock = vi
@@ -89,24 +91,26 @@ describe("githubFetch", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
-  it("개발 서버 진단 로그에 시도 횟수와 연결 오류 코드만 남긴다", async () => {
+  // 재시도가 성공하면 사용자에게도 오류에도 아무것도 남지 않습니다. 이 한 줄이 유일한 흔적입니다.
+  it("재시도한 경우에만 개발 서버에 연결 오류 코드를 한 줄 남긴다", async () => {
     vi.stubEnv("NODE_ENV", "development");
     const cause = Object.assign(new Error("sensitive original message"), {
       code: "UND_ERR_CONNECT_TIMEOUT",
     });
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed", { cause })));
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("fetch failed", { cause }))
+      .mockResolvedValueOnce(jsonResponse({ default_branch: "main" }));
+    vi.stubGlobal("fetch", fetchMock);
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    await expect(githubFetch(COMMITS_URL, AUTH.token)).rejects.toMatchObject({ kind: "network" });
+    await expect(githubFetch(COMMITS_URL, AUTH.token)).resolves.toMatchObject({ status: 200 });
 
-    expect(log.mock.calls.map(([, detail]) => (detail as { attempt: number }).attempt)).toEqual([1, 2]);
-    expect(log).toHaveBeenLastCalledWith("[githubFetch] network failure", {
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log).toHaveBeenCalledWith("[githubFetch] retrying after transport failure", {
       url: COMMITS_URL,
-      attempt: 2,
-      attempts: 2,
+      attempt: 1,
       elapsedMs: expect.any(Number),
-      name: "TypeError",
-      code: undefined,
       causeCode: "UND_ERR_CONNECT_TIMEOUT",
     });
     const logged = JSON.stringify(log.mock.calls);
@@ -114,7 +118,17 @@ describe("githubFetch", () => {
     expect(logged).not.toContain("sensitive original message");
   });
 
-  it("운영에서는 진단 로그 없이 기존 network 오류를 던진다", async () => {
+  // 마지막 시도에는 재시도가 없으므로 남길 것도 없습니다. 원인은 오류의 cause에 실려 나갑니다.
+  it("마지막 시도의 실패는 로그로 남기지 않는다", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await expect(githubFetch(COMMITS_URL, AUTH.token)).rejects.toMatchObject({ kind: "network" });
+    expect(log).toHaveBeenCalledTimes(1);
+  });
+
+  it("운영에서는 재시도해도 로그를 남기지 않는다", async () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
     const log = vi.spyOn(console, "error").mockImplementation(() => {});

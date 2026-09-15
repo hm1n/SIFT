@@ -17,7 +17,13 @@ import {
 } from "@/features/interview/use-interview-stream";
 import { BlockUpdateFetchError, fetchBlockUpdate } from "./client";
 import { emptyInterviewProgress, recordAsked, recordResponse, selectNextTarget } from "./progress";
-import { emptyExperienceBlockState, type ExperienceBlockState, type TargetResponse } from "./types";
+import {
+  BLOCK_KINDS,
+  emptyExperienceBlockState,
+  type BlockKind,
+  type ExperienceBlockState,
+  type TargetResponse,
+} from "./types";
 
 /**
  * 이슈 #90 "턴 진행과 블록 전환, 열 턴 자동 종료"의 훅입니다. 설계는
@@ -62,8 +68,38 @@ export interface UseExperienceInterviewState extends InterviewStreamState {
   isReadyToFinish: boolean;
   /** 종료 사유입니다. 종료 전에는 `null`입니다. */
   endReason: ExperienceInterviewEndReason | null;
+  /**
+   * 지금 화면에 있는 질문이 겨냥한 블록과 요소입니다. 첫 질문 전에도 `FIRST_TARGET`으로 정해져
+   * 있어 `null`이 되지 않습니다.
+   *
+   * 블록 패널이 "수집 중" 카드를 가리는 데 쓰고, 답변 입력 아래의 현재 블록 안내도 이 값을
+   * 읽습니다. 화면이 진행 상태를 따로 추적하면 질문이 겨냥한 블록과 어긋난 값을 그릴 수 있어,
+   * 대상을 실제로 정하는 이 훅이 그대로 내보냅니다.
+   */
+  currentTarget: NonNullable<InterviewQuestionTarget>;
+  /**
+   * 블록 갱신을 호출하는 중인지입니다. 현재 답변의 갱신과 미반영 재처리를 가리지 않습니다. 둘 다
+   * 같은 직렬 큐를 거치므로 한 번에 하나만 참입니다.
+   *
+   * 블록 패널의 "수집 중" 표시와 재처리 버튼의 중복 호출 방지에 함께 씁니다.
+   */
+  isBlockUpdating: boolean;
+  /**
+   * 지금 갱신 중인 블록입니다. 호출 중이 아니면 `null`입니다.
+   *
+   * `isBlockUpdating`만으로는 어느 블록인지 알 수 없어 화면이 `currentTarget`이라고 짐작해야 했고,
+   * 미반영 재처리에서는 그 짐작이 틀립니다. 재처리는 예전 턴의 대상을 갱신하는데 `currentTarget`은
+   * 이미 다음 블록으로 넘어가 있어, 관계없는 카드가 "수집 중"으로 보였습니다(PR #121 리뷰 1라운드).
+   * 대상을 실제로 정하는 이 훅이 그대로 내보냅니다.
+   */
+  updatingBlock: BlockKind | null;
   /** 블록 갱신이 실패해 반영되지 않은 턴의 ID입니다. 없으면 `null`입니다. */
   unreflectedTurnId: string | null;
+  /**
+   * 미반영 턴들이 겨냥했던 블록입니다. 블록 패널이 어느 카드에 오류를 그릴지 정하는 데 씁니다.
+   * `unreflectedTurnId`가 가장 오래된 턴 하나만 알려 주는 것과 달리 미반영 턴 전체를 담습니다.
+   */
+  unreflectedBlocks: readonly BlockKind[];
   /** 미반영 턴의 블록 갱신을 다시 시도합니다. 미반영 턴이 없으면 아무 일도 하지 않습니다. */
   retryUnreflectedBlockUpdate: () => void;
 }
@@ -93,12 +129,21 @@ export function useExperienceInterview({
   const [isReadyToFinish, setIsReadyToFinish] = useState(false);
   const [endReason, setEndReason] = useState<ExperienceInterviewEndReason | null>(null);
   const [unreflectedTurnId, setUnreflectedTurnId] = useState<string | null>(null);
+  const [unreflectedBlocks, setUnreflectedBlocks] = useState<readonly BlockKind[]>([]);
 
   // 지금까지의 턴 전체입니다. 블록 갱신 호출이 매번 다시 싣습니다(설계 5절).
   const turnsRef = useRef<BlockUpdateTurn[]>([]);
   const turnSeqRef = useRef(0);
   // 방금 답한 질문이 겨냥했던 대상입니다. 첫 질문은 `initialTarget`과 같은 값으로 시작합니다.
   const answeredTargetRef = useRef<NonNullable<InterviewQuestionTarget>>(FIRST_TARGET);
+  /**
+   * `answeredTargetRef`를 화면이 읽을 수 있게 옮긴 값입니다. ref는 바뀌어도 렌더를 일으키지 않아
+   * 블록 패널이 대상 전환을 놓칩니다. 갱신하는 곳이 한 곳뿐이라 두 값이 갈릴 여지는 없습니다.
+   */
+  const [currentTarget, setCurrentTarget] = useState<NonNullable<InterviewQuestionTarget>>(FIRST_TARGET);
+  /** 블록 갱신 호출이 진행 중인지입니다. `activeRef`와 같은 사실을 화면 쪽으로 옮긴 것입니다. */
+  const [isBlockUpdating, setIsBlockUpdating] = useState(false);
+  const [updatingBlock, setUpdatingBlock] = useState<BlockKind | null>(null);
   /**
    * 방금 답한 질문을 보낸 시점의, 그 대상 요소 `askedCount`입니다(CodeRabbit PR #117). 첫 질문은
    * `progressRef`의 초깃값이 이미 `recordAsked`를 한 번 거친 값이라 1입니다. `recordResponse`가
@@ -133,12 +178,34 @@ export function useExperienceInterview({
    */
   const applyQueueRef = useRef<Promise<void>>(Promise.resolve());
   /**
+   * 큐에 들어가 있거나 실행 중인 턴입니다. 같은 턴을 두 번 등록하지 않으려고 둡니다.
+   *
+   * 직렬 큐는 동시 실행만 막습니다. 이미 들어간 중복 항목을 지우지는 않으므로 둘 다 실행되어 같은
+   * 블록 갱신 요청이 두 번 나갑니다. `isBlockUpdating`으로는 막지 못합니다. 그 값은 큐에 넣는
+   * 시점이 아니라 `runApplyTurn`이 자기 차례를 잡았을 때 참이 되기 때문입니다.
+   *
+   * 중복이 들어오는 경로는 둘입니다. 재처리 버튼 연타와, 재처리가 큐에 있는 동안의 종료입니다.
+   * 종료 버튼은 `isBlockUpdating`으로 잠기지 않는데 `endInterview`도 `retryAllUnreflected`를
+   * 부릅니다(PR #121 리뷰 2라운드, backlog 3번).
+   *
+   * 앞선 호출이 끝나면 지웁니다. 실패한 턴을 나중에 다시 재처리하는 길은 막지 않습니다.
+   *
+   * 값이 `Set`이 아니라 등록마다 새로 만드는 표식인 이유는 `endInterview` 때문입니다. 종료는 진행
+   * 중이던 호출을 끊고 그 턴을 곧바로 다시 등록하는데, 끊긴 호출이 나중에 정리될 때 자기가 넣은
+   * 항목이 아니라 새로 등록된 항목을 지우면 중복 판정에 구멍이 생깁니다. 자기 표식일 때만 지웁니다.
+   */
+  const queuedTurnsRef = useRef<Map<string, symbol>>(new Map());
+  /**
    * 언마운트됐는지입니다. 이 훅이 사라진 뒤에도 `applyTurn`이나 `onBeforeQuestion`의 이어지는
    * 작업이 상태를 계속 바꾸는 것을 막습니다(구현검토 2026-09-11 P1-3, R5). `useInterviewStream`
    * 쪽의 이어지는 질문 요청은 그 훅 자신의 언마운트 가드가 막습니다.
    */
   const unmountedRef = useRef(false);
   useEffect(() => {
+    // Strict Mode는 개발에서 effect를 setup → cleanup → setup으로 두 번 실행합니다. setup에서
+    // 되돌리지 않으면 첫 cleanup이 남긴 `true`가 그대로 살아 있어, 마운트된 훅이 스스로를
+    // 언마운트됐다고 판단합니다. 그러면 첫 답변부터 블록 갱신 요청을 아예 보내지 않습니다.
+    unmountedRef.current = false;
     return () => {
       unmountedRef.current = true;
       activeAbortRef.current?.abort();
@@ -147,8 +214,14 @@ export function useExperienceInterview({
 
   /** `unreflectedRef`가 바뀐 뒤 노출용 상태를 맞춥니다. 가장 오래된(먼저 실패한) 턴을 보여 줍니다. */
   const syncUnreflectedTurnId = useCallback(() => {
-    const oldest = unreflectedRef.current.keys().next();
-    setUnreflectedTurnId(oldest.done ? null : oldest.value);
+    // `Map`이 넣은 순서를 지키므로 첫 항목이 먼저 실패한 턴입니다.
+    const pending = [...unreflectedRef.current.values()];
+    setUnreflectedTurnId(pending.length === 0 ? null : pending[0].turn.turnId);
+    // 미반영 턴이 여럿이면 겨냥한 블록도 여럿입니다. 화면이 어느 카드에 오류를 그릴지 정하려면
+    // 가장 오래된 턴 하나가 아니라 전부를 알아야 합니다.
+    setUnreflectedBlocks(
+      BLOCK_KINDS.filter((block) => pending.some((item) => item.target.targetBlock === block))
+    );
   }, []);
 
   const optionsRef = useRef({ questionUrl, blockUpdateUrl, snapshot, fetchImpl, retryDelaysMs, sleep, scheduleFrame, cancelFrame });
@@ -185,6 +258,8 @@ export function useExperienceInterview({
       const controller = new AbortController();
       activeAbortRef.current = controller;
       activeRef.current = { turn, target, askedCountAtQuestion };
+      setIsBlockUpdating(true);
+      setUpdatingBlock(target.targetBlock);
       try {
         const result = await fetchBlockUpdate({
           url: current.blockUpdateUrl,
@@ -219,6 +294,8 @@ export function useExperienceInterview({
       } finally {
         activeRef.current = null;
         activeAbortRef.current = null;
+        setIsBlockUpdating(false);
+        setUpdatingBlock(null);
       }
     },
     [setBlockStateBoth, syncUnreflectedTurnId]
@@ -235,11 +312,22 @@ export function useExperienceInterview({
       target: NonNullable<InterviewQuestionTarget>,
       askedCountAtQuestion: number
     ): Promise<{ readonly ok: boolean; readonly targetResponse: TargetResponse | null }> => {
+      // 이미 등록된 턴은 다시 넣지 않습니다. 앞선 호출의 결과가 이 턴의 결과이므로 새 호출을 만들
+      // 이유가 없습니다. 돌려주는 값은 재처리 경로에서만 쓰이지 않고 버려집니다.
+      if (queuedTurnsRef.current.has(turn.turnId)) {
+        return Promise.resolve({ ok: false, targetResponse: null });
+      }
+      const token = Symbol(turn.turnId);
+      queuedTurnsRef.current.set(turn.turnId, token);
       const result = applyQueueRef.current.then(() => runApplyTurn(turn, target, askedCountAtQuestion));
-      applyQueueRef.current = result.then(
-        () => undefined,
-        () => undefined
-      );
+      applyQueueRef.current = result
+        .then(
+          () => undefined,
+          () => undefined
+        )
+        .then(() => {
+          if (queuedTurnsRef.current.get(turn.turnId) === token) queuedTurnsRef.current.delete(turn.turnId);
+        });
       return result;
     },
     [runApplyTurn]
@@ -317,6 +405,7 @@ export function useExperienceInterview({
       progressRef.current = recordAsked(progressRef.current, next.block, next.element);
       const target: NonNullable<InterviewQuestionTarget> = { targetBlock: next.block, targetElement: next.element };
       answeredTargetRef.current = target;
+      setCurrentTarget(target);
       answeredAskedCountRef.current = progressRef.current[next.block].elements[next.element].askedCount;
       return { kind: "ask", target, lastOutcome };
     },
@@ -380,6 +469,9 @@ export function useExperienceInterview({
     activeAbortRef.current?.abort();
     if (interrupted !== null) {
       unreflectedRef.current.set(interrupted.turn.turnId, interrupted);
+      // 끊은 호출은 더 이상 진행 중이 아니므로 중복 판정에서 뺍니다. 이 줄이 없으면 바로 아래의
+      // 재처리가 중복으로 걸러져, 구현검토 P1-2(R6)가 요구한 "끊고 한 번 더 반영"이 사라집니다.
+      queuedTurnsRef.current.delete(interrupted.turn.turnId);
       syncUnreflectedTurnId();
     }
     void retryAllUnreflected();
@@ -395,7 +487,11 @@ export function useExperienceInterview({
     maxTurns: INTERVIEW_MAX_TURNS,
     isReadyToFinish,
     endReason,
+    currentTarget,
+    isBlockUpdating,
+    updatingBlock,
     unreflectedTurnId,
+    unreflectedBlocks,
     retryUnreflectedBlockUpdate,
   };
 }
