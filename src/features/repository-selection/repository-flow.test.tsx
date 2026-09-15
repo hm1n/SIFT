@@ -66,7 +66,7 @@ describe("RepositoryFlow", () => {
 
     await waitFor(() => expect(analyzeMock).toHaveBeenCalledWith({ owner: "octocat", repo: "hello-world" }, ["푸시 알림 구현"], expect.any(Function)));
     expect(screen.queryByRole("heading", { name: "분석할 Repository를 선택하세요." })).not.toBeInTheDocument();
-    expect(screen.getByText("분석할 커밋이 없습니다.")).toBeInTheDocument();
+    expect(screen.getByText("기본 브랜치에 커밋이 없습니다.")).toBeInTheDocument();
   });
 
   it("다른 Repository 선택은 목록을 다시 조회해 선택 화면으로 돌아간다", async () => {
@@ -80,7 +80,9 @@ describe("RepositoryFlow", () => {
     await screen.findByRole("heading", { name: "분석할 Repository를 선택하세요." });
     expect(repositoryListCalls(calls)).toBe(2);
     // 고른 Repository가 없어도 사이드바는 그대로 있습니다(이슈 #115).
-    expect(within(screen.getByRole("region", { name: "Repository" })).getByText("선택된 Repository 없음")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("region", { name: "Repository" })).getByText("Repository를 선택하지 않았습니다.")
+    ).toBeInTheDocument();
   });
 });
 

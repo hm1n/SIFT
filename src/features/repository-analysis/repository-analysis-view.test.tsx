@@ -226,9 +226,9 @@ describe("RepositoryAnalysisView Loading", () => {
 
 describe("RepositoryAnalysisView Empty", () => {
   it.each([
-    ["no_commits", "분석할 커밋이 없습니다."],
-    ["no_author_commits", "직접 작성한 커밋을 찾지 못했습니다."],
-    ["no_analyzable_commits", "이 Repository는 분석하기 어렵습니다."],
+    ["no_commits", "기본 브랜치에 커밋이 없습니다."],
+    ["no_author_commits", "로그인한 GitHub 계정으로 작성한 커밋이 없습니다."],
+    ["no_analyzable_commits", "분석할 커밋이 남지 않았습니다."],
     ["no_stage_a_candidates", "설명할 가치가 있는 경험 후보를 찾지 못했습니다."],
   ] as const)("%s를 별도 안내로 표시한다", async (kind, label) => {
     mockState({ status: "empty", kind });
@@ -281,7 +281,7 @@ describe("RepositoryAnalysisView Empty의 Stage A 제외 표시", () => {
     await renderAndAnalyze();
 
     expect(screen.queryByRole("heading", { name: "1차 선별에서 제외됨" })).not.toBeInTheDocument();
-    expect(screen.getByText("분석할 커밋이 없습니다.")).toBeInTheDocument();
+    expect(screen.getByText("기본 브랜치에 커밋이 없습니다.")).toBeInTheDocument();
   });
 
   it("unjudgedShas가 있으면 no_final_candidates에서도 판단 불가 표시가 보인다", async () => {
@@ -658,7 +658,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
   it("계약 위반 오류는 retryPoint 없이 전체 조회 재시도로 처음부터 입력을 다시 구성한다", async () => {
     const error: AnalysisError = {
       kind: "contract_violation",
-      title: "후보 생성 요청이 서버 계약과 맞지 않았습니다",
+      title: "후보 생성 요청을 처리할 수 없습니다",
       message: "같은 입력을 그대로 다시 보내지 않고 Repository 조회부터 다시 구성해 재시도합니다.",
       recovery: "retry",
     };

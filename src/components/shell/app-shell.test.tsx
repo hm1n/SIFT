@@ -42,7 +42,7 @@ describe("AppShell", () => {
     );
 
     const repository = screen.getByRole("region", { name: "Repository" });
-    expect(repository).toHaveTextContent("선택된 Repository 없음");
+    expect(repository).toHaveTextContent("Repository를 선택하지 않았습니다.");
     expect(screen.queryByRole("button", { name: "← Repository 변경" })).not.toBeInTheDocument();
   });
 

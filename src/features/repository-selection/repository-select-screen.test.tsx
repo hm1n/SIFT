@@ -52,14 +52,14 @@ describe("RepositorySelectScreen 상태", () => {
     renderScreen(() => Promise.resolve([]));
     const status = await screen.findByRole("status");
     expect(status).toHaveAttribute("data-status-kind", "empty");
-    expect(status).toHaveTextContent("분석할 수 있는 Repository가 없습니다.");
+    expect(status).toHaveTextContent("불러온 Repository가 없습니다.");
     expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
   });
 
   it.each([
-    ["rate_limit", "GitHub rate limit에 걸렸습니다."],
+    ["rate_limit", "GitHub 요청 한도에 도달했습니다."],
     ["network", "서버에 연결하지 못했습니다."],
-    ["server_error", "GitHub이 오류를 돌려주었습니다."],
+    ["server_error", "GitHub 서버가 응답하지 않았습니다."],
   ] as const)("%s 실패는 ERROR / GITHUB와 Try again을 그린다", async (kind, sub) => {
     renderScreen(() => Promise.reject(new GitHubFetchError(kind, "실패")));
     const alert = await screen.findByRole("alert");
@@ -83,7 +83,7 @@ describe("RepositorySelectScreen 상태", () => {
 
   it("GitHubFetchError가 아닌 실패도 서버 오류 안내로 그린다", async () => {
     renderScreen(() => Promise.reject(new Error("unexpected")));
-    expect(await screen.findByRole("alert")).toHaveTextContent("GitHub이 오류를 돌려주었습니다.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("GitHub 서버가 응답하지 않았습니다.");
   });
 
   // 인증 취소는 다시 조회해도 풀리지 않습니다. 로그인 화면과 같은 ERROR / AUTH 형식으로 다시 로그인을 안내합니다.
@@ -141,7 +141,7 @@ describe("RepositorySelectScreen 목록", () => {
     await renderReady();
     fireEvent.change(screen.getByRole("searchbox", { name: "Repository 검색" }), { target: { value: "nothing-here" } });
 
-    expect(screen.getByText("검색 결과가 없습니다. 다른 키워드로 다시 검색해보세요.")).toBeInTheDocument();
+    expect(screen.getByText("검색 결과가 없습니다. 다른 검색어를 입력해 보세요.")).toBeInTheDocument();
     expect(screen.queryByRole("radio")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "분석할 Repository를 선택하세요." })).toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
@@ -158,9 +158,9 @@ describe("RepositorySelectScreen 목록", () => {
 });
 
 describe("RepositorySelectScreen 선택과 Analyze", () => {
-  it("선택 전에는 선택된 Repository 없음와 disabled Analyze를 그린다", async () => {
+  it("선택 전에는 Repository 미선택 안내와 disabled Analyze를 그린다", async () => {
     await renderReady();
-    expect(screen.getByText("선택된 Repository 없음")).toBeInTheDocument();
+    expect(screen.getByText("Repository를 선택하지 않았습니다.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /분석하기/ })).toBeDisabled();
     expect(screen.getAllByRole("radio").every((row) => row.getAttribute("aria-checked") === "false")).toBe(true);
   });
@@ -197,7 +197,7 @@ describe("RepositorySelectScreen 선택과 Analyze", () => {
     await renderReady();
     const textarea = screen.getByRole("textbox", { name: "Your Contribution" });
     expect(textarea).toHaveAttribute("placeholder", "실시간 채팅, 푸시 알림, TypeScript 전환 작업을 주로 담당했습니다.");
-    expect(textarea).toHaveAccessibleDescription("프로젝트에서 주로 기여한 내용을 알려주세요.");
+    expect(textarea).toHaveAccessibleDescription("프로젝트에서 어떤 일을 주로 맡았는지 알려주세요.");
     expect(screen.getByText("Optional")).toBeInTheDocument();
     expect(screen.getByRole("radiogroup").contains(textarea)).toBe(false);
   });

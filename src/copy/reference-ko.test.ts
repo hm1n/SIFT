@@ -37,8 +37,16 @@ const REFERENCE_KO: readonly {
     text: "GitHub에 연결 중...",
     deviation: "화면 문구의 말줄임표를 세 점 대신 한 글자 말줄임표로 통일했습니다.",
   },
-  { key: "noReposMatch", text: "검색 결과가 없습니다. 다른 키워드로 다시 검색해보세요." },
-  { key: "contributionHelper", text: "프로젝트에서 주로 기여한 내용을 알려주세요." },
+  {
+    key: "noReposMatch",
+    text: "검색 결과가 없습니다. 다른 키워드로 다시 검색해보세요.",
+    deviation: "검색어를 입력하는 다음 행동을 직접 안내하고 `키워드`를 쉬운 말로 바꿨습니다.",
+  },
+  {
+    key: "contributionHelper",
+    text: "프로젝트에서 주로 기여한 내용을 알려주세요.",
+    deviation: "사용자가 맡은 일을 말로 답하기 쉬운 질문으로 바꿨습니다.",
+  },
   { key: "contributionPlaceholder", text: "실시간 채팅, 푸시 알림, TypeScript 전환 작업을 주로 담당했습니다." },
   { key: "analyze", text: "분석하기" },
   { key: "findNewExperience", text: "새 경험 찾기" },
@@ -70,8 +78,16 @@ const REFERENCE_KO: readonly {
     deviation: "이슈 #128 경계표가 `Repository`를 한국어 문장 안에서 영어로 남기기로 정했습니다. 코드와 위키가 이미 그렇게 씁니다.",
   },
   { key: "chooseRepo", text: "분석할 저장소를 선택하세요.", deviation: "`selectRepository`와 같습니다." },
-  { key: "searchRepos", text: "저장소 검색...", deviation: "`selectRepository`와 같습니다." },
-  { key: "noRepoSelected", text: "선택된 저장소 없음", deviation: "`selectRepository`와 같습니다." },
+  {
+    key: "searchRepos",
+    text: "저장소 검색...",
+    deviation: "`Repository`를 영어로 유지하고 이름을 검색한다는 점을 명확히 했습니다.",
+  },
+  {
+    key: "noRepoSelected",
+    text: "선택된 저장소 없음",
+    deviation: "`Repository`를 영어로 유지하고 상태를 자연스러운 문장으로 바꿨습니다.",
+  },
   { key: "analyzingRepo", text: "저장소 분석 중", deviation: "`selectRepository`와 같습니다." },
   { key: "changeRepository", text: "← 저장소 변경", deviation: "`selectRepository`와 같습니다." },
   {
