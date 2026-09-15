@@ -1,26 +1,14 @@
 import { useId, useState } from "react";
-import {
-  blockEditByteLength,
-  blockMarks,
-  effectiveConflicts,
-  effectiveDisplay,
-  filledBlockCount,
-  formatBlockEdit,
-  parseBlockEdit,
-  validateBlockEdit,
-  type BlockEdits,
-} from "@/features/experience-block/block-edits";
+import { BlockSentences } from "@/features/experience-block/block-sentences";
+import { filledBlockCount } from "@/features/experience-block/block-edits";
 import { BLOCK_LABELS } from "@/features/experience-block/block-labels";
-import { BLOCK_MAX_BYTES, BLOCK_MAX_STATEMENTS } from "@/features/experience-block/reducer";
-import { BLOCK_KINDS, type BlockKind, type DisplaySentence } from "@/features/experience-block/types";
+import { blockConflicts, markDisplay } from "@/features/experience-block/reducer";
+import { BLOCK_KINDS, type BlockKind } from "@/features/experience-block/types";
 import type { UseExperienceInterviewState } from "@/features/experience-block/use-experience-interview";
 import styles from "./paar-panel.module.css";
 
 /** PAAR 블록은 PROBLEM·ANALYZE·ACTION·RESULT 넷입니다. */
 export const PAAR_BLOCK_COUNT = BLOCK_KINDS.length;
-
-/** 사용자 주장과 저장소 관찰이 어긋난 상태입니다. 문장 안이 아니라 밖에 그립니다(설계 8절). */
-const CONFLICT_MARK = "Conflicts with the evidence · needs checking";
 
 /** 카드가 그리는 네 가지 상태입니다. 이슈 #91 Approach 2의 표와 같습니다. */
 type CardState = "pending" | "collecting" | "filled" | "unfilled";
@@ -61,38 +49,19 @@ export function cardState(input: {
   return input.isEnded ? "unfilled" : "pending";
 }
 
-/** 같은 커밋·파일 인용이 여러 주장에 붙어 있으면 화면에는 한 번만 그립니다. */
-function uniqueSources(sources: readonly { commitSha: string; filePath: string | null }[]) {
-  const seen = new Map<string, { commitSha: string; filePath: string | null }>();
-  for (const source of sources) seen.set(`${source.commitSha}:${source.filePath ?? ""}`, source);
-  return [...seen.values()];
-}
-
 interface BlockCardProps {
   block: BlockKind;
   stream: UseExperienceInterviewState;
-  edits: BlockEdits;
-  onEditBlock: (block: BlockKind, sentences: readonly DisplaySentence[]) => void;
 }
 
-function BlockCard({ block, stream, edits, onEditBlock }: BlockCardProps) {
+function BlockCard({ block, stream }: BlockCardProps) {
   const { blockState, updatingBlock, isEnded, unreflectedBlocks } = stream;
-  const sentences = effectiveDisplay(blockState, edits, block);
-  const marks = blockMarks(blockState, edits, block);
-  const conflicts = effectiveConflicts(blockState, edits, block);
+  const marks = markDisplay(blockState, block);
   const state = cardState({
-    hasSentences: sentences.length > 0,
+    hasSentences: marks.length > 0,
     isUpdatingThisBlock: updatingBlock === block,
     isEnded,
   });
-
-  // 편집은 한 번에 한 카드만 엽니다. 여러 카드를 동시에 열 이유가 없고, 열린 편집이 하나뿐이면
-  // 저장하지 않은 입력이 어디 있는지도 분명해집니다.
-  const [draft, setDraft] = useState<string | null>(null);
-  const editId = useId();
-  const parsed = draft === null ? null : parseBlockEdit(draft);
-  const rejection = parsed === null ? null : validateBlockEdit(parsed);
-  const remainingBytes = parsed === null ? 0 : BLOCK_MAX_BYTES - blockEditByteLength(parsed);
 
   return (
     <div className={styles.card}>
@@ -103,117 +72,15 @@ function BlockCard({ block, stream, edits, onEditBlock }: BlockCardProps) {
         </span>
       </div>
 
-      {sentences.length === 0 ? (
-        <p className={styles.cardEmpty}>{CARD_EMPTY_TEXT[state]}</p>
-      ) : (
-        <ul className={styles.sentences}>
-          {marks.map((mark, index) => (
-            // 문장은 사용자가 고치면 순서가 그대로이므로 위치를 키로 씁니다. 표시 문장에는 식별자가
-            // 없고, 본문을 키로 쓰면 같은 문장이 두 번 나올 때 깨집니다.
-            <li key={index} className={styles.sentence}>
-              <p className={styles.sentenceText}>{mark.text}</p>
-              {mark.repositorySources.length > 0 ? (
-                <ul className={styles.sources}>
-                  {uniqueSources(mark.repositorySources).map((source) => (
-                    <li key={`${source.commitSha}:${source.filePath ?? ""}`} className={styles.source}>
-                      <span className={styles.sourceSha}>{source.commitSha.slice(0, 7)}</span>
-                      {source.filePath === null ? null : (
-                        <span className={styles.sourcePath}>{source.filePath}</span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {/*
-        충돌은 블록 문장 밖에 그립니다(설계 8절). 어긋난 것은 문장이 아니라 사용자 주장과 저장소
-        관찰이고, 충돌 때문에 블록 전체를 비우지도 않습니다.
-      */}
-      {conflicts.length > 0 ? (
-        <div className={styles.conflict}>
-          <p className={styles.conflictMark}>{CONFLICT_MARK}</p>
-          <ul className={styles.conflictList}>
-            {conflicts.map((conflict) => (
-              <li key={conflict.claimId}>{conflict.observation}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+      <BlockSentences
+        marks={marks}
+        conflicts={blockConflicts(blockState, block)}
+        emptyText={CARD_EMPTY_TEXT[state]}
+      />
 
       {/* 어느 블록이 미반영인지만 알립니다. 다시 처리하는 버튼은 패널 위에 하나만 둡니다. */}
       {unreflectedBlocks.includes(block) ? (
         <p className={styles.cardError}>An answer aimed at this block hasn&apos;t been reflected yet.</p>
-      ) : null}
-
-      {/*
-        편집은 인터뷰가 끝난 뒤에만 엽니다. 진행 중에 열면 화면에 보이는 값과 모델이 판정에 쓰는 값이
-        갈라집니다. 모델은 편집본을 보지 못하므로 같은 것을 계속 묻거나, 반대로 사용자가 지운 내용을
-        근거로 충분하다고 판정합니다.
-      */}
-      {isEnded ? (
-        draft === null ? (
-          <button
-            type="button"
-            className={styles.editButton}
-            onClick={() => setDraft(formatBlockEdit(sentences))}
-          >
-            Edit
-          </button>
-        ) : (
-          <div className={styles.editor}>
-            <label className={styles.editorLabel} htmlFor={editId}>
-              {BLOCK_LABELS[block]} — one sentence per line
-            </label>
-            <textarea
-              id={editId}
-              className={styles.editorInput}
-              value={draft}
-              rows={3}
-              onChange={(event) => setDraft(event.target.value)}
-              aria-describedby={`${editId}-note`}
-              aria-invalid={rejection !== null || undefined}
-            />
-            {/*
-              편집하면 저장소 인용을 잃는다는 사실을 고치기 전에 알립니다. 되돌릴 수 없고 오타 하나를
-              고쳐도 같으므로, 바뀐 뒤에 배지로 알리는 것은 늦습니다.
-            */}
-            <p id={`${editId}-note`} className={styles.editorNote}>
-              Editing drops the repository citations on these sentences. Edited text is shown as your
-              own statement. {remainingBytes.toLocaleString()} bytes left.
-            </p>
-            {rejection === "too_many_statements" ? (
-              <p className={styles.editorError}>
-                Keep it to {BLOCK_MAX_STATEMENTS} lines or fewer. Each line is one sentence.
-              </p>
-            ) : null}
-            {rejection === "block_too_large" ? (
-              <p className={styles.editorError}>
-                This block is over the {BLOCK_MAX_BYTES.toLocaleString()} byte limit the server uses.
-              </p>
-            ) : null}
-            <div className={styles.editorActions}>
-              <button
-                type="button"
-                className={styles.editorSave}
-                disabled={rejection !== null}
-                onClick={() => {
-                  if (parsed === null || rejection !== null) return;
-                  onEditBlock(block, parsed);
-                  setDraft(null);
-                }}
-              >
-                Save
-              </button>
-              <button type="button" className={styles.editorCancel} onClick={() => setDraft(null)}>
-                Cancel
-              </button>
-            </div>
-          </div>
-        )
       ) : null}
     </div>
   );
@@ -222,9 +89,6 @@ function BlockCard({ block, stream, edits, onEditBlock }: BlockCardProps) {
 export interface PaarPanelProps {
   /** 인터뷰 상태 전체입니다. 훅은 `InterviewScreen`이 들고 있습니다. */
   stream: UseExperienceInterviewState;
-  /** 종료 후 사용자가 고친 블록 문장입니다. 개수 표시도 같은 값을 봐야 해서 화면이 들고 있습니다. */
-  edits: BlockEdits;
-  onEditBlock: (block: BlockKind, sentences: readonly DisplaySentence[]) => void;
   /**
    * 이 인터뷰가 저장되는 중인지입니다(이슈 #115). 종료 확인 문구가 갈립니다. 저장되는 인터뷰는
    * 끝내도 사라지지 않고 Interviews에 남으므로 "다시 이어갈 수 없다"고 말하면 안 됩니다.
@@ -235,6 +99,13 @@ export interface PaarPanelProps {
 /**
  * 인터뷰 워크스페이스의 오른쪽 열입니다. 블록 카드 네 개와 진행 표시, 종료 조작을 그립니다.
  *
+ * **이 패널은 블록을 고치지 않습니다.** 편집은 저장된 인터뷰의 요약 화면(`SavedInterviewScreen`)에만
+ * 있습니다. 예전에는 종료하는 순간 이 패널이 카드 넷을 편집 가능한 모습으로 다시 그렸는데, 종료가
+ * 곧바로 요약 화면으로 넘어가는 조작이라 그 모습이 한 프레임 번쩍이고 사라졌습니다. 자리를 옮긴
+ * 다른 이유는 진행 중 편집이 성립하지 않는다는 것입니다. 모델은 편집본을 보지 못하므로 화면에 보이는
+ * 값과 판정에 쓰는 값이 갈라지고, 이어가기 뒤 그 블록을 건드리는 순간 `applyBlockUpdate`가 고친
+ * 문장을 통째로 갈아 끼웁니다.
+ *
  * **카드에 `aria-live`를 두지 않습니다.** 네 카드가 답변마다 함께 바뀌므로, 낭독 대상으로 삼으면 한
  * 번 답할 때마다 네 블록이 통째로 읽히고 대화 영역의 상태 문단과 새 메시지 안내를 덮습니다. 낭독
  * 대상은 그 둘로 둡니다(이슈 #91 Constraint, 이슈 #60 실측으로 정한 경계).
@@ -243,7 +114,7 @@ export interface PaarPanelProps {
  * 하지만, 이슈 #78이 사용자가 언제든 인터뷰를 끝낼 수 있도록 정했습니다. 경위는
  * `llm-wiki/wiki/2026-09-14-PAAR-블록-패널과-종료-후-편집.md`에 있습니다.
  */
-export function PaarPanel({ stream, edits, onEditBlock, isSaved = false }: PaarPanelProps) {
+export function PaarPanel({ stream, isSaved = false }: PaarPanelProps) {
   const {
     blockState,
     isEnded,
@@ -258,7 +129,7 @@ export function PaarPanel({ stream, edits, onEditBlock, isSaved = false }: PaarP
   // 종료하지 않은 상태가 두 가지가 되고, 조작 잠금이 어느 쪽을 봐야 하는지 갈립니다.
   const [isConfirmingEnd, setIsConfirmingEnd] = useState(false);
   const endConfirmId = useId();
-  const filled = filledBlockCount(blockState, edits);
+  const filled = filledBlockCount(blockState);
 
   return (
     <section className={styles.panel} aria-labelledby="paar-panel-heading">
@@ -295,13 +166,7 @@ export function PaarPanel({ stream, edits, onEditBlock, isSaved = false }: PaarP
         )}
 
         {BLOCK_KINDS.map((block) => (
-          <BlockCard
-            key={block}
-            block={block}
-            stream={stream}
-            edits={edits}
-            onEditBlock={onEditBlock}
-          />
+          <BlockCard key={block} block={block} stream={stream} />
         ))}
       </div>
 
@@ -329,11 +194,12 @@ export function PaarPanel({ stream, edits, onEditBlock, isSaved = false }: PaarP
               <p id={endConfirmId} className={styles.endConfirmText}>
                 {/*
                   저장되는 인터뷰는 끝내도 사라지지 않고 Interviews에 남습니다(이슈 #115). 끝내면
-                  그 인터뷰의 요약으로 돌아가고, 블록 편집은 거기서 다시 열어 이어갑니다.
+                  그 인터뷰의 요약으로 돌아가고, 블록 편집은 거기서 엽니다. 저장되지 않는 인터뷰에는
+                  돌아갈 요약이 없으므로 고칠 기회도 없습니다. 있지도 않은 편집을 약속하지 않습니다.
                 */}
                 {isSaved
                   ? "Ending the interview closes the answer box and leaves the conversation read-only. Any answer you are still writing is discarded. The interview stays in Interviews on the left, and you can open it again from there to edit the PAAR blocks."
-                  : "Ending the interview closes the answer box and leaves the conversation read-only. Any answer you are still writing is discarded. You can edit the PAAR blocks afterwards. Going back to the candidate list clears the conversation too, and it cannot be resumed."}
+                  : "Ending the interview closes the answer box and leaves the conversation read-only. Any answer you are still writing is discarded. This interview isn't being saved, so the PAAR blocks stay as they are and you cannot edit them afterwards. Going back to the candidate list clears the conversation too, and it cannot be resumed."}
               </p>
               <div className={styles.endActions}>
                 {/* 확인 문구를 읽지 않고 누르는 일을 줄이려고 초점을 확인 버튼으로 옮깁니다. */}

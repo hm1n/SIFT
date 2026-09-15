@@ -4,6 +4,11 @@ import {
   toSavedInterviewError,
 } from "@/features/saved-interviews/errors";
 import { toStoredInterviewPayload } from "@/features/saved-interviews/payload";
+import {
+  blockEditSentences,
+  isBlockEditBody,
+  parseBlockEditBody,
+} from "@/features/saved-interviews/request";
 import { getGitHubSessionFromRequest } from "@/lib/github/auth-session";
 import { GitHubFetchError } from "@/lib/github/errors";
 import { neonStore } from "@/lib/db/neon-store";
@@ -68,11 +73,73 @@ export async function handleDeleteInterview(
 }
 
 /**
- * 인터뷰를 끝난 것으로 표시합니다(이슈 #115). 지금 바꿀 수 있는 것은 상태뿐이라 본문도 그것만 받습니다.
+ * 끝난 인터뷰의 블록 문장을 고칩니다(이슈 #115).
  *
- * 턴 저장에 얹지 않고 따로 둡니다. 끝내는 조작은 답변 제출과 함께 오지 않아서 얹을 요청이 없습니다.
- * 되돌리는 값(`in_progress`)은 받지 않습니다. 끝낸 인터뷰를 다시 여는 조작이 화면에 없고, 받아 두면
- * 쓰지 않는 경로가 남습니다.
+ * **끝난 인터뷰만 고칠 수 있습니다.** 진행 중인 인터뷰를 고쳐 두면 이어간 뒤 모델이 그 블록을
+ * 건드리는 순간 `applyBlockUpdate`가 표시 문장을 통째로 갈아 끼워 고친 문장이 사라집니다. 사라질
+ * 편집을 저장해 주는 것보다 받지 않는 편이 낫습니다.
+ *
+ * 저장 계층에 연산을 새로 만들지 않고 `appendTurn`에 빈 턴을 넘깁니다. 이력은 그대로 두고 블록
+ * 상태와 버전만 바뀌며, 다른 탭이 먼저 저장한 경우를 막는 조건도 그 연산이 이미 들고 있습니다.
+ *
+ * 새 버전은 저장된 블록 버전보다 1 큽니다. 화면이 보낸 값이 아니라 방금 읽은 값에서 셉니다.
+ */
+async function handleBlockEdit(
+  json: unknown,
+  id: string,
+  userId: number,
+  store: SiftStore
+): Promise<Response> {
+  const parsed = parseBlockEditBody(json);
+  if (!parsed.ok) return savedInterviewErrorResponse(parsed.kind, parsed.message);
+
+  const interview = await store.getInterview(id, userId);
+  if (interview === null) return savedInterviewErrorResponse("not_found", NOT_FOUND_MESSAGE);
+  if (interview.status !== "completed") {
+    return savedInterviewErrorResponse(
+      "invalid_request",
+      "인터뷰를 끝낸 뒤에만 블록 문장을 고칠 수 있습니다."
+    );
+  }
+  if (interview.blockVersion !== parsed.body.expectedBlockVersion) {
+    return savedInterviewErrorResponse(
+      "version_conflict",
+      "이 인터뷰가 다른 곳에서 먼저 바뀌었습니다. 최신 내용을 불러온 뒤에 다시 고쳐 주세요."
+    );
+  }
+
+  const blockVersion = interview.blockVersion + 1;
+  const result = await store.appendTurn({
+    githubUserId: userId,
+    interviewId: id,
+    turn: [],
+    blockState: {
+      ...interview.blockState,
+      version: blockVersion,
+      display: { ...interview.blockState.display, [parsed.body.block]: blockEditSentences(parsed.body) },
+    },
+    progress: interview.progress,
+    expectedBlockVersion: interview.blockVersion,
+  });
+  if (result === "not_found") return savedInterviewErrorResponse("not_found", NOT_FOUND_MESSAGE);
+  if (result === "version_conflict") {
+    return savedInterviewErrorResponse(
+      "version_conflict",
+      "이 인터뷰가 다른 곳에서 먼저 바뀌었습니다. 최신 내용을 불러온 뒤에 다시 고쳐 주세요."
+    );
+  }
+  return Response.json({ blockVersion });
+}
+
+/**
+ * 저장된 인터뷰 하나를 고칩니다(이슈 #115). 바꿀 수 있는 것은 둘입니다. 끝난 것으로 표시하는 것과
+ * 끝난 인터뷰의 블록 문장을 고치는 것입니다.
+ *
+ * 둘 다 턴 저장에 얹지 않고 여기 둡니다. 끝내는 조작도 블록 편집도 답변 제출과 함께 오지 않아서 얹을
+ * 요청이 없습니다. 저장 전용 경로를 새로 만들지 않는다는 Constraint는 이 한 자리에 모아 지킵니다.
+ *
+ * 상태를 되돌리는 값(`in_progress`)은 받지 않습니다. 끝낸 인터뷰를 다시 여는 조작이 화면에 없고,
+ * 받아 두면 쓰지 않는 경로가 남습니다.
  */
 export async function handlePatchInterview(
   request: NextRequest,
@@ -88,11 +155,13 @@ export async function handlePatchInterview(
   } catch {
     return savedInterviewErrorResponse("invalid_json", "요청 본문은 JSON이어야 합니다.");
   }
-  if (typeof json !== "object" || json === null || (json as { status?: unknown }).status !== "completed") {
-    return savedInterviewErrorResponse("invalid_request", 'status는 "completed"여야 합니다.');
-  }
 
   try {
+    if (isBlockEditBody(json)) return await handleBlockEdit(json, id, session.userId, store);
+
+    if (typeof json !== "object" || json === null || (json as { status?: unknown }).status !== "completed") {
+      return savedInterviewErrorResponse("invalid_request", 'status는 "completed"여야 합니다.');
+    }
     const completed = await store.completeInterview(id, session.userId);
     if (!completed) return savedInterviewErrorResponse("not_found", NOT_FOUND_MESSAGE);
     return new Response(null, { status: 204 });

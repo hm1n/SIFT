@@ -6,9 +6,8 @@ import { CodePanel } from "./code-panel";
 import { InterviewStreamView } from "./interview-stream-view";
 import { PAAR_BLOCK_COUNT, PaarPanel } from "./paar-panel";
 import { ResizeHandle } from "./resize-handle";
-import { filledBlockCount, type BlockEdits } from "@/features/experience-block/block-edits";
+import { filledBlockCount } from "@/features/experience-block/block-edits";
 import { BLOCK_LABELS } from "@/features/experience-block/block-labels";
-import type { BlockKind, DisplaySentence } from "@/features/experience-block/types";
 import {
   useExperienceInterview,
   type RestoredInterview,
@@ -161,17 +160,10 @@ export function InterviewScreen({
   }, [hasUnsaved, onUnsavedChange]);
 
   /*
-   * 종료 뒤 사용자가 고친 블록 문장입니다. 패널 안이 아니라 여기 두는 이유는 헤더 토글과 좁은 폭
-   * 탭이 같은 `n/4` 개수를 그리기 때문입니다. 편집 상태가 패널 안에만 있으면 사용자가 블록을 지웠을
-   * 때 패널 머리글과 헤더 토글의 숫자가 갈립니다.
-   *
-   * 저장 계층이 없어 이 값은 이 화면을 떠나면 사라집니다. 사라진다는 사실은 뒤로가기 확인 문구가
-   * 알립니다.
+   * 헤더 토글과 좁은 폭 탭이 그리는 `n/4`입니다. 이 화면은 블록을 고치지 않으므로 저장된 문장만
+   * 셉니다. 편집은 저장된 인터뷰의 요약 화면에 있습니다(이슈 #115).
    */
-  const [blockEdits, setBlockEdits] = useState<BlockEdits>({});
-  const editBlock = (block: BlockKind, sentences: readonly DisplaySentence[]) =>
-    setBlockEdits((edits) => ({ ...edits, [block]: sentences }));
-  const filledBlocks = filledBlockCount(stream.blockState, blockEdits);
+  const filledBlocks = filledBlockCount(stream.blockState);
 
   const title =
     snapshot.representativeCommit.title ??
@@ -266,8 +258,8 @@ export function InterviewScreen({
               알립니다.
             */}
             {interviewId
-              ? "Going back to the candidate list closes this conversation here. What has been saved stays in Interviews on the left, so you can pick it up later. Any answer you're still writing and any edits you made to the PAAR blocks are lost."
-              : "Going back to the candidate list clears this conversation for good, along with any answer you're still writing, the PAAR blocks, and any edits you made to them. Reloading the page clears them too. Nothing here is saved."}
+              ? "Going back to the candidate list closes this conversation here. What has been saved stays in Interviews on the left, so you can pick it up later. Any answer you're still writing is lost."
+              : "Going back to the candidate list clears this conversation for good, along with any answer you're still writing and the PAAR blocks. Reloading the page clears them too. Nothing here is saved."}
           </p>
           <div className={styles.backActions}>
             <button className={styles.backConfirmButton} type="button" onClick={onBack} autoFocus>
@@ -374,7 +366,7 @@ export function InterviewScreen({
               className={`${styles.paarColumn} ${columnClass("paar")}`}
               style={{ width: `${fitted.paar}px` }}
             >
-              <PaarPanel stream={stream} edits={blockEdits} onEditBlock={editBlock} isSaved={Boolean(interviewId)} />
+              <PaarPanel stream={stream} isSaved={Boolean(interviewId)} />
             </div>
           </>
         ) : null}

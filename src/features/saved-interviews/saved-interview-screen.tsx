@@ -1,11 +1,25 @@
 "use client";
 
+import { useId, useState } from "react";
+import {
+  blockEditByteLength,
+  blockMarks,
+  effectiveConflicts,
+  effectiveDisplay,
+  formatBlockEdit,
+  parseBlockEdit,
+  validateBlockEdit,
+  type BlockEdits,
+} from "@/features/experience-block/block-edits";
+import { BlockSentences } from "@/features/experience-block/block-sentences";
+import { BLOCK_MAX_BYTES, BLOCK_MAX_STATEMENTS } from "@/features/experience-block/reducer";
 import { BLOCK_KINDS, type BlockKind, type ExperienceBlockState } from "@/features/experience-block/types";
 import {
   EVIDENCE_VERIFIABILITY_NOTICE,
   REPOSITORY_VERIFIED_NOTICE,
 } from "@/features/experience-candidates/evidence-verifiability";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
+import { SavedInterviewFetchError, saveSavedInterviewBlock } from "./client";
 import type { StoredInterviewPayload } from "./payload";
 import styles from "./saved-interview-screen.module.css";
 
@@ -19,10 +33,18 @@ import styles from "./saved-interview-screen.module.css";
  * 대화로 곧바로 들어가지 않는 이유는 원본 주석에 있습니다. 며칠 전에 하던 대화 한가운데로 떨어지면
  * 무엇을 이야기하던 중이었는지 모른 채 답을 써야 합니다. 그래서 고른 경험이 무엇이었고 어디까지
  * 왔는지를 먼저 보입니다.
+ *
+ * **블록 편집이 있는 유일한 화면입니다.** 인터뷰 화면에서 옮겨 왔습니다. 그쪽은 끝내는 순간 카드
+ * 넷을 편집 가능한 모습으로 다시 그렸는데, 종료가 곧바로 이 화면으로 넘어가는 조작이라 그 모습이 한
+ * 프레임 번쩍이고 사라졌습니다. 자리를 옮긴 다른 이유는 진행 중 편집이 성립하지 않는다는 것입니다.
  */
 export interface SavedInterviewScreenProps {
   interview: StoredInterviewPayload;
   onResume: () => void;
+  /** 다른 곳에서 먼저 저장했을 때 최신 내용을 다시 읽습니다. 없으면 그 안내만 보입니다. */
+  onLoadLatest?: () => void;
+  /** 테스트에서 저장 요청을 대체하는 통로입니다. */
+  fetchImpl?: typeof fetch;
 }
 
 /** 저장된 분석에서 고른 후보입니다. 오래전에 쓴 값이라 지금 기대하는 모양이 아닐 수 있습니다. */
@@ -52,7 +74,12 @@ function asSnapshot(value: unknown): ExperienceEvidenceSnapshot | null {
     : null;
 }
 
-/** 블록이 어디까지 왔는지입니다. 평가가 없으면 아직 다루지 않은 블록입니다. */
+/**
+ * 블록이 어디까지 왔는지입니다. 평가가 없으면 아직 다루지 않은 블록입니다.
+ *
+ * 편집은 이 기호를 바꾸지 않습니다. 기호가 말하는 것은 인터뷰가 그 블록을 어디까지 다뤘는지이고,
+ * 그것은 사용자가 문장을 고친다고 달라지지 않습니다.
+ */
 function blockSymbol(blockState: ExperienceBlockState, block: BlockKind): "✓" | "●" | "○" {
   const evaluation = blockState.evaluation[block];
   if (evaluation === null) return "○";
@@ -72,11 +99,94 @@ function formatDate(iso: string): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-export function SavedInterviewScreen({ interview, onResume }: SavedInterviewScreenProps) {
+/**
+ * 이 화면이 스스로 드는 값입니다. 한 덩어리로 두고 읽어 온 인터뷰가 바뀌면 통째로 버립니다.
+ *
+ * 읽어 온 값이 바뀌는 경로는 최신 내용 다시 읽기뿐이고, 그때는 방금까지 고치던 것이 서버에 이미 반영된
+ * 뒤이거나 다른 곳의 편집으로 대체된 뒤입니다. 어느 쪽이든 들고 있던 편집본과 열린 입력은 버려야
+ * 맞습니다. 효과로 비우지 않고 요청 키로 가르는 것은 `use-saved-interview`와 같은 방식입니다.
+ */
+interface ScreenState {
+  readonly key: string;
+  /** 저장에 성공한 편집본입니다. 서버가 받아들인 뒤에만 채웁니다. */
+  readonly edits: BlockEdits;
+  /** 저장된 블록 버전입니다. 저장할 때마다 오르므로 읽어 온 값을 그대로 쓸 수 없습니다. */
+  readonly version: number;
+  readonly editor: { readonly block: BlockKind; readonly draft: string } | null;
+  readonly save: "idle" | "saving" | "conflict" | "failed";
+}
+
+function freshState(key: string, version: number): ScreenState {
+  return { key, edits: {}, version, editor: null, save: "idle" };
+}
+
+export function SavedInterviewScreen({
+  interview,
+  onResume,
+  onLoadLatest,
+  fetchImpl,
+}: SavedInterviewScreenProps) {
   const candidate = parseStoredCandidate(interview.candidate);
   const snapshot = asSnapshot(interview.evidence);
   const date = formatDate(interview.updatedAt);
   const progress = `PAAR ${interview.completedBlockCount}/${BLOCK_KINDS.length}`;
+
+  const key = `${interview.id}:${interview.blockVersion}`;
+  const [held, setHeld] = useState<ScreenState>(() => freshState(key, interview.blockVersion));
+  const state = held.key === key ? held : freshState(key, interview.blockVersion);
+  const editorId = useId();
+
+  /*
+   * 편집은 끝난 인터뷰에만 엽니다. 진행 중인 인터뷰를 고쳐 두면 이어간 뒤 모델이 그 블록을 건드리는
+   * 순간 `applyBlockUpdate`가 표시 문장을 통째로 갈아 끼워 고친 문장이 사라집니다. 서버도 같은
+   * 판정을 하므로 이 조건은 요청을 아끼는 쪽이고, 거절할 권한은 서버에 있습니다.
+   */
+  const canEdit = interview.status === "completed";
+  const emptyText = canEdit
+    ? "The interview ended without anything to put here."
+    : "The interview hasn't reached this block yet.";
+
+  const draft = state.editor?.draft ?? null;
+  const parsed = draft === null ? null : parseBlockEdit(draft);
+  const rejection = parsed === null ? null : validateBlockEdit(parsed);
+  const remainingBytes = parsed === null ? 0 : BLOCK_MAX_BYTES - blockEditByteLength(parsed);
+
+  function openEditor(block: BlockKind) {
+    setHeld({
+      ...state,
+      editor: { block, draft: formatBlockEdit(effectiveDisplay(interview.blockState, state.edits, block)) },
+      save: "idle",
+    });
+  }
+
+  async function saveEditor() {
+    const editor = state.editor;
+    if (editor === null || parsed === null || rejection !== null) return;
+    setHeld({ ...state, save: "saving" });
+    try {
+      const version = await saveSavedInterviewBlock(
+        interview.id,
+        {
+          block: editor.block,
+          sentences: parsed.map((sentence) => sentence.text),
+          expectedBlockVersion: state.version,
+        },
+        fetchImpl
+      );
+      setHeld({
+        key,
+        edits: { ...state.edits, [editor.block]: parsed },
+        version,
+        editor: null,
+        save: "idle",
+      });
+    } catch (error) {
+      // 편집본을 화면에 반영하지 않고 입력을 열어 둡니다. 저장되지 않은 문장을 저장된 것처럼 그리면
+      // 사용자가 고쳤다고 믿고 떠납니다.
+      const conflict = error instanceof SavedInterviewFetchError && error.kind === "version_conflict";
+      setHeld({ ...state, save: conflict ? "conflict" : "failed" });
+    }
+  }
 
   return (
     <section className={styles.screen}>
@@ -144,22 +254,118 @@ export function SavedInterviewScreen({ interview, onResume }: SavedInterviewScre
             )}
           </section>
 
-          {/*
-            블록 문장까지 그리는 패널은 이슈 #91의 범위입니다. 여기서는 어디까지 왔는지만 보입니다.
-            같은 값을 두 화면이 각자 그리면 #91에서 둘이 어긋납니다.
-          */}
           <section className={styles.section} aria-labelledby="saved-paar-heading">
             <div className={styles.sectionHeader}>
               <p id="saved-paar-heading" className={styles.sectionEyebrow}>PAAR experience</p>
               <span className={styles.progress}>{progress}</span>
             </div>
             <ul className={styles.blocks}>
-              {BLOCK_KINDS.map((block) => (
-                <li key={block} className={styles.block}>
-                  <span className={styles.blockSymbol} aria-hidden="true">{blockSymbol(interview.blockState, block)}</span>
-                  <span className={styles.blockLabel}>{BLOCK_LABEL[block]}</span>
-                </li>
-              ))}
+              {BLOCK_KINDS.map((block) => {
+                const isEditing = state.editor?.block === block;
+                return (
+                  <li key={block} className={styles.block}>
+                    <div className={styles.blockHeader}>
+                      <span className={styles.blockSymbol} aria-hidden="true">
+                        {blockSymbol(interview.blockState, block)}
+                      </span>
+                      <span className={styles.blockLabel}>{BLOCK_LABEL[block]}</span>
+                      {/*
+                        블록이 넷이라 "Edit"만으로는 어느 블록을 고치는 버튼인지 이름으로 갈리지
+                        않습니다. 보이는 글자는 짧게 두고 이름에만 블록을 붙입니다.
+                      */}
+                      {canEdit && !isEditing ? (
+                        <button
+                          type="button"
+                          className={styles.editButton}
+                          aria-label={`Edit ${BLOCK_LABEL[block]}`}
+                          onClick={() => openEditor(block)}
+                        >
+                          Edit
+                        </button>
+                      ) : null}
+                    </div>
+
+                    <BlockSentences
+                      marks={blockMarks(interview.blockState, state.edits, block)}
+                      conflicts={effectiveConflicts(interview.blockState, state.edits, block)}
+                      emptyText={emptyText}
+                    />
+
+                    {isEditing && draft !== null ? (
+                      <div className={styles.editor}>
+                        <label className={styles.editorLabel} htmlFor={editorId}>
+                          {BLOCK_LABEL[block]} — one sentence per line
+                        </label>
+                        <textarea
+                          id={editorId}
+                          className={styles.editorInput}
+                          value={draft}
+                          rows={4}
+                          onChange={(event) =>
+                            setHeld({ ...state, editor: { block, draft: event.target.value } })
+                          }
+                          aria-describedby={`${editorId}-note`}
+                          aria-invalid={rejection !== null || undefined}
+                        />
+                        {/*
+                          편집하면 저장소 인용을 잃는다는 사실을 고치기 전에 알립니다. 되돌릴 수 없고
+                          오타 하나를 고쳐도 같으므로, 바뀐 뒤에 배지로 알리는 것은 늦습니다.
+                        */}
+                        <p id={`${editorId}-note`} className={styles.editorNote}>
+                          Editing drops the repository citations on these sentences. Edited text is shown as
+                          your own statement. {remainingBytes.toLocaleString()} bytes left.
+                        </p>
+                        {rejection === "too_many_statements" ? (
+                          <p className={styles.editorError}>
+                            Keep it to {BLOCK_MAX_STATEMENTS} lines or fewer. Each line is one sentence.
+                          </p>
+                        ) : null}
+                        {rejection === "block_too_large" ? (
+                          <p className={styles.editorError}>
+                            This block is over the {BLOCK_MAX_BYTES.toLocaleString()} byte limit the server
+                            uses.
+                          </p>
+                        ) : null}
+                        {state.save === "failed" ? (
+                          <p className={styles.editorError}>
+                            Your edit wasn&apos;t saved. The block still holds what you see above.
+                          </p>
+                        ) : null}
+                        {state.save === "conflict" ? (
+                          <div className={styles.editorConflict}>
+                            <p className={styles.editorConflictText}>
+                              This interview was changed somewhere else, so your edit wasn&apos;t saved. Load
+                              the latest version before editing again.
+                            </p>
+                            {onLoadLatest ? (
+                              <button type="button" className={styles.editorCancel} onClick={onLoadLatest}>
+                                Load latest
+                              </button>
+                            ) : null}
+                          </div>
+                        ) : null}
+                        <div className={styles.editorActions}>
+                          <button
+                            type="button"
+                            className={styles.editorSave}
+                            disabled={rejection !== null || state.save === "saving"}
+                            onClick={() => void saveEditor()}
+                          >
+                            {state.save === "saving" ? "Saving…" : "Save"}
+                          </button>
+                          <button
+                            type="button"
+                            className={styles.editorCancel}
+                            onClick={() => setHeld({ ...state, editor: null, save: "idle" })}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </li>
+                );
+              })}
             </ul>
           </section>
         </div>

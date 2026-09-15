@@ -1,9 +1,6 @@
 /*
- * 인터뷰 워크스페이스의 오른쪽 열입니다. #98이 자리와 빈 상태를 만들었고 #91이 블록 카드와 종료 후
- * 편집을 채웠습니다.
- *
- * 출처 구분을 색으로만 하지 않습니다(이슈 #91 Constraint). 사용자 진술 표시와 충돌 표시는 모두
- * 글자로 적고, 색과 왼쪽 표시선은 그 글자를 찾기 쉽게 하는 보조 수단으로만 씁니다.
+ * 인터뷰 워크스페이스의 오른쪽 열입니다. #98이 자리와 빈 상태를 만들었고 #91이 블록 카드를
+ * 채웠습니다. 종료 후 편집은 #115에서 저장된 인터뷰의 요약 화면으로 옮겼습니다.
  */
 .panel { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; border-left: 1px solid var(--color-border); background: var(--color-card); }
 .header { display: flex; align-items: center; gap: 6px; flex-shrink: 0; border-bottom: 1px solid var(--color-border); padding: 8px 12px; }
@@ -25,40 +22,11 @@
 .cardTitle { margin: 0; color: var(--color-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); font-weight: 400; letter-spacing: var(--label-tracking); text-transform: uppercase; }
 .cardState { color: var(--color-scrollbar-hover); font-family: var(--font-mono); font-size: var(--label-size-xs); letter-spacing: var(--label-tracking-wide); text-transform: uppercase; }
 .cardState[data-state="collecting"] { color: var(--color-foreground); }
-.cardEmpty { margin: 0; color: var(--color-muted-foreground); font-size: 12px; line-height: 1.6; }
 
-.sentences { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
-.sentence { display: grid; gap: 4px; }
-.sentenceText { margin: 0; color: var(--color-foreground); font-size: 12px; line-height: 1.6; }
-
-/* 사용자 진술 표시입니다. 글자가 본문이고 왼쪽 선은 훑어볼 때의 표지입니다. */
-
-.sources { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
-.source { display: flex; gap: 6px; min-width: 0; font-family: var(--font-mono); font-size: 11px; }
-.sourceSha { flex-shrink: 0; color: var(--color-muted-foreground); }
-.sourcePath { overflow: hidden; color: var(--color-scrollbar-hover); text-overflow: ellipsis; white-space: nowrap; }
-
-/* 충돌은 블록 문장 밖입니다. 문장 목록과 떨어져 보이도록 테두리를 둡니다. */
-.conflict { display: grid; gap: 4px; border: 1px solid #e5c9a8; border-radius: var(--radius); background: #fdf8f1; padding: 8px; }
-.conflictMark { margin: 0; color: #7a5320; font-size: 11px; font-weight: 500; line-height: 1.5; }
-.conflictList { display: grid; gap: 4px; margin: 0; padding-left: 16px; color: #7a5320; font-size: 11px; line-height: 1.5; }
+/* 문장과 출처와 충돌은 `experience-block/block-sentences.module.css`에 있습니다. 저장된 인터뷰의
+   요약 화면이 같은 것을 그리므로 두 화면이 한 파일을 함께 씁니다. */
 
 .cardError { margin: 0; color: #a3272c; font-size: 11px; line-height: 1.5; }
-
-.editButton { justify-self: start; min-height: 26px; border: 1px solid #d4d4d4; border-radius: var(--radius); background: var(--color-card); color: #404040; cursor: pointer; font: inherit; font-size: 11px; padding: 0 10px; }
-.editButton:hover { border-color: var(--color-muted-foreground); color: var(--color-foreground); }
-
-.editor { display: grid; gap: 6px; }
-.editorLabel { color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); letter-spacing: var(--label-tracking); text-transform: uppercase; }
-.editorInput { width: 100%; box-sizing: border-box; resize: vertical; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-background); color: var(--color-foreground); font: inherit; font-size: 12px; line-height: 1.6; padding: 6px 8px; }
-.editorInput[aria-invalid="true"] { border-color: #a3272c; }
-.editorNote { margin: 0; color: var(--color-muted-foreground); font-size: 11px; line-height: 1.5; }
-.editorError { margin: 0; color: #a3272c; font-size: 11px; line-height: 1.5; }
-.editorActions { display: flex; gap: 8px; }
-.editorSave { min-height: 26px; border: 0; border-radius: var(--radius); background: var(--color-primary); color: var(--color-primary-foreground); cursor: pointer; font: inherit; font-size: 11px; font-weight: 500; padding: 0 10px; }
-.editorSave:disabled { cursor: default; opacity: 0.45; }
-.editorCancel { min-height: 26px; border: 1px solid #d4d4d4; border-radius: var(--radius); background: var(--color-card); color: #404040; cursor: pointer; font: inherit; font-size: 11px; padding: 0 10px; }
-.editorCancel:hover { border-color: var(--color-muted-foreground); color: var(--color-foreground); }
 
 /* 완료 안내입니다. 종료 조작 바로 위에 둡니다. 안내일 뿐 종료를 일으키지 않습니다. */
 .readyNotice { flex-shrink: 0; margin: 0; border-top: 1px solid var(--color-border); padding: 10px 12px 0; color: var(--color-muted-foreground); font-size: 12px; line-height: 1.6; }
@@ -83,8 +51,4 @@
 /* 초점 표시는 `interview-stream-view.module.css`와 같은 2px 실선 하나로 통일합니다. */
 .endButton:focus-visible,
 .endCancelButton:focus-visible,
-.editButton:focus-visible,
-.editorSave:focus-visible,
-.editorCancel:focus-visible,
-.editorInput:focus-visible,
 .unreflectedRetry:focus-visible { outline: 2px solid var(--color-foreground); outline-offset: 2px; }

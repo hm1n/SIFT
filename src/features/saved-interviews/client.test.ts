@@ -7,6 +7,7 @@ import {
   fetchSavedInterviews,
   INTERVIEWS_PATH,
   SavedInterviewFetchError,
+  saveSavedInterviewBlock,
 } from "./client";
 import type { CreateInterviewRequestBody } from "./request";
 
@@ -108,5 +109,49 @@ describe("저장된 인터뷰 클라이언트", () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(200, { interviews: "목록" }));
 
     await expect(fetchSavedInterviews(fetchImpl)).rejects.toMatchObject({ kind: "server_error" });
+  });
+
+  it("블록 편집을 PATCH로 보내고 저장된 뒤의 블록 버전을 돌려준다", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(200, { blockVersion: 4 }));
+
+    const version = await saveSavedInterviewBlock(
+      INTERVIEW_ID,
+      { block: "problem", sentences: ["고친 문장"], expectedBlockVersion: 3 },
+      fetchImpl
+    );
+
+    expect(version).toBe(4);
+    expect(fetchImpl.mock.calls[0][0]).toBe(`${INTERVIEWS_PATH}/${INTERVIEW_ID}`);
+    expect(fetchImpl.mock.calls[0][1].method).toBe("PATCH");
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({
+      blockEdit: { block: "problem", sentences: ["고친 문장"], expectedBlockVersion: 3 },
+    });
+  });
+
+  // 버전을 돌려받지 못하면 다음 편집이 어떤 버전으로 저장해야 하는지 알 수 없습니다.
+  it("블록 버전이 없는 응답은 형식 오류로 본다", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(200, {}));
+
+    await expect(
+      saveSavedInterviewBlock(
+        INTERVIEW_ID,
+        { block: "problem", sentences: [], expectedBlockVersion: 3 },
+        fetchImpl
+      )
+    ).rejects.toMatchObject({ kind: "server_error" });
+  });
+
+  it("다른 곳이 먼저 고쳤으면 version_conflict로 올린다", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(409, { error: { kind: "version_conflict", message: "충돌" } }));
+
+    await expect(
+      saveSavedInterviewBlock(
+        INTERVIEW_ID,
+        { block: "problem", sentences: ["고친 문장"], expectedBlockVersion: 3 },
+        fetchImpl
+      )
+    ).rejects.toMatchObject({ kind: "version_conflict" });
   });
 });

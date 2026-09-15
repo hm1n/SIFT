@@ -284,7 +284,7 @@ function ResumedInterview({
   const { interview } = state;
   const snapshot = interview.evidence as ExperienceEvidenceSnapshot | null;
   if (mode.stage === "review" || snapshot === null || typeof snapshot !== "object") {
-    return <SavedInterviewScreen interview={interview} onResume={onResume} />;
+    return <SavedInterviewScreen interview={interview} onResume={onResume} onLoadLatest={onLoadLatest} />;
   }
 
   return (

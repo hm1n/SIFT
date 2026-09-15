@@ -113,7 +113,12 @@ export function blockMarks(
   }));
 }
 
-/** 내용이 채워진 블록 수입니다. 헤더 토글과 좁은 폭 탭, 패널 머리글의 `n/4`가 모두 이 값을 씁니다. */
-export function filledBlockCount(state: ExperienceBlockState, edits: BlockEdits): number {
+/**
+ * 내용이 채워진 블록 수입니다. 헤더 토글과 좁은 폭 탭, 패널 머리글의 `n/4`가 모두 이 값을 씁니다.
+ *
+ * 편집을 넘기지 않으면 저장된 문장만 셉니다. 인터뷰 화면은 더 이상 블록을 고치지 않으므로(이슈
+ * #115에서 편집을 요약 화면으로 옮겼습니다) 넘길 편집이 없습니다.
+ */
+export function filledBlockCount(state: ExperienceBlockState, edits: BlockEdits = {}): number {
   return BLOCK_KINDS.filter((block) => effectiveDisplay(state, edits, block).length > 0).length;
 }

@@ -1,4 +1,4 @@
-import type { CreateInterviewRequestBody } from "./request";
+import type { BlockEditRequestBody, CreateInterviewRequestBody } from "./request";
 import type { SavedInterviewErrorKind } from "./errors";
 import type { InterviewListItemPayload, StoredInterviewPayload } from "./payload";
 
@@ -151,6 +151,36 @@ export async function completeSavedInterview(
     },
     fetchImpl
   );
+}
+
+/**
+ * 끝난 인터뷰의 블록 문장을 고쳐 저장하고 저장된 뒤의 블록 버전을 돌려줍니다(이슈 #115).
+ *
+ * 문장을 문자열로만 보냅니다. 표시 문장 객체로 보내면 예전 주장 참조를 실어 보낼 수 있고, 그러면 고친
+ * 문장에 저장소 인용이 따라옵니다(설계 8절). 서버는 받은 문자열로 문장을 새로 만듭니다.
+ *
+ * 다른 곳에서 먼저 고쳤으면 `version_conflict`로 올라옵니다. 화면은 그때 최신 내용을 다시 읽습니다.
+ */
+export async function saveSavedInterviewBlock(
+  interviewId: string,
+  blockEdit: BlockEditRequestBody,
+  fetchImpl?: typeof fetch,
+  signal?: AbortSignal
+): Promise<number> {
+  const result = await request<{ blockVersion?: unknown }>(
+    `${INTERVIEWS_PATH}/${encodeURIComponent(interviewId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ blockEdit }),
+      signal,
+    },
+    fetchImpl
+  );
+  if (result === null || typeof result.blockVersion !== "number") {
+    throw new SavedInterviewFetchError("server_error", "서버 응답 형식이 올바르지 않습니다.");
+  }
+  return result.blockVersion;
 }
 
 /** 인터뷰 하나를 지웁니다. 이미 지워졌거나 남의 인터뷰면 `not_found`로 올라옵니다. */

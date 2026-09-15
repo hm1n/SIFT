@@ -1,3 +1,6 @@
+import { blockEditByteLength } from "@/features/experience-block/block-edits";
+import { BLOCK_MAX_BYTES, BLOCK_MAX_STATEMENTS } from "@/features/experience-block/reducer";
+import { BLOCK_KINDS, type BlockKind, type DisplaySentence } from "@/features/experience-block/types";
 import { STAGE_B_MAX_TOTAL_PATCH_CHARS } from "@/features/experience-candidates/stage-b";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
 import { isExperienceEvidenceSnapshot, SNAPSHOT_BODY_BYTES } from "@/features/interview/question-request";
@@ -103,4 +106,83 @@ export function parseCreateInterviewBody(value: unknown): ParsedCreateInterview 
       evidence,
     },
   };
+}
+
+/**
+ * `PATCH /api/interviews/[id]`가 받는 블록 편집입니다(이슈 #115). 끝난 인터뷰의 요약 화면에서 블록
+ * 문장을 고칠 때 옵니다.
+ *
+ * 문장을 표시 문장 객체가 아니라 **문자열 배열**로 받습니다. 그래야 고친 문장에 예전 주장이 따라올
+ * 길이 없습니다. 객체로 받으면 `claimIds`를 실어 보낼 수 있고, 서버가 그것을 지우는 것을 한 번이라도
+ * 빠뜨리면 사용자가 직접 쓴 문장에 저장소가 뒷받침한다는 표시가 붙습니다(설계 8절). 자료 모양으로
+ * 막으면 빠뜨릴 자리가 없습니다.
+ *
+ * 저장 전용 경로를 새로 만들지 않는다는 이슈의 Constraint를 지킵니다. 끝내기 표시가 이미 이 PATCH에
+ * 있으므로 같은 자리에 분기를 하나 더합니다.
+ */
+export interface BlockEditRequestBody {
+  readonly block: BlockKind;
+  readonly sentences: readonly string[];
+  /** 화면이 읽어 온 블록 버전입니다. 저장된 값과 다르면 다른 탭이 먼저 고친 것입니다. */
+  readonly expectedBlockVersion: number;
+}
+
+export type ParsedBlockEdit =
+  | { readonly ok: true; readonly body: BlockEditRequestBody }
+  | {
+      readonly ok: false;
+      readonly kind: Extract<SavedInterviewErrorKind, "invalid_request">;
+      readonly message: string;
+    };
+
+/** 본문이 블록 편집인지 봅니다. 이 판정이 참일 때만 상태 변경이 아닌 길로 갑니다. */
+export function isBlockEditBody(value: unknown): boolean {
+  return isRecord(value) && value.blockEdit !== undefined;
+}
+
+/** 저장할 표시 문장입니다. 빈 줄은 버리고 출처는 언제나 비웁니다. */
+export function blockEditSentences(body: BlockEditRequestBody): readonly DisplaySentence[] {
+  return body.sentences
+    .map((line) => line.trim())
+    .filter((line) => line !== "")
+    .map((line) => ({ text: line, claimIds: [] }));
+}
+
+/**
+ * 상한을 서버가 다시 잽니다. 화면도 같은 기준으로 먼저 막지만, 화면의 검사는 요청을 아끼려는 것이고
+ * 거절할 권한은 서버에 있습니다. 재는 대상은 저장될 표시 문장이라 `applyBlockUpdate`의 검증과 같은
+ * 값을 봅니다.
+ */
+export function parseBlockEditBody(value: unknown): ParsedBlockEdit {
+  if (!isRecord(value) || !isRecord(value.blockEdit)) {
+    return { ok: false, kind: "invalid_request", message: "blockEdit이 객체여야 합니다." };
+  }
+  const edit = value.blockEdit;
+  if (typeof edit.block !== "string" || !BLOCK_KINDS.includes(edit.block as BlockKind)) {
+    return { ok: false, kind: "invalid_request", message: "blockEdit.block이 PAAR 블록 이름이어야 합니다." };
+  }
+  if (!Array.isArray(edit.sentences) || edit.sentences.some((line) => typeof line !== "string")) {
+    return { ok: false, kind: "invalid_request", message: "blockEdit.sentences는 문자열 배열이어야 합니다." };
+  }
+  if (!Number.isInteger(edit.expectedBlockVersion) || (edit.expectedBlockVersion as number) < 0) {
+    return {
+      ok: false,
+      kind: "invalid_request",
+      message: "blockEdit.expectedBlockVersion은 0 이상의 정수여야 합니다.",
+    };
+  }
+
+  const body: BlockEditRequestBody = {
+    block: edit.block as BlockKind,
+    sentences: edit.sentences as readonly string[],
+    expectedBlockVersion: edit.expectedBlockVersion as number,
+  };
+  const sentences = blockEditSentences(body);
+  if (sentences.length > BLOCK_MAX_STATEMENTS) {
+    return { ok: false, kind: "invalid_request", message: `블록 문장은 ${BLOCK_MAX_STATEMENTS}개까지입니다.` };
+  }
+  if (blockEditByteLength(sentences) > BLOCK_MAX_BYTES) {
+    return { ok: false, kind: "invalid_request", message: `블록 하나는 ${BLOCK_MAX_BYTES}바이트까지입니다.` };
+  }
+  return { ok: true, body };
 }

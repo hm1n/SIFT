@@ -2,10 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parseBlockEdit, type BlockEdits } from "@/features/experience-block/block-edits";
-import { BLOCK_MAX_BYTES, BLOCK_MAX_STATEMENTS } from "@/features/experience-block/reducer";
 import {
   emptyExperienceBlockState,
   type BlockKind,
@@ -68,16 +65,9 @@ const citedClaim: Claim = {
   turnId: "t1",
 };
 
-/** 편집 상태를 `InterviewScreen`과 같은 방식으로 들고 있는 하네스입니다. */
+/** 호출부를 하나로 두려고 남긴 하네스입니다. 이 패널은 더 이상 편집 상태를 받지 않습니다. */
 function PanelHarness({ stream }: { stream: UseExperienceInterviewState }) {
-  const [edits, setEdits] = useState<BlockEdits>({});
-  return (
-    <PaarPanel
-      stream={stream}
-      edits={edits}
-      onEditBlock={(block, sentences) => setEdits((current) => ({ ...current, [block]: sentences }))}
-    />
-  );
+  return <PaarPanel stream={stream} />;
 }
 
 describe("PaarPanel 블록 상태", () => {
@@ -218,56 +208,8 @@ describe("PaarPanel 출처와 충돌 표시", () => {
     expect(sentence.parentElement?.contains(conflict)).toBe(false);
   });
 
-  it("고친 블록에는 예전 충돌을 남기지 않는다", () => {
-    // 충돌은 모델이 낸 주장에 매여 있습니다. 사용자가 블록을 자기 문장으로 바꾸면 그 주장은 화면에
-    // 없는데, 예전에는 충돌 안내만 남아 쓴 적 없는 문장에 대한 경고가 됐습니다(PR #121 리뷰 1라운드).
-    const conflicted: Claim = { ...citedClaim, id: "c2", status: "conflicted" };
-    render(
-      <PanelHarness
-        stream={baseStream({
-          isEnded: true,
-          endReason: "user",
-          blockState: stateWith({
-            claims: [citedClaim, conflicted],
-            conflicts: [{ claimId: "c2", observation: "커밋에는 그 변경이 없습니다", turnId: "t2" }],
-            display: displayOf("problem", [{ text: "모델이 쓴 문장", claimIds: ["c1"] }]),
-          }),
-        })}
-      />
-    );
-    expect(screen.getByText("Conflicts with the evidence · needs checking")).toBeInTheDocument();
-
-    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "사용자가 고친 문장" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    expect(screen.getByText("사용자가 고친 문장")).toBeInTheDocument();
-    expect(screen.queryByText("Conflicts with the evidence · needs checking")).not.toBeInTheDocument();
-    expect(screen.queryByText("커밋에는 그 변경이 없습니다")).not.toBeInTheDocument();
-  });
-
-  it("블록을 모두 지워도 예전 충돌을 남기지 않는다", () => {
-    const conflicted: Claim = { ...citedClaim, id: "c2", status: "conflicted" };
-    render(
-      <PanelHarness
-        stream={baseStream({
-          isEnded: true,
-          endReason: "user",
-          blockState: stateWith({
-            claims: [citedClaim, conflicted],
-            conflicts: [{ claimId: "c2", observation: "커밋에는 그 변경이 없습니다", turnId: "t2" }],
-            display: displayOf("problem", [{ text: "모델이 쓴 문장", claimIds: ["c1"] }]),
-          }),
-        })}
-      />
-    );
-
-    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "   " } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    expect(screen.queryByText("Conflicts with the evidence · needs checking")).not.toBeInTheDocument();
-  });
+  // 고친 블록의 충돌과 인용을 어떻게 다루는지는 편집이 있는 화면의 몫입니다.
+  // `saved-interviews/saved-interview-screen.test.tsx`에 있습니다.
 });
 
 describe("PaarPanel 미반영 상태", () => {
@@ -306,103 +248,26 @@ describe("PaarPanel 미반영 상태", () => {
   });
 });
 
-describe("PaarPanel 종료 후 편집", () => {
+describe("PaarPanel 편집 없음", () => {
   const filled = stateWith({
     claims: [citedClaim],
     display: displayOf("problem", [{ text: "모델이 쓴 문장", claimIds: ["c1"] }]),
   });
 
-  it("인터뷰가 진행되는 동안에는 편집을 열지 않는다", () => {
-    render(<PanelHarness stream={baseStream({ blockState: filled })} />);
+  /*
+   * 편집은 저장된 인터뷰의 요약 화면으로 옮겼습니다(이슈 #115). 예전에는 종료하는 순간 이 패널이
+   * 카드 넷을 편집 가능한 모습으로 다시 그렸는데, 종료가 곧바로 요약 화면으로 넘어가는 조작이라
+   * 그 모습이 한 프레임 번쩍이고 사라졌습니다.
+   */
+  it.each([
+    ["진행 중", { blockState: filled }],
+    ["종료 뒤", { blockState: filled, isEnded: true, endReason: "user" as const }],
+  ])("%s에도 편집을 열지 않는다", (_label, overrides) => {
+    render(<PanelHarness stream={baseStream(overrides)} />);
 
-    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
-  });
-
-  it("종료한 뒤에만 편집을 연다", () => {
-    render(<PanelHarness stream={baseStream({ blockState: filled, isEnded: true, endReason: "user" })} />);
-
-    expect(screen.getAllByRole("button", { name: "Edit" })).toHaveLength(4);
-  });
-
-  it("고치면 저장소 인용을 잃는다", () => {
-    render(<PanelHarness stream={baseStream({ blockState: filled, isEnded: true, endReason: "user" })} />);
-    expect(screen.getByText("abc1234")).toBeInTheDocument();
-
-    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "사용자가 고친 문장" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    expect(screen.getByText("사용자가 고친 문장")).toBeInTheDocument();
-    expect(screen.queryByText(/not verified in the repository/)).not.toBeInTheDocument();
-    expect(screen.queryByText("abc1234")).not.toBeInTheDocument();
-    expect(screen.queryByText("src/log.tsx")).not.toBeInTheDocument();
-  });
-
-  it("고치기 전에 인용을 잃는다는 것을 알린다", () => {
-    render(<PanelHarness stream={baseStream({ blockState: filled, isEnded: true, endReason: "user" })} />);
-
-    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
-    expect(screen.getByText(/drops the repository citations/)).toBeInTheDocument();
-  });
-
-  it("문장 수 상한을 넘으면 저장을 막는다", () => {
-    render(<PanelHarness stream={baseStream({ blockState: filled, isEnded: true, endReason: "user" })} />);
-
-    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
-    fireEvent.change(screen.getByRole("textbox"), {
-      target: { value: Array.from({ length: BLOCK_MAX_STATEMENTS + 1 }, (_, i) => `문장 ${i}`).join("\n") },
-    });
-
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    expect(screen.getByText(new RegExp(`${BLOCK_MAX_STATEMENTS} lines or fewer`))).toBeInTheDocument();
-  });
-
-  it("서버가 쓰는 바이트 상한을 넘으면 저장을 막는다", () => {
-    render(<PanelHarness stream={baseStream({ blockState: filled, isEnded: true, endReason: "user" })} />);
-
-    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "가".repeat(BLOCK_MAX_BYTES) } });
-
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    expect(screen.getByText(new RegExp(`${BLOCK_MAX_BYTES.toLocaleString()} byte limit`))).toBeInTheDocument();
-  });
-
-  it("종료 뒤 재처리가 성공해도 사용자 편집을 덮지 않는다", () => {
-    // 설계 9절 "재처리가 종료 후 사용자 편집을 덮어쓰지 않습니다". 종료가 미반영 턴의 재처리를
-    // 걸어 두므로 편집한 뒤에 블록 상태가 바뀌는 순서가 실제로 생깁니다.
-    const stream = baseStream({ blockState: filled, isEnded: true, endReason: "user" });
-    const { rerender } = render(<PanelHarness stream={stream} />);
-
-    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "사용자가 고친 문장" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    rerender(
-      <PanelHarness
-        stream={{
-          ...stream,
-          unreflectedTurnId: null,
-          blockState: stateWith({
-            version: 9,
-            display: displayOf("problem", [{ text: "재처리가 낸 새 문장", claimIds: [] }]),
-          }),
-        }}
-      />
-    );
-
-    expect(screen.getByText("사용자가 고친 문장")).toBeInTheDocument();
-    expect(screen.queryByText("재처리가 낸 새 문장")).not.toBeInTheDocument();
-  });
-
-  it("취소하면 편집을 버리고 원래 문장으로 돌아간다", () => {
-    render(<PanelHarness stream={baseStream({ blockState: filled, isEnded: true, endReason: "user" })} />);
-
-    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "버릴 문장" } });
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-
+    expect(screen.queryByRole("button", { name: /Edit/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(screen.getByText("모델이 쓴 문장")).toBeInTheDocument();
-    expect(screen.queryByText("버릴 문장")).not.toBeInTheDocument();
   });
 });
 
@@ -428,11 +293,20 @@ describe("PaarPanel 종료 조작", () => {
     expect(screen.getByRole("button", { name: "End interview" })).toBeInTheDocument();
   });
 
-  it("종료 확인 문구가 블록 편집이 뒤에 열린다는 것을 알린다", () => {
+  it("저장되지 않는 인터뷰의 종료 확인 문구는 블록을 고칠 수 없다고 알린다", () => {
+    // 편집은 저장된 인터뷰의 요약 화면에만 있습니다(이슈 #115). 돌아갈 요약이 없는 인터뷰에
+    // "나중에 고칠 수 있다"고 적으면 있지도 않은 조작을 약속하게 됩니다.
     render(<PanelHarness stream={baseStream()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "End interview" }));
-    expect(screen.getByRole("group")).toHaveTextContent("edit the PAAR blocks afterwards");
+    expect(screen.getByRole("group")).toHaveTextContent("cannot edit them afterwards");
+  });
+
+  it("저장되는 인터뷰의 종료 확인 문구는 목록에서 다시 열어 고칠 수 있다고 알린다", () => {
+    render(<PaarPanel stream={baseStream()} isSaved />);
+
+    fireEvent.click(screen.getByRole("button", { name: "End interview" }));
+    expect(screen.getByRole("group")).toHaveTextContent("open it again from there to edit the PAAR blocks");
   });
 });
 
@@ -453,20 +327,5 @@ describe("PaarPanel 낭독 경계", () => {
     expect(container.querySelectorAll("[aria-live]")).toHaveLength(0);
     expect(container.querySelectorAll("[role='alert']")).toHaveLength(0);
     expect(container.querySelectorAll("[role='status']")).toHaveLength(0);
-  });
-});
-
-describe("PaarPanel 편집 입력", () => {
-  it("남은 바이트를 서버 기준으로 보여 준다", () => {
-    render(<PanelHarness stream={baseStream({ isEnded: true, endReason: "user" })} />);
-
-    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "문장" } });
-
-    const remaining = BLOCK_MAX_BYTES - JSON.stringify(parseBlockEdit("문장")).length - 4;
-    // 한글 한 글자가 UTF-8에서 3바이트라 직렬화 길이와 바이트 수가 다릅니다. 정확한 값 대신 화면이
-    // 글자 수가 아닌 바이트를 쓰는지만 봅니다.
-    expect(screen.getByText(/bytes left/)).toBeInTheDocument();
-    expect(screen.queryByText(new RegExp(`${remaining + 100} bytes left`))).not.toBeInTheDocument();
   });
 });

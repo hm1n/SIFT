@@ -295,9 +295,9 @@ describe("InterviewScreen", () => {
     const confirm = screen.getByRole("group", { name: /clears this conversation for good/ });
     expect(confirm).toHaveTextContent("clears this conversation for good");
     expect(confirm).toHaveTextContent("any answer you're still writing");
-    // 저장 계층이 없어 블록과 편집 내용도 함께 사라집니다. 확인 문구가 대화만 말하면 사용자는 고친
-    // 문장이 남는다고 읽습니다(이슈 #91 Tasks).
-    expect(confirm).toHaveTextContent("the PAAR blocks, and any edits you made to them");
+    // 저장 계층이 없어 블록도 함께 사라집니다. 확인 문구가 대화만 말하면 사용자는 블록이 남는다고
+    // 읽습니다(이슈 #91 Tasks). 편집은 더 이상 이 화면에 없으므로 문구에서도 뺐습니다(이슈 #115).
+    expect(confirm).toHaveTextContent("and the PAAR blocks");
     expect(confirm).toHaveTextContent("Nothing here is saved");
 
     fireEvent.click(screen.getByRole("button", { name: "Continue the interview" }));

@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { emptyInterviewProgress } from "@/features/experience-block/progress";
+import { BLOCK_MAX_BYTES, BLOCK_MAX_STATEMENTS } from "@/features/experience-block/reducer";
 import { emptyExperienceBlockState } from "@/features/experience-block/types";
 import { DatabaseError } from "@/lib/db/client";
 import { createInMemoryStore } from "@/lib/db/in-memory-store";
@@ -247,6 +248,165 @@ describe("PATCH /api/interviews/[id]", () => {
 
   it("저장 계층이 끊기면 503이다", async () => {
     const response = await handlePatchInterview(patch(), "11111111-1111-4111-8111-111111111111", brokenStore());
+    expect(response.status).toBe(503);
+  });
+});
+
+/**
+ * 끝난 인터뷰의 블록 문장 편집입니다(이슈 #115). 저장 전용 경로를 새로 만들지 않고 이 PATCH에
+ * 분기를 하나 더 둡니다.
+ */
+describe("PATCH /api/interviews/[id] 블록 편집", () => {
+  const SENTENCE = "사용자가 직접 고친 문장";
+
+  function editBody(overrides: Record<string, unknown> = {}) {
+    return { blockEdit: { block: "problem", sentences: [SENTENCE], expectedBlockVersion: 1, ...overrides } };
+  }
+
+  /** 끝난 인터뷰 하나를 만듭니다. 블록 상태에는 저장소를 인용하는 문장이 하나 들어 있습니다. */
+  async function seedCompleted(store: SiftStore) {
+    const { interviewId, analysisId } = await seed(store);
+    await store.appendTurn({
+      githubUserId: OWNER_ID,
+      interviewId,
+      turn: [{ role: "question", text: "질문" }, { role: "answer", text: "답변" }],
+      blockState: {
+        ...emptyExperienceBlockState(),
+        version: 1,
+        display: {
+          ...emptyExperienceBlockState().display,
+          problem: [{ text: "모델이 쓴 문장", claimIds: ["c1"] }],
+        },
+      },
+      progress: emptyInterviewProgress(),
+      expectedBlockVersion: 0,
+    });
+    await store.completeInterview(interviewId, OWNER_ID);
+    return { interviewId, analysisId };
+  }
+
+  it("고친 문장을 저장하고 오른 블록 버전을 돌려준다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seedCompleted(store);
+
+    const response = await handlePatchInterview(
+      request({ method: "PATCH", body: editBody() }),
+      interviewId,
+      store
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ blockVersion: 2 });
+    const saved = await store.getInterview(interviewId, OWNER_ID);
+    // 고친 문장에 예전 주장이 따라오지 않습니다(설계 8절). 서버가 문장을 새로 만듭니다.
+    expect(saved?.blockState.display.problem).toEqual([{ text: SENTENCE, claimIds: [] }]);
+    expect(saved?.blockVersion).toBe(2);
+  });
+
+  it("이력과 다른 블록은 건드리지 않는다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seedCompleted(store);
+
+    await handlePatchInterview(request({ method: "PATCH", body: editBody() }), interviewId, store);
+
+    const saved = await store.getInterview(interviewId, OWNER_ID);
+    expect(saved?.history).toHaveLength(2);
+    expect(saved?.blockState.display.action).toEqual([]);
+  });
+
+  it("빈 문장만 보내면 블록을 비운다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seedCompleted(store);
+
+    const response = await handlePatchInterview(
+      request({ method: "PATCH", body: editBody({ sentences: ["  ", ""] }) }),
+      interviewId,
+      store
+    );
+
+    expect(response.status).toBe(200);
+    expect((await store.getInterview(interviewId, OWNER_ID))?.blockState.display.problem).toEqual([]);
+  });
+
+  // 진행 중인 인터뷰를 고쳐 두면 이어간 뒤 모델이 그 블록을 건드리는 순간 고친 문장이 사라집니다.
+  it("진행 중인 인터뷰는 400이고 문장이 그대로 남는다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seed(store);
+    await store.appendTurn({
+      githubUserId: OWNER_ID,
+      interviewId,
+      turn: [],
+      blockState: { ...emptyExperienceBlockState(), version: 1 },
+      progress: emptyInterviewProgress(),
+      expectedBlockVersion: 0,
+    });
+
+    const response = await handlePatchInterview(
+      request({ method: "PATCH", body: editBody() }),
+      interviewId,
+      store
+    );
+
+    expect(response.status).toBe(400);
+    expect((await store.getInterview(interviewId, OWNER_ID))?.blockVersion).toBe(1);
+  });
+
+  it("다른 곳이 먼저 고쳤으면 409이고 아무것도 쓰지 않는다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seedCompleted(store);
+
+    const response = await handlePatchInterview(
+      request({ method: "PATCH", body: editBody({ expectedBlockVersion: 0 }) }),
+      interviewId,
+      store
+    );
+
+    expect(response.status).toBe(409);
+    const saved = await store.getInterview(interviewId, OWNER_ID);
+    expect(saved?.blockState.display.problem).toEqual([{ text: "모델이 쓴 문장", claimIds: ["c1"] }]);
+  });
+
+  it.each([
+    ["모르는 블록 이름", { block: "unknown" }],
+    ["문자열이 아닌 문장", { sentences: [1] }],
+    ["음수 버전", { expectedBlockVersion: -1 }],
+    ["문장 수 상한 초과", { sentences: Array.from({ length: BLOCK_MAX_STATEMENTS + 1 }, (_, i) => `문장 ${i}`) }],
+    ["바이트 상한 초과", { sentences: ["가".repeat(BLOCK_MAX_BYTES)] }],
+  ])("%s은 400이다", async (_label, overrides) => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seedCompleted(store);
+
+    const response = await handlePatchInterview(
+      request({ method: "PATCH", body: editBody(overrides) }),
+      interviewId,
+      store
+    );
+
+    expect(response.status).toBe(400);
+    expect((await store.getInterview(interviewId, OWNER_ID))?.blockVersion).toBe(1);
+  });
+
+  it("다른 사용자의 인터뷰는 404이고 그대로 남는다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seedCompleted(store);
+
+    const response = await handlePatchInterview(
+      request({ method: "PATCH", body: editBody(), userId: OTHER_ID }),
+      interviewId,
+      store
+    );
+
+    expect(response.status).toBe(404);
+    expect((await store.getInterview(interviewId, OWNER_ID))?.blockVersion).toBe(1);
+  });
+
+  it("저장소가 답하지 않으면 503이다", async () => {
+    const response = await handlePatchInterview(
+      request({ method: "PATCH", body: editBody() }),
+      "11111111-1111-4111-8111-111111111111",
+      brokenStore()
+    );
+
     expect(response.status).toBe(503);
   });
 });

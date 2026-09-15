@@ -1,15 +1,38 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { emptyInterviewProgress } from "@/features/experience-block/progress";
-import { emptyExperienceBlockState } from "@/features/experience-block/types";
+import { BLOCK_MAX_BYTES, BLOCK_MAX_STATEMENTS } from "@/features/experience-block/reducer";
+import { emptyExperienceBlockState, type Claim } from "@/features/experience-block/types";
 import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
 import type { StoredInterviewPayload } from "./payload";
 import { SavedInterviewScreen } from "./saved-interview-screen";
 
 afterEach(cleanup);
+
+const citedClaim: Claim = {
+  id: "c1",
+  block: "problem",
+  text: "로그가 청크마다 전체를 다시 그렸다",
+  sources: [{ source: "repository", commitSha: "abc1234def5678", filePath: "src/log.tsx" }],
+  status: "active",
+  turnId: "t1",
+};
+
+/** 저장 응답입니다. 실제 경로는 새 블록 버전만 돌려줍니다. */
+function savedResponse(blockVersion: number): Response {
+  return { ok: true, status: 200, json: async () => ({ blockVersion }) } as unknown as Response;
+}
+
+function errorResponse(status: number, kind: string): Response {
+  return {
+    ok: false,
+    status,
+    json: async () => ({ error: { kind, message: "흉내 낸 오류" } }),
+  } as unknown as Response;
+}
 
 function payload(overrides: Partial<StoredInterviewPayload> = {}): StoredInterviewPayload {
   return {
@@ -31,6 +54,8 @@ function payload(overrides: Partial<StoredInterviewPayload> = {}): StoredIntervi
     blockState: {
       ...emptyExperienceBlockState(),
       version: 1,
+      claims: [citedClaim],
+      display: { ...emptyExperienceBlockState().display, problem: [{ text: "모델이 쓴 문장", claimIds: ["c1"] }] },
       evaluation: {
         ...emptyExperienceBlockState().evaluation,
         problem: { sufficient: true, askable: false, reason: "sufficient" },
@@ -101,5 +126,201 @@ describe("SavedInterviewScreen", () => {
     render(<SavedInterviewScreen interview={payload({ status: "completed" })} onResume={vi.fn()} />);
 
     expect(screen.getByRole("button", { name: /Review interview/ })).toBeInTheDocument();
+  });
+});
+
+/**
+ * 블록 편집입니다. 이슈 #91이 인터뷰 화면의 PAAR 패널에 만든 것을 #115에서 이 화면으로 옮겼습니다.
+ * 저장된 인터뷰의 화면이라 고친 문장을 서버에 함께 보냅니다.
+ */
+describe("SavedInterviewScreen 블록 편집", () => {
+  const completed = payload({ status: "completed" });
+
+  it("저장된 블록 문장과 그 문장이 인용한 커밋을 그린다", () => {
+    render(<SavedInterviewScreen interview={completed} onResume={vi.fn()} />);
+
+    const paar = screen.getByRole("region", { name: "PAAR experience" });
+    expect(within(paar).getByText("모델이 쓴 문장")).toBeInTheDocument();
+    expect(within(paar).getByText("abc1234")).toBeInTheDocument();
+    expect(within(paar).getByText("src/log.tsx")).toBeInTheDocument();
+  });
+
+  // 진행 중인 인터뷰를 고쳐 두면 이어간 뒤 모델이 그 블록을 건드리는 순간 고친 문장이 사라집니다.
+  it("진행 중인 인터뷰에는 편집을 열지 않는다", () => {
+    render(<SavedInterviewScreen interview={payload()} onResume={vi.fn()} />);
+
+    expect(screen.queryByRole("button", { name: /^Edit / })).not.toBeInTheDocument();
+  });
+
+  it("끝난 인터뷰는 블록마다 편집을 연다", () => {
+    render(<SavedInterviewScreen interview={completed} onResume={vi.fn()} />);
+
+    expect(screen.getAllByRole("button", { name: /^Edit / })).toHaveLength(4);
+  });
+
+  it("고쳐 저장하면 문장만 서버로 보내고 저장소 인용을 잃는다", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(savedResponse(2));
+    render(<SavedInterviewScreen interview={completed} onResume={vi.fn()} fetchImpl={fetchImpl} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Problem" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "사용자가 고친 문장" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(screen.getByText("사용자가 고친 문장")).toBeInTheDocument());
+    // 고친 문장에 예전 주장이 따라오지 않도록 문장은 문자열로만 보냅니다(설계 8절).
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({
+      blockEdit: { block: "problem", sentences: ["사용자가 고친 문장"], expectedBlockVersion: 1 },
+    });
+    expect(fetchImpl.mock.calls[0][1].method).toBe("PATCH");
+    expect(screen.queryByText("abc1234")).not.toBeInTheDocument();
+    expect(screen.queryByText("src/log.tsx")).not.toBeInTheDocument();
+  });
+
+  it("고치기 전에 인용을 잃는다는 것을 알린다", () => {
+    render(<SavedInterviewScreen interview={completed} onResume={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Problem" }));
+    expect(screen.getByText(/drops the repository citations/)).toBeInTheDocument();
+  });
+
+  it("이어서 고치면 저장된 뒤의 버전으로 보낸다", async () => {
+    // 저장할 때마다 블록 버전이 오릅니다. 읽어 온 값을 계속 쓰면 두 번째 편집이 스스로 만든 버전과
+    // 어긋나 충돌로 거절됩니다.
+    const fetchImpl = vi.fn().mockResolvedValueOnce(savedResponse(2)).mockResolvedValueOnce(savedResponse(3));
+    render(<SavedInterviewScreen interview={completed} onResume={vi.fn()} fetchImpl={fetchImpl} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Problem" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "첫 번째 편집" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.getByText("첫 번째 편집")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Action" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "두 번째 편집" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.getByText("두 번째 편집")).toBeInTheDocument());
+
+    expect(JSON.parse(fetchImpl.mock.calls[1][1].body).blockEdit).toEqual({
+      block: "action",
+      sentences: ["두 번째 편집"],
+      expectedBlockVersion: 2,
+    });
+  });
+
+  it("고친 블록에는 예전 충돌을 남기지 않는다", async () => {
+    // 충돌은 모델이 낸 주장에 매여 있습니다. 사용자가 블록을 자기 문장으로 바꾸면 그 주장은 화면에
+    // 없는데, 예전에는 충돌 안내만 남아 쓴 적 없는 문장에 대한 경고가 됐습니다(PR #121 리뷰 1라운드).
+    const conflicted: Claim = { ...citedClaim, id: "c2", status: "conflicted" };
+    const interview = payload({
+      status: "completed",
+      blockState: {
+        ...completed.blockState,
+        claims: [citedClaim, conflicted],
+        conflicts: [{ claimId: "c2", observation: "커밋에는 그 변경이 없습니다", turnId: "t2" }],
+      },
+    });
+    const fetchImpl = vi.fn().mockResolvedValue(savedResponse(2));
+    render(<SavedInterviewScreen interview={interview} onResume={vi.fn()} fetchImpl={fetchImpl} />);
+    expect(screen.getByText("Conflicts with the evidence · needs checking")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Problem" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "사용자가 고친 문장" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(screen.getByText("사용자가 고친 문장")).toBeInTheDocument());
+    expect(screen.queryByText("Conflicts with the evidence · needs checking")).not.toBeInTheDocument();
+    expect(screen.queryByText("커밋에는 그 변경이 없습니다")).not.toBeInTheDocument();
+  });
+
+  it("블록을 모두 지우면 빈 목록을 보내고 예전 충돌도 남기지 않는다", async () => {
+    const conflicted: Claim = { ...citedClaim, id: "c2", status: "conflicted" };
+    const interview = payload({
+      status: "completed",
+      blockState: {
+        ...completed.blockState,
+        claims: [citedClaim, conflicted],
+        conflicts: [{ claimId: "c2", observation: "커밋에는 그 변경이 없습니다", turnId: "t2" }],
+      },
+    });
+    const fetchImpl = vi.fn().mockResolvedValue(savedResponse(2));
+    render(<SavedInterviewScreen interview={interview} onResume={vi.fn()} fetchImpl={fetchImpl} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Problem" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "   " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body).blockEdit.sentences).toEqual([]);
+    expect(screen.queryByText("Conflicts with the evidence · needs checking")).not.toBeInTheDocument();
+    expect(screen.queryByText("모델이 쓴 문장")).not.toBeInTheDocument();
+  });
+
+  it("문장 수 상한을 넘으면 저장을 막는다", () => {
+    render(<SavedInterviewScreen interview={completed} onResume={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Problem" }));
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: Array.from({ length: BLOCK_MAX_STATEMENTS + 1 }, (_, i) => `문장 ${i}`).join("\n") },
+    });
+
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByText(new RegExp(`${BLOCK_MAX_STATEMENTS} lines or fewer`))).toBeInTheDocument();
+  });
+
+  it("서버가 쓰는 바이트 상한을 넘으면 저장을 막는다", () => {
+    render(<SavedInterviewScreen interview={completed} onResume={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Problem" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "가".repeat(BLOCK_MAX_BYTES) } });
+
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByText(new RegExp(`${BLOCK_MAX_BYTES.toLocaleString()} byte limit`))).toBeInTheDocument();
+  });
+
+  // 저장되지 않은 문장을 저장된 것처럼 그리면 사용자가 고쳤다고 믿고 떠납니다.
+  it("저장이 실패하면 고친 문장을 반영하지 않고 알린다", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(errorResponse(503, "storage_failed"));
+    render(<SavedInterviewScreen interview={completed} onResume={vi.fn()} fetchImpl={fetchImpl} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Problem" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "저장되지 않을 문장" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(screen.getByText(/wasn't saved/)).toBeInTheDocument());
+    expect(screen.getByText("모델이 쓴 문장")).toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toHaveValue("저장되지 않을 문장");
+  });
+
+  it("다른 곳에서 먼저 바뀌었으면 최신 내용을 다시 읽게 한다", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(errorResponse(409, "version_conflict"));
+    const onLoadLatest = vi.fn();
+    render(
+      <SavedInterviewScreen
+        interview={completed}
+        onResume={vi.fn()}
+        onLoadLatest={onLoadLatest}
+        fetchImpl={fetchImpl}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Problem" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "늦게 도착한 편집" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(screen.getByText(/changed somewhere else/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Load latest" }));
+    expect(onLoadLatest).toHaveBeenCalledTimes(1);
+  });
+
+  it("취소하면 편집을 버리고 원래 문장으로 돌아간다", () => {
+    const fetchImpl = vi.fn();
+    render(<SavedInterviewScreen interview={completed} onResume={vi.fn()} fetchImpl={fetchImpl} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Problem" }));
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "버릴 문장" } });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.getByText("모델이 쓴 문장")).toBeInTheDocument();
+    expect(screen.queryByText("버릴 문장")).not.toBeInTheDocument();
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

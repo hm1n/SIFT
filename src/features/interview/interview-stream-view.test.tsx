@@ -2,9 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { BlockEdits } from "@/features/experience-block/block-edits";
 import { BLOCK_LABELS } from "@/features/experience-block/block-labels";
 import { emptyExperienceBlockState } from "@/features/experience-block/types";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
@@ -59,8 +57,6 @@ function TestStreamHarness(options: HarnessOptions) {
 
 function ExperienceHarness(options: HarnessOptions & { snapshot: ExperienceEvidenceSnapshot }) {
   const stream = useExperienceInterview(options);
-  // 편집 상태를 `InterviewScreen`과 같은 자리에 둡니다. 개수 표시가 같은 값을 봐야 하기 때문입니다.
-  const [edits, setEdits] = useState<BlockEdits>({});
   return (
     <>
       <InterviewStreamView
@@ -69,11 +65,7 @@ function ExperienceHarness(options: HarnessOptions & { snapshot: ExperienceEvide
           stream.isReadyToFinish ? undefined : BLOCK_LABELS[stream.currentTarget.targetBlock]
         }
       />
-      <PaarPanel
-        stream={stream}
-        edits={edits}
-        onEditBlock={(block, sentences) => setEdits((current) => ({ ...current, [block]: sentences }))}
-      />
+      <PaarPanel stream={stream} />
     </>
   );
 }
