@@ -44,6 +44,14 @@ export interface SavedInterviewScreenProps {
   onResume: () => void;
   /** 다른 곳에서 먼저 저장했을 때 최신 내용을 다시 읽습니다. 없으면 그 안내만 보입니다. */
   onLoadLatest?: () => void;
+  /**
+   * 이 인터뷰가 나온 분석의 후보 목록을 엽니다(이슈 #116). 없으면 그 버튼을 그리지 않습니다.
+   *
+   * 한 분석에서 경험을 여러 개 고를 수 있는데, 저장된 인터뷰에서 그 분석으로 돌아가는 길이 없으면
+   * 사용자는 같은 저장소를 다시 분석해야 합니다. Stage B가 쓰는 모델은 하루 요청 수가 프로젝트 전체
+   * 20회라 그 길이 사실상 막혀 있습니다.
+   */
+  onOpenAnalysis?: () => void;
   /** 테스트에서 저장 요청을 대체하는 통로입니다. */
   fetchImpl?: typeof fetch;
 }
@@ -140,6 +148,7 @@ export function SavedInterviewScreen({
   interview,
   onResume,
   onLoadLatest,
+  onOpenAnalysis,
   fetchImpl,
 }: SavedInterviewScreenProps) {
   const candidate = parseStoredCandidate(interview.candidate);
@@ -402,6 +411,11 @@ export function SavedInterviewScreen({
 
       <footer className={styles.footer}>
         <span className={styles.footerMeta}>{progress} · {date}</span>
+        {onOpenAnalysis ? (
+          <button type="button" className={styles.openAnalysis} onClick={onOpenAnalysis}>
+            Other experiences from this analysis
+          </button>
+        ) : null}
         <button type="button" className={styles.resume} onClick={onResume}>
           {interview.status === "completed" ? "Review interview" : "Continue interview"}
           <span className={styles.arrow} aria-hidden="true">→</span>

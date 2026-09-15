@@ -11,6 +11,7 @@ import type { ConfirmedExperience } from "@/features/experience-candidates/exper
 import {
   createSavedInterview,
   fetchAnalysisByRepository,
+  fetchStoredAnalysis,
   saveRepositoryAnalysis,
   SavedInterviewFetchError,
 } from "@/features/saved-interviews/client";
@@ -37,6 +38,8 @@ const INITIAL_STATE: AnalysisState = { status: "idle" };
 type LookupState =
   | { readonly status: "loading" }
   | { readonly status: "done" }
+  /** 가리킨 분석이 사라졌습니다. 조회 실패와 갈라 둡니다. 사용자가 할 수 있는 일이 다릅니다. */
+  | { readonly status: "missing" }
   | { readonly status: "failed"; readonly message: string };
 
 /**
@@ -75,20 +78,42 @@ function checklistKeyFor(loading: LoadingPhase): ChecklistKey {
   return loading.step;
 }
 
-/** `AppShell`의 사이드바 메타 표기(`ShellRepository` 기준 `visibility`·`language`)와 같은 형식입니다. */
-function analysisMeta(repository: RepositorySummary): string {
-  return [repository.visibility.toUpperCase(), repository.language ?? undefined].filter(Boolean).join(" · ");
+/**
+ * `AppShell`의 사이드바 메타 표기(`ShellRepository` 기준 `visibility`·`language`)와 같은 형식입니다.
+ * 저장된 인터뷰에서 들어온 경로에는 두 값이 없어 빈 문자열이 됩니다(이슈 #116).
+ */
+function analysisMeta(repository: AnalyzedRepository): string {
+  return [repository.visibility?.toUpperCase(), repository.language ?? undefined].filter(Boolean).join(" · ");
 }
 
+/**
+ * 분석할 Repository입니다. 공개 여부와 언어는 선택 사항입니다(이슈 #116).
+ *
+ * 저장된 인터뷰의 요약 화면에서 그 분석의 후보 목록으로 들어오는 경로가 생기면서 필요해졌습니다.
+ * 저장된 인터뷰에는 owner와 name만 있고, 공개 여부와 언어는 저장소에서 바뀔 수 있는 값이라 저장하지
+ * 않았습니다(backlog 3번). 없는 값을 지어내 채우면 화면이 낡은 값을 사실처럼 보입니다.
+ */
+export type AnalyzedRepository = Pick<RepositorySummary, "owner" | "name"> &
+  Partial<Pick<RepositorySummary, "visibility" | "language">>;
+
 export interface RepositoryAnalysisViewProps {
-  repository: RepositorySummary;
+  repository: AnalyzedRepository;
   contributionItems: readonly string[];
+  /**
+   * 열어야 할 저장된 분석입니다(이슈 #116). 주면 저장소 이름으로 찾지 않고 이 분석을 엽니다.
+   *
+   * 저장된 인터뷰에서 "이 분석의 다른 경험"으로 들어올 때 씁니다. 저장소 이름으로 찾으면 그 사이에
+   * 다시 분석한 결과가 있을 때 사용자가 고른 것과 다른 분석이 열립니다.
+   */
+  analysisId?: string;
   /** 테스트에서 인터뷰 줄 생성 요청을 대체하는 통로입니다. */
   createInterview?: typeof createSavedInterview;
   /** 테스트에서 분석 저장 요청을 대체하는 통로입니다(이슈 #116). */
   saveAnalysis?: typeof saveRepositoryAnalysis;
   /** 테스트에서 저장된 분석 조회를 대체하는 통로입니다(이슈 #116). */
   fetchAnalysis?: typeof fetchAnalysisByRepository;
+  /** 테스트에서 식별자로 하는 분석 조회를 대체하는 통로입니다(이슈 #116). */
+  fetchAnalysisById?: typeof fetchStoredAnalysis;
   /** 인터뷰 줄을 새로 만들었을 때 알립니다. 사이드바 목록이 그 줄을 바로 보이게 다시 조회합니다. */
   onInterviewCreated?: () => void;
   /** 다른 탭이 먼저 저장했을 때 그 인터뷰를 최신 내용으로 다시 엽니다. */
@@ -121,6 +146,8 @@ export function RepositoryAnalysisView({
   createInterview = createSavedInterview,
   saveAnalysis = saveRepositoryAnalysis,
   fetchAnalysis = fetchAnalysisByRepository,
+  fetchAnalysisById = fetchStoredAnalysis,
+  analysisId,
   onInterviewCreated,
   onLoadLatestInterview,
   onUnsavedInterviewChange,
@@ -150,6 +177,11 @@ export function RepositoryAnalysisView({
   const [lookup, setLookup] = useState<LookupState>({ status: "loading" });
   /** 저장된 분석으로 그린 화면이면 그 분석을 저장한 시각입니다. 다시 분석하면 비웁니다. */
   const [savedAt, setSavedAt] = useState<string | null>(null);
+  /**
+   * 열어야 할 분석의 식별자입니다. 그 분석이 사라졌을 때 비우고 저장소 이름으로 다시 찾습니다.
+   * 상태로 두는 이유는 비우는 일이 사용자의 조작(다시 분석)에서 오기 때문입니다.
+   */
+  const requestedAnalysisIdRef = useRef<string | undefined>(analysisId);
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -173,13 +205,23 @@ export function RepositoryAnalysisView({
    */
   async function openRepository(run: number): Promise<void> {
     setLookup({ status: "loading" });
+    const requested = requestedAnalysisIdRef.current;
     let stored: StoredAnalysisPayload | null = null;
     try {
-      stored = await fetchAnalysis(repository.owner, repository.name);
+      stored =
+        requested === undefined
+          ? await fetchAnalysis(repository.owner, repository.name)
+          : await fetchAnalysisById(requested);
     } catch (error) {
       if (runRef.current !== run) return;
       if (!(error instanceof SavedInterviewFetchError) || error.kind !== "not_found") {
         setLookup({ status: "failed", message: error instanceof Error ? error.message : "" });
+        return;
+      }
+      // 사용자가 가리킨 분석이 사라졌습니다. 저장소 이름으로 대신 찾지 않고 알립니다. 다른 분석을
+      // 말없이 열면 사용자가 고른 것과 다른 후보 목록이 보입니다.
+      if (requested !== undefined) {
+        setLookup({ status: "missing" });
         return;
       }
     }
@@ -304,6 +346,12 @@ export function RepositoryAnalysisView({
     })();
   }
 
+  /** 가리킨 분석이 사라졌을 때 저장소를 처음부터 다시 분석합니다. 사용자가 눌러야 시작합니다. */
+  function analyzeAgain(): void {
+    requestedAnalysisIdRef.current = undefined;
+    void restart();
+  }
+
   function restart() {
     runRef.current += 1;
     // 다시 분석하면 앞 분석의 줄을 가리키는 식별자는 더 이상 이 화면의 결과가 아닙니다.
@@ -342,6 +390,15 @@ export function RepositoryAnalysisView({
           code="LOADING"
           label="Looking for a saved analysis…"
           sub="If this repository was analyzed before, the saved result opens instead of a new analysis."
+        />
+      ) : null}
+      {lookup.status === "missing" ? (
+        <StatusScreen
+          kind="empty"
+          code="NOT FOUND"
+          label="This saved analysis is no longer available."
+          sub="It may have been deleted after 90 days without opening it. You can analyze this repository again."
+          action={{ label: "Analyze this repository", onClick: analyzeAgain }}
         />
       ) : null}
       {lookup.status === "failed" ? (
@@ -427,7 +484,7 @@ function LoadingChecklist({
   loading,
   onSelectRepository,
 }: {
-  repository: RepositorySummary;
+  repository: AnalyzedRepository;
   loading: LoadingPhase;
   onSelectRepository: () => void;
 }) {

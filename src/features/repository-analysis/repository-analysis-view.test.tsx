@@ -19,6 +19,7 @@ import { SavedInterviewFetchError } from "@/features/saved-interviews/client";
 import type {
   createSavedInterview,
   fetchAnalysisByRepository,
+  fetchStoredAnalysis,
   saveRepositoryAnalysis,
 } from "@/features/saved-interviews/client";
 import { RepositoryAnalysisView } from "./repository-analysis-view";
@@ -376,6 +377,57 @@ describe("RepositoryAnalysisView 저장된 분석으로 열기", () => {
     // master-detail이라 목록 행과 상세가 같은 제목을 함께 그립니다.
     expect(await screen.findAllByText("저장된 경험 요약입니다.")).not.toHaveLength(0);
     expect(fetchAnalysis).toHaveBeenCalledTimes(2);
+  });
+
+  /**
+   * 저장된 인터뷰에서 그 분석으로 들어오는 경로입니다. 저장소 이름으로 찾으면 그 사이에 다시 분석한
+   * 결과가 있을 때 사용자가 보던 것과 다른 후보 목록이 열립니다.
+   */
+  it("분석 식별자를 받으면 저장소 이름으로 찾지 않는다", async () => {
+    const fetchAnalysis = noSavedAnalysis();
+    const fetchAnalysisById = vi
+      .fn<typeof fetchStoredAnalysis>()
+      .mockResolvedValue(storedAnalysis({ id: "a-old" }));
+
+    render(
+      <RepositoryAnalysisView
+        repository={{ owner: REPOSITORY.owner, name: REPOSITORY.name }}
+        contributionItems={[]}
+        analysisId="a-old"
+        onSelectRepository={onSelectRepository}
+        fetchAnalysis={fetchAnalysis}
+        fetchAnalysisById={fetchAnalysisById}
+      />
+    );
+
+    expect((await screen.findAllByText("저장된 경험 요약입니다."))[0]).toBeInTheDocument();
+    expect(fetchAnalysisById).toHaveBeenCalledWith("a-old");
+    expect(fetchAnalysis).not.toHaveBeenCalled();
+  });
+
+  /** 90일이 지나 지워진 분석입니다. 저장소의 다른 분석을 말없이 열면 고른 것과 다른 목록이 보입니다. */
+  it("가리킨 분석이 사라졌으면 다시 분석할지 묻는다", async () => {
+    const fetchAnalysisById = vi
+      .fn<typeof fetchStoredAnalysis>()
+      .mockRejectedValue(new SavedInterviewFetchError("not_found", "없습니다."));
+    mockState({ status: "loading", loading: { step: "commits" } });
+
+    render(
+      <RepositoryAnalysisView
+        repository={{ owner: REPOSITORY.owner, name: REPOSITORY.name }}
+        contributionItems={[]}
+        analysisId="a-gone"
+        onSelectRepository={onSelectRepository}
+        fetchAnalysis={noSavedAnalysis()}
+        fetchAnalysisById={fetchAnalysisById}
+      />
+    );
+
+    expect(await screen.findByText("This saved analysis is no longer available.")).toBeInTheDocument();
+    expect(analyzeMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Analyze this repository" }));
+    await waitFor(() => expect(analyzeMock).toHaveBeenCalled());
   });
 
   it("저장된 분석이 없으면 분석을 시작한다", async () => {
