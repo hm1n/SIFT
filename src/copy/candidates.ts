@@ -1,3 +1,4 @@
+import { CHOOSE_ANOTHER_REPOSITORY } from "./shared";
 import type { EvidenceSnapshotFailureReason, VerifiabilityStatus } from "@/features/experience-candidates/types";
 import type { WorkUnitSignal } from "@/features/experience-candidates/work-unit-score";
 import type { WorkUnitSelectionExclusionReason } from "@/features/experience-candidates/work-unit-selection";
@@ -76,7 +77,7 @@ export const CANDIDATE_DETAIL_COPY = {
   showLess: "간단히 보기",
   viewAll: (count: string) => `전체 ${count} 보기 →`,
   backToList: "← 후보 목록으로",
-  chooseAnotherRepository: "다른 Repository 선택",
+  chooseAnotherRepository: CHOOSE_ANOTHER_REPOSITORY,
   startInterview: "인터뷰 시작",
 } as const;
 

@@ -1,3 +1,4 @@
+import { CONNECTING_GITHUB, GITHUB_UNREACHABLE } from "./shared";
 /**
  * OAuth 라우트가 `?auth_error=`로 돌려보내는 오류 종류별 안내입니다. 종류는 콜백 라우트와 로그인
  * 라우트가 정합니다. 이슈 #94 Constraint대로 종류를 합쳐 한 문구로 만들지 않습니다.
@@ -15,9 +16,9 @@ export const LOGIN_COPY = {
   continueWithGitHub: "GitHub으로 계속하기",
   terms: "계속하면 이용약관에 동의하는 것입니다",
   /** 로그인 링크를 누른 뒤의 Loading입니다. `code`는 mono 상태 코드라 영어로 남습니다. */
-  authenticatingLabel: "GitHub에 연결 중…",
+  authenticatingLabel: CONNECTING_GITHUB,
   authenticatingSub: "GitHub에서 권한을 확인합니다.",
   /** `auth_error` 쿼리가 있을 때의 Error입니다. 원인별 문구는 `AUTH_ERROR_COPY`가 sub에 들어갑니다. */
-  errorLabel: "GitHub에 연결할 수 없습니다.",
+  errorLabel: GITHUB_UNREACHABLE,
   tryAgain: "다시 시도",
 } as const;

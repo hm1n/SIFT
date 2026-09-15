@@ -1,3 +1,10 @@
+import {
+  CHANGE_REPOSITORY,
+  CHOOSE_ANOTHER_REPOSITORY,
+  CONTINUE_INTERVIEW,
+  GITHUB_UNREACHABLE,
+  NO_REPOSITORY_SELECTED,
+} from "./shared";
 import type { GitHubFetchErrorKind } from "@/lib/github/errors";
 
 export const REPOSITORY_SELECT_COPY = {
@@ -8,7 +15,7 @@ export const REPOSITORY_SELECT_COPY = {
   noMatch: "검색 결과가 없습니다. 다른 검색어를 입력해 보세요.",
   contributionHelp: "프로젝트에서 어떤 일을 주로 맡았는지 알려주세요.",
   contributionPlaceholder: "실시간 채팅, 푸시 알림, TypeScript 전환 작업을 주로 담당했습니다.",
-  noSelection: "Repository를 선택하지 않았습니다.",
+  noSelection: NO_REPOSITORY_SELECTED,
   analyze: "분석하기",
   /** 목록을 읽는 중입니다. `code`는 mono 상태 코드라 영어로 남습니다. */
   loadingLabel: "GitHub에서 Repository 목록을 불러오는 중…",
@@ -16,7 +23,7 @@ export const REPOSITORY_SELECT_COPY = {
   emptyLabel: "불러온 Repository가 없습니다.",
   emptySub: "GitHub 계정에 Repository가 있는지 확인해 주세요.",
   /** 인증이 끊긴 경우입니다. 다시 시도로 풀리지 않아 다시 로그인을 안내합니다. */
-  authErrorLabel: "GitHub에 연결할 수 없습니다.",
+  authErrorLabel: GITHUB_UNREACHABLE,
   authErrorSub: "GitHub 세션이 더 이상 유효하지 않습니다. 다시 로그인해 주세요.",
   logInAgain: "다시 로그인",
   /** 그 밖의 조회 실패입니다. 제목은 고정하고 sub만 원인별로 갈립니다. */
@@ -57,8 +64,8 @@ export const CHECKLIST_STATUS_COPY = {
 
 export const ANALYSIS_COPY = {
   eyebrow: "Repository 분석 중",
-  changeRepository: "← Repository 변경",
-  chooseAnother: "다른 Repository 선택",
+  changeRepository: CHANGE_REPOSITORY,
+  chooseAnother: CHOOSE_ANOTHER_REPOSITORY,
   logInAgain: "GitHub에 다시 로그인",
   retryCandidates: "후보 생성 다시 시도",
   retryAll: "분석 전체 다시 시도",
@@ -233,5 +240,5 @@ export const LEAVE_CONFIRM_COPY = {
     "다시 이어갈 수 있습니다.",
   ].join("\n"),
   leave: "나가기",
-  stay: "인터뷰 계속하기",
+  stay: CONTINUE_INTERVIEW,
 } as const;

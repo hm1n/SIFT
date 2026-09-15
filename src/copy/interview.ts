@@ -1,3 +1,9 @@
+import {
+  BLOCK_EMPTY_ENDED,
+  BLOCK_EMPTY_PENDING,
+  CONTINUE_INTERVIEW,
+  LOAD_LATEST,
+} from "./shared";
 import type { BlockUpdateFetchErrorKind } from "@/features/experience-block/client";
 import type { EvidenceFileStatus } from "@/features/interview/evidence-files";
 import type {
@@ -75,7 +81,7 @@ export const STREAM_VIEW_COPY = {
   unsavedNotice: "마지막 답변이 저장되지 않았습니다.",
   retrySave: "다시 저장",
   staleNotice: "다른 탭에서 이 인터뷰가 변경됐습니다.",
-  loadLatest: "최신 내용 불러오기",
+  loadLatest: LOAD_LATEST,
   preparingFirst: "첫 질문을 준비하고 있습니다.",
   preparingNext: "다음 질문을 준비하고 있습니다.",
   viewNewMessages: "새 메시지 보기",
@@ -114,7 +120,7 @@ export const INTERVIEW_SCREEN_COPY = {
       ? "이미 보낸 답변 1개가 아직 저장되지 않아 함께 사라집니다."
       : `이미 보낸 답변 ${count}개가 아직 저장되지 않아 함께 사라집니다.`,
   leaveConfirm: "후보 목록으로",
-  stay: "인터뷰 계속하기",
+  stay: CONTINUE_INTERVIEW,
 } as const;
 
 /** PAAR 카드의 네 상태입니다. 상태 라벨과 빈 자리 문구를 함께 둡니다. */
@@ -131,15 +137,21 @@ export const PAAR_CARD_STATE_COPY = {
  * 화면의 목표로 정합니다.
  */
 export const PAAR_CARD_EMPTY_COPY = {
-  pending: "대화를 진행하면 AI가 이 블록을 채웁니다.",
+  pending: BLOCK_EMPTY_PENDING,
   collecting: "AI가 마지막 답변을 반영하고 있습니다.",
   filled: "",
-  unfilled: "이 블록은 채우지 못한 채 인터뷰가 끝났습니다.",
+  unfilled: BLOCK_EMPTY_ENDED,
 } as const;
 
 /**
  * 답변이 블록에 반영되지 않은 이유입니다. 다시 시도하면 풀릴 일인지 아닌지를 가리는 것이 목적입니다.
- * 분류를 다 적지 않습니다. 없는 분류에는 `PAAR_PANEL_COPY.updateUnfinished`가 나갑니다.
+ *
+ * 문구를 넣은 계기는 2026-09-15의 사고입니다. `.env`의 키 이름이 어긋나 블록 갱신이 매번 인증 실패로
+ * 끝났는데 화면에는 "반영되지 않았습니다"만 떠서, 설정 문제라는 것이 드러나기까지 인터뷰 두 개의
+ * 대화가 통째로 사라졌습니다. 저장이 이 요청에 얹혀 가므로 반영 실패는 곧 저장 실패입니다.
+ *
+ * 분류를 다 적지 않습니다. 없는 분류에는 `PAAR_PANEL_COPY.updateUnfinished`가 나갑니다. 틀린 원인을
+ * 단정하는 것보다 원인을 말하지 않는 편이 낫습니다.
  */
 export const BLOCK_UPDATE_ERROR_CAUSE: Partial<Record<BlockUpdateFetchErrorKind, string>> = {
   network: "서버에 연결하지 못했습니다.",
@@ -178,7 +190,7 @@ export const PAAR_PANEL_COPY = {
   endConfirmUnsaved:
     "인터뷰를 완료하면 답변 입력이 닫히고 대화를 읽기만 할 수 있습니다. 쓰던 답변은 사라집니다. 이 인터뷰는 저장되지 않으므로 PAAR 블록은 지금 상태로 남고 나중에 고칠 수 없습니다. 후보 목록으로 돌아가면 대화도 함께 사라지고 다시 이어갈 수 없습니다.",
   end: "인터뷰 완료",
-  stay: "인터뷰 계속하기",
+  stay: CONTINUE_INTERVIEW,
 } as const;
 
 /** 파일 행의 한 글자 표시 옆에 시각적으로 숨겨 두는 상태 이름입니다. */

@@ -1,8 +1,9 @@
+import { BLOCK_EMPTY_ENDED, BLOCK_EMPTY_PENDING, LOAD_LATEST, NO_INTERVIEWS } from "./shared";
 export const SAVED_INTERVIEW_LIST_COPY = {
   loading: "인터뷰를 불러오는 중…",
   error: "인터뷰를 불러오지 못했습니다.",
   retry: "다시 시도",
-  empty: "인터뷰가 없습니다. 경험 후보를 선택해 시작하세요.",
+  empty: NO_INTERVIEWS,
   deleteConfirm: "이 인터뷰를 삭제할까요? 되돌릴 수 없습니다.",
   cancel: "취소",
   delete: "삭제",
@@ -13,8 +14,8 @@ export const SAVED_INTERVIEW_SCREEN_COPY = {
   /** mono 섹션 라벨입니다. 레퍼런스 `TRANSLATIONS.ko`가 이 항목만은 한국어로 둡니다. */
   paarHeading: "PAAR 경험",
   /** PAAR 블록이 비어 있을 때입니다. 끝난 인터뷰인지에 따라 사용자가 할 수 있는 일이 다릅니다. */
-  blockEmptyEnded: "이 블록은 채우지 못한 채 인터뷰가 끝났습니다.",
-  blockEmptyPending: "대화를 진행하면 AI가 이 블록을 채웁니다.",
+  blockEmptyEnded: BLOCK_EMPTY_ENDED,
+  blockEmptyPending: BLOCK_EMPTY_PENDING,
   noCandidateAnalysis: "이 인터뷰에는 후보를 고를 때 사용한 분석이 저장되지 않았습니다.",
   noTopics: "이 인터뷰에는 기술 토픽이 없습니다.",
   commitNotIndexed: "불러온 커밋 목록에서 찾지 못했습니다.",
@@ -30,7 +31,7 @@ export const SAVED_INTERVIEW_SCREEN_COPY = {
   blockTooLarge: (maxBytes: string) => `이 블록은 ${maxBytes}바이트까지 저장할 수 있습니다.`,
   saveFailed: "편집한 내용이 저장되지 않았습니다. 블록에는 위에 보이는 내용이 그대로 남아 있습니다.",
   saveConflict: "다른 곳에서 인터뷰가 바뀌어 편집한 내용을 저장하지 않았습니다. 최신 내용을 불러온 뒤 다시 편집해 주세요.",
-  loadLatest: "최신 내용 불러오기",
+  loadLatest: LOAD_LATEST,
   saving: "저장 중…",
   save: "저장",
   cancel: "취소",
