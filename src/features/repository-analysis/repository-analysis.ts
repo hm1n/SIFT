@@ -159,32 +159,32 @@ function errorCopy(kind: Exclude<GitHubFetchErrorKind, "partial_failure">) {
   switch (kind) {
     case "rate_limit":
       return {
-        title: "GitHub API rate limit reached.",
-        message: "Wait for the limit to reset, then retry the full fetch.",
+        title: "GitHub API rate limit에 걸렸습니다.",
+        message: "제한이 풀릴 때까지 기다린 뒤 전체 조회를 다시 시도해 주세요.",
         recovery: "retry" as const,
       };
     case "auth_revoked":
       return {
-        title: "Please log in to GitHub again.",
-        message: "Your session has expired or access was revoked. Log in again to resume the fetch.",
+        title: "GitHub에 다시 로그인해 주세요.",
+        message: "세션이 만료되었거나 권한이 회수되었습니다. 다시 로그인하면 조회를 이어갈 수 있습니다.",
         recovery: "reauthenticate" as const,
       };
     case "repo_not_found":
       return {
-        title: "Repository not found.",
-        message: "Check whether the repository was deleted or renamed, and whether your current authentication can access it.",
+        title: "Repository를 찾을 수 없습니다.",
+        message: "Repository가 삭제되었거나 이름이 바뀌지 않았는지, 지금 인증으로 접근할 수 있는지 확인해 주세요.",
         recovery: "select_repository" as const,
       };
     case "network":
       return {
-        title: "Couldn't connect to GitHub.",
-        message: "Check your network connection, then retry the full fetch.",
+        title: "GitHub에 연결하지 못했습니다.",
+        message: "네트워크 연결을 확인한 뒤 전체 조회를 다시 시도해 주세요.",
         recovery: "retry" as const,
       };
     case "server_error":
       return {
-        title: "Couldn't load data from GitHub.",
-        message: "This may be a GitHub server issue. Wait a moment, then retry the full fetch.",
+        title: "GitHub에서 데이터를 불러오지 못했습니다.",
+        message: "GitHub 서버 문제일 수 있습니다. 잠시 후 전체 조회를 다시 시도해 주세요.",
         recovery: "retry" as const,
       };
   }
@@ -203,15 +203,15 @@ export function toAnalysisError(error: unknown, context: FailureContext): Analys
   const causeKind = underlyingKind(error);
   const range =
     context.step === "details" && context.total !== undefined
-      ? `Failed after collecting ${completed} of ${context.total} items during detail fetch.`
-      : `Failed after collecting ${completed} commits.`;
-  const causeGuidance = causeKind ? ` Original failure cause: ${errorCopy(causeKind).title}` : "";
+      ? `상세 조회 중 ${context.total}건 가운데 ${completed}건까지 모은 뒤 실패했습니다.`
+      : `커밋 ${completed}건까지 모은 뒤 실패했습니다.`;
+  const causeGuidance = causeKind ? ` 최초 실패 원인: ${errorCopy(causeKind).title}` : "";
 
   return {
     kind: "partial_failure",
     ...(causeKind === undefined ? {} : { causeKind }),
-    title: "Only part of the repository data was collected.",
-    message: `${range}${causeGuidance} Partial results aren't reused to avoid duplicates or omissions. Recovery restarts the fetch from the beginning.`,
+    title: "Repository 데이터를 일부만 수집했습니다.",
+    message: `${range}${causeGuidance} 중복이나 누락을 막기 위해 일부 결과는 재사용하지 않습니다. 복구하면 조회를 처음부터 다시 시작합니다.`,
     recovery: causeKind ? errorCopy(causeKind).recovery : "retry",
     completed,
     ...(context.total === undefined ? {} : { total: context.total }),
@@ -349,18 +349,18 @@ export async function generateCandidates(
 }
 
 const DIFF_REFETCH_GUIDANCE: Record<Exclude<GitHubFetchErrorKind, "partial_failure">, string> = {
-  rate_limit: "Try generating candidates again once the GitHub API rate limit resets.",
-  auth_revoked: "The sign-in expired or access was revoked. Sign in to GitHub again.",
-  repo_not_found: "Check whether the repository was deleted or renamed, then pick it again.",
-  network: "Check your network connection, then try generating candidates again.",
-  server_error: "This may be a GitHub server problem. Try generating candidates again in a moment.",
+  rate_limit: "GitHub API rate limit이 풀린 뒤 후보 생성을 다시 시도해 주세요.",
+  auth_revoked: "로그인이 만료되었거나 권한이 회수되었습니다. GitHub에 다시 로그인해 주세요.",
+  repo_not_found: "Repository가 삭제되었거나 이름이 바뀌지 않았는지 확인한 뒤 다시 선택해 주세요.",
+  network: "네트워크 연결을 확인한 뒤 후보 생성을 다시 시도해 주세요.",
+  server_error: "GitHub 서버 문제일 수 있습니다. 잠시 후 후보 생성을 다시 시도해 주세요.",
 };
 
 export function toCandidateGenerationError(error: unknown, stage: CandidateStage): AnalysisError {
   const fallback: AnalysisError = {
     kind: "contract_violation",
-    title: "Could not generate experience candidates",
-    message: "An unexpected error occurred. Try generating candidates again.",
+    title: "경험 후보를 만들지 못했습니다",
+    message: "예기치 못한 오류가 발생했습니다. 후보 생성을 다시 시도해 주세요.",
     recovery: "retry",
   };
   if (!(error instanceof CandidateRequestError)) return fallback;
@@ -380,8 +380,8 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
       return {
         kind: "diff_refetch_failure",
         causeKind,
-        title: "Could not re-fetch the diff and PR evidence for the candidates",
-        message: `Collecting the diff and PR info for the final judgment from GitHub failed. ${DIFF_REFETCH_GUIDANCE[causeKind]}`,
+        title: "후보의 diff와 PR 근거를 다시 조회하지 못했습니다",
+        message: `최종 판단에 쓸 diff와 PR 정보를 GitHub에서 수집하지 못했습니다. ${DIFF_REFETCH_GUIDANCE[causeKind]}`,
         recovery: errorCopy(causeKind).recovery,
       };
     }
@@ -389,8 +389,8 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
     case "json_parse":
       return {
         kind: "llm_schema_violation",
-        title: "The LLM response did not follow the output contract",
-        message: `${error.message} A result that breaks the contract is not used. Try generating candidates again.`,
+        title: "LLM 응답이 출력 계약을 따르지 않았습니다",
+        message: `${error.message} 계약을 어긴 결과는 쓰지 않습니다. 후보 생성을 다시 시도해 주세요.`,
         recovery: "retry",
       };
     case "unknown_sha":
@@ -398,8 +398,8 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
     case "unknown_file_path":
       return {
         kind: "llm_hallucination_rejected",
-        title: "Rejected a judgment that does not match the actual Repository evidence",
-        message: `${error.message} A result citing a commit or file that is not in the input is not used. Try generating candidates again.`,
+        title: "실제 Repository 근거와 맞지 않는 판단을 버렸습니다",
+        message: `${error.message} 입력에 없는 커밋이나 파일을 인용한 결과는 쓰지 않습니다. 후보 생성을 다시 시도해 주세요.`,
         recovery: "retry",
       };
     case "llm_timeout":
@@ -407,30 +407,30 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
       return stage === "stage_b"
         ? {
             kind: "llm_call_failure",
-            title: "Stage B exceeded its time budget",
+            title: "Stage B가 시간 예산을 넘겼습니다",
             message:
-              "The whole route, including the GitHub diff and PR lookups, went over its time budget. This may not be an LLM failure. Try generating candidates again in a moment.",
+              "GitHub diff·PR 조회를 포함한 라우트 전체가 시간 예산을 넘겼습니다. LLM 자체의 실패가 아닐 수 있습니다. 잠시 후 후보 생성을 다시 시도해 주세요.",
             recovery: "retry",
           }
         : {
             kind: "llm_call_failure",
-            title: "LLM analysis timed out",
-            message: "The analysis did not finish within the time limit. Try generating candidates again in a moment.",
+            title: "LLM 분석이 시간 안에 끝나지 않았습니다",
+            message: "제한 시간 안에 분석이 끝나지 않았습니다. 잠시 후 후보 생성을 다시 시도해 주세요.",
             recovery: "retry",
           };
     case "llm_rate_limit":
       return {
         kind: "llm_call_failure",
-        title: "The LLM call limit was reached",
-        message: "Try generating candidates again once the call limit resets.",
+        title: "LLM 호출 한도에 걸렸습니다",
+        message: "호출 한도가 풀린 뒤 후보 생성을 다시 시도해 주세요.",
         recovery: "retry",
       };
     case "llm_auth":
     case "llm_configuration":
       return {
         kind: "llm_call_failure",
-        title: "There is a problem with the LLM connection settings",
-        message: "This is an LLM authentication or configuration problem on the service side. Try generating candidates again in a moment.",
+        title: "LLM 연결 설정에 문제가 있습니다",
+        message: "서비스 쪽 LLM 인증이나 설정 문제입니다. 잠시 후 후보 생성을 다시 시도해 주세요.",
         recovery: "retry",
       };
     case "llm_network":
@@ -438,34 +438,34 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
     case "llm_failure":
       return {
         kind: "llm_call_failure",
-        title: "The LLM call failed",
-        message: `${error.message} Try generating candidates again in a moment.`,
+        title: "LLM 호출에 실패했습니다",
+        message: `${error.message} 잠시 후 후보 생성을 다시 시도해 주세요.`,
         recovery: "retry",
       };
     case "body_too_large":
       return {
         kind: "request_too_large",
-        title: "The analysis data exceeded the request limit",
+        title: "분석 데이터가 요청 한도를 넘었습니다",
         message:
-          "The collected commit evidence is over the size a single request can carry. Pick a repository with fewer commits.",
+          "수집한 커밋 근거가 한 번의 요청에 담을 수 있는 크기를 넘었습니다. 커밋 수가 더 적은 Repository를 선택해 주세요.",
         recovery: "select_repository",
       };
     case "fetch_network":
       return {
         kind: "network",
-        title: "Could not reach the candidate generation server",
-        message: "Check your network connection, then try generating candidates again.",
+        title: "후보 생성 서버에 연결하지 못했습니다",
+        message: "네트워크 연결을 확인한 뒤 후보 생성을 다시 시도해 주세요.",
         recovery: "retry",
       };
     case "invalid_request":
       return {
         kind: "contract_violation",
-        title: "The candidate generation request did not match the server contract",
-        message: `${error.message} The same input is not resent as is; the retry rebuilds from the Repository lookup. If this keeps happening it may be a defect you cannot work around.`,
+        title: "후보 생성 요청이 서버 계약과 맞지 않았습니다",
+        message: `${error.message} 같은 입력을 그대로 다시 보내지 않고, 다시 시도하면 Repository 조회부터 새로 만듭니다. 계속 반복되면 사용자가 우회할 수 없는 결함일 수 있습니다.`,
         recovery: "retry",
       };
     default:
       // invalid_response, invalid_json 등 사용자가 복구 방법을 고를 수 없는 오류입니다.
-      return { ...fallback, message: `${error.message} Try generating candidates again.` };
+      return { ...fallback, message: `${error.message} 후보 생성을 다시 시도해 주세요.` };
   }
 }

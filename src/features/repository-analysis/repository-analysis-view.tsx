@@ -28,12 +28,12 @@ const INITIAL_STATE: AnalysisState = { status: "idle" };
  * 갈라지므로 여기서만 매핑하고 `repository-analysis.ts`의 실제 단계 수·순서는 바꾸지 않습니다.
  */
 const CHECKLIST_STEPS = [
-  { key: "commits", label: "Fetching commit history" },
-  { key: "commit_details", label: "Fetching commit details" },
-  { key: "repository_metadata", label: "Fetching repository metadata" },
-  { key: "deriving", label: "Computing derived metrics" },
-  { key: "stage_a", label: "Selecting experience candidates" },
-  { key: "stage_b", label: "Finalizing candidates" },
+  { key: "commits", label: "커밋 히스토리 불러오는 중" },
+  { key: "commit_details", label: "커밋 상세 불러오는 중" },
+  { key: "repository_metadata", label: "Repository 메타데이터 불러오는 중" },
+  { key: "deriving", label: "파생 지표 계산 중" },
+  { key: "stage_a", label: "경험 후보 선별 중" },
+  { key: "stage_b", label: "후보 확정 중" },
 ] as const;
 
 type ChecklistKey = (typeof CHECKLIST_STEPS)[number]["key"];
@@ -45,9 +45,9 @@ type ChecklistKey = (typeof CHECKLIST_STEPS)[number]["key"];
  * 기존 `LoadingState`가 `role="status"`로 현재 단계 제목을 알리던 것과 같은 효과를 냅니다.
  */
 const CHECKLIST_STATUS_TEXT: Record<"done" | "active" | "pending", string> = {
-  done: "Completed:",
-  active: "In progress:",
-  pending: "Pending:",
+  done: "완료:",
+  active: "진행 중:",
+  pending: "대기:",
 };
 
 function checklistKeyFor(loading: LoadingPhase): ChecklistKey {
@@ -88,7 +88,7 @@ export interface RepositoryAnalysisViewProps {
  * 분석 로직과 후보 목록에는 `{owner, repo}`만 좁혀서 넘깁니다.
  *
  * 세션 여부는 `page.tsx`가 쿠키로 갈라 세션이 없으면 이 화면을 통째로 내리므로 여기서 세션을 다시 보지 않습니다.
- * 로그아웃 진입점은 둘입니다. 상단 헤더의 Sign out과 이 화면 오류 안내의 다시 로그인입니다. 둘 다 세션 삭제 뒤 라우터를 갱신해
+ * 로그아웃 진입점은 둘입니다. 상단 헤더의 로그아웃과 이 화면 오류 안내의 다시 로그인입니다. 둘 다 세션 삭제 뒤 라우터를 갱신해
  * 서버가 헤더와 화면을 함께 다시 그립니다. 내려간 뒤 늦게 도착하는 결과는 실행 번호로 걸러냅니다.
  */
 export function RepositoryAnalysisView({
@@ -216,7 +216,7 @@ export function RepositoryAnalysisView({
       {state.status === "error" ? (
         <ErrorState
           error={state.error}
-          retryLabel={state.retryPoint ? "Retry candidate generation" : "Retry full analysis"}
+          retryLabel={state.retryPoint ? "후보 생성 다시 시도" : "분석 전체 다시 시도"}
           onRetry={retry}
           onReauthenticate={reauthenticate}
           onSelectRepository={onSelectRepository}
@@ -259,7 +259,7 @@ function LoadingChecklist({
   return (
     <div className={styles.loadingScreen}>
       <header className={styles.header}>
-        <p className={styles.eyebrow}>Analyzing Repository</p>
+        <p className={styles.eyebrow}>Repository 분석 중</p>
         <h1>{repository.owner} / {repository.name}</h1>
         {meta ? <p className={styles.meta}>{meta}</p> : null}
       </header>
@@ -296,7 +296,7 @@ function LoadingChecklist({
       </div>
 
       <footer className={styles.footer}>
-        <button className={styles.changeRepository} type="button" onClick={onSelectRepository}>← Change repository</button>
+        <button className={styles.changeRepository} type="button" onClick={onSelectRepository}>← Repository 변경</button>
       </footer>
     </div>
   );
@@ -305,31 +305,31 @@ function LoadingChecklist({
 const EMPTY_COPY: Record<EmptyKind | "no_final_candidates", { code: string; label: string; description: string }> = {
   no_commits: {
     code: "No Commits",
-    label: "No commits found to analyze.",
-    description: "No commits were found on the default branch. Choose a repository with commit history.",
+    label: "분석할 커밋이 없습니다.",
+    description: "기본 브랜치에서 커밋을 찾지 못했습니다. 커밋 히스토리가 있는 Repository를 선택해 주세요.",
   },
   no_author_commits: {
     code: "No Author Commits",
-    label: "No commits authored by you were found.",
+    label: "직접 작성한 커밋을 찾지 못했습니다.",
     description:
-      "The default branch has commits, but none are authored by the current GitHub account. Choose a repository where you have authored commits.",
+      "기본 브랜치에 커밋은 있지만 지금 로그인한 GitHub 계정이 작성한 커밋이 없습니다. 직접 작성한 커밋이 있는 Repository를 선택해 주세요.",
   },
   no_analyzable_commits: {
     code: "No Analyzable Commits",
-    label: "This repository is difficult to analyze.",
+    label: "이 Repository는 분석하기 어렵습니다.",
     description:
-      "There are commits, but none remain once merge, docs, dependency, typo, and formatting commits are excluded. Choose a different repository with commit history.",
+      "커밋은 있지만 merge, 문서, 의존성, 오타, 포매팅 커밋을 제외하면 남는 커밋이 없습니다. 커밋 히스토리가 있는 다른 Repository를 선택해 주세요.",
   },
   no_stage_a_candidates: {
     code: "No Candidates",
-    label: "No experience candidates worth explaining were found.",
+    label: "설명할 가치가 있는 경험 후보를 찾지 못했습니다.",
     description:
-      "No commits matched your contribution items or stood out as worth explaining based on commit messages and change stats. Choose a different repository.",
+      "기여 항목과 맞거나 커밋 메시지·변경 규모로 보아 설명할 가치가 있다고 볼 만한 커밋이 없습니다. 다른 Repository를 선택해 주세요.",
   },
   no_final_candidates: {
     code: "No Final Candidates",
-    label: "Unable to produce final experience candidates.",
-    description: "We don't lower the bar or fill in candidates artificially. Choose a different repository.",
+    label: "최종 경험 후보를 만들지 못했습니다.",
+    description: "기준을 낮추거나 후보를 임의로 채우지 않습니다. 다른 Repository를 선택해 주세요.",
   },
 };
 
@@ -355,7 +355,7 @@ function EmptyState({
         code={copy.code}
         label={copy.label}
         sub={reason ? <>{reason} {copy.description}</> : copy.description}
-        action={{ label: "Choose a different repository", onClick: onSelectRepository }}
+        action={{ label: "다른 Repository 선택", onClick: onSelectRepository }}
       />
       {/* StageAExclusions는 <details>를 그리는 블록 엘리먼트라 StatusScreen의 sub(<p>) 안에는 못 넣고
           형제로 둡니다. StatusScreen 계약은 바꾸지 않습니다. */}
@@ -374,8 +374,8 @@ interface ErrorStateProps {
 
 /**
  * GitHub 조회 오류(rate_limit·auth_revoked·repo_not_found·network·server_error·partial_failure)의 `code`만
- * 여기서 정합니다. 후보 생성 오류(LLM·diff 재조회·Stage A/B)는 이번 이슈 범위 밖이라 `title`·`message`가
- * 아직 한국어이고, 코드도 일반 `ERROR`로 남겨 둡니다. 번역 범위 확장은 후속 이슈입니다.
+ * 여기서 정합니다. 후보 생성 오류(LLM·diff 재조회·Stage A/B)는 갈래가 많아 상태 코드를 따로 두지 않고
+ * 일반 `ERROR`로 남깁니다. 안내 문구는 `repository-analysis.ts`가 갈래마다 따로 씁니다.
  */
 function errorStatusCode(kind: string): string {
   switch (kind) {
@@ -398,9 +398,9 @@ function errorStatusCode(kind: string): string {
 
 function ErrorState({ error, retryLabel, onRetry, onReauthenticate, onSelectRepository }: ErrorStateProps) {
   const action = error.recovery === "reauthenticate"
-    ? { label: "Log in to GitHub again", onClick: onReauthenticate }
+    ? { label: "GitHub에 다시 로그인", onClick: onReauthenticate }
     : error.recovery === "select_repository"
-      ? { label: "Choose a different repository", onClick: onSelectRepository }
+      ? { label: "다른 Repository 선택", onClick: onSelectRepository }
       : { label: retryLabel, onClick: onRetry };
   return (
     <StatusScreen

@@ -38,20 +38,20 @@ type Mode =
 const RESUME_ERROR: Record<string, { code: string; label: string; sub: string }> = {
   not_found: {
     code: "ERROR / NOT FOUND",
-    label: "This interview is no longer available.",
-    sub: "It may have been deleted. Pick another one from Interviews.",
+    label: "이 인터뷰를 더 이상 찾을 수 없습니다.",
+    sub: "삭제되었을 수 있습니다. 왼쪽 Interviews에서 다른 인터뷰를 선택해 주세요.",
   },
   unauthorized: {
     code: "ERROR / AUTH",
-    label: "Your session has expired.",
-    sub: "Log in again to continue this interview.",
+    label: "세션이 만료되었습니다.",
+    sub: "이 인터뷰를 이어가려면 다시 로그인해 주세요.",
   },
 };
 
 const RESUME_ERROR_FALLBACK = {
   code: "ERROR / STORAGE",
-  label: "Couldn't open this interview.",
-  sub: "The server didn't answer. Try again in a moment.",
+  label: "이 인터뷰를 열지 못했습니다.",
+  sub: "서버가 응답하지 않았습니다. 잠시 후 다시 시도해 주세요.",
 };
 
 export function RepositoryFlow() {
@@ -207,10 +207,10 @@ export function RepositoryFlow() {
             aria-labelledby={leaveConfirmTitleId}
             aria-describedby={leaveConfirmDescId}
           >
-            <p id={leaveConfirmTitleId} className={styles.leaveConfirmTitle}>You have an unsaved answer.</p>
+            <p id={leaveConfirmTitleId} className={styles.leaveConfirmTitle}>저장되지 않은 답변이 있습니다.</p>
             <p id={leaveConfirmDescId} className={styles.leaveConfirmText}>
-              Leaving now drops the answer that hasn&apos;t been saved yet. Everything already saved stays in
-              Interviews on the left, and you can pick it up from there.
+              지금 나가면 아직 저장되지 않은 답변이 사라집니다. 이미 저장된 내용은 왼쪽 Interviews에
+              남아 있어 거기서 다시 이어갈 수 있습니다.
             </p>
             <div className={styles.leaveConfirmActions}>
               <Button
@@ -222,9 +222,9 @@ export function RepositoryFlow() {
                   run();
                 }}
               >
-                Leave
+                나가기
               </Button>
-              <Button variant="secondary" onClick={() => setPendingNavigation(null)}>Continue the interview</Button>
+              <Button variant="secondary" onClick={() => setPendingNavigation(null)}>인터뷰 계속하기</Button>
             </div>
           </div>
         </div>
@@ -282,7 +282,7 @@ function ResumedInterview({
   onEnded: () => void;
 }) {
   if (state.status === "loading") {
-    return <StatusScreen kind="loading" code="Loading Interview" label="Opening the saved interview..." sub="" />;
+    return <StatusScreen kind="loading" code="Loading Interview" label="저장된 인터뷰를 여는 중..." sub="" />;
   }
 
   if (state.status === "error") {
@@ -293,7 +293,7 @@ function ResumedInterview({
         code={copy.code}
         label={copy.label}
         sub={copy.sub}
-        action={{ label: "Try again", onClick: onRetry }}
+        action={{ label: "다시 시도", onClick: onRetry }}
       />
     );
   }
@@ -318,9 +318,9 @@ function ResumedInterview({
       <StatusScreen
         kind="error"
         code="ERROR / STORAGE"
-        label="Couldn't open this interview."
-        sub="The saved evidence or blocks can no longer be read. You can still review what was saved."
-        action={{ label: "Back to the summary", onClick: onBackToReview }}
+        label="이 인터뷰를 열지 못했습니다."
+        sub="저장된 근거나 블록을 더 이상 읽을 수 없습니다. 저장된 내용은 계속 확인할 수 있습니다."
+        action={{ label: "요약으로 돌아가기", onClick: onBackToReview }}
       />
     );
   }

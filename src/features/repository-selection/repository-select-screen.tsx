@@ -21,15 +21,15 @@ type ListState =
   | { status: "ready"; repositories: RepositorySummary[] };
 
 /**
- * 목록 조회 실패 안내입니다. 제목은 디자인의 `Unable to load repositories.`로 고정하고 sub만 원인별로 갈립니다.
- * 인증 취소는 Try again으로 풀리지 않으므로 로그인 화면의 ERROR / AUTH 형식으로 다시 로그인을 안내합니다.
+ * 목록 조회 실패 안내입니다. 제목은 한 문장으로 고정하고 sub만 원인별로 갈립니다.
+ * 인증 취소는 다시 시도로 풀리지 않으므로 로그인 화면의 ERROR / AUTH 형식으로 다시 로그인을 안내합니다.
  */
 const ERROR_SUB: Record<Exclude<GitHubFetchErrorKind, "auth_revoked">, string> = {
-  rate_limit: "GitHub rate limit reached. Wait a moment and try again.",
-  network: "We couldn't reach the server. Check your connection and try again.",
-  repo_not_found: "GitHub returned an error.",
-  server_error: "GitHub returned an error.",
-  partial_failure: "GitHub returned an error.",
+  rate_limit: "GitHub rate limit에 걸렸습니다. 잠시 후 다시 시도해 주세요.",
+  network: "서버에 연결하지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.",
+  repo_not_found: "GitHub이 오류를 돌려주었습니다.",
+  server_error: "GitHub이 오류를 돌려주었습니다.",
+  partial_failure: "GitHub이 오류를 돌려주었습니다.",
 };
 
 export interface RepositorySelectScreenProps {
@@ -90,7 +90,7 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
   }
 
   if (list.status === "loading") {
-    return <StatusScreen kind="loading" code="Loading Repositories" label="Fetching repositories from GitHub..." sub="" />;
+    return <StatusScreen kind="loading" code="Loading Repositories" label="GitHub에서 Repository 목록을 불러오는 중..." sub="" />;
   }
 
   if (list.status === "error") {
@@ -99,9 +99,9 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
         <StatusScreen
           kind="error"
           code="ERROR / AUTH"
-          label="Unable to connect to GitHub."
-          sub="Your GitHub session is no longer valid. Log in again to continue."
-          action={{ label: "Log in again", onClick: () => void reauthenticate() }}
+          label="GitHub에 연결할 수 없습니다."
+          sub="GitHub 세션이 더 이상 유효하지 않습니다. 다시 로그인해 주세요."
+          action={{ label: "다시 로그인", onClick: () => void reauthenticate() }}
         />
       );
     }
@@ -109,10 +109,10 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
       <StatusScreen
         kind="error"
         code="ERROR / GITHUB"
-        label="Unable to load repositories."
+        label="Repository 목록을 불러올 수 없습니다."
         sub={ERROR_SUB[list.kind]}
         action={{
-          label: "Try again",
+          label: "다시 시도",
           onClick: () => {
             setList({ status: "loading" });
             setAttempt((count) => count + 1);
@@ -128,8 +128,8 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
       <StatusScreen
         kind="empty"
         code="No Repositories"
-        label="No repositories available for analysis."
-        sub="Make sure your GitHub account has at least one repository."
+        label="분석할 수 있는 Repository가 없습니다."
+        sub="GitHub 계정에 Repository가 하나 이상 있는지 확인해 주세요."
       />
     );
   }
@@ -172,8 +172,8 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
   return (
     <div className={styles.screen}>
       <header className={styles.header}>
-        <p className={styles.eyebrow}>Select Repository</p>
-        <h1 className={styles.title}>Choose a repository to analyze.</h1>
+        <p className={styles.eyebrow}>Repository 선택</p>
+        <h1 className={styles.title}>분석할 Repository를 선택하세요.</h1>
       </header>
 
       <div className={styles.body}>
@@ -189,13 +189,13 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
                 className={styles.search}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search repositories..."
-                aria-label="Search repositories"
+                placeholder="Repository 검색..."
+                aria-label="Repository 검색"
                 autoComplete="off"
               />
             </div>
             {filtered.length === 0 ? (
-              <p className={styles.noMatch}>No repositories match your search.</p>
+              <p className={styles.noMatch}>검색 결과가 없습니다. 다른 키워드로 다시 검색해 보세요.</p>
             ) : (
               <div role="radiogroup" aria-label="Repositories">
                 {filtered.map((repository, index) => {
@@ -239,14 +239,14 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
               <span className={styles.label} id={labelId}>Your Contribution</span>
               <span className={styles.optional}>Optional</span>
             </div>
-            <p className={styles.contributionCopy} id={copyId}>Tell us what you mainly contributed to this project.</p>
+            <p className={styles.contributionCopy} id={copyId}>이 프로젝트에서 주로 기여한 내용을 알려주세요.</p>
             <div className={styles.textareaFrame}>
               <textarea
                 ref={textareaRef}
                 className={styles.textarea}
                 value={contribution}
                 onChange={(event) => setContribution(event.target.value)}
-                placeholder="e.g. I mainly built the realtime chat, push notifications, and the TypeScript migration."
+                placeholder="예: 실시간 채팅, 푸시 알림, TypeScript 전환 작업을 주로 담당했습니다."
                 rows={3}
                 aria-labelledby={labelId}
                 aria-describedby={copyId}
@@ -257,13 +257,13 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
       </div>
 
       <footer className={styles.footer}>
-        <span className={styles.selection}>{selected ? `${selected.owner} / ${selected.name}` : "No repository selected"}</span>
+        <span className={styles.selection}>{selected ? `${selected.owner} / ${selected.name}` : "선택된 Repository 없음"}</span>
         <Button
           variant="primary"
           disabled={selected === null}
           onClick={() => selected && onAnalyze(selected, parseContributionItems(contribution))}
         >
-          Analyze <span className={styles.arrow} aria-hidden="true">→</span>
+          분석하기 <span className={styles.arrow} aria-hidden="true">→</span>
         </Button>
       </footer>
     </div>
