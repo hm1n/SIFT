@@ -3,32 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { trackEvent } from "@/features/analytics/events";
+import { AUTH_ERROR_COPY, toAuthErrorParam } from "./auth-error";
 import { LoginLink, useAuthTransition } from "@/components/shell/auth-transition";
 import { SiftMark } from "@/components/shell/sift-mark";
 import { StatusScreen } from "@/components/shell/status-screen";
 import styles from "./login-screen.module.css";
-
-/**
- * OAuth 라우트가 `?auth_error=`로 돌려보내는 오류 종류별 안내입니다. 종류는 콜백 라우트와 로그인 라우트가 정합니다.
- * 이슈 #94 Constraint대로 종류를 합쳐 한 문구로 만들지 않습니다. 제목은 디자인의 한 문장으로 고정하고 여기 문구를 sub에 씁니다.
- */
-export const AUTH_ERROR_COPY: Record<string, string> = {
-  access_denied: "You cancelled the GitHub authorization. You can log in again.",
-  state_mismatch: "We couldn't verify the login request. Start the login again from the beginning.",
-  exchange_failed: "GitHub authentication didn't complete. Try again in a moment.",
-  config_missing: "The server has no GitHub login configuration. A server administrator needs to complete the setup.",
-};
-
-/**
- * 계측에 실을 `auth_error` 값입니다. 표에 없는 값은 `unknown`으로 묶습니다.
- *
- * 주소창의 쿼리는 아무 값이나 들어올 수 있습니다. 그대로 보내면 GA4 디멘션에 임의 문자열이 쌓여
- * 분류로 쓸 수 없게 되고 파라미터 값 100자 제한도 보장되지 않습니다. 판정 근거를 화면 안내표와 같은
- * `AUTH_ERROR_COPY`에 두어 분류가 늘 때 둘이 함께 늘어나게 합니다.
- */
-export function toAuthErrorParam(value: string): string {
-  return Object.hasOwn(AUTH_ERROR_COPY, value) ? value : "unknown";
-}
 
 export interface LoginScreenProps {
   /** `page.tsx`가 `searchParams.auth_error`에서 읽어 넘기는 오류 종류입니다. 표에 없는 값은 안내로 취급하지 않습니다. */

@@ -1,5 +1,6 @@
 import { AnalyticsSession, type LoginResult } from "@/features/analytics/analytics-session";
-import { LoginScreen, toAuthErrorParam } from "@/features/auth/login-screen";
+import { toAuthErrorParam } from "@/features/auth/auth-error";
+import { LoginScreen } from "@/features/auth/login-screen";
 import { RepositoryFlow } from "@/features/repository-selection/repository-flow";
 import { toAnalyticsUserId } from "@/lib/analytics/user-id";
 import { GITHUB_SESSION_COOKIE, decryptGitHubSession } from "@/lib/github/auth-session";
