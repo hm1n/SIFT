@@ -38,13 +38,12 @@ export function RepositoryFlow() {
    *
    * 재시도는 같은 `flow_id`를 그대로 씁니다. 실패한 분석과 그 재시도는 한 번의 분석 시도이고,
    * 저장소를 바꾸면 선택이 비워지면서 다음 분석에 새 값이 발급됩니다.
+   *
+   * `flow_id` 자체는 여기서 만들지 않습니다. 계측이 쓰는 값을 화면이 만들면 그 생성이 실패할 때
+   * 예외가 계측 밖으로 나와 분석 시작을 막습니다.
    */
   function startAnalysis(summary: RepositorySummary, contributionItems: readonly string[]) {
-    startAnalysisFlow({
-      flowId: crypto.randomUUID(),
-      repoVisibility: summary.visibility,
-      repoLanguage: summary.language,
-    });
+    startAnalysisFlow({ repoVisibility: summary.visibility, repoLanguage: summary.language });
     trackEvent({ name: "analysis_requested", contribution_item_count: contributionItems.length });
     setSelection({ summary, contributionItems });
   }

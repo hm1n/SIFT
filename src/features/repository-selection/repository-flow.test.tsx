@@ -94,11 +94,27 @@ describe("RepositoryFlow", () => {
     fireEvent.click(screen.getByRole("button", { name: /Analyze/ }));
 
     await waitFor(() => expect(startAnalysisFlow).toHaveBeenCalledTimes(1));
-    const flow = startAnalysisFlow.mock.calls[0]?.[0];
-    expect(flow).toMatchObject({ repoVisibility: "public", repoLanguage: "TypeScript" });
-    expect(flow.flowId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(startAnalysisFlow).toHaveBeenCalledWith({ repoVisibility: "public", repoLanguage: "TypeScript" });
     expect(trackEvent).toHaveBeenCalledWith({ name: "analysis_requested", contribution_item_count: 2 });
     expect(JSON.stringify(trackEvent.mock.calls)).not.toContain("hello-world");
+  });
+
+  /**
+   * `flow_id`를 만드는 `crypto.randomUUID`는 보안 컨텍스트에만 있어서, LAN 주소로 띄운 개발
+   * 서버에서는 없습니다. 이 화면이 그 값을 직접 만들면 예외가 계측 밖으로 나와 `setSelection`에
+   * 닿지 못하고 Analyze 버튼이 죽습니다. 값을 만드는 일은 계측 쪽에 있어야 합니다.
+   */
+  it("flow_id를 만들 수 없어도 분석을 시작한다", async () => {
+    const randomUUID = vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(() => {
+      throw new TypeError("crypto.randomUUID is not a function");
+    });
+    analyzeMock.mockImplementation(async (_repo, _items, onStateChange) => onStateChange({ status: "empty", kind: "no_commits" }));
+    render(<RepositoryFlow />);
+    fireEvent.click(await screen.findByRole("radio", { name: /hello-world/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Analyze/ }));
+
+    expect(await screen.findByText("No commits found to analyze.")).toBeInTheDocument();
+    randomUUID.mockRestore();
   });
 
   /**

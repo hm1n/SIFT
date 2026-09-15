@@ -94,18 +94,23 @@ export function setAnalyticsUser(userId: string | null): void {
  *
  * 발급 시점을 저장소를 고른 순간이 아니라 분석을 시작하는 순간으로 둡니다. "분석 한 번을 묶는
  * 값"이라는 정의에 맞고, 화면 순서가 바뀌어도 분석 시작이라는 액션은 남기 때문입니다.
+ *
+ * `flow_id`를 부르는 쪽에서 받지 않고 여기서 만듭니다. `crypto.randomUUID`는 보안 컨텍스트
+ * (HTTPS와 localhost)에만 있어서, LAN 주소로 띄운 개발 서버처럼 없는 곳에서는 부르는 순간
+ * 던집니다. 화면 쪽에서 만들면 그 예외가 이 모듈의 try/catch 바깥이라 분석 시작 자체를 막습니다.
+ * 계측이 만드는 값은 계측 안에서 만들고, 못 만들면 이 분석에는 `flow_id`가 붙지 않습니다.
  */
-export function startAnalysisFlow(flow: {
-  flowId: string;
-  repoVisibility: string;
-  repoLanguage: string | null;
-}): void {
-  safelySetGaParams({
-    flow_id: flow.flowId,
-    repo_visibility: flow.repoVisibility,
-    // 언어가 없는 저장소가 있습니다. 빈 문자열 대신 파라미터를 지워 값 없음과 값 있음을 가릅니다.
-    repo_language: flow.repoLanguage,
-  });
+export function startAnalysisFlow(flow: { repoVisibility: string; repoLanguage: string | null }): void {
+  try {
+    setGaParams({
+      flow_id: crypto.randomUUID(),
+      repo_visibility: flow.repoVisibility,
+      // 언어가 없는 저장소가 있습니다. 빈 문자열 대신 파라미터를 지워 값 없음과 값 있음을 가릅니다.
+      repo_language: flow.repoLanguage,
+    });
+  } catch {
+    // 계측이 죽는 것이 화면이 죽는 것보다 낫습니다.
+  }
 }
 
 export function clearAnalysisFlow(): void {

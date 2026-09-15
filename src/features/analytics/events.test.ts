@@ -84,9 +84,9 @@ describe("공통 파라미터", () => {
   });
 
   it("sets the flow id and repository context when an analysis starts", () => {
-    startAnalysisFlow({ flowId: "flow-1", repoVisibility: "private", repoLanguage: "TypeScript" });
+    startAnalysisFlow({ repoVisibility: "private", repoLanguage: "TypeScript" });
     expect(setGaParams).toHaveBeenCalledWith({
-      flow_id: "flow-1",
+      flow_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
       repo_visibility: "private",
       repo_language: "TypeScript",
     });
@@ -94,8 +94,21 @@ describe("공통 파라미터", () => {
 
   /** 언어가 없는 저장소가 있습니다. 빈 문자열 대신 파라미터를 지워 값 없음과 값 있음을 가릅니다. */
   it("clears the language when the repository has none", () => {
-    startAnalysisFlow({ flowId: "flow-1", repoVisibility: "public", repoLanguage: null });
+    startAnalysisFlow({ repoVisibility: "public", repoLanguage: null });
     expect(setGaParams).toHaveBeenCalledWith(expect.objectContaining({ repo_language: null }));
+  });
+
+  /**
+   * `crypto.randomUUID`는 보안 컨텍스트에만 있습니다. LAN 주소로 띄운 개발 서버에는 없고, 그때
+   * 던지는 예외가 이 함수 밖으로 나가면 분석 시작 자체가 막힙니다.
+   */
+  it("does not throw when the flow id cannot be generated", () => {
+    const randomUUID = vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(() => {
+      throw new TypeError("crypto.randomUUID is not a function");
+    });
+    expect(() => startAnalysisFlow({ repoVisibility: "public", repoLanguage: null })).not.toThrow();
+    expect(setGaParams).not.toHaveBeenCalled();
+    randomUUID.mockRestore();
   });
 
   /** 비우지 않으면 다음 분석을 시작하기 전의 이벤트가 지난 분석의 `flow_id`를 달고 나갑니다. */
@@ -109,7 +122,7 @@ describe("공통 파라미터", () => {
       throw new Error("transport is broken");
     });
     expect(() => setAnalyticsUser("hashed-user")).not.toThrow();
-    expect(() => startAnalysisFlow({ flowId: "f", repoVisibility: "public", repoLanguage: null })).not.toThrow();
+    expect(() => startAnalysisFlow({ repoVisibility: "public", repoLanguage: null })).not.toThrow();
     expect(() => clearAnalysisFlow()).not.toThrow();
     setGaParams.mockReset();
   });
