@@ -193,11 +193,11 @@ describe("RepositorySelectScreen 선택과 Analyze", () => {
     expect(onAnalyze).toHaveBeenCalledWith(REPOSITORIES[2], []);
   });
 
-  it("기여 항목 섹션은 라벨, OPTIONAL, 한국어 안내와 placeholder를 갖고 목록 카드 밖에 있다", async () => {
+  it("기여 항목 섹션은 라벨, OPTIONAL, 안내와 placeholder를 갖고 목록 카드 밖에 있다", async () => {
     await renderReady();
     const textarea = screen.getByRole("textbox", { name: "Your Contribution" });
-    expect(textarea).toHaveAttribute("placeholder", "실시간 채팅, 푸시 알림, TypeScript 전환 작업을 주로 담당했습니다.");
-    expect(textarea).toHaveAccessibleDescription("프로젝트에서 주로 기여한 내용을 알려주세요.");
+    expect(textarea).toHaveAttribute("placeholder", "e.g. I mainly built the realtime chat, push notifications, and the TypeScript migration.");
+    expect(textarea).toHaveAccessibleDescription("Tell us what you mainly contributed to this project.");
     expect(screen.getByText("Optional")).toBeInTheDocument();
     expect(screen.getByRole("radiogroup").contains(textarea)).toBe(false);
   });

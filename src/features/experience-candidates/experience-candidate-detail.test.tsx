@@ -215,7 +215,7 @@ describe("ExperienceCandidateDetail", () => {
     expect(screen.getByText("Representative commit not found in the commit index.")).toBeInTheDocument();
     expect(screen.getAllByText("2 commits").length).toBeGreaterThan(0);
 
-    const failedRow = screen.getByRole("link", { name: `커밋 색인 실패 · ${candidate.sha.slice(0, 7)}` }).closest("li");
+    const failedRow = screen.getByRole("link", { name: `Commit not indexed · ${candidate.sha.slice(0, 7)}` }).closest("li");
     expect(failedRow).not.toHaveTextContent("Verified");
   });
 

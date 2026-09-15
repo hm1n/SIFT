@@ -183,3 +183,54 @@
     padding-right: 16px;
   }
 }
+
+/* 저장된 근거의 커밋 목록입니다. 디자인 원본 `SessionReviewScreen`의 Repository evidence 표입니다. */
+.commits {
+  display: grid;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  list-style: none;
+  overflow: hidden;
+}
+
+.commit {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-muted);
+}
+
+.commit:last-child {
+  border-bottom: 0;
+}
+
+.commitBadge {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  color: var(--color-muted-foreground);
+}
+
+.commitMain {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.commitTitle {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-foreground);
+  overflow-wrap: anywhere;
+}
+
+.commitMeta {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  color: var(--color-muted-foreground);
+}

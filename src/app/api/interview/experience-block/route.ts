@@ -134,18 +134,18 @@ export async function handleExperienceBlockUpdate(
     githubUserId = getGitHubSessionFromRequest(request).githubUserId;
   } catch (error) {
     if (error instanceof GitHubFetchError && error.kind === "auth_revoked") {
-      return errorResponse("unauthorized", "GitHub 인증 세션이 필요합니다.");
+      return errorResponse("unauthorized", "A GitHub sign-in session is required.");
     }
     // 두 갈래를 남기는 이유는 `stream/route.ts`와 같습니다. 세션 쿠키가 있는데 암호화 키 설정이
     // 없거나 32바이트가 아니면 `server_error`가 그대로 올라옵니다.
-    return errorResponse("server_error", "서버 설정 문제로 블록 갱신을 시작하지 못했습니다.");
+    return errorResponse("server_error", "A server configuration problem stopped the block update from starting.");
   }
 
   const declaredLength = Number(request.headers.get("content-length"));
   if (declaredLength > MAX_EXPERIENCE_BLOCK_BODY_BYTES) {
     return errorResponse(
       "body_too_large",
-      `요청 본문은 ${Math.floor(MAX_EXPERIENCE_BLOCK_BODY_BYTES / 1024)}KB 이하여야 합니다.`
+      `The request body must be ${Math.floor(MAX_EXPERIENCE_BLOCK_BODY_BYTES / 1024)}KB or smaller.`
     );
   }
 
@@ -153,7 +153,7 @@ export async function handleExperienceBlockUpdate(
   if (new TextEncoder().encode(text).byteLength > MAX_EXPERIENCE_BLOCK_BODY_BYTES) {
     return errorResponse(
       "body_too_large",
-      `요청 본문은 ${Math.floor(MAX_EXPERIENCE_BLOCK_BODY_BYTES / 1024)}KB 이하여야 합니다.`
+      `The request body must be ${Math.floor(MAX_EXPERIENCE_BLOCK_BODY_BYTES / 1024)}KB or smaller.`
     );
   }
 
@@ -161,7 +161,7 @@ export async function handleExperienceBlockUpdate(
   try {
     json = JSON.parse(text);
   } catch {
-    return errorResponse("invalid_json", "요청 본문은 JSON이어야 합니다.");
+    return errorResponse("invalid_json", "The request body must be JSON.");
   }
 
   const store = options.store ?? neonStore();
@@ -211,7 +211,7 @@ export async function handleExperienceBlockUpdate(
       AbortSignal.any([request.signal, AbortSignal.timeout(INTERVIEW_QUESTION_TOTAL_TIMEOUT_MS)])
     );
   } catch (error) {
-    const mapped = mapInterviewLlmError(error, "블록 갱신");
+    const mapped = mapInterviewLlmError(error, "Block update");
     return errorResponse(mapped.kind, mapped.message);
   }
 
@@ -219,7 +219,7 @@ export async function handleExperienceBlockUpdate(
   if (!result.ok) {
     return errorResponse(
       "block_update_rejected",
-      `모델 출력이 검증을 통과하지 못했습니다: ${result.errors.map((e) => `${e.kind}(${e.detail})`).join(", ")}`
+      `The model output did not pass validation: ${result.errors.map((e) => `${e.kind}(${e.detail})`).join(", ")}`
     );
   }
 

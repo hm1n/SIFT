@@ -6,13 +6,15 @@ import {
   REPOSITORY_VERIFIED_NOTICE,
 } from "@/features/experience-candidates/evidence-verifiability";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
-import { InterviewEvidencePanel } from "@/features/interview/interview-evidence-panel";
 import type { StoredInterviewPayload } from "./payload";
 import styles from "./saved-interview-screen.module.css";
 
 /**
  * 저장된 인터뷰를 이어가기 전에 보는 화면입니다(이슈 #115). 디자인 파일 `App.tsx`의
  * `SessionReviewScreen`을 옮겼습니다.
+ *
+ * 근거는 커밋 목록으로만 보입니다. 코드와 diff를 보여 주는 `CodePanel`은 인터뷰 화면의 왼쪽 열이고,
+ * 여기서 같은 것을 한 번 더 그리면 이어가기 전에 볼 것과 이어간 뒤에 볼 것이 겹칩니다.
  *
  * 대화로 곧바로 들어가지 않는 이유는 원본 주석에 있습니다. 며칠 전에 하던 대화 한가운데로 떨어지면
  * 무엇을 이야기하던 중이었는지 모른 채 답을 써야 합니다. 그래서 고른 경험이 무엇이었고 어디까지
@@ -120,7 +122,23 @@ export function SavedInterviewScreen({ interview, onResume }: SavedInterviewScre
             <p id="saved-evidence-heading" className={styles.sectionEyebrow}>Repository evidence</p>
             <p className={styles.notice}>{REPOSITORY_VERIFIED_NOTICE}</p>
             {snapshot ? (
-              <InterviewEvidencePanel snapshot={snapshot} />
+              <ul className={styles.commits}>
+                {[snapshot.representativeCommit, ...snapshot.relatedCommits].map((commit) => (
+                  <li key={commit.sha} className={styles.commit}>
+                    <span className={styles.commitBadge}>
+                      {commit.pullRequests.length > 0 ? `PR #${commit.pullRequests[0].number}` : commit.sha.slice(0, 7)}
+                    </span>
+                    <span className={styles.commitMain}>
+                      <span className={styles.commitTitle}>
+                        {commit.title ?? "Not found in the commit index."}
+                      </span>
+                      <span className={styles.commitMeta}>
+                        {commit.files.length === 1 ? "1 file" : `${commit.files.length} files`}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
             ) : (
               <p className={styles.notice}>The saved evidence can no longer be read.</p>
             )}

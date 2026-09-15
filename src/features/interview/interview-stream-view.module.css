@@ -1,98 +1,178 @@
-.stream { display: grid; gap: 12px; margin-top: 24px; }
-.log { display: grid; gap: 4px; max-height: 60vh; overflow-y: auto; border: 1px solid #ecebf0; border-radius: 12px; padding: 16px; background: #fff; overflow-wrap: anywhere; }
-.log:focus-visible { outline: 3px solid rgba(109, 99, 232, .25); outline-offset: 2px; }
-.preparing { color: #777580; font-size: 14px; }
-.message { display: grid; gap: 10px; border-top: 1px solid #f2f1f6; padding: 12px 0; color: #34333d; font-size: 15px; line-height: 1.7; }
-.message:first-child { border-top: 0; padding-top: 0; }
-.roleLabel { color: #777580; font-size: 12px; font-weight: 700; letter-spacing: .02em; }
-.message[data-role="answer"] { border-left: 3px solid #d9d6f2; padding-left: 12px; }
-.message[data-role="answer"] .roleLabel { color: #5b52d6; }
-.message h2 { color: #1f1e28; font-size: 18px; letter-spacing: -.02em; }
+/*
+ * 인터뷰 워크스페이스의 가운데 대화 열입니다.
+ *
+ * #98은 3열 배치만 하고 이 파일에서는 높이 규칙 두 줄만 고쳤습니다. 그 결과 헤더와 코드 패널과
+ * PAAR가 토큰·영어인 화면에서 이 열만 `#5b52d6` 계열 보라색과 한국어로 남아 한 화면 안에서
+ * 갈렸습니다. 그래서 색 52개를 전부 `globals.css` 토큰으로 옮겼습니다. 문구는
+ * `interview-stream-view.tsx`에서 함께 영어로 옮겼습니다. 후속 backlog 22번이 여기서 닫힙니다.
+ *
+ * 타이포그래피와 버튼 모양은 디자인 원본(`Chat Interface Design/src/App.tsx`의 `MessageRow`·
+ * `MessageContent`·composer)과 먼저 개편된 `experience-candidate-detail.module.css`를 따릅니다.
+ * 오류 배경과 글자색만 토큰 9종 밖인데, 확인 실패를 알리는 의미색이라 그 파일의 `.selectionError`와
+ * 같은 값을 씁니다.
+ *
+ * 높이 규칙은 그대로입니다. 로그가 자기 안에서 스크롤하고, 자동 스크롤(`use-auto-scroll.ts`)과
+ * 낭독 경계와 `InterviewMessage`의 memo 경계는 건드리지 않았습니다.
+ */
+/*
+ * `position: relative`는 스크린리더 전용 문구(`.visuallyHidden` 계열) 때문입니다. 그 요소들은
+ * `position: absolute`인데 위치 잡을 조상이 없으면 초기 컨테이닝 블록을 기준으로 놓입니다. 그러면
+ * 스크롤 영역 안에 있어도 잘리지 않고, 정적 위치가 아래로 갈수록 문서 자체가 길어져 화면 아래에
+ * 빈 스크롤 영역이 생깁니다(2026-09-15 실측: body.scrollHeight 422, html.scrollHeight 1036).
+ */
+.stream { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+
+/*
+ * 로그는 열 전체를 씁니다. 테두리와 라운드와 패딩을 두지 않습니다. 여백은 각 메시지 행이 갖고,
+ * 행 구분선이 열 끝까지 그어집니다. 디자인 원본의 가운데 열 구조입니다. 카드로 감싸면 열 안에 또
+ * 하나의 상자가 생겨 구분선이 중간에서 끊깁니다.
+ *
+ * `align-content: start`가 있어야 합니다. grid의 기본값 `stretch`는 컨테이너에 남는 높이를 자동 크기
+ * 행에 나눠 줍니다. #98에서 `max-height: 60vh`를 걷어내고 로그가 열 높이를 채우게 되자 남는 높이가
+ * 생겼고, 대화가 짧을 때 메시지 블록이 화면 높이를 따라 늘어났습니다. 메시지 높이는 내용이 정합니다.
+ * `experience-candidate-list.module.css`의 `.candidateList`가 같은 이유로 같은 선언을 씁니다.
+ *
+ * 줄바꿈은 `word-break: keep-all`입니다. 한국어를 어절 단위로 끊습니다. 이전의 `overflow-wrap: anywhere`
+ * 는 글자 아무 데서나 끊어서, 좁아진 대화 열에서 한 단어가 두 줄로 갈라졌습니다.
+ */
+.log { display: grid; align-content: start; flex: 1; min-height: 0; overflow-y: auto; background: var(--color-card); word-break: keep-all; overflow-wrap: break-word; }
+
+/*
+ * 메시지 한 줄입니다. 고정폭 라벨 칸과 본문 칸을 가로로 놓습니다(디자인 원본 `MessageRow`).
+ * 라벨 칸 폭 44px은 `YOU`·`AGENT` 둘이 들어가는 최소치입니다.
+ */
+.message { display: flex; align-items: flex-start; gap: 12px; border-bottom: 1px solid var(--color-border); padding: 16px; color: var(--color-foreground); font-size: 14px; line-height: 1.65; }
+/*
+ * 누가 말한 것인지는 색이 아니라 글자로 구분합니다. 디자인 원본의 `YOU`·`AGENT`와 같은 mono 대문자
+ * 라벨이고, 질문 쪽을 진하게 둡니다. 답변에 왼쪽 표시선을 두지 않습니다. 라벨 칸이 이미 구분합니다.
+ */
+.roleLabel { flex-shrink: 0; width: 44px; margin: 0; padding-top: 2px; color: var(--color-foreground); font-family: var(--font-mono); font-size: var(--label-size-sm); font-weight: 500; letter-spacing: var(--label-tracking); text-transform: uppercase; }
+.message[data-role="answer"] .roleLabel { color: var(--color-muted-foreground); }
+.messageBody { display: grid; align-content: start; gap: 12px; flex: 1; min-width: 0; }
+.message h2 { color: var(--color-foreground); font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
 .message ul { display: grid; gap: 4px; margin: 0; padding-left: 18px; }
-.message code { border-radius: 4px; background: #f5f4fa; font-size: 13px; padding: 1px 4px; }
-.codeBlock pre, .plainCode { overflow-x: auto; border-radius: 10px; background: #f7f7fb; font-size: 13px; line-height: 1.6; padding: 12px 14px; }
-.codeBlock code, .plainCode code { background: none; font-size: 13px; padding: 0; }
-.trimNotice { border-left: 3px solid #e0ddf0; border-radius: 6px; background: #f7f7fb; color: #55535e; font-size: 12px; line-height: 1.6; margin: 4px 0; padding: 10px 12px; }
-.status { color: #777580; font-size: 13px; }
-.unreadButton { width: fit-content; min-height: 44px; border: 0; border-radius: 999px; background: #5b52d6; color: #fff; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
-.unreadButton:focus-visible { outline: 3px solid rgba(109, 99, 232, .35); outline-offset: 2px; }
-.unreadNotice { color: #777580; font-size: 12px; line-height: 1.5; }
+.message code { border-radius: 4px; background: var(--color-muted); font-family: var(--font-mono); font-size: 12px; padding: 1px 4px; }
+
+/* 질문이 오기 전 자리를 지킵니다. 메시지 행과 같은 라벨 칸을 써서 줄이 어긋나지 않습니다. */
+.thinking { display: flex; align-items: flex-start; gap: 12px; margin: 0; border-bottom: 1px solid var(--color-border); padding: 16px; }
+.thinkingLabel { flex-shrink: 0; width: 44px; padding-top: 2px; color: var(--color-foreground); font-family: var(--font-mono); font-size: var(--label-size-sm); font-weight: 500; letter-spacing: var(--label-tracking); text-transform: uppercase; }
+/*
+ * 칸 셋이 차례로 채워졌다가 함께 비는 순환입니다. 1.6초에 400ms씩 네 단계로, 디자인 원본의
+ * `setInterval` 주기와 같습니다. 칸마다 채워지는 시점이 다르고 비는 시점은 같아서 지연으로는
+ * 만들 수 없습니다. 그래서 keyframe을 셋 둡니다.
+ */
+.thinkingCells { display: inline-flex; gap: 3px; padding-top: 5px; }
+.thinkingCells span { width: 7px; height: 11px; background: var(--color-scrollbar-hover); opacity: .3; }
+.thinkingCells span:nth-child(1) { animation: thinkingCell1 1.6s linear infinite; }
+.thinkingCells span:nth-child(2) { animation: thinkingCell2 1.6s linear infinite; }
+.thinkingCells span:nth-child(3) { animation: thinkingCell3 1.6s linear infinite; }
+
+@keyframes thinkingCell1 { 0%, 24.9% { opacity: .3; } 25%, 100% { opacity: 1; } }
+@keyframes thinkingCell2 { 0%, 49.9% { opacity: .3; } 50%, 100% { opacity: 1; } }
+@keyframes thinkingCell3 { 0%, 74.9% { opacity: .3; } 75%, 100% { opacity: 1; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .thinkingCells span { animation: none; opacity: 1; }
+}
+
+/*
+ * highlight된 블록은 shiki가 `<pre>`에 배경을 인라인으로 박으므로 여기 배경이 닿지 않습니다.
+ * 테두리와 라운드와 여백만 두 경로에 같이 걸어 모양을 맞춥니다.
+ */
+.codeBlock pre, .plainCode { overflow-x: auto; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-muted); font-family: var(--font-mono); font-size: 12px; line-height: 1.6; padding: 10px 12px; }
+.codeBlock code, .plainCode code { background: none; font-size: 12px; padding: 0; }
+
+/* 로그 안에 들어가므로 행처럼 좌우 여백을 맞춥니다. */
+.trimNotice { border-left: 3px solid var(--color-border); border-radius: var(--radius); background: var(--color-muted); color: var(--color-muted-foreground); font-size: 12px; line-height: 1.6; margin: 12px 16px; padding: 10px 12px; }
+
+/*
+ * 로그 아래 줄들입니다. `.stream`이 패딩과 gap을 갖지 않으므로 각자 좌우 16px을 맞춥니다.
+ * 디자인 원본에는 이 줄들이 없습니다. 스트리밍 상태 낭독과 실패 안내는 목업이 다루지 않는 요구입니다.
+ */
+.status { flex-shrink: 0; margin: 0; padding: 8px 16px; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-sm); letter-spacing: var(--label-tracking-wide); }
+
+.unreadButton { flex-shrink: 0; width: fit-content; min-height: 32px; margin: 0 16px 8px; border: 0; border-radius: var(--radius); background: var(--color-primary); color: var(--color-primary-foreground); cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; padding: 0 12px; }
+.unreadButton:hover { background: #404040; }
+.unreadNotice { flex-shrink: 0; margin: 0; padding: 0 16px; color: var(--color-muted-foreground); font-size: 12px; line-height: 1.5; }
 /* 내용이 없을 때도 노드는 남겨 둡니다. live region은 붙어 있는 동안의 변경만 알립니다. 절대 위치로
    빼서 grid 항목에서 제외해야 빈 상태에서 gap이 생기지 않습니다. */
 .unreadNotice:empty { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-.error { display: grid; gap: 6px; border-radius: 10px; background: #fdecec; padding: 12px 14px; }
-.errorMessage { color: #8c2f2f; font-size: 14px; font-weight: 700; }
-.errorGuidance { color: #8c4a4a; font-size: 13px; line-height: 1.6; }
-.retryButton { width: fit-content; min-height: 44px; border: 1px solid #d9b5b5; border-radius: 999px; background: #fff; color: #8c2f2f; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
-.retryButton:focus-visible { outline: 3px solid rgba(140, 47, 47, .25); outline-offset: 2px; }
-.answerForm { display: grid; gap: 8px; }
-.answerLabel { color: #34333d; font-size: 14px; font-weight: 700; }
-.answerInput { width: 100%; box-sizing: border-box; resize: vertical; border: 1px solid #d9d8e0; border-radius: 10px; background: #fff; color: #34333d; font: inherit; font-size: 15px; line-height: 1.6; padding: 10px 12px; }
-.answerInput:focus-visible { outline: 3px solid rgba(109, 99, 232, .25); outline-offset: 2px; }
-.answerInput:disabled { background: #f7f7fb; color: #9a98a3; }
-.answerInput[aria-invalid="true"] { border-color: #c94f4f; }
-.answerHint { color: #777580; font-size: 12px; line-height: 1.5; }
-.submitButton { width: fit-content; min-height: 44px; border: 0; border-radius: 999px; background: #5b52d6; color: #fff; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
-.submitButton:disabled { background: #c9c6e6; cursor: not-allowed; }
-.submitButton:focus-visible { outline: 3px solid rgba(109, 99, 232, .35); outline-offset: 2px; }
-.endButton { width: fit-content; min-height: 44px; border: 1px solid #d9d8e0; border-radius: 999px; background: #fff; color: #55535e; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
-.endButton:focus-visible { outline: 3px solid rgba(109, 99, 232, .25); outline-offset: 2px; }
-.endConfirm { display: grid; gap: 10px; border: 1px solid #e4e2ec; border-radius: 10px; background: #f7f7fb; padding: 12px 14px; }
-.endConfirmText { color: #34333d; font-size: 13px; line-height: 1.6; }
-.endActions { display: flex; flex-wrap: wrap; gap: 8px; }
-.endConfirmButton { min-height: 44px; border: 0; border-radius: 999px; background: #34333d; color: #fff; cursor: pointer; font: inherit; font-size: 14px; font-weight: 700; padding: 0 18px; }
-.endConfirmButton:focus-visible { outline: 3px solid rgba(52, 51, 61, .3); outline-offset: 2px; }
-.endedNotice { border-radius: 10px; background: #f7f7fb; color: #55535e; font-size: 13px; line-height: 1.6; padding: 12px 14px; }
+
+/* 확인 실패를 알리는 의미색입니다. `experience-candidate-detail.module.css`의 `.selectionError`와 같은 값입니다. */
+.error { flex-shrink: 0; display: grid; gap: 6px; margin: 0 16px 12px; border-radius: var(--radius); background: #fdeaea; padding: 12px 14px; }
+.errorMessage { color: #a3272c; font-size: 14px; font-weight: 600; }
+.errorGuidance { color: #7c3b3d; font-size: 13px; line-height: 1.6; }
+.retryButton { width: fit-content; min-height: 32px; border: 1px solid #d4d4d4; border-radius: var(--radius); background: var(--color-card); color: #404040; cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; padding: 0 12px; }
+.retryButton:hover { border-color: var(--color-muted-foreground); color: var(--color-foreground); }
 
 /*
- * 저장 상태 안내입니다(이슈 #115). 대화 위에 쌓이고 대화를 막지 않습니다. 디자인 파일 `App.tsx`의
- * 인터뷰 화면 배너와 같은 구성입니다.
+ * 입력부입니다. 테두리 하나 안에 입력 칸과 푸터 줄을 넣습니다(디자인 원본 composer). 위쪽 경계선이
+ * 로그와 갈라 줍니다. 입력 칸은 `rows={1}`로 시작해 내용만큼 자라고, 140px을 넘으면 칸 안에서
+ * 스크롤합니다. 높이는 `interview-stream-view.tsx`가 재서 인라인으로 넣습니다.
  */
-.saveNotices {
-  display: grid;
-  gap: 8px;
-  margin-bottom: 12px;
-}
+.answerForm { flex-shrink: 0; border-top: 1px solid var(--color-border); background: var(--color-card); padding: 12px 16px; }
+/*
+ * 초점이 들어와도 테두리를 바꾸지 않습니다. 디자인 원본은 `focus-within`으로 테두리를 진하게 하지만
+ * 사용자가 그 강조를 빼기로 했습니다. hover와 입력 상한 초과(`data-invalid`)는 초점이 아니므로 남깁니다.
+ *
+ * 그래서 초점 표시는 글자 커서 하나입니다. 아래 `.answerInput`의 `outline: none`과 함께 봐야 합니다.
+ */
+.composer { display: grid; border: 1px solid var(--color-border); border-radius: var(--radius); transition: border-color 120ms ease; }
+.composer:hover { border-color: var(--color-scrollbar); }
+.composer[data-invalid] { border-color: #a3272c; }
 
-.saveNotice {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-muted);
-}
+/*
+ * `outline: none`은 의도한 것입니다. 브라우저 기본 초점 테두리가 composer 테두리 위에 그려져, 위에서
+ * `focus-within`을 뺀 의미가 없어집니다. 이 칸의 초점은 글자 커서가 알립니다.
+ */
+.answerInput { display: block; width: 100%; box-sizing: border-box; resize: none; overflow-y: auto; max-height: 140px; border: 0; outline: none; background: transparent; color: var(--color-foreground); font: inherit; font-size: 14px; line-height: 1.65; padding: 12px 16px 6px; }
+.answerInput::placeholder { color: var(--color-scrollbar-hover); }
+.answerInput:disabled { color: var(--color-muted-foreground); }
 
-.saveNoticeMark {
-  flex-shrink: 0;
-  font-family: var(--font-mono);
-  font-size: var(--label-size-sm);
-  color: var(--color-muted-foreground);
-}
+/*
+ * 왼쪽 자리가 비어 있을 수 있으므로 `space-between` 대신 `margin-left: auto`로 오른쪽에 붙입니다.
+ * `space-between`은 항목이 하나일 때 그 하나를 왼쪽으로 보냅니다.
+ */
+.composerFooter { display: flex; align-items: center; gap: 12px; padding: 0 10px 8px; }
+.answerError { flex: 1; min-width: 0; margin: 0; color: #a3272c; font-size: 11px; line-height: 1.5; }
+/* 지금 채우는 중인 PAAR 블록입니다. 디자인 원본에서 이 줄의 왼쪽이 블록 진행 상태의 자리입니다. */
+.blockProgress { flex-shrink: 0; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); letter-spacing: var(--label-tracking-wide); text-transform: uppercase; }
+.composerActions { display: flex; align-items: center; gap: 12px; flex-shrink: 0; margin-left: auto; }
+.shortcutHint { color: var(--color-scrollbar-hover); font-family: var(--font-mono); font-size: var(--label-size-xs); letter-spacing: var(--label-tracking-wide); }
 
-.saveNoticeText {
-  flex: 1;
-  min-width: 0;
-  font-family: var(--font-pretendard);
-  font-size: 12px;
-  color: var(--color-foreground);
-}
+.submitButton { width: fit-content; min-height: 28px; border: 0; border-radius: var(--radius); background: var(--color-primary); color: var(--color-primary-foreground); cursor: pointer; font: inherit; font-size: 12px; font-weight: 500; padding: 0 12px; }
+.submitButton:hover:not(:disabled) { background: #404040; }
+.submitButton:disabled { opacity: .3; cursor: not-allowed; }
 
-.saveNoticeAction {
-  flex-shrink: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  font-family: var(--font-mono);
-  font-size: var(--label-size-sm);
-  color: var(--color-muted-foreground);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
+/* 종료 뒤 입력부가 있던 자리를 씁니다. 같은 자리이므로 위쪽 경계선도 같습니다. */
+.endedNotice { flex-shrink: 0; margin: 0; border-top: 1px solid var(--color-border); background: var(--color-muted); color: var(--color-muted-foreground); font-size: 13px; line-height: 1.6; padding: 12px 16px; }
 
+/*
+ * 시각적으로만 숨깁니다. `code-panel.module.css`·`repository-analysis.module.css`와 같은 선언을 그대로
+ * 복제합니다. 모듈이 자기 완결적인 쪽을 파일 간 셀렉터 공유보다 앞에 둡니다.
+ *
+ * 답변 칸 라벨과 생성 중 표시의 대체 문장이 씁니다. 둘 다 디자인에는 자리가 없지만, placeholder와
+ * 블록 문자는 접근 가능한 이름이 되지 못해 DOM에는 남아 있어야 합니다.
+ */
+.visuallyHidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+/* 초점 표시는 `code-panel.module.css`·`button.module.css`와 같은 2px 실선 하나로 통일합니다. */
+.log:focus-visible,
+.unreadButton:focus-visible,
+.retryButton:focus-visible,
+.submitButton:focus-visible { outline: 2px solid var(--color-foreground); outline-offset: 2px; }
+/* 로그는 스크롤 영역이라 바깥 여백이 없습니다. 안쪽에 그려야 잘리지 않습니다. */
+.log:focus-visible { outline-offset: -2px; }
+
+/*
+ * 저장 상태 안내입니다(이슈 #115). 대화 위에 쌓이고 대화를 막지 않습니다. 오류 안내(`.error`)와 같은
+ * 자리 규칙을 쓰되 의미색은 쓰지 않습니다. 저장이 밀린 것은 사용자가 지금 고쳐야 하는 오류가 아니라
+ * 알고만 있으면 되는 상태입니다.
+ */
+.saveNotices { flex-shrink: 0; display: grid; gap: 8px; margin: 12px 16px 0; }
+.saveNotice { display: flex; align-items: center; gap: 8px; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-muted); padding: 8px 12px; }
+.saveNoticeMark { flex-shrink: 0; font-family: var(--font-mono); font-size: var(--label-size-sm); color: var(--color-muted-foreground); }
+.saveNoticeText { flex: 1; min-width: 0; color: var(--color-foreground); font-size: 12px; }
+.saveNoticeAction { flex-shrink: 0; border: 0; background: transparent; color: var(--color-muted-foreground); cursor: pointer; font-family: var(--font-mono); font-size: var(--label-size-sm); padding: 0; text-decoration: underline; text-underline-offset: 2px; }
 .saveNoticeAction:hover,
-.saveNoticeAction:focus-visible {
-  color: var(--color-foreground);
-}
+.saveNoticeAction:focus-visible { color: var(--color-foreground); }

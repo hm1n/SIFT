@@ -45,17 +45,17 @@ export interface GitHubSession {
 /** 64비트로 실어 나르지만 JSON과 JavaScript 정수 범위를 벗어난 값은 받지 않습니다. */
 function assertUserId(value: number): void {
   if (!Number.isSafeInteger(value) || value <= 0) {
-    throw new GitHubFetchError("server_error", "GitHub 사용자 번호가 올바르지 않습니다.");
+    throw new GitHubFetchError("server_error", "The GitHub user id is not valid.");
   }
 }
 
 function encryptionKey(): Buffer {
   const encodedKey = process.env[GITHUB_SESSION_KEY_ENV];
-  if (!encodedKey) throw new GitHubFetchError("server_error", "GitHub 세션 암호화 키가 설정되지 않았습니다.");
+  if (!encodedKey) throw new GitHubFetchError("server_error", "The GitHub session encryption key is not configured.");
 
   const key = Buffer.from(encodedKey, "base64");
   if (key.length !== 32) {
-    throw new GitHubFetchError("server_error", "GitHub 세션 암호화 키는 base64로 인코딩한 32바이트 값이어야 합니다.");
+    throw new GitHubFetchError("server_error", "The GitHub session encryption key must be a base64-encoded 32-byte value.");
   }
   return key;
 }
@@ -98,13 +98,13 @@ export function decryptGitHubSession(value: string): GitHubSession {
     return { token: plaintext.subarray(HEADER_LENGTH).toString("utf8"), githubUserId };
   } catch (error) {
     if (error instanceof GitHubFetchError) throw error;
-    throw new GitHubFetchError("auth_revoked", "GitHub 인증 세션이 없거나 유효하지 않습니다.");
+    throw new GitHubFetchError("auth_revoked", "The GitHub sign-in session is missing or invalid.");
   }
 }
 
 export function getGitHubSessionFromRequest(request: NextRequest): GitHubSession {
   const encryptedSession = request.cookies.get(GITHUB_SESSION_COOKIE)?.value;
-  if (!encryptedSession) throw new GitHubFetchError("auth_revoked", "GitHub 인증 세션이 없습니다.");
+  if (!encryptedSession) throw new GitHubFetchError("auth_revoked", "There is no GitHub sign-in session.");
   return decryptGitHubSession(encryptedSession);
 }
 

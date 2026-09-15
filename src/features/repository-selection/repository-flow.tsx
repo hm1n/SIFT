@@ -174,10 +174,10 @@ export function RepositoryFlow() {
             aria-labelledby={leaveConfirmTitleId}
             aria-describedby={leaveConfirmDescId}
           >
-            <p id={leaveConfirmTitleId} className={styles.leaveConfirmTitle}>저장되지 않은 답변이 있습니다.</p>
+            <p id={leaveConfirmTitleId} className={styles.leaveConfirmTitle}>You have an unsaved answer.</p>
             <p id={leaveConfirmDescId} className={styles.leaveConfirmText}>
-              지금 나가면 아직 저장되지 않은 답변은 사라집니다. 저장된 부분은 왼쪽 Interviews에서 다시
-              이어갈 수 있습니다.
+              Leaving now drops the answer that hasn&apos;t been saved yet. Everything already saved stays in
+              Interviews on the left, and you can pick it up from there.
             </p>
             <div className={styles.leaveConfirmActions}>
               <Button
@@ -189,9 +189,9 @@ export function RepositoryFlow() {
                   run();
                 }}
               >
-                나가기
+                Leave
               </Button>
-              <Button variant="secondary" onClick={() => setPendingNavigation(null)}>인터뷰 계속하기</Button>
+              <Button variant="secondary" onClick={() => setPendingNavigation(null)}>Continue the interview</Button>
             </div>
           </div>
         </div>

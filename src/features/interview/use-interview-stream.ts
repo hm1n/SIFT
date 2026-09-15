@@ -54,7 +54,8 @@ export interface InterviewStreamMessage {
 }
 
 export interface UseInterviewStreamOptions {
-  url: string;
+  /** 질문 스트림 엔드포인트입니다. 호출부가 모두 같은 값을 쓰므로 기본값을 여기 둡니다. */
+  url?: string;
   /**
    * 질문을 생성할 근거 스냅샷입니다.
    *
@@ -111,6 +112,14 @@ export interface InterviewStreamState {
    * 화면은 이 값을 읽어 무엇이 빠졌는지 알립니다. 안내 자체는 이 훅의 범위가 아닙니다.
    */
   removedHistory: readonly InterviewHistoryMessage[];
+  /**
+   * 근거 스냅샷을 실어 실제 생성 경로로 도는지입니다. 화면은 이 값 하나로 답변 입력을 열지와
+   * 끊긴 스트림을 이어받을 수 있는지를 가릅니다.
+   *
+   * 스냅샷을 받은 것이 이 훅이므로 판정도 여기서 냅니다. 같은 사실을 화면이 따로 받으면 스트림과
+   * 어긋난 값을 넘길 수 있습니다.
+   */
+  hasSnapshot: boolean;
   /**
    * 지금 답변을 제출할 수 있는지입니다. 근거 스냅샷이 있고, 마지막 질문이 다 도착했고, 표시 중인
    * 오류가 없을 때만 참입니다. 생성 중에는 거짓이라 다시 제출할 수 없습니다.
@@ -203,7 +212,7 @@ function toHistory(messages: readonly InterviewStreamMessage[]): InterviewHistor
  * 하는데 React 상태는 다음 렌더까지 갱신되지 않으므로 ref에 같은 값을 함께 둡니다.
  */
 export function useInterviewStream({
-  url,
+  url = "/api/interview/stream",
   snapshot,
   autoStart = true,
   fetchImpl,
@@ -543,6 +552,9 @@ export function useInterviewStream({
   // 진짜 언마운트만 잡습니다. 빈 의존성 배열이라 위 effect처럼 `start`가 바뀔 때마다 다시 돌지
   // 않습니다. 같이 두면 재실행마다 "언마운트됨"으로 잘못 표시합니다.
   useEffect(() => {
+    // Strict Mode의 두 번째 setup에서 되돌립니다. 없으면 첫 cleanup이 남긴 `true` 때문에
+    // `onBeforeQuestion`의 결과를 항상 버려 다음 질문 요청이 시작되지 않습니다.
+    unmountedRef.current = false;
     return () => {
       unmountedRef.current = true;
     };
@@ -554,6 +566,7 @@ export function useInterviewStream({
     error,
     receivedSeq,
     removedHistory,
+    hasSnapshot: snapshot !== undefined,
     canSubmitAnswer,
     isLastQuestionTooLong,
     isEnded,

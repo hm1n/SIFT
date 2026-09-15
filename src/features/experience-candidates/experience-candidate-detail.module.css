@@ -3,11 +3,22 @@
  * 스크롤 영역·푸터 3단 구조와 타이포그래피는 디자인 원본(`Chat Interface Design/src/App.tsx`의
  * `CandidateDetailPanel`)을 그대로 따르고, 색과 라운드는 `globals.css` 토큰만 씁니다.
  */
-.detail { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+/*
+ * `position: relative`는 스크린리더 전용 문구(`.visuallyHidden` 계열) 때문입니다. 그 요소들은
+ * `position: absolute`인데 위치 잡을 조상이 없으면 초기 컨테이닝 블록을 기준으로 놓입니다. 그러면
+ * 스크롤 영역 안에 있어도 잘리지 않고, 정적 위치가 아래로 갈수록 문서 자체가 길어져 화면 아래에
+ * 빈 스크롤 영역이 생깁니다(2026-09-15 실측: body.scrollHeight 422, html.scrollHeight 1036).
+ */
+.detail { position: relative; display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .header { flex-shrink: 0; border-bottom: 1px solid var(--color-border); padding: 20px 24px; }
 .header h2 { margin: 0; color: var(--color-foreground); font-size: 14px; font-weight: 600; letter-spacing: -.01em; line-height: 1.4; }
 .eyebrow, .sectionEyebrow { display: block; margin: 0 0 8px; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); letter-spacing: var(--label-tracking); text-transform: uppercase; }
-.body { flex: 1; overflow-y: auto; padding: 20px 24px; display: grid; gap: 24px; }
+/*
+ * `align-content: start`가 있어야 합니다. grid의 기본값 `stretch`는 남는 높이를 자동 크기 행에
+ * 나눠 줍니다. `.body`는 `flex: 1`이라 목록 패널(`max-height: 640px`)이 더 길면 남는 높이가 생기고,
+ * 내용이 짧은 후보에서 문단 사이가 화면 높이를 따라 벌어졌습니다. 문단 높이는 내용이 정합니다.
+ */
+.body { flex: 1; overflow-y: auto; padding: 20px 24px; display: grid; align-content: start; gap: 24px; }
 .body p { margin: 0; color: var(--color-muted-foreground); font-size: 13px; line-height: 1.6; }
 .meta { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
 .meta span { color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-sm); }

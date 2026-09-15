@@ -198,18 +198,56 @@ function buildMessageHtml(index: number): string {
 
 const messageHtml = buildMessageHtml(0);
 
-const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 900, height: 720 } });
-await page.setContent(`<!doctype html><meta charset="utf-8">
-<style>
+/**
+ * 이슈 #98이 인터뷰 화면을 한 열에서 3열로 바꿨습니다. 배치가 로그의 폭을 바꾸므로 줄바꿈과 높이가
+ * 달라지고, 그것이 append와 스크롤 비용에 얼마나 반영되는지를 같은 코퍼스로 잽니다.
+ *
+ * `single`이 #98 이전 배치(로그가 본문 폭을 다 씀)이고 `columns`가 3열 배치입니다. 두 배치의 차이는
+ * 로그가 놓이는 자리뿐이고 메시지 HTML·측정 절차·viewport는 같습니다. 3열 배치를 재려면 세 열의
+ * 최소 폭 합(708px)에 사이드바 208px를 더한 폭보다 넓어야 해서 viewport를 1440x900으로 잡습니다.
+ */
+const VIEWPORT = { width: 1_440, height: 900 };
+
+const LAYOUTS = [
+  {
+    key: "single",
+    label: "한 열 (#98 이전 배치)",
+    body: `<div class="shell"><aside class="sidebar"></aside><main class="single"><div id="log"></div></main></div>`,
+  },
+  {
+    key: "columns",
+    label: "3열 (#98 배치, 코드 300px · PAAR 280px)",
+    body: `<div class="shell">
+      <aside class="sidebar"></aside>
+      <main class="workspace">
+        <div class="panel" style="width: 300px"></div>
+        <div class="handle"></div>
+        <div class="chat"><div id="log"></div></div>
+        <div class="handle"></div>
+        <div class="panel" style="width: 280px"></div>
+      </main>
+    </div>`,
+  },
+] as const;
+
+const pageStyle = `<style>
   body { margin: 0; font: 14px/1.65 system-ui, sans-serif; }
-  #log { height: 720px; overflow-y: auto; padding: 16px; }
+  .shell { display: flex; height: ${VIEWPORT.height}px; }
+  .sidebar { width: 208px; flex-shrink: 0; border-right: 1px solid #eee; }
+  .single { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .workspace { flex: 1; min-width: 0; display: flex; }
+  .panel { flex-shrink: 0; border-right: 1px solid #eee; }
+  .handle { width: 4px; flex-shrink: 0; background: #eee; }
+  .chat { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 0 16px; }
+  #log { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; }
   .message { border-top: 1px solid #eee; padding: 12px 0; }
   pre { overflow-x: auto; padding: 12px; border-radius: 8px; }
-</style>
-<div id="log"></div>`);
+</style>`;
 
-const results = await page.evaluate(
+const browser = await chromium.launch();
+
+const measureLayout = (page: import("@playwright/test").Page) =>
+  page.evaluate(
   ({ messageHtml, sizes }) => {
     const log = document.getElementById("log")!;
     // 강제 동기 layout을 일으켜 append 비용에 layout을 포함시킵니다. 읽지 않으면 브라우저가
@@ -292,17 +330,32 @@ const results = await page.evaluate(
     }
     return rows;
   },
-  { messageHtml, sizes: [1, 5, 10, 20, 40, 80, 160] }
+    { messageHtml, sizes: [1, 5, 10, 20, 40, 80, 160] }
+  );
+
+console.log(
+  `## 실제 Chromium DOM 비용 (viewport ${VIEWPORT.width}x${VIEWPORT.height}, 메시지당 Code Block 1개)
+`
 );
 
-console.log("## 실제 Chromium DOM 비용 (viewport 900x720, 메시지당 Code Block 1개)\n");
-console.log("메시지 | DOM 노드 | 메시지 1개 append | 스트리밍 청크 1개 | 하단 자동 스크롤");
-console.log("--- | --- | --- | --- | ---");
-for (const row of results) {
-  console.log(
-    `${String(row.messages).padStart(3)} | ${String(row.nodes).padStart(5)} | ` +
-      `${row.appendMs.toFixed(2)} ms | ${row.streamChunkMs.toFixed(3)} ms | ${row.scrollToBottomMs.toFixed(3)} ms`
-  );
+for (const layout of LAYOUTS) {
+  const page = await browser.newPage({ viewport: VIEWPORT });
+  await page.setContent(`<!doctype html><meta charset="utf-8">${pageStyle}${layout.body}`);
+  const logWidth = await page.evaluate(() => document.getElementById("log")!.clientWidth);
+  const rows = await measureLayout(page);
+  await page.close();
+
+  console.log(`### ${layout.label} — 로그 폭 ${logWidth}px
+`);
+  console.log("메시지 | DOM 노드 | 메시지 1개 append | 스트리밍 청크 1개 | 하단 자동 스크롤");
+  console.log("--- | --- | --- | --- | ---");
+  for (const row of rows) {
+    console.log(
+      `${String(row.messages).padStart(3)} | ${String(row.nodes).padStart(5)} | ` +
+        `${row.appendMs.toFixed(2)} ms | ${row.streamChunkMs.toFixed(3)} ms | ${row.scrollToBottomMs.toFixed(3)} ms`
+    );
+  }
+  console.log("");
 }
 
 await browser.close();

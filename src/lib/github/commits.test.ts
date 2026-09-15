@@ -4,6 +4,7 @@ import {
   fetchAuthenticatedUser,
   fetchAuthenticatedUserLogin,
   fetchAuthoredCommits,
+  githubFetch,
 } from "./commits";
 import { GitHubFetchError } from "./errors";
 
@@ -43,6 +44,21 @@ function mockRepoAndBranch(fetchMock: ReturnType<typeof vi.fn>, headSha = HEAD_S
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe("githubFetch", () => {
+  it("연결 오류 원인을 cause로 보존한다", () => {
+    // 잡은 예외를 버리면 호출부에 network라는 분류만 남아, 같은 증상을 다시 조사할 때 원인을
+    // 처음부터 재현해야 합니다(2026-09-15 GitHub 수집 실패 조사).
+    const cause = Object.assign(new Error("Connect Timeout Error"), { code: "UND_ERR_CONNECT_TIMEOUT" });
+    const original = new TypeError("fetch failed", { cause });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(original));
+
+    return expect(githubFetch(COMMITS_URL, AUTH.token)).rejects.toMatchObject({
+      kind: "network",
+      cause: original,
+    });
+  });
 });
 
 describe("fetchAllCommits", () => {

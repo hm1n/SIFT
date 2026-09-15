@@ -2,6 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
 import { encodeSseEvent } from "@/features/interview/sse";
@@ -146,6 +147,63 @@ describe("useExperienceInterview", () => {
     expect(result.current.turnsUsed).toBe(1);
   });
 
+  it("currentTarget이 다음 질문의 대상을 따라간다", async () => {
+    // 블록 패널의 "수집 중" 카드와 답변 입력 아래의 현재 블록 안내가 이 값을 읽습니다. ref로만
+    // 들고 있으면 대상이 바뀌어도 렌더가 일어나지 않아 화면이 앞 블록에 멈춥니다.
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    const fetchImpl = makeFetchImpl({
+      questionSources: [q1, q2],
+      blockUpdateResponses: [jsonResponse(200, blockUpdateBody({ evaluation: { problem: SUFFICIENT } }))],
+    });
+    const { result } = renderHook(() =>
+      useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    expect(result.current.currentTarget).toEqual({ targetBlock: "problem", targetElement: "a" });
+    completeQuestion(q1, "문제 상황을 알려주세요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+    act(() => {
+      result.current.submitAnswer("화면이 비어 있었습니다.");
+    });
+
+    await waitFor(() =>
+      expect(result.current.currentTarget).toEqual({ targetBlock: "alternatives", targetElement: "a" })
+    );
+  });
+
+  it("블록 갱신을 호출하는 동안 isBlockUpdating이 참이다", async () => {
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    // 응답을 우리가 풀어 줄 때까지 붙잡아 호출 중인 구간을 만듭니다.
+    let release: (response: Response) => void = () => {};
+    const blockUpdate = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === QUESTION_URL) return (fetchImpl.mock.calls.length === 1 ? q1 : q2).response;
+      return blockUpdate;
+    });
+    const { result } = renderHook(() =>
+      useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    completeQuestion(q1, "문제 상황을 알려주세요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+    act(() => {
+      result.current.submitAnswer("화면이 비어 있었습니다.");
+    });
+    await waitFor(() => expect(result.current.isBlockUpdating).toBe(true));
+
+    await act(async () => {
+      release(jsonResponse(200, blockUpdateBody({})));
+    });
+    await waitFor(() => expect(result.current.isBlockUpdating).toBe(false));
+  });
+
   it("블록 갱신이 실패해도 질문은 그대로 요청되고, 재시도로 미반영 턴을 다시 반영한다", async () => {
     const q1 = controllableResponse();
     const q2 = controllableResponse();
@@ -170,6 +228,8 @@ describe("useExperienceInterview", () => {
     // 실패해도 질문은 그대로 요청됩니다(질문1, 블록갱신 실패, 질문2).
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
     expect(result.current.unreflectedTurnId).toBe("t1");
+    // 블록 패널이 어느 카드에 오류를 그릴지 정하려면 미반영 턴이 겨냥했던 블록도 알아야 합니다.
+    expect(result.current.unreflectedBlocks).toEqual(["problem"]);
     // 실패만으로 같은 블록에 고정하지 않습니다. 이전 평가(null)로도 계속 이동 정책을 따릅니다.
     completeQuestion(q2, "다른 질문");
     await waitFor(() => expect(result.current.messages).toHaveLength(3));
@@ -178,6 +238,184 @@ describe("useExperienceInterview", () => {
       result.current.retryUnreflectedBlockUpdate();
     });
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(4));
+    await waitFor(() => expect(result.current.unreflectedTurnId).toBeNull());
+    await waitFor(() => expect(result.current.unreflectedBlocks).toEqual([]));
+    expect(result.current.blockState.evaluation.problem).toEqual(ASKABLE);
+  });
+
+  it("재처리 중 updatingBlock이 currentTarget이 아니라 그 턴의 블록을 가리킨다", async () => {
+    // 블록 패널은 "수집 중" 카드를 이 값으로 정합니다. `isBlockUpdating` 불리언만 있으면 화면이
+    // `currentTarget`이라고 짐작해야 하는데, 재처리는 예전 턴의 대상을 갱신하므로 그 짐작이 틀려
+    // 관계없는 카드가 수집 중으로 보였습니다(PR #121 리뷰 1라운드).
+    const questions = [controllableResponse(), controllableResponse(), controllableResponse()];
+    // 재처리 응답을 우리가 풀어 줄 때까지 붙잡아 호출 중인 구간을 만듭니다.
+    let release: (response: Response) => void = () => {};
+    const heldRetry = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    let questionIndex = 0;
+    let blockUpdateCalls = 0;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      if (String(input) === QUESTION_URL) return questions[questionIndex++].response;
+      blockUpdateCalls += 1;
+      // 1번 턴은 실패해 미반영으로 남고, 2번 턴은 성공해 대상을 다음 블록으로 넘깁니다.
+      if (blockUpdateCalls === 1) return jsonResponse(502, { error: { kind: "block_update_rejected", message: "검증 실패" } });
+      if (blockUpdateCalls === 2) return jsonResponse(200, blockUpdateBody({ evaluation: { problem: SUFFICIENT } }));
+      return heldRetry;
+    });
+    const { result } = renderHook(() =>
+      useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate })
+    );
+
+    await waitFor(() => expect(questionIndex).toBe(1));
+    completeQuestion(questions[0], "문제 상황을 알려주세요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+    act(() => {
+      result.current.submitAnswer("화면이 비어 있었습니다.");
+    });
+    await waitFor(() => expect(result.current.unreflectedBlocks).toEqual(["problem"]));
+
+    await waitFor(() => expect(questionIndex).toBe(2));
+    completeQuestion(questions[1], "조금 더 자세히 알려주세요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+    act(() => {
+      result.current.submitAnswer("로그가 비어 있었습니다.");
+    });
+
+    // 2번 턴이 problem을 충분으로 만들어 다음 질문은 다른 블록을 겨냥합니다. 여기서 두 값이 갈립니다.
+    await waitFor(() => expect(result.current.currentTarget.targetBlock).not.toBe("problem"));
+    expect(result.current.unreflectedBlocks).toEqual(["problem"]);
+
+    act(() => {
+      result.current.retryUnreflectedBlockUpdate();
+    });
+
+    await waitFor(() => expect(result.current.isBlockUpdating).toBe(true));
+    expect(result.current.updatingBlock).toBe("problem");
+    expect(result.current.updatingBlock).not.toBe(result.current.currentTarget.targetBlock);
+
+    await act(async () => {
+      release(jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE } })));
+    });
+    await waitFor(() => expect(result.current.updatingBlock).toBeNull());
+  });
+
+  it("큐에 들어간 턴을 다시 등록하지 않는다", async () => {
+    // 직렬 큐는 동시 실행만 막고 이미 들어간 중복은 지우지 않습니다. `isBlockUpdating`으로도 막지
+    // 못합니다. 그 값은 큐에 넣는 시점이 아니라 `runApplyTurn`이 차례를 잡았을 때 참이 됩니다
+    // (PR #121 리뷰 2라운드, backlog 3번).
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    let release: (response: Response) => void = () => {};
+    const held = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    let blockUpdateCalls = 0;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      if (String(input) === QUESTION_URL) return (blockUpdateCalls === 0 ? q1 : q2).response;
+      blockUpdateCalls += 1;
+      if (blockUpdateCalls === 1) return jsonResponse(502, { error: { kind: "block_update_rejected", message: "검증 실패" } });
+      return held;
+    });
+    const { result } = renderHook(() =>
+      useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    completeQuestion(q1, "문제 상황을 알려주세요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+    act(() => {
+      result.current.submitAnswer("화면이 비어 있었습니다.");
+    });
+    await waitFor(() => expect(result.current.unreflectedTurnId).toBe("t1"));
+    expect(blockUpdateCalls).toBe(1);
+
+    // 한 틱 안에 두 번 부르면 예전에는 큐에 두 번 들어가 갱신 요청이 두 번 나갔습니다.
+    act(() => {
+      result.current.retryUnreflectedBlockUpdate();
+      result.current.retryUnreflectedBlockUpdate();
+    });
+    await waitFor(() => expect(result.current.isBlockUpdating).toBe(true));
+    expect(blockUpdateCalls).toBe(2);
+
+    await act(async () => {
+      release(jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE } })));
+    });
+    await waitFor(() => expect(result.current.unreflectedTurnId).toBeNull());
+    // 큐에 남아 있던 중복이 뒤늦게 실행되지 않습니다.
+    expect(blockUpdateCalls).toBe(2);
+  });
+
+  it("재처리가 큐에만 있을 때 종료해도 같은 턴을 다시 등록하지 않는다", async () => {
+    // `endInterview`도 `retryAllUnreflected`를 부르는데 종료 버튼은 `isBlockUpdating`으로 잠기지
+    // 않습니다. 재처리가 아직 자기 차례를 잡기 전이면 끊을 호출이 없어, 예전에는 같은 턴이 큐에 두 번
+    // 들어갔습니다. 진행 중인 호출을 끊고 다시 반영하는 경로(구현검토 P1-2, R6)와는 다릅니다.
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    const fetchImpl = makeFetchImpl({
+      questionSources: [q1, q2],
+      blockUpdateResponses: [
+        jsonResponse(502, { error: { kind: "block_update_rejected", message: "검증 실패" } }),
+        jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE } })),
+        jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE } })),
+      ],
+    });
+    const { result } = renderHook(() =>
+      useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    completeQuestion(q1, "문제 상황을 알려주세요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+    act(() => {
+      result.current.submitAnswer("화면이 비어 있었습니다.");
+    });
+    await waitFor(() => expect(result.current.unreflectedTurnId).toBe("t1"));
+    const beforeRetry = fetchImpl.mock.calls.filter(([input]) => String(input) === BLOCK_UPDATE_URL).length;
+    expect(beforeRetry).toBe(1);
+
+    // 같은 틱에 부릅니다. 재처리는 큐에 들어가기만 하고 아직 실행되지 않은 상태입니다.
+    act(() => {
+      result.current.retryUnreflectedBlockUpdate();
+      result.current.endInterview();
+    });
+
+    await waitFor(() => expect(result.current.isEnded).toBe(true));
+    await waitFor(() => expect(result.current.unreflectedTurnId).toBeNull());
+    const afterRetry = fetchImpl.mock.calls.filter(([input]) => String(input) === BLOCK_UPDATE_URL).length;
+    expect(afterRetry).toBe(2);
+  });
+
+  it("앞선 재처리가 끝난 뒤에는 같은 턴을 다시 재처리할 수 있다", async () => {
+    // 중복 방지가 재시도 자체를 막으면 안 됩니다. 두 번째 재처리로 실제로 반영되어야 합니다.
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    const fetchImpl = makeFetchImpl({
+      questionSources: [q1, q2],
+      blockUpdateResponses: [
+        jsonResponse(502, { error: { kind: "block_update_rejected", message: "검증 실패" } }),
+        jsonResponse(502, { error: { kind: "block_update_rejected", message: "또 실패" } }),
+        jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE } })),
+      ],
+    });
+    const { result } = renderHook(() =>
+      useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    completeQuestion(q1, "문제 상황을 알려주세요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+    act(() => {
+      result.current.submitAnswer("화면이 비어 있었습니다.");
+    });
+    await waitFor(() => expect(result.current.unreflectedTurnId).toBe("t1"));
+
+    act(() => {
+      result.current.retryUnreflectedBlockUpdate();
+    });
+    await waitFor(() => expect(result.current.unreflectedTurnId).toBe("t1"));
+    await waitFor(() => expect(result.current.isBlockUpdating).toBe(false));
+
+    act(() => {
+      result.current.retryUnreflectedBlockUpdate();
+    });
     await waitFor(() => expect(result.current.unreflectedTurnId).toBeNull());
     expect(result.current.blockState.evaluation.problem).toEqual(ASKABLE);
   });
@@ -611,6 +849,44 @@ describe("useExperienceInterview", () => {
     // 질문 10회 + 블록 갱신 10회 + 상한 종료가 시도한 마지막 재처리 1회 = 21회입니다. 이전
     // 구현은 `inner.endInterview()`를 곧장 불러 이 재처리 없이 그대로 끝났습니다.
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(21));
+    expect(result.current.unreflectedTurnId).toBeNull();
+  });
+
+  it("Strict Mode로 두 번 마운트해도 첫 답변의 블록 갱신을 보낸다", async () => {
+    // Strict Mode는 개발에서 effect를 setup → cleanup → setup으로 실행합니다. 언마운트 표시를
+    // setup에서 되돌리지 않으면 첫 cleanup이 남긴 값 때문에 마운트된 훅이 스스로를 언마운트됐다고
+    // 판단합니다. 그러면 답변을 제출해도 블록 갱신 요청을 보내지 않고 그 턴을 미반영으로 남긴 뒤
+    // 다음 질문도 시작하지 않아, 화면이 첫 답변 뒤 로딩에서 멈춥니다.
+    const questions: ReturnType<typeof controllableResponse>[] = [];
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      if (url === QUESTION_URL) {
+        const source = controllableResponse();
+        questions.push(source);
+        return source.response;
+      }
+      return jsonResponse(200, blockUpdateBody({ evaluation: { problem: SUFFICIENT } }));
+    });
+    const { result } = renderHook(
+      () => useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate }),
+      { wrapper: StrictMode }
+    );
+    await waitFor(() => expect(questions.length).toBeGreaterThan(0));
+    // 앞선 마운트의 스트림은 cleanup이 끊었으므로 마지막 요청만 살아 있습니다.
+    completeQuestion(questions[questions.length - 1], "문제 상황을 알려주세요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+    act(() => {
+      result.current.submitAnswer("화면이 비어 있었습니다.");
+    });
+
+    await waitFor(() =>
+      expect(fetchImpl.mock.calls.filter(([input]) => String(input) === BLOCK_UPDATE_URL)).toHaveLength(1)
+    );
+    // 다음 질문 요청까지 이어져야 로딩이 풀립니다.
+    await waitFor(() =>
+      expect(result.current.currentTarget).toEqual({ targetBlock: "alternatives", targetElement: "a" })
+    );
     expect(result.current.unreflectedTurnId).toBeNull();
   });
 });

@@ -134,7 +134,7 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
         stageASelection: { excludedUnits: [], thresholdScore: 0, selectedUnitCount: 1, unjudgedShas: [] },
       });
     });
-    const stub = stubFetch({
+    stubFetch({
       "/api/interview/stream": () => questionResponse("문제 상황을 알려주세요"),
       ...handlers,
     });
@@ -144,8 +144,8 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
     fireEvent.click(screen.getByRole("button", { name: /Analyze/ }));
     fireEvent.click(await screen.findByRole("button", { name: /재시도 큐 도입/ }));
     fireEvent.click(screen.getByRole("button", { name: /Start interview/ }));
-    await screen.findByText("AI 인터뷰");
-    return stub;
+    // 인터뷰 화면이 떴는지는 3열 워크스페이스의 코드 패널로 봅니다.
+    await screen.findByRole("region", { name: "Code / Evidence" });
   }
 
   // 저장된 대화는 다시 이어갈 수 있으므로 잃을 것이 없습니다. 묻지 않고 나갑니다.
@@ -167,19 +167,19 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
       "/api/interview/experience-block": () =>
         Response.json({ error: { kind: "storage_failed", message: "끊김" } }, { status: 503 }),
     });
-    const answer = await screen.findByRole("textbox", { name: /답변/ });
+    const answer = await screen.findByRole("textbox", { name: /Answer/ });
     fireEvent.change(answer, { target: { value: "화면이 비어 있었습니다." } });
-    fireEvent.click(screen.getByRole("button", { name: "답변 보내기" }));
-    await screen.findByText("마지막 답변이 저장되지 않았습니다.");
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText("Your last answer wasn't saved.");
 
     fireEvent.click(screen.getByRole("button", { name: "← Change repository" }));
 
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
-    expect(screen.getByText("AI 인터뷰")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "인터뷰 계속하기" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue the interview" }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
-    expect(screen.getByText("AI 인터뷰")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
   });
 
   it("확인 뒤 나가기를 누르면 선택 화면으로 돌아간다", async () => {
@@ -187,16 +187,16 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
       "/api/interview/experience-block": () =>
         Response.json({ error: { kind: "storage_failed", message: "끊김" } }, { status: 503 }),
     });
-    const answer = await screen.findByRole("textbox", { name: /답변/ });
+    const answer = await screen.findByRole("textbox", { name: /Answer/ });
     fireEvent.change(answer, { target: { value: "화면이 비어 있었습니다." } });
-    fireEvent.click(screen.getByRole("button", { name: "답변 보내기" }));
-    await screen.findByText("마지막 답변이 저장되지 않았습니다.");
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText("Your last answer wasn't saved.");
 
     fireEvent.click(screen.getByRole("button", { name: "← Change repository" }));
-    fireEvent.click(screen.getByRole("button", { name: "나가기" }));
+    fireEvent.click(screen.getByRole("button", { name: "Leave" }));
 
     await screen.findByRole("heading", { name: "Choose a repository to analyze." });
-    expect(screen.queryByText("AI 인터뷰")).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Code / Evidence" })).not.toBeInTheDocument();
   });
 });
 
@@ -253,7 +253,7 @@ describe("RepositoryFlow 이어가기", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Continue interview/ }));
 
-    expect(await screen.findByText("AI 인터뷰")).toBeInTheDocument();
+    expect(await screen.findByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
     // 저장된 대화를 들고 시작합니다.
     expect(screen.getByText("화면이 비어 있었습니다.")).toBeInTheDocument();
   });
