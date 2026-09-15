@@ -291,6 +291,126 @@ describe("useExperienceInterview", () => {
     await waitFor(() => expect(result.current.updatingBlock).toBeNull());
   });
 
+  it("큐에 들어간 턴을 다시 등록하지 않는다", async () => {
+    // 직렬 큐는 동시 실행만 막고 이미 들어간 중복은 지우지 않습니다. `isBlockUpdating`으로도 막지
+    // 못합니다. 그 값은 큐에 넣는 시점이 아니라 `runApplyTurn`이 차례를 잡았을 때 참이 됩니다
+    // (PR #121 리뷰 2라운드, backlog 3번).
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    let release: (response: Response) => void = () => {};
+    const held = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    let blockUpdateCalls = 0;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      if (String(input) === QUESTION_URL) return (blockUpdateCalls === 0 ? q1 : q2).response;
+      blockUpdateCalls += 1;
+      if (blockUpdateCalls === 1) return jsonResponse(502, { error: { kind: "block_update_rejected", message: "검증 실패" } });
+      return held;
+    });
+    const { result } = renderHook(() =>
+      useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    completeQuestion(q1, "문제 상황을 알려주세요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+    act(() => {
+      result.current.submitAnswer("화면이 비어 있었습니다.");
+    });
+    await waitFor(() => expect(result.current.unreflectedTurnId).toBe("t1"));
+    expect(blockUpdateCalls).toBe(1);
+
+    // 한 틱 안에 두 번 부르면 예전에는 큐에 두 번 들어가 갱신 요청이 두 번 나갔습니다.
+    act(() => {
+      result.current.retryUnreflectedBlockUpdate();
+      result.current.retryUnreflectedBlockUpdate();
+    });
+    await waitFor(() => expect(result.current.isBlockUpdating).toBe(true));
+    expect(blockUpdateCalls).toBe(2);
+
+    await act(async () => {
+      release(jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE } })));
+    });
+    await waitFor(() => expect(result.current.unreflectedTurnId).toBeNull());
+    // 큐에 남아 있던 중복이 뒤늦게 실행되지 않습니다.
+    expect(blockUpdateCalls).toBe(2);
+  });
+
+  it("재처리가 큐에만 있을 때 종료해도 같은 턴을 다시 등록하지 않는다", async () => {
+    // `endInterview`도 `retryAllUnreflected`를 부르는데 종료 버튼은 `isBlockUpdating`으로 잠기지
+    // 않습니다. 재처리가 아직 자기 차례를 잡기 전이면 끊을 호출이 없어, 예전에는 같은 턴이 큐에 두 번
+    // 들어갔습니다. 진행 중인 호출을 끊고 다시 반영하는 경로(구현검토 P1-2, R6)와는 다릅니다.
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    const fetchImpl = makeFetchImpl({
+      questionSources: [q1, q2],
+      blockUpdateResponses: [
+        jsonResponse(502, { error: { kind: "block_update_rejected", message: "검증 실패" } }),
+        jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE } })),
+        jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE } })),
+      ],
+    });
+    const { result } = renderHook(() =>
+      useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    completeQuestion(q1, "문제 상황을 알려주세요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+    act(() => {
+      result.current.submitAnswer("화면이 비어 있었습니다.");
+    });
+    await waitFor(() => expect(result.current.unreflectedTurnId).toBe("t1"));
+    const beforeRetry = fetchImpl.mock.calls.filter(([input]) => String(input) === BLOCK_UPDATE_URL).length;
+    expect(beforeRetry).toBe(1);
+
+    // 같은 틱에 부릅니다. 재처리는 큐에 들어가기만 하고 아직 실행되지 않은 상태입니다.
+    act(() => {
+      result.current.retryUnreflectedBlockUpdate();
+      result.current.endInterview();
+    });
+
+    await waitFor(() => expect(result.current.isEnded).toBe(true));
+    await waitFor(() => expect(result.current.unreflectedTurnId).toBeNull());
+    const afterRetry = fetchImpl.mock.calls.filter(([input]) => String(input) === BLOCK_UPDATE_URL).length;
+    expect(afterRetry).toBe(2);
+  });
+
+  it("앞선 재처리가 끝난 뒤에는 같은 턴을 다시 재처리할 수 있다", async () => {
+    // 중복 방지가 재시도 자체를 막으면 안 됩니다. 두 번째 재처리로 실제로 반영되어야 합니다.
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    const fetchImpl = makeFetchImpl({
+      questionSources: [q1, q2],
+      blockUpdateResponses: [
+        jsonResponse(502, { error: { kind: "block_update_rejected", message: "검증 실패" } }),
+        jsonResponse(502, { error: { kind: "block_update_rejected", message: "또 실패" } }),
+        jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE } })),
+      ],
+    });
+    const { result } = renderHook(() =>
+      useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    completeQuestion(q1, "문제 상황을 알려주세요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+    act(() => {
+      result.current.submitAnswer("화면이 비어 있었습니다.");
+    });
+    await waitFor(() => expect(result.current.unreflectedTurnId).toBe("t1"));
+
+    act(() => {
+      result.current.retryUnreflectedBlockUpdate();
+    });
+    await waitFor(() => expect(result.current.unreflectedTurnId).toBe("t1"));
+    await waitFor(() => expect(result.current.isBlockUpdating).toBe(false));
+
+    act(() => {
+      result.current.retryUnreflectedBlockUpdate();
+    });
+    await waitFor(() => expect(result.current.unreflectedTurnId).toBeNull());
+    expect(result.current.blockState.evaluation.problem).toEqual(ASKABLE);
+  });
+
   it("블록 갱신 실패를 다음 질문 요청의 lastOutcome에 실어 보낸다 (구현검토 P1-5)", async () => {
     const q1 = controllableResponse();
     const q2 = controllableResponse();

@@ -178,6 +178,24 @@ export function useExperienceInterview({
    */
   const applyQueueRef = useRef<Promise<void>>(Promise.resolve());
   /**
+   * 큐에 들어가 있거나 실행 중인 턴입니다. 같은 턴을 두 번 등록하지 않으려고 둡니다.
+   *
+   * 직렬 큐는 동시 실행만 막습니다. 이미 들어간 중복 항목을 지우지는 않으므로 둘 다 실행되어 같은
+   * 블록 갱신 요청이 두 번 나갑니다. `isBlockUpdating`으로는 막지 못합니다. 그 값은 큐에 넣는
+   * 시점이 아니라 `runApplyTurn`이 자기 차례를 잡았을 때 참이 되기 때문입니다.
+   *
+   * 중복이 들어오는 경로는 둘입니다. 재처리 버튼 연타와, 재처리가 큐에 있는 동안의 종료입니다.
+   * 종료 버튼은 `isBlockUpdating`으로 잠기지 않는데 `endInterview`도 `retryAllUnreflected`를
+   * 부릅니다(PR #121 리뷰 2라운드, backlog 3번).
+   *
+   * 앞선 호출이 끝나면 지웁니다. 실패한 턴을 나중에 다시 재처리하는 길은 막지 않습니다.
+   *
+   * 값이 `Set`이 아니라 등록마다 새로 만드는 표식인 이유는 `endInterview` 때문입니다. 종료는 진행
+   * 중이던 호출을 끊고 그 턴을 곧바로 다시 등록하는데, 끊긴 호출이 나중에 정리될 때 자기가 넣은
+   * 항목이 아니라 새로 등록된 항목을 지우면 중복 판정에 구멍이 생깁니다. 자기 표식일 때만 지웁니다.
+   */
+  const queuedTurnsRef = useRef<Map<string, symbol>>(new Map());
+  /**
    * 언마운트됐는지입니다. 이 훅이 사라진 뒤에도 `applyTurn`이나 `onBeforeQuestion`의 이어지는
    * 작업이 상태를 계속 바꾸는 것을 막습니다(구현검토 2026-09-11 P1-3, R5). `useInterviewStream`
    * 쪽의 이어지는 질문 요청은 그 훅 자신의 언마운트 가드가 막습니다.
@@ -294,11 +312,22 @@ export function useExperienceInterview({
       target: NonNullable<InterviewQuestionTarget>,
       askedCountAtQuestion: number
     ): Promise<{ readonly ok: boolean; readonly targetResponse: TargetResponse | null }> => {
+      // 이미 등록된 턴은 다시 넣지 않습니다. 앞선 호출의 결과가 이 턴의 결과이므로 새 호출을 만들
+      // 이유가 없습니다. 돌려주는 값은 재처리 경로에서만 쓰이지 않고 버려집니다.
+      if (queuedTurnsRef.current.has(turn.turnId)) {
+        return Promise.resolve({ ok: false, targetResponse: null });
+      }
+      const token = Symbol(turn.turnId);
+      queuedTurnsRef.current.set(turn.turnId, token);
       const result = applyQueueRef.current.then(() => runApplyTurn(turn, target, askedCountAtQuestion));
-      applyQueueRef.current = result.then(
-        () => undefined,
-        () => undefined
-      );
+      applyQueueRef.current = result
+        .then(
+          () => undefined,
+          () => undefined
+        )
+        .then(() => {
+          if (queuedTurnsRef.current.get(turn.turnId) === token) queuedTurnsRef.current.delete(turn.turnId);
+        });
       return result;
     },
     [runApplyTurn]
@@ -440,6 +469,9 @@ export function useExperienceInterview({
     activeAbortRef.current?.abort();
     if (interrupted !== null) {
       unreflectedRef.current.set(interrupted.turn.turnId, interrupted);
+      // 끊은 호출은 더 이상 진행 중이 아니므로 중복 판정에서 뺍니다. 이 줄이 없으면 바로 아래의
+      // 재처리가 중복으로 걸러져, 구현검토 P1-2(R6)가 요구한 "끊고 한 번 더 반영"이 사라집니다.
+      queuedTurnsRef.current.delete(interrupted.turn.turnId);
       syncUnreflectedTurnId();
     }
     void retryAllUnreflected();
