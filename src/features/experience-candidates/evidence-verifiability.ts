@@ -10,10 +10,10 @@ export const VERIFIABILITY_LABEL: Record<VerifiabilityStatus, string> = {
 };
 
 /** LLM이 작성한 evidence 문장 전체는 Repository 값이 아니라 해석이므로 확인 불가입니다. */
-export const EVIDENCE_VERIFIABILITY_NOTICE = `${VERIFIABILITY_LABEL.unverifiable} · AI-written interpretation`;
+export const EVIDENCE_VERIFIABILITY_NOTICE = `${VERIFIABILITY_LABEL.unverifiable} · AI가 쓴 해석입니다`;
 
 /** 화면에 이미 표시하는 항목 중 GitHub 응답 값이거나 서버 검증을 통과한 관계임을 알리는 문구입니다. */
-export const REPOSITORY_VERIFIED_NOTICE = `${VERIFIABILITY_LABEL.verified} · Changed files, code changes, and PR info are values from the Repository response, and related commits are confirmed only as far as belonging to the same PR as the representative commit`;
+export const REPOSITORY_VERIFIED_NOTICE = `${VERIFIABILITY_LABEL.verified} · 변경 파일, 코드 변경, PR 정보는 Repository 응답에서 온 값이고, 관련 커밋은 대표 커밋과 같은 PR에 속한다는 사실까지만 확인했습니다`;
 
 /**
  * `relatedShas`와 `citedFilePaths`는 LLM이 고른 값입니다. `assertCandidateEvidence`는 관련 SHA가
@@ -23,16 +23,16 @@ export const REPOSITORY_VERIFIED_NOTICE = `${VERIFIABILITY_LABEL.verified} · Ch
  */
 export const AI_SELECTION_LABEL = "AI-selected";
 
-export const RELATED_COMMITS_VERIFICATION_NOTICE = `${AI_SELECTION_LABEL} · Confirmed only as belonging to the same PR as the representative commit — whether it's actually relevant as evidence is unverifiable`;
+export const RELATED_COMMITS_VERIFICATION_NOTICE = `${AI_SELECTION_LABEL} · 대표 커밋과 같은 PR에 속한다는 사실까지만 확인했습니다. 근거로서 실제로 관련 있는지는 확인할 수 없습니다`;
 
 /**
  * 확인 불가 고정 목록입니다. 인터뷰 단계에서 사용자가 스스로 설명해야 하는 지점을 미리 드러내려고
  * 상세 화면에 항상 표시합니다.
  */
 export const REPOSITORY_UNVERIFIABLE_ITEMS: readonly string[] = [
-  "Extent of performance improvement",
-  "User impact",
-  "Comparison with alternatives",
-  "Collaboration and discussion background",
-  "Whether the numbers, comparisons, and intent stated in the commit message actually held true",
+  "성능 개선 정도",
+  "사용자에게 미친 영향",
+  "대안과의 비교",
+  "협업과 논의 배경",
+  "커밋 메시지에 적힌 수치, 비교, 의도가 실제로 맞았는지",
 ];

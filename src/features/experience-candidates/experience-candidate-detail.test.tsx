@@ -85,14 +85,14 @@ describe("ExperienceCandidateDetail", () => {
     expect(screen.getByRole("heading", { name: candidate.summary })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "후보 상세 구현" })).not.toBeInTheDocument();
     expect(screen.getAllByText("2 commits").length).toBeGreaterThan(0);
-    expect(screen.getByText("Aug 2026 – Sep 2026")).toBeInTheDocument();
+    expect(screen.getByText("2026년 8월 – 2026년 9월")).toBeInTheDocument();
   });
 
   it("관련 커밋이 없으면 기간을 대표 커밋 한 달로 표시한다", () => {
     renderDetail({ ...candidate, relatedShas: [] });
 
     expect(screen.getAllByText("1 commit").length).toBeGreaterThan(0);
-    expect(screen.getByText("Aug 2026")).toBeInTheDocument();
+    expect(screen.getByText("2026년 8월")).toBeInTheDocument();
   });
 
   it("Why worth discussing에 evidence 문장과 확인 불가 안내를 함께 둔다", () => {
@@ -100,7 +100,7 @@ describe("ExperienceCandidateDetail", () => {
 
     expect(screen.getByText("Why worth discussing")).toBeInTheDocument();
     expect(screen.getByText("상세 근거를 표시합니다.")).toBeInTheDocument();
-    expect(screen.getAllByText("Unverifiable · AI-written interpretation").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Unverifiable · AI가 쓴 해석입니다").length).toBeGreaterThan(0);
   });
 
   /**
@@ -116,7 +116,7 @@ describe("ExperienceCandidateDetail", () => {
     expect(screen.getByText("CSS Modules")).toBeInTheDocument();
     expect(screen.queryByText(/No corresponding data in the Repository schema/)).not.toBeInTheDocument();
     // 토픽은 LLM 해석이므로 Why worth discussing과 같은 안내가 하나 더 붙습니다.
-    expect(screen.getAllByText("Unverifiable · AI-written interpretation")).toHaveLength(2);
+    expect(screen.getAllByText("Unverifiable · AI가 쓴 해석입니다")).toHaveLength(2);
   });
 
   /** 토픽이 빈 배열로 와도 화면이 정상 동작하고, 없다는 사실을 문장으로 알립니다. */
@@ -126,7 +126,7 @@ describe("ExperienceCandidateDetail", () => {
     expect(screen.getByText("Technical topics")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "No technical topics were identified from the diffs and commit messages of this candidate."
+        "이 후보의 diff와 커밋 메시지에서는 기술 토픽을 찾지 못했습니다."
       )
     ).toBeInTheDocument();
   });
@@ -158,13 +158,13 @@ describe("ExperienceCandidateDetail", () => {
   it("관련 커밋이 있으면 AI 선택 안내를 표시하고 없으면 표시하지 않는다", () => {
     renderDetail();
     expect(
-      screen.getByText(/Confirmed only as belonging to the same PR as the representative commit/)
+      screen.getByText(/근거로서 실제로 관련 있는지는 확인할 수 없습니다/)
     ).toBeInTheDocument();
 
     cleanup();
     renderDetail({ ...candidate, relatedShas: [] });
     expect(
-      screen.queryByText(/Confirmed only as belonging to the same PR as the representative commit/)
+      screen.queryByText(/근거로서 실제로 관련 있는지는 확인할 수 없습니다/)
     ).not.toBeInTheDocument();
   });
 
@@ -178,10 +178,10 @@ describe("ExperienceCandidateDetail", () => {
     renderDetail({ ...candidate, relatedShas: [related.sha, ...relatedShas] }, representative, manyData);
 
     expect(screen.queryByText("관련 커밋 2")).not.toBeInTheDocument();
-    const toggle = screen.getByRole("button", { name: /View all 5 commits/ });
+    const toggle = screen.getByRole("button", { name: /전체 5 commits 보기/ });
     fireEvent.click(toggle);
     expect(screen.getByText("관련 커밋 2")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Show less" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "간단히 보기" })).toBeInTheDocument();
   });
 
   it("footer 왼쪽에 다른 Repository 선택 버튼을 표시하고 클릭하면 onSelectRepository를 부른다", () => {
@@ -204,7 +204,7 @@ describe("ExperienceCandidateDetail", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Choose a different repository" }));
+    fireEvent.click(screen.getByRole("button", { name: "다른 Repository 선택" }));
     expect(onSelectRepository).toHaveBeenCalledTimes(1);
   });
 
@@ -212,10 +212,10 @@ describe("ExperienceCandidateDetail", () => {
     renderDetail(candidate, null);
 
     expect(screen.getByRole("heading", { name: candidate.summary })).toBeInTheDocument();
-    expect(screen.getByText("Representative commit not found in the commit index.")).toBeInTheDocument();
+    expect(screen.getByText("대표 커밋을 커밋 색인에서 찾지 못했습니다.")).toBeInTheDocument();
     expect(screen.getAllByText("2 commits").length).toBeGreaterThan(0);
 
-    const failedRow = screen.getByRole("link", { name: `Commit not indexed · ${candidate.sha.slice(0, 7)}` }).closest("li");
+    const failedRow = screen.getByRole("link", { name: `색인되지 않은 커밋 · ${candidate.sha.slice(0, 7)}` }).closest("li");
     expect(failedRow).not.toHaveTextContent("Verified");
   });
 
@@ -242,9 +242,9 @@ describe("ExperienceCandidateDetail", () => {
 
     const alert = screen.getByRole("alert");
     expect(alert).toHaveAttribute("data-selection-error", "no_repository_evidence");
-    expect(screen.getByRole("button", { name: /Start interview/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /인터뷰 시작/ })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "← Back to candidates" }));
+    fireEvent.click(screen.getByRole("button", { name: "← 후보 목록으로" }));
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 });

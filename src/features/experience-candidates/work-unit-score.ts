@@ -38,15 +38,15 @@ export interface WorkUnitScore {
  * 신호가 늘면 `Record`가 누락을 컴파일 오류로 잡습니다.
  */
 export const WORK_UNIT_SIGNAL_COPY: Record<WorkUnitSignal, string> = {
-  dependency_added: "Added a new dependency",
-  infrastructure_added: "Added deployment or infrastructure setup",
-  file_rewritten_repeatedly: "Reworked the same file heavily more than once",
-  revert_or_hotfix: "Contains a revert or hotfix",
-  large_refactor: "Deleted a lot of code",
-  performance_or_refactor_prefix: "Contains a performance or refactoring commit",
-  many_commits: "Many commits",
-  long_span: "Worked on across several days",
-  many_files: "Many files changed",
+  dependency_added: "새 의존성을 추가했습니다",
+  infrastructure_added: "배포나 인프라 설정을 추가했습니다",
+  file_rewritten_repeatedly: "같은 파일을 여러 번 크게 다시 썼습니다",
+  revert_or_hotfix: "revert나 hotfix가 들어 있습니다",
+  large_refactor: "코드를 많이 지웠습니다",
+  performance_or_refactor_prefix: "성능이나 리팩터링 커밋이 들어 있습니다",
+  many_commits: "커밋이 많습니다",
+  long_span: "여러 날에 걸쳐 작업했습니다",
+  many_files: "변경한 파일이 많습니다",
 };
 
 export const MANY_COMMITS_THRESHOLD = 5;

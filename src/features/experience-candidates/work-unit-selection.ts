@@ -87,8 +87,8 @@ export const WORK_UNIT_SELECTION_EXCLUSION_COPY: Record<
   WorkUnitSelectionExclusionReason,
   string
 > = {
-  over_input_budget: "This unit did not make it.",
-  over_byte_budget: "This single unit alone exceeds what one request can carry.",
+  over_input_budget: "이 묶음은 선별에 들지 못했습니다.",
+  over_byte_budget: "이 묶음 하나만으로 한 번에 보낼 수 있는 분량을 넘습니다.",
 };
 
 /**

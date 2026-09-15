@@ -38,7 +38,7 @@ const VERIFIED_NOTICE_ID = "candidate-repository-verified-notice";
  * 그 문구는 스키마에 필드가 없다는 뜻이었고, 이제 필드가 있으므로 "이 후보에서는 고를 것이
  * 없었다"는 다른 사실을 말해야 합니다(이슈 #110).
  */
-const TOPICS_EMPTY_NOTICE = "No technical topics were identified from the diffs and commit messages of this candidate.";
+const TOPICS_EMPTY_NOTICE = "이 후보의 diff와 커밋 메시지에서는 기술 토픽을 찾지 못했습니다.";
 
 /** 목록에 3개 초과일 때 접어 두는 기준입니다. 디자인의 "View all" 기준과 같습니다. */
 const EVIDENCE_LIST_COLLAPSE_THRESHOLD = 3;
@@ -98,7 +98,7 @@ export function ExperienceCandidateDetail({
       <div className={styles.header}>
         <p className={styles.eyebrow}>Experience</p>
         <h2>{title}</h2>
-        {commit === null ? <p className={styles.notice}>Representative commit not found in the commit index.</p> : null}
+        {commit === null ? <p className={styles.notice}>대표 커밋을 커밋 색인에서 찾지 못했습니다.</p> : null}
         <div className={styles.meta}>
           <span>{pluralCount(commitCount, "commit")}</span>
           {period ? <span>{period.start === period.end ? period.start : `${period.start} – ${period.end}`}</span> : null}
@@ -159,7 +159,7 @@ export function ExperienceCandidateDetail({
           </div>
           {evidenceEntries.length > EVIDENCE_LIST_COLLAPSE_THRESHOLD ? (
             <button className={styles.viewAllButton} type="button" onClick={() => setShowAllEvidence((value) => !value)}>
-              {showAllEvidence ? "Show less" : `View all ${pluralCount(evidenceEntries.length, "commit")} →`}
+              {showAllEvidence ? "간단히 보기" : `전체 ${pluralCount(evidenceEntries.length, "commit")} 보기 →`}
             </button>
           ) : null}
         </section>
@@ -168,14 +168,14 @@ export function ExperienceCandidateDetail({
           <div className={styles.selectionError} role="alert" data-selection-error={selectionError}>
             <strong>{EXPERIENCE_SELECTION_ERROR_COPY[selectionError].title}</strong>
             <span>{EXPERIENCE_SELECTION_ERROR_COPY[selectionError].message}</span>
-            <button className={styles.backButton} type="button" onClick={onBack}>← Back to candidates</button>
+            <button className={styles.backButton} type="button" onClick={onBack}>← 후보 목록으로</button>
           </div>
         ) : null}
       </div>
 
       <div className={styles.footer}>
         <button className={styles.secondaryButton} type="button" onClick={onSelectRepository}>
-          Choose a different repository
+          다른 Repository 선택
         </button>
         <button
           className={styles.primaryButton}
@@ -183,7 +183,7 @@ export function ExperienceCandidateDetail({
           aria-describedby={`${EVIDENCE_NOTICE_ID} ${VERIFIED_NOTICE_ID}`}
           onClick={onConfirm}
         >
-          Start interview <span aria-hidden="true">→</span>
+          인터뷰 시작 <span aria-hidden="true">→</span>
         </button>
       </div>
     </section>

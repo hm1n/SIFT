@@ -53,19 +53,19 @@ export const EXPERIENCE_SELECTION_ERROR_COPY: Record<
   { readonly title: string; readonly message: string }
 > = {
   representative_commit_not_indexed: {
-    title: "Can't start an interview for this experience",
+    title: "이 경험으로는 인터뷰를 시작할 수 없습니다",
     message:
-      "The representative commit wasn't found in the commit index, so its title, message, PR info, and changed files can't be used as evidence. Dismiss this message and select a different experience.",
+      "대표 커밋을 커밋 색인에서 찾지 못해 제목, 메시지, PR 정보, 변경 파일을 근거로 쓸 수 없습니다. 이 안내를 닫고 다른 경험을 선택해 주세요.",
   },
   no_repository_evidence: {
-    title: "Can't start an interview for this experience",
+    title: "이 경험으로는 인터뷰를 시작할 수 없습니다",
     message:
-      "Neither the representative commit nor its related commits have any changed files, so there's no code to ask about. Dismiss this message and select a different experience.",
+      "대표 커밋과 관련 커밋 어디에도 변경 파일이 없어 물어볼 코드가 없습니다. 이 안내를 닫고 다른 경험을 선택해 주세요.",
   },
   evidence_input_too_large: {
-    title: "This experience's evidence exceeds the interview input limit",
+    title: "이 경험의 근거가 인터뷰 입력 한도를 넘습니다",
     message:
-      "Even without any code changes, the commit messages and changed file list alone exceed the limit. Dismiss this message and select a different experience.",
+      "코드 변경을 빼고 커밋 메시지와 변경 파일 목록만으로도 한도를 넘습니다. 이 안내를 닫고 다른 경험을 선택해 주세요.",
   },
 };
 
