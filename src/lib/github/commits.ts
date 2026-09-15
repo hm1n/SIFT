@@ -64,12 +64,56 @@ export async function classifyErrorResponse(response: Response): Promise<GitHubF
   return "server_error";
 }
 
+/**
+ * 전송 실패 한정 시도 횟수입니다. 실패 한 건이 undici의 연결 제한 10초를 쓰므로, commit-details의
+ * maxDuration 60초 예산(정상 배치 약 17초) 안에 들도록 총 2회까지만 시도합니다.
+ */
+const GITHUB_FETCH_ATTEMPTS = 2;
+
+function errorCode(value: unknown): unknown {
+  return typeof value === "object" && value !== null && "code" in value && typeof value.code === "string"
+    ? value.code
+    : undefined;
+}
+
+/** 개발 서버에만 연결 오류 코드와 몇 번째 시도인지를 남깁니다. 토큰과 예외 원문은 남기지 않습니다. */
+function logNetworkFailure(url: string, error: unknown, elapsedMs: number, attempt: number): void {
+  if (process.env.NODE_ENV !== "development") return;
+  const cause = error instanceof Error ? error.cause : undefined;
+  console.error("[githubFetch] network failure", {
+    url,
+    attempt,
+    attempts: GITHUB_FETCH_ATTEMPTS,
+    elapsedMs,
+    name: error instanceof Error ? error.name : undefined,
+    code: errorCode(error),
+    causeCode: errorCode(cause),
+    ...(cause instanceof AggregateError ? { causeCodes: cause.errors.map(errorCode) } : {}),
+  });
+}
+
+/**
+ * fetch가 reject한 전송 실패만 한 번 더 시도합니다. HTTP 오류 응답은 fetch가 정상 반환하므로
+ * 재시도 없이 그대로 classifyErrorResponse로 넘어갑니다. 정체 원인이 서버 혼잡이 아니라 로컬
+ * 이름 해석이고 실패 직후 재요청이 245ms에 성공했으므로(2026-09-15 측정) 대기를 두지 않습니다.
+ */
 export async function githubFetch(url: string, token: string): Promise<Response> {
-  try {
-    return await fetch(url, { headers: githubHeaders(token) });
-  } catch {
-    throw new GitHubFetchError("network", `The GitHub API request failed: ${url}`);
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= GITHUB_FETCH_ATTEMPTS; attempt += 1) {
+    const startedAt = Date.now();
+    try {
+      return await fetch(url, { headers: githubHeaders(token) });
+    } catch (error) {
+      lastError = error;
+      logNetworkFailure(url, error, Date.now() - startedAt, attempt);
+    }
   }
+  throw new GitHubFetchError(
+    "network",
+    `The GitHub API request failed after ${GITHUB_FETCH_ATTEMPTS} attempts: ${url}`,
+    undefined,
+    { cause: lastError }
+  );
 }
 
 /** 성공 응답의 body 파싱이 실패하면(끊긴 연결, 깨진 JSON) network 오류로 통일해서 던진다. */
