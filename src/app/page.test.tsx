@@ -32,7 +32,7 @@ afterEach(() => {
 describe("Home", () => {
   it("세션 쿠키가 없으면 로그인 화면만 그리고 Repository 목록을 조회하지 않는다", async () => {
     render(await renderHome());
-    expect(screen.getByRole("link", { name: "Continue with GitHub" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "GitHub으로 계속하기" })).toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -42,7 +42,7 @@ describe("Home", () => {
     render(await renderHome());
     expect(screen.getByRole("status")).toHaveTextContent("Loading Repositories");
     expect(fetch).toHaveBeenCalledWith("/api/github/repositories", undefined);
-    expect(screen.queryByRole("link", { name: "Continue with GitHub" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "GitHub으로 계속하기" })).not.toBeInTheDocument();
   });
 
   it("세션 쿠키가 없고 auth_error가 있으면 ERROR / AUTH 상태를 그린다", async () => {
@@ -52,7 +52,7 @@ describe("Home", () => {
 
   it("auth_error가 여러 번 오면 첫 값만 쓴다", async () => {
     render(await renderHome({ auth_error: ["state_mismatch", "access_denied"] }));
-    expect(screen.getByRole("alert")).toHaveTextContent("We couldn't verify the login request.");
+    expect(screen.getByRole("alert")).toHaveTextContent("로그인 요청을 확인하지 못했습니다.");
   });
 
   // 로그인이 이미 끝난 뒤 남은 쿼리입니다. 세션이 있으면 오류가 아닙니다.
@@ -72,6 +72,6 @@ describe("Home", () => {
     cookieNames.delete(GITHUB_SESSION_COOKIE);
     rerender(await renderHome());
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Continue with GitHub" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "GitHub으로 계속하기" })).toBeInTheDocument();
   });
 });
