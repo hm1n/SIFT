@@ -51,6 +51,22 @@ describe("resolveMeasurementId", () => {
     process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID = value;
     expect(resolveMeasurementId()).toBeNull();
   });
+
+  /**
+   * 문자 집합만 보면 GA4 웹 스트림이 아닌 값도 통과해 스크립트 로드와 전송 경로가 켜지고, 이벤트가
+   * 어디에도 도착하지 않은 채 조용히 사라집니다(PR #129 리뷰).
+   */
+  it.each([
+    ["no prefix", "ABC123"],
+    ["an empty identifier", "G-"],
+    ["only hyphens", "---"],
+    ["a Tag Manager id", "GTM-ABC123"],
+    ["a Google Ads id", "AW-123456789"],
+    ["a lowercase prefix", "g-ABC123"],
+  ])("treats %s as absent", (_label, value) => {
+    process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID = value;
+    expect(resolveMeasurementId()).toBeNull();
+  });
 });
 
 describe("sendGaEvent", () => {

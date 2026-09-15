@@ -56,10 +56,16 @@ export const GA_MEASUREMENT_ID_ENV = "NEXT_PUBLIC_GA_MEASUREMENT_ID";
 export function resolveMeasurementId(): string | null {
   const measurementId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID?.trim();
   if (!measurementId) return null;
-  // 측정 ID는 인라인 부트스트랩 스크립트 본문에 문자열로 박힙니다. 형식을 벗어난 값을 그대로 넣으면
-  // 환경변수가 스크립트를 깨거나 코드를 끼워 넣는 통로가 됩니다. GA4 측정 ID는 `G-` 뒤에 영숫자이고
-  // 그 바깥 문자가 있으면 설정이 잘못된 것이므로 값이 없는 것과 같이 다룹니다.
-  return /^[A-Za-z0-9-]+$/.test(measurementId) ? measurementId : null;
+  /**
+   * 측정 ID는 인라인 부트스트랩 스크립트 본문에 문자열로 박힙니다. 형식을 벗어난 값을 그대로 넣으면
+   * 환경변수가 스크립트를 깨거나 코드를 끼워 넣는 통로가 됩니다.
+   *
+   * `G-` 접두사와 그 뒤의 식별자를 함께 봅니다. 문자 집합만 보면 `ABC123`이나 `G-`처럼 GA4 웹
+   * 스트림이 아닌 값도 통과해 스크립트 로드와 전송 경로가 켜지고, 이벤트가 어디에도 도착하지 않은 채
+   * 조용히 사라집니다(PR #129 리뷰). 형식을 벗어나면 설정이 잘못된 것이므로 값이 없는 것과 같이
+   * 다룹니다. GTM(`GTM-`)이나 Google Ads(`AW-`)는 이 앱이 쓰지 않습니다.
+   */
+  return /^G-[A-Za-z0-9]+$/.test(measurementId) ? measurementId : null;
 }
 
 /**
