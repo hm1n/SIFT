@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
-import { clearAnalysisFlow, setAnalyticsUser, trackEvent } from "./events";
+import { clearFlow, setAnalyticsUser, trackEvent } from "./events";
 
 /** 로그인 결과입니다. 세션 유무를 아는 쪽이 서버이므로 `page.tsx`가 판정해서 넘깁니다. */
 export type LoginResult = { readonly success: true } | { readonly success: false; readonly errorKind: string };
@@ -50,9 +50,9 @@ export function AnalyticsSession({ userId, signedIn, loginResult, urlAfterReport
      * 문맥이 gtag에 남습니다. 지우지 않으면 뒤이어 그려지는 로그인 화면의 `login_view`와
      * `login_start`가 지난 분석의 묶음에 붙습니다(PR #129 리뷰).
      *
-     * 세션 경계를 아는 곳이 여기입니다. 분석을 한 적이 없으면 `clearAnalysisFlow`가 걸러냅니다.
+     * 세션 경계를 아는 곳이 여기입니다. 흐름을 시작한 적이 없으면 `clearFlow`가 걸러냅니다.
      */
-    if (!signedIn) clearAnalysisFlow();
+    if (!signedIn) clearFlow();
   }, [userId, signedIn]);
 
   useEffect(() => {

@@ -4,12 +4,21 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { emptyExperienceBlockState } from "@/features/experience-block/types";
+import { emptyInterviewProgress } from "@/features/experience-block/progress";
 import { fitPanelWidths, InterviewScreen } from "./interview-screen";
 import { DEFAULT_EXPERIENCE_BLOCK_UPDATE_URL } from "@/features/experience-block/use-experience-interview";
 import { evidenceSnapshotFixture, FIXTURE_REPRESENTATIVE_SHA } from "./question-fixture";
 import { createTestStream, type TestStreamScenario } from "./test-stream";
 
 afterEach(cleanup);
+
+const trackEvent = vi.fn();
+vi.mock("@/features/analytics/events", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/features/analytics/events")>();
+  return { ...original, trackEvent: (...args: unknown[]) => trackEvent(...args) };
+});
+
+afterEach(() => trackEvent.mockReset());
 
 /** 이 화면이 답변마다 부르는 블록 갱신에 항상 성공 응답을 준비해 둡니다(이슈 #90). */
 function defaultBlockUpdateResponse(): Response {
@@ -448,5 +457,62 @@ describe("fitPanelWidths", () => {
 
     expect(fitted.code).toBe(300);
     expect(700 - fitted.code - 4).toBeGreaterThanOrEqual(280);
+  });
+});
+
+/**
+ * 새 분석에서 온 인터뷰와 저장된 인터뷰를 잇는 인터뷰가 모두 이 화면을 지납니다. 두 경로를 한
+ * 자리에서 셀 수 있는 곳이 여기뿐이라 시작 이벤트가 이 화면에 붙습니다.
+ */
+describe("InterviewScreen 계측", () => {
+  const RESTORED = {
+    history: [
+      { role: "question", text: "문제 상황을 알려주세요" },
+      { role: "answer", text: "화면이 비어 있었습니다." },
+    ],
+    blockState: emptyExperienceBlockState(),
+    progress: emptyInterviewProgress(),
+  } as const;
+
+  it("대화가 열리면 interview_started를 한 번 남긴다", async () => {
+    render(
+      <InterviewScreen snapshot={evidenceSnapshotFixture()} onBack={vi.fn()} fetchImpl={pendingFetch()} />
+    );
+
+    await waitFor(() => expect(trackEvent).toHaveBeenCalledWith({ name: "interview_started", turn: 0 }));
+    expect(trackEvent.mock.calls.filter(([event]) => event.name === "interview_started")).toHaveLength(1);
+  });
+
+  /** 이어가기는 저장된 턴 수부터 셉니다. 0으로 보내면 중도 이탈이 몰린 턴이 앞으로 당겨집니다. */
+  it("이어가기는 저장된 턴 수를 싣는다", async () => {
+    render(
+      <InterviewScreen
+        snapshot={evidenceSnapshotFixture()}
+        onBack={vi.fn()}
+        restore={{ ...RESTORED, status: "in_progress" }}
+        fetchImpl={pendingFetch()}
+      />
+    );
+
+    await waitFor(() => expect(trackEvent).toHaveBeenCalledWith({ name: "interview_started", turn: 1 }));
+  });
+
+  /**
+   * 끝난 인터뷰를 다시 열면 이 화면이 읽기 전용으로 뜹니다. 세면 인터뷰 시작 수가 요약을 다시 열어
+   * 본 횟수만큼 부풀어 중도 이탈률이 실제보다 낮게 보입니다.
+   */
+  it("끝난 인터뷰를 다시 열면 세지 않는다", async () => {
+    render(
+      <InterviewScreen
+        snapshot={evidenceSnapshotFixture()}
+        onBack={vi.fn()}
+        restore={{ ...RESTORED, status: "completed" }}
+        fetchImpl={pendingFetch()}
+      />
+    );
+
+    // 화면이 다 그려진 뒤에 봅니다. 마운트 직후에 보면 아직 보내지 않은 것과 구분되지 않습니다.
+    expect(await screen.findByRole("region", { name: "PAAR" })).toBeInTheDocument();
+    expect(trackEvent.mock.calls.map(([event]) => event.name)).not.toContain("interview_started");
   });
 });

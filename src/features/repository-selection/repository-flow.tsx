@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { AppShell } from "@/components/shell/app-shell";
 import { Button } from "@/components/shell/button";
 import { StatusScreen } from "@/components/shell/status-screen";
-import { clearAnalysisFlow, startAnalysisFlow, trackEvent } from "@/features/analytics/events";
+import { clearFlow, startFlow, trackEvent } from "@/features/analytics/events";
 import { InterviewScreen } from "@/features/interview/interview-screen";
 import { RepositoryAnalysisView } from "@/features/repository-analysis/repository-analysis-view";
 import { SavedInterviewList } from "@/features/saved-interviews/saved-interview-list";
@@ -105,14 +105,22 @@ export function RepositoryFlow() {
       options.onRun?.();
       setMode(next);
       /**
-       * 분석 화면을 떠나면 그 분석의 묶음이 끝납니다. 비우지 않으면 다음 분석을 시작하기 전에
-       * 일어나는 이벤트(`repo_list_loaded`)가 지난 분석의 `flow_id`를 달고 나갑니다.
+       * 흐름의 묶음을 여기 한 곳에서 갈아 끼웁니다. 이동이 전부 이 함수를 지나므로, 각 화면이 저마다
+       * 발급하고 비우면 이어가기처럼 나중에 생긴 경로가 그대로 빠져나갑니다.
        *
-       * 이동이 전부 이 함수를 지나므로 여기 한 곳에서만 비웁니다. 되돌아가기마다 비우면 이어가기로
-       * 빠지는 경로가 그대로 빠져나갑니다. 세운 적이 없을 때 지우기를 걸러내는 일은
-       * `clearAnalysisFlow`가 자기 안에서 합니다.
+       * 분석은 `startAnalysis`가 이미 세운 뒤에 이 함수를 부릅니다. 저장소 문맥을 함께 세워야 해서
+       * 이동보다 먼저 일어나야 합니다. 여기서 다시 세우면 그 값을 덮어씁니다.
+       *
+       * 이어가기는 여기서 세웁니다. 저장된 인터뷰를 여는 것이 그 흐름의 시작이고, 이 경로는 분석
+       * 이벤트를 하나도 거치지 않아 `flow_id`를 발급할 다른 자리가 없습니다. 요약 화면에서 대화로
+       * 넘어가는 것은 `setMode`가 직접 하므로, 한 번 연 인터뷰는 대화까지 같은 값으로 묶입니다.
+       *
+       * Repository 선택으로 돌아가면 비웁니다. 비우지 않으면 다음 분석을 시작하기 전에 일어나는
+       * 이벤트(`repo_list_loaded`)가 지난 흐름의 `flow_id`를 달고 나갑니다. 세운 적이 없을 때
+       * 지우기를 걸러내는 일은 `clearFlow`가 자기 안에서 합니다.
        */
-      if (next.kind !== "analysis") clearAnalysisFlow();
+      if (next.kind === "resume") startFlow({ entryPath: "resumed_interview" });
+      else if (next.kind !== "analysis") clearFlow();
       // 인터뷰를 떠날 때마다 목록을 다시 읽습니다. 진행도와 끝난 표시가 그 사이에 바뀝니다.
       if (wasInterviewOpen) interviews.reload();
     };
@@ -135,11 +143,10 @@ export function RepositoryFlow() {
    * 예외가 계측 밖으로 나와 분석 시작을 막습니다.
    *
    * 저장된 인터뷰를 잇는 경로(`openInterview`)는 이 자리를 지나지 않아 분석 이벤트가 하나도 남지
-   * 않습니다. 진입 경로를 가르는 파라미터는 아직 없습니다
-   * (`llm-wiki/wiki/2026-09-15-GA4-계측-후속-backlog.md` 3번).
+   * 않습니다. 두 경로는 `entry_path`로 갈라집니다. 이어가기 쪽의 발급은 `navigate`가 합니다.
    */
   function startAnalysis(summary: RepositorySummary, contributionItems: readonly string[]) {
-    startAnalysisFlow({ repoVisibility: summary.visibility, repoLanguage: summary.language });
+    startFlow({ entryPath: "new_analysis", repoVisibility: summary.visibility, repoLanguage: summary.language });
     trackEvent({ name: "analysis_requested", contribution_item_count: contributionItems.length });
     navigate({ kind: "analysis", summary, contributionItems });
   }

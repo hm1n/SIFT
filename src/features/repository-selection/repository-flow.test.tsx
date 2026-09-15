@@ -19,15 +19,15 @@ const routerMock = { push: vi.fn(), refresh: vi.fn(), replace: vi.fn() };
 vi.mock("next/navigation", () => ({ useRouter: () => routerMock }));
 
 const trackEvent = vi.fn();
-const startAnalysisFlow = vi.fn();
-const clearAnalysisFlow = vi.fn();
+const startFlow = vi.fn();
+const clearFlow = vi.fn();
 vi.mock("@/features/analytics/events", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/features/analytics/events")>();
   return {
     ...original,
     trackEvent: (...args: unknown[]) => trackEvent(...args),
-    startAnalysisFlow: (...args: unknown[]) => startAnalysisFlow(...args),
-    clearAnalysisFlow: (...args: unknown[]) => clearAnalysisFlow(...args),
+    startFlow: (...args: unknown[]) => startFlow(...args),
+    clearFlow: (...args: unknown[]) => clearFlow(...args),
   };
 });
 
@@ -69,8 +69,8 @@ function repositoryListCalls(calls: readonly string[]): number {
 beforeEach(() => {
   analyzeMock.mockReset();
   trackEvent.mockReset();
-  startAnalysisFlow.mockReset();
-  clearAnalysisFlow.mockReset();
+  startFlow.mockReset();
+  clearFlow.mockReset();
   advanceAnalysisTracker.mockReset();
   advanceAnalysisTracker.mockImplementation((tracker: unknown) => ({ tracker, events: [] }));
   stubFetch();
@@ -119,8 +119,8 @@ describe("RepositoryFlow", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Your Contribution" }), { target: { value: "푸시 알림 구현\n스크롤 복원" } });
     fireEvent.click(screen.getByRole("button", { name: /Analyze/ }));
 
-    await waitFor(() => expect(startAnalysisFlow).toHaveBeenCalledTimes(1));
-    expect(startAnalysisFlow).toHaveBeenCalledWith({ repoVisibility: "public", repoLanguage: "TypeScript" });
+    await waitFor(() => expect(startFlow).toHaveBeenCalledTimes(1));
+    expect(startFlow).toHaveBeenCalledWith({ entryPath: "new_analysis", repoVisibility: "public", repoLanguage: "TypeScript" });
     expect(trackEvent).toHaveBeenCalledWith({ name: "analysis_requested", contribution_item_count: 2 });
     expect(JSON.stringify(trackEvent.mock.calls)).not.toContain("hello-world");
   });
@@ -168,7 +168,7 @@ describe("RepositoryFlow", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Choose a different repository" }));
 
     await screen.findByRole("heading", { name: "Choose a repository to analyze." });
-    expect(clearAnalysisFlow).toHaveBeenCalledTimes(1);
+    expect(clearFlow).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -344,6 +344,23 @@ describe("RepositoryFlow 이어가기", () => {
     expect(await screen.findByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
     // 저장된 대화를 들고 시작합니다.
     expect(screen.getByText("화면이 비어 있었습니다.")).toBeInTheDocument();
+  });
+
+  /**
+   * 이 경로는 `analysis_requested`부터 `analysis_succeeded`까지를 하나도 거치지 않습니다. 여기서
+   * 흐름을 세우지 않으면 이어가기로 일어난 이벤트가 `flow_id` 없이, 또는 지난 분석의 값을 달고
+   * 나가 리포트에서 인터뷰 시작 수가 분석 성공 수보다 커 보입니다.
+   */
+  it("사이드바에서 저장된 인터뷰를 열면 이어가기 흐름을 세운다", async () => {
+    stubWithSavedInterview(() => Response.json({ interview: STORED }));
+    render(<RepositoryFlow />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
+
+    await waitFor(() => expect(startFlow).toHaveBeenCalledWith({ entryPath: "resumed_interview" }));
+    // 이어가기는 흐름을 새로 세우는 것이지 비우는 것이 아닙니다. 비우면 곧바로 나가는
+    // `interview_started`가 묶는 값 없이 전송됩니다.
+    expect(clearFlow).not.toHaveBeenCalled();
   });
 
   it("지워진 인터뷰를 고르면 그 사실을 알리고 다시 시도할 수 있다", async () => {

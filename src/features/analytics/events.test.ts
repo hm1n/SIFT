@@ -9,7 +9,7 @@ vi.mock("@/lib/analytics/ga", () => ({
   setGaParams: (...args: unknown[]) => setGaParams(...args),
 }));
 
-const { clearAnalysisFlow, commitCountBucket, setAnalyticsUser, startAnalysisFlow, trackEvent } =
+const { clearFlow, commitCountBucket, setAnalyticsUser, startFlow, trackEvent } =
   await import("./events");
 
 beforeEach(() => {
@@ -84,17 +84,62 @@ describe("공통 파라미터", () => {
   });
 
   it("sets the flow id and repository context when an analysis starts", () => {
-    startAnalysisFlow({ repoVisibility: "private", repoLanguage: "TypeScript" });
+    startFlow({ entryPath: "new_analysis", repoVisibility: "private", repoLanguage: "TypeScript" });
     expect(setGaParams).toHaveBeenCalledWith({
       flow_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      entry_path: "new_analysis",
       repo_visibility: "private",
       repo_language: "TypeScript",
     });
   });
 
+  /**
+   * 저장된 인터뷰를 잇는 흐름입니다. 이 경로는 분석 이벤트를 하나도 거치지 않으므로, 이 값이
+   * 없으면 리포트에서 인터뷰 시작 수가 분석 성공 수보다 커 보입니다.
+   */
+  it("marks a resumed interview as its own flow", async () => {
+    // 저장소 문맥을 세운 적이 있는지는 모듈 상태이므로 앞 테스트와 섞이지 않게 새로 불러옵니다.
+    vi.resetModules();
+    const fresh = await import("./events");
+    setGaParams.mockClear();
+    fresh.startFlow({ entryPath: "resumed_interview" });
+    expect(setGaParams).toHaveBeenCalledWith({
+      flow_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      entry_path: "resumed_interview",
+    });
+  });
+
+  /**
+   * 저장된 인터뷰에는 공개 여부와 언어가 없습니다. 앞 분석이 세워 둔 값을 그대로 두면 이어가는
+   * 인터뷰의 이벤트가 엉뚱한 저장소의 문맥을 달고 나갑니다.
+   */
+  it("drops the repository context when a resumed interview follows an analysis", () => {
+    startFlow({ entryPath: "new_analysis", repoVisibility: "private", repoLanguage: "TypeScript" });
+    setGaParams.mockClear();
+    startFlow({ entryPath: "resumed_interview" });
+    expect(setGaParams).toHaveBeenCalledWith(
+      expect.objectContaining({ repo_visibility: null, repo_language: null })
+    );
+  });
+
+  /**
+   * 로그인하자마자 저장된 인터뷰를 이어가면 분석을 한 번도 하지 않은 채 흐름이 시작됩니다. 세운 적
+   * 없는 저장소 문맥을 null로 지우면 gtag가 그 자리를 빈 문자열로 직렬화해 이후 모든 이벤트에
+   * 실어 보냅니다(`user_id`에서 실측).
+   */
+  it("does not clear a repository context that was never set", async () => {
+    vi.resetModules();
+    const fresh = await import("./events");
+    setGaParams.mockClear();
+    fresh.startFlow({ entryPath: "resumed_interview" });
+    expect(setGaParams).toHaveBeenCalledWith(
+      expect.not.objectContaining({ repo_visibility: null, repo_language: null })
+    );
+  });
+
   /** 언어가 없는 저장소가 있습니다. 빈 문자열 대신 파라미터를 지워 값 없음과 값 있음을 가릅니다. */
   it("clears the language when the repository has none", () => {
-    startAnalysisFlow({ repoVisibility: "public", repoLanguage: null });
+    startFlow({ entryPath: "new_analysis", repoVisibility: "public", repoLanguage: null });
     expect(setGaParams).toHaveBeenCalledWith(expect.objectContaining({ repo_language: null }));
   });
 
@@ -106,7 +151,7 @@ describe("공통 파라미터", () => {
     const randomUUID = vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(() => {
       throw new TypeError("crypto.randomUUID is not a function");
     });
-    expect(() => startAnalysisFlow({ repoVisibility: "public", repoLanguage: null })).not.toThrow();
+    expect(() => startFlow({ entryPath: "new_analysis", repoVisibility: "public", repoLanguage: null })).not.toThrow();
     randomUUID.mockRestore();
   });
 
@@ -118,17 +163,26 @@ describe("공통 파라미터", () => {
     const randomUUID = vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(() => {
       throw new TypeError("crypto.randomUUID is not a function");
     });
-    startAnalysisFlow({ repoVisibility: "private", repoLanguage: "TypeScript" });
-    expect(setGaParams).toHaveBeenCalledWith({ repo_visibility: "private", repo_language: "TypeScript" });
+    startFlow({ entryPath: "new_analysis", repoVisibility: "private", repoLanguage: "TypeScript" });
+    expect(setGaParams).toHaveBeenCalledWith({
+      entry_path: "new_analysis",
+      repo_visibility: "private",
+      repo_language: "TypeScript",
+    });
     randomUUID.mockRestore();
   });
 
   /** 비우지 않으면 다음 분석을 시작하기 전의 이벤트가 지난 분석의 `flow_id`를 달고 나갑니다. */
   it("clears the whole flow context when the repository changes", () => {
-    startAnalysisFlow({ repoVisibility: "public", repoLanguage: null });
+    startFlow({ entryPath: "new_analysis", repoVisibility: "public", repoLanguage: null });
     setGaParams.mockClear();
-    clearAnalysisFlow();
-    expect(setGaParams).toHaveBeenCalledWith({ flow_id: null, repo_visibility: null, repo_language: null });
+    clearFlow();
+    expect(setGaParams).toHaveBeenCalledWith({
+      flow_id: null,
+      entry_path: null,
+      repo_visibility: null,
+      repo_language: null,
+    });
   });
 
   /**
@@ -141,7 +195,7 @@ describe("공통 파라미터", () => {
     vi.resetModules();
     const fresh = await import("./events");
     setGaParams.mockClear();
-    fresh.clearAnalysisFlow();
+    fresh.clearFlow();
     expect(setGaParams).not.toHaveBeenCalled();
   });
 
@@ -150,8 +204,8 @@ describe("공통 파라미터", () => {
       throw new Error("transport is broken");
     });
     expect(() => setAnalyticsUser("hashed-user")).not.toThrow();
-    expect(() => startAnalysisFlow({ repoVisibility: "public", repoLanguage: null })).not.toThrow();
-    expect(() => clearAnalysisFlow()).not.toThrow();
+    expect(() => startFlow({ entryPath: "new_analysis", repoVisibility: "public", repoLanguage: null })).not.toThrow();
+    expect(() => clearFlow()).not.toThrow();
     setGaParams.mockReset();
   });
 });
@@ -171,6 +225,7 @@ const EVENT_SAMPLES: readonly AnalyticsEvent[] = [
   { name: "analysis_empty", empty_kind: "no_final_candidates" },
   { name: "analysis_failed", error_kind: "llm_hallucination_rejected", recovery: "retry", stage: "stage_b" },
   { name: "analysis_retried", error_kind: "rate_limit", retry_scope: "candidate_generation" },
+  { name: "interview_started", turn: 3 },
 ];
 
 describe("GA4 한도", () => {
