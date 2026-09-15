@@ -3,6 +3,7 @@ import { Geist_Mono, Inter } from "next/font/google";
 import { cookies } from "next/headers";
 import { AuthTransitionProvider } from "@/components/shell/auth-transition";
 import { TopHeader } from "@/components/shell/top-header";
+import { GoogleAnalyticsScript } from "@/features/analytics/ga-script";
 import { GITHUB_SESSION_COOKIE } from "@/lib/github/auth-session";
 import "./globals.css";
 
@@ -43,6 +44,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           <TopHeader isAuthenticated={cookieStore.has(GITHUB_SESSION_COOKIE)} />
           {children}
         </AuthTransitionProvider>
+        <GoogleAnalyticsScript />
       </body>
     </html>
   );
