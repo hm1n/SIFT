@@ -348,7 +348,7 @@ describe("POST /api/interview/stream", () => {
       {
         type: "error",
         kind: "llm_failure",
-        message: "The question generation service is temporarily unavailable.",
+        message: "질문 생성 서비스를 일시적으로 쓸 수 없습니다.",
       },
     ]);
   });

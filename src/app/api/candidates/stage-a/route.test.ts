@@ -255,7 +255,7 @@ describe("POST /api/candidates/stage-a", () => {
     const output = await response.json();
     expect(output.error.kind).toBe("invalid_request");
     // 오류 종류는 기존 계약(invalid_request)을 그대로 쓰되, 메시지로 기여 항목이 원인임을 밝힌다.
-    expect(output.error.message).toContain("contribution note");
+    expect(output.error.message).toContain("기여 항목");
   });
 
   it("요약과 기여 항목을 합쳐도 상한 안이면 정상 처리된다", async () => {
