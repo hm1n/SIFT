@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/shell/button";
 import { StatusScreen } from "@/components/shell/status-screen";
 import { SESSION_PATH } from "@/lib/github/auth-paths";
 import type { RepositorySummary } from "@/lib/github/types";
@@ -9,9 +10,11 @@ import { ExperienceCandidateList, StageAExclusions } from "@/features/experience
 import type { ConfirmedExperience } from "@/features/experience-candidates/experience-selection";
 import {
   createSavedInterview,
+  fetchAnalysisByRepository,
   saveRepositoryAnalysis,
   SavedInterviewFetchError,
 } from "@/features/saved-interviews/client";
+import type { StoredAnalysisPayload } from "@/features/saved-interviews/payload";
 import { buildStoredAnalysis } from "./analysis-snapshot";
 import {
   analyzeRepository,
@@ -24,6 +27,17 @@ import {
 import styles from "./repository-analysis.module.css";
 
 const INITIAL_STATE: AnalysisState = { status: "idle" };
+
+/**
+ * 저장된 분석이 있는지 찾아보는 단계의 상태입니다(이슈 #116).
+ *
+ * `AnalysisState`에 섞지 않습니다. 이것은 분석의 한 단계가 아니라 분석을 할지 말지를 정하는 단계이고,
+ * 섞으면 Loading 체크리스트가 하지 않은 분석 단계를 진행 중인 것처럼 보입니다.
+ */
+type LookupState =
+  | { readonly status: "loading" }
+  | { readonly status: "done" }
+  | { readonly status: "failed"; readonly message: string };
 
 /**
  * Loading 체크리스트가 그리는 6개 실제 분석 단계입니다. 순서는 `route-client.ts`의
@@ -73,6 +87,8 @@ export interface RepositoryAnalysisViewProps {
   createInterview?: typeof createSavedInterview;
   /** 테스트에서 분석 저장 요청을 대체하는 통로입니다(이슈 #116). */
   saveAnalysis?: typeof saveRepositoryAnalysis;
+  /** 테스트에서 저장된 분석 조회를 대체하는 통로입니다(이슈 #116). */
+  fetchAnalysis?: typeof fetchAnalysisByRepository;
   /** 인터뷰 줄을 새로 만들었을 때 알립니다. 사이드바 목록이 그 줄을 바로 보이게 다시 조회합니다. */
   onInterviewCreated?: () => void;
   /** 다른 탭이 먼저 저장했을 때 그 인터뷰를 최신 내용으로 다시 엽니다. */
@@ -104,6 +120,7 @@ export function RepositoryAnalysisView({
   onInterviewActiveChange,
   createInterview = createSavedInterview,
   saveAnalysis = saveRepositoryAnalysis,
+  fetchAnalysis = fetchAnalysisByRepository,
   onInterviewCreated,
   onLoadLatestInterview,
   onUnsavedInterviewChange,
@@ -126,20 +143,67 @@ export function RepositoryAnalysisView({
   const runRef = useRef(0);
   // 개발 모드의 StrictMode는 effect를 두 번 실행합니다. 같은 분석을 두 번 시작하지 않게 한 번만 시작합니다.
   const startedRef = useRef(false);
+  /**
+   * 저장된 분석을 찾아보는 단계입니다(이슈 #116). 분석 상태와 따로 두는 이유는 이것이 분석의 한
+   * 단계가 아니기 때문입니다. 체크리스트의 단계로 섞으면 화면이 하지 않은 일을 하고 있다고 말합니다.
+   */
+  const [lookup, setLookup] = useState<LookupState>({ status: "loading" });
+  /** 저장된 분석으로 그린 화면이면 그 분석을 저장한 시각입니다. 다시 분석하면 비웁니다. */
+  const [savedAt, setSavedAt] = useState<string | null>(null);
 
   useEffect(() => {
     if (startedRef.current) return;
     startedRef.current = true;
-    const run = ++runRef.current;
-    void analyzeRepository(
+    void openRepository(++runRef.current);
+    // 이 effect가 부르는 함수들은 렌더마다 새로 만들어지지만 붙드는 값이 모두 ref와 setState라 실행
+    // 결과가 달라지지 않습니다. 의존성에 넣으면 effect가 매 렌더 다시 돌아 같은 분석을 다시 시작합니다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repository, contributionItems]);
+
+  /**
+   * 이 Repository를 엽니다. 저장된 분석이 있으면 그것으로 후보 화면을 그리고, 없을 때만 분석합니다
+   * (이슈 #116).
+   *
+   * 저장된 것이 있는데도 다시 분석하지 않는 이유는 Stage B가 쓰는 모델의 하루 요청 수가 프로젝트
+   * 전체에서 20회이기 때문입니다. 자동으로 다시 분석하면 사용자가 고르지 않은 요청이 그 한도를 씁니다.
+   * 다시 분석하는 일은 사용자가 화면에서 직접 고릅니다.
+   *
+   * 조회가 실패한 경우를 "저장된 것이 없음"으로 접지 않습니다. 접으면 저장 계층이 잠시 끊긴 동안
+   * 들어온 사용자마다 새 분석이 돌아 한도를 씁니다. 없는 것(`not_found`)만 분석으로 넘어갑니다.
+   */
+  async function openRepository(run: number): Promise<void> {
+    setLookup({ status: "loading" });
+    let stored: StoredAnalysisPayload | null = null;
+    try {
+      stored = await fetchAnalysis(repository.owner, repository.name);
+    } catch (error) {
+      if (runRef.current !== run) return;
+      if (!(error instanceof SavedInterviewFetchError) || error.kind !== "not_found") {
+        setLookup({ status: "failed", message: error instanceof Error ? error.message : "" });
+        return;
+      }
+    }
+    if (runRef.current !== run) return;
+    setLookup({ status: "done" });
+
+    if (stored !== null) {
+      analysisIdRef.current = stored.id;
+      setSavedAt(stored.createdAt);
+      setState({
+        status: "success",
+        data: { includedCommits: stored.candidates.includedCommits },
+        candidates: stored.candidates.candidates,
+        stageASelection: stored.stageASummary,
+      });
+      return;
+    }
+
+    await analyzeRepository(
       { owner: repository.owner, repo: repository.name },
       contributionItems,
       stateSinkFor(run)
     );
-    // `stateSinkFor`는 렌더마다 새로 만들어지지만 붙드는 값이 모두 ref와 setState라 실행 결과가
-    // 달라지지 않습니다. 의존성에 넣으면 이 effect가 매 렌더 다시 돌아 같은 분석을 다시 시작합니다.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repository, contributionItems]);
+  }
 
   /**
    * 이 실행이 아직 최신일 때만 상태를 반영하고, 분석이 끝나면 그 결과를 저장합니다(이슈 #116).
@@ -244,6 +308,8 @@ export function RepositoryAnalysisView({
     runRef.current += 1;
     // 다시 분석하면 앞 분석의 줄을 가리키는 식별자는 더 이상 이 화면의 결과가 아닙니다.
     analysisIdRef.current = null;
+    savingAnalysisRef.current = null;
+    setSavedAt(null);
     return analyzeRepository({ owner: repository.owner, repo: repository.name }, contributionItems, stateSinkFor(runRef.current));
   }
 
@@ -270,6 +336,28 @@ export function RepositoryAnalysisView({
       {state.status !== "loading" ? (
         <h1 className={styles.visuallyHidden}>{repository.owner} / {repository.name}</h1>
       ) : null}
+      {lookup.status === "loading" ? (
+        <StatusScreen
+          kind="loading"
+          code="LOADING"
+          label="Looking for a saved analysis…"
+          sub="If this repository was analyzed before, the saved result opens instead of a new analysis."
+        />
+      ) : null}
+      {lookup.status === "failed" ? (
+        <StatusScreen
+          kind="error"
+          code="ERROR / STORAGE"
+          label="Couldn't check for a saved analysis."
+          sub={
+            <>
+              A new analysis isn&apos;t started automatically, because it would use one of the few daily model
+              requests this project shares. {lookup.message}
+            </>
+          }
+          action={{ label: "Try again", onClick: () => void openRepository(++runRef.current) }}
+        />
+      ) : null}
       {state.status === "loading" ? <LoadingChecklist repository={repository} loading={state.loading} onSelectRepository={onSelectRepository} /> : null}
       {state.status === "empty" ? (
         <EmptyState
@@ -290,6 +378,7 @@ export function RepositoryAnalysisView({
       ) : null}
       {state.status === "success" ? (
         <div className={styles.content}>
+          {savedAt !== null ? <SavedAnalysisNotice savedAt={savedAt} onReanalyze={restart} /> : null}
           <ExperienceCandidateList
             repository={{ owner: repository.owner, repo: repository.name }}
             data={state.data}
@@ -306,6 +395,30 @@ export function RepositoryAnalysisView({
         </div>
       ) : null}
     </main>
+  );
+}
+
+/**
+ * 저장된 분석으로 그린 화면이라는 것을 알립니다(이슈 #116).
+ *
+ * 저장된 값이라는 사실을 감추면 사용자는 지금 저장소 상태를 본다고 오해합니다. 저장 뒤에 올라온
+ * 커밋은 이 후보 목록에 없습니다. 다시 분석하는 길도 여기서 함께 엽니다. 자동으로 다시 분석하지
+ * 않기로 한 이상(`openRepository`), 사용자가 고를 자리가 없으면 옛 결과에 갇힙니다.
+ */
+function SavedAnalysisNotice({ savedAt, onReanalyze }: { savedAt: string; onReanalyze: () => void }) {
+  const date = new Date(savedAt);
+  return (
+    <div className={styles.savedNotice} role="status">
+      <span className={styles.savedNoticeCode}>SAVED</span>
+      <p className={styles.savedNoticeText}>
+        Showing the analysis saved on{" "}
+        <time dateTime={savedAt}>
+          {Number.isNaN(date.getTime()) ? savedAt : date.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+        </time>
+        . Commits pushed since then are not in this list.
+      </p>
+      <Button variant="secondary" onClick={onReanalyze}>Analyze again</Button>
+    </div>
   );
 }
 

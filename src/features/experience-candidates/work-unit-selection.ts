@@ -5,7 +5,7 @@ import {
   type WorkUnitSignal,
 } from "./work-unit-score";
 import { renderWorkUnitSummary, summarizeWorkUnit } from "./work-unit-summary";
-import type { WorkUnit } from "./work-unit";
+import type { WorkUnit, WorkUnitKind } from "./work-unit";
 import { STAGE_A_MAX_UNITS } from "./stage-a";
 
 /**
@@ -62,6 +62,45 @@ export interface ExcludedWorkUnit<TCommit extends ScorableCommit>
    * 보여주려면 필요합니다. `selected`에는 화면이 쓰지 않아 싣지 않습니다.
    */
   readonly signals: readonly WorkUnitSignal[];
+}
+
+/**
+ * 제외된 묶음 하나를 화면과 저장이 쓰는 모양으로 줄인 것입니다(이슈 #116).
+ *
+ * `ExcludedWorkUnit`은 `unit.commits`에 그 묶음의 커밋 상세를 통째로 들고 있습니다. 묶음 상한이
+ * 200이라 그대로 저장하면 후보 밖 커밋 전량을 저장하는 셈이 되어 "원본 커밋 전량을 저장하지
+ * 않는다"는 제약을 깹니다. 제외 목록 화면(`StageAExclusions`)은 라벨과 제목과 점수와 신호만 그리고
+ * 묶음 안의 커밋은 한 번도 읽지 않으므로, 화면이 받는 값도 이 모양으로 좁힙니다.
+ *
+ * 화면과 저장이 같은 타입을 쓰는 것이 중요합니다. 둘이 갈라지면 저장된 분석으로 같은 화면을 그릴 때
+ * 모양을 맞추는 코드가 한 벌 더 생기고, 그 코드가 어긋나도 양쪽 테스트는 각자 통과합니다.
+ */
+export interface ExcludedUnitSummary {
+  readonly unitId: string;
+  readonly kind: WorkUnitKind;
+  readonly title: string;
+  /** Pull Request 묶음이 아니면 `null`입니다. 화면이 `PR #번호` 라벨에만 씁니다. */
+  readonly pullRequestNumber: number | null;
+  readonly score: number;
+  readonly reason: WorkUnitSelectionExclusionReason;
+  readonly signals: readonly WorkUnitSignal[];
+}
+
+export function toExcludedUnitSummary<TCommit extends ScorableCommit>({
+  unit,
+  score,
+  reason,
+  signals,
+}: ExcludedWorkUnit<TCommit>): ExcludedUnitSummary {
+  return {
+    unitId: unit.unitId,
+    kind: unit.kind,
+    title: unit.title,
+    pullRequestNumber: unit.kind === "pull_request" ? unit.pullRequest.number : null,
+    score,
+    reason,
+    signals,
+  };
 }
 
 export interface WorkUnitSelection<TCommit extends ScorableCommit> {

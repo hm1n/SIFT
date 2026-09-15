@@ -11,7 +11,7 @@ import type {
   ExperienceEvidenceSnapshot,
   StageBCandidateResult,
 } from "./types";
-import type { CandidateDataOutput, ReadonlyCommitDetail } from "@/lib/github/types";
+import type { CandidateCommitIndex, ReadonlyCommitDetail } from "@/lib/github/types";
 
 /**
  * 근거 인계 입력 전체의 추정 토큰 상한입니다. patch만이 아니라 커밋 메시지, 변경 파일 목록,
@@ -291,7 +291,7 @@ function assembleCommits(inputs: readonly CommitInput[], maxPatchBytes: number):
  */
 export function buildExperienceEvidenceSnapshot(
   item: ExperienceCandidateListItem,
-  data: CandidateDataOutput,
+  data: CandidateCommitIndex,
   candidates: StageBCandidateResult,
   maxInputTokens: number = EVIDENCE_SNAPSHOT_MAX_INPUT_TOKENS,
   renderForBudget: EvidenceBudgetRenderer = serializeSnapshotForBudget

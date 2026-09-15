@@ -35,6 +35,13 @@ function stubFetch(handlers: Record<string, () => Promise<Response> | Response> 
     for (const [prefix, handler] of Object.entries(handlers)) {
       if (url.includes(prefix)) return Promise.resolve(handler());
     }
+    // 저장된 분석이 없는 것이 기본입니다(이슈 #116). 분석 화면은 저장된 것을 먼저 찾아보고 없을
+    // 때만 분석합니다.
+    if (url.includes("/api/analyses")) {
+      return Promise.resolve(
+        Response.json({ error: { kind: "not_found", message: "저장된 분석이 없습니다." } }, { status: 404 })
+      );
+    }
     if (url.includes("/api/interviews")) return Promise.resolve(Response.json({ interviews: [] }));
     return Promise.resolve(Response.json(LIST));
   });
@@ -129,7 +136,7 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
     analyzeMock.mockImplementation(async (_repo, _items, onStateChange) => {
       onStateChange({
         status: "success",
-        data: { allCommits: [COMMIT], includedCommits: [COMMIT], repository: { fileTree: [], treeTruncated: false, languages: {} } },
+        data: { includedCommits: [COMMIT] },
         candidates: { candidates: [CANDIDATE], insufficientCandidatesReason: null, diffs: [] },
         stageASelection: { excludedUnits: [], thresholdScore: 0, selectedUnitCount: 1, unjudgedShas: [] },
       });

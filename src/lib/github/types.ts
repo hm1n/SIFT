@@ -100,6 +100,16 @@ export interface CandidateDataInput {
 }
 
 /** 개발 경험 후보 생성 기능의 Repository 근거 입력입니다. */
+/**
+ * 후보 화면과 근거 스냅샷이 `CandidateDataOutput`에서 실제로 읽는 부분입니다(이슈 #116).
+ *
+ * 저장된 분석에는 이것만 남습니다. `allCommits`와 저장소의 파일 트리·언어 통계는 Stage B 입력으로만
+ * 쓰이고 그 뒤로 읽히지 않아 저장하지 않기 때문입니다(`analysis-snapshot.ts`). 화면이 받는 타입을
+ * 여기까지 좁혀야 저장된 분석으로 같은 화면을 그릴 수 있습니다. 좁히지 않고 빈 값으로 채워 넘기면
+ * 화면이 언젠가 그 빈 값을 읽고 조용히 어긋납니다.
+ */
+export type CandidateCommitIndex = Pick<CandidateDataOutput, "includedCommits">;
+
 export interface CandidateDataOutput {
   /** 블랙리스트 제외 여부와 무관한 인증 사용자 본인의 전체 커밋 메타데이터입니다. */
   readonly allCommits: readonly Readonly<CommitSummary>[];

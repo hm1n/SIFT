@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { WorkUnit } from "@/features/experience-candidates/work-unit";
-import type { ExcludedWorkUnit } from "@/features/experience-candidates/work-unit-selection";
+import { toExcludedUnitSummary, type ExcludedUnitSummary } from "@/features/experience-candidates/work-unit-selection";
 import type { ReadonlyCommitDetail } from "@/lib/github/types";
 import { SESSION_PATH } from "@/lib/github/auth-paths";
 import {
@@ -16,7 +16,11 @@ import {
   type StageASelectionState,
 } from "./repository-analysis";
 import { SavedInterviewFetchError } from "@/features/saved-interviews/client";
-import type { createSavedInterview, saveRepositoryAnalysis } from "@/features/saved-interviews/client";
+import type {
+  createSavedInterview,
+  fetchAnalysisByRepository,
+  saveRepositoryAnalysis,
+} from "@/features/saved-interviews/client";
 import { RepositoryAnalysisView } from "./repository-analysis-view";
 
 
@@ -28,7 +32,7 @@ function commit(sha: string, title: string): ReadonlyCommitDetail {
 }
 
 /** 점수 컷에서 밀린 PR 묶음 하나입니다. 화면 배선만 확인하는 스위트라 세부 신호는 두지 않습니다. */
-function excludedPullRequestUnit(number: number): ExcludedWorkUnit<ReadonlyCommitDetail> {
+function excludedPullRequestUnit(number: number): ExcludedUnitSummary {
   const unit: WorkUnit<ReadonlyCommitDetail> = {
     kind: "pull_request",
     unitId: `pr:${number}`,
@@ -36,7 +40,7 @@ function excludedPullRequestUnit(number: number): ExcludedWorkUnit<ReadonlyCommi
     pullRequest: { number, title: "잡무 PR", state: "closed", baseBranch: "develop", headBranch: "f" },
     commits: [commit(`sha-${number}`, "잡무 PR")],
   };
-  return { unit, score: 1, reason: "over_input_budget", signals: [] };
+  return toExcludedUnitSummary({ unit, score: 1, reason: "over_input_budget", signals: [] });
 }
 
 vi.mock("./repository-analysis", async (importOriginal) => {
@@ -68,10 +72,25 @@ const EMPTY_STAGE_A_SELECTION: StageASelectionState = {
   unjudgedShas: [],
 };
 
+/**
+ * 저장된 분석이 없는 경우입니다(이슈 #116). 화면은 저장된 것을 먼저 찾아보고 없을 때만 분석하므로,
+ * 분석 경로를 보는 테스트는 이 답을 씁니다.
+ */
+function noSavedAnalysis() {
+  return vi
+    .fn<typeof fetchAnalysisByRepository>()
+    .mockRejectedValue(new SavedInterviewFetchError("not_found", "저장된 분석이 없습니다."));
+}
+
 /** Repository와 기여 항목은 선택 화면이 prop으로 넘기고, 화면은 마운트되자마자 분석을 시작합니다. */
 function renderView(contributionItems: readonly string[] = []) {
   return render(
-    <RepositoryAnalysisView repository={REPOSITORY} contributionItems={contributionItems} onSelectRepository={onSelectRepository} />
+    <RepositoryAnalysisView
+      repository={REPOSITORY}
+      contributionItems={contributionItems}
+      onSelectRepository={onSelectRepository}
+      fetchAnalysis={noSavedAnalysis()}
+    />
   );
 }
 
@@ -252,6 +271,122 @@ describe("RepositoryAnalysisView Empty", () => {
 // 성공 상태와 같은 StageAExclusions를 재사용하므로 여기서는 배선(빈 상태에서도 렌더되는지, 빈 값이면
 // 렌더하지 않는지, Stage A 전 빈 상태는 영향받지 않는지)만 확인합니다. 세부 렌더 규칙(정렬·구획 분리
 // 등)은 experience-candidate-list.test.tsx가 이미 검증합니다.
+describe("RepositoryAnalysisView 저장된 분석으로 열기", () => {
+  const SAVED_SHA = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+
+  function storedAnalysis(overrides: { id?: string; createdAt?: string } = {}) {
+    return {
+      id: overrides.id ?? "a1",
+      createdAt: overrides.createdAt ?? "2026-09-10T00:00:00.000Z",
+      repoOwner: REPOSITORY.owner,
+      repoName: REPOSITORY.name,
+      contributionItems: ["성능 개선"],
+      candidates: {
+        candidates: {
+          candidates: [
+            {
+              sha: SAVED_SHA,
+              relatedShas: [],
+              summary: "저장된 경험 요약입니다.",
+              evidence: "저장된 근거입니다.",
+              technicalTopics: [],
+              citedFilePaths: [],
+              source: "automatic_recommendation",
+            },
+          ],
+          insufficientCandidatesReason: null,
+          diffs: [],
+        },
+        includedCommits: [commit(SAVED_SHA, "저장된 커밋")],
+      },
+      stageASummary: EMPTY_STAGE_A_SELECTION,
+    } as unknown as Awaited<ReturnType<typeof fetchAnalysisByRepository>>;
+  }
+
+  function renderWithSaved(fetchAnalysis: Mock<typeof fetchAnalysisByRepository>) {
+    return render(
+      <RepositoryAnalysisView
+        repository={REPOSITORY}
+        contributionItems={["이번에 적은 기여"]}
+        onSelectRepository={onSelectRepository}
+        fetchAnalysis={fetchAnalysis}
+        saveAnalysis={vi.fn<typeof saveRepositoryAnalysis>().mockResolvedValue("a-new")}
+      />
+    );
+  }
+
+  /**
+   * Stage B가 쓰는 모델은 하루 요청 수가 프로젝트 전체에서 20회입니다. 저장된 결과가 있는데도 다시
+   * 분석하면 사용자가 고르지 않은 요청이 그 한도를 씁니다.
+   */
+  it("저장된 분석이 있으면 다시 분석하지 않고 그 후보를 그린다", async () => {
+    const fetchAnalysis = vi.fn<typeof fetchAnalysisByRepository>().mockResolvedValue(storedAnalysis());
+
+    renderWithSaved(fetchAnalysis);
+
+    // master-detail이라 목록 행과 상세가 같은 제목을 함께 그립니다.
+    expect(await screen.findAllByText("저장된 경험 요약입니다.")).not.toHaveLength(0);
+    expect(analyzeMock).not.toHaveBeenCalled();
+    expect(fetchAnalysis).toHaveBeenCalledWith(REPOSITORY.owner, REPOSITORY.name);
+  });
+
+  // 저장된 값이라는 사실을 감추면 사용자는 지금 저장소 상태를 본다고 오해합니다.
+  it("저장된 결과라는 것과 저장한 날짜를 알린다", async () => {
+    renderWithSaved(vi.fn<typeof fetchAnalysisByRepository>().mockResolvedValue(storedAnalysis()));
+
+    expect(await screen.findByText(/Showing the analysis saved on/)).toBeInTheDocument();
+    expect(screen.getByText("Sep 10, 2026")).toBeInTheDocument();
+  });
+
+  it("다시 분석하면 저장된 결과 안내가 사라지고 분석이 시작된다", async () => {
+    renderWithSaved(vi.fn<typeof fetchAnalysisByRepository>().mockResolvedValue(storedAnalysis()));
+    await screen.findByText(/Showing the analysis saved on/);
+    mockState({ status: "loading", loading: { step: "commits" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Analyze again" }));
+
+    await waitFor(() => expect(analyzeMock).toHaveBeenCalled());
+    expect(screen.queryByText(/Showing the analysis saved on/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * 조회 실패를 "저장된 것이 없음"으로 접으면 저장 계층이 잠시 끊긴 동안 들어온 사용자마다 새 분석이
+   * 돌아 하루치 한도를 씁니다.
+   */
+  it("조회가 실패하면 분석하지 않고 오류를 알린다", async () => {
+    const fetchAnalysis = vi
+      .fn<typeof fetchAnalysisByRepository>()
+      .mockRejectedValue(new SavedInterviewFetchError("storage_failed", "저장소에 연결하지 못했습니다."));
+
+    renderWithSaved(fetchAnalysis);
+
+    expect(await screen.findByText("Couldn't check for a saved analysis.")).toBeInTheDocument();
+    expect(analyzeMock).not.toHaveBeenCalled();
+  });
+
+  it("조회 실패를 다시 시도하면 저장된 분석을 다시 찾는다", async () => {
+    const fetchAnalysis = vi
+      .fn<typeof fetchAnalysisByRepository>()
+      .mockRejectedValueOnce(new SavedInterviewFetchError("storage_failed", "끊겼습니다."))
+      .mockResolvedValue(storedAnalysis());
+
+    renderWithSaved(fetchAnalysis);
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+
+    // master-detail이라 목록 행과 상세가 같은 제목을 함께 그립니다.
+    expect(await screen.findAllByText("저장된 경험 요약입니다.")).not.toHaveLength(0);
+    expect(fetchAnalysis).toHaveBeenCalledTimes(2);
+  });
+
+  it("저장된 분석이 없으면 분석을 시작한다", async () => {
+    mockState({ status: "loading", loading: { step: "commits" } });
+
+    renderWithSaved(noSavedAnalysis());
+
+    await waitFor(() => expect(analyzeMock).toHaveBeenCalled());
+  });
+});
+
 describe("RepositoryAnalysisView Empty의 Stage A 제외 표시", () => {
   it("no_stage_a_candidates에서도 제외 요약이 화면에 보인다", async () => {
     mockState({
@@ -492,7 +627,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
       };
       return {
         status: "success",
-        data: { allCommits: [], includedCommits: [detail], repository: { fileTree: [], treeTruncated: false, languages: {} } },
+        data: { includedCommits: [detail] },
         candidates: {
           candidates: [
             { sha: SHA, relatedShas: [], summary: "경험 요약입니다.", evidence: "근거입니다.", technicalTopics: [], citedFilePaths: [], source: "automatic_recommendation" },
@@ -524,6 +659,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
           onSelectRepository={onSelectRepository}
           createInterview={createInterview}
           saveAnalysis={saveAnalysis}
+          fetchAnalysis={noSavedAnalysis()}
         />
       );
       await waitFor(() => expect(analyzeMock).toHaveBeenCalled());

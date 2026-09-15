@@ -1,12 +1,7 @@
 import type { StageBCandidateResult } from "@/features/experience-candidates/types";
-import type { WorkUnitKind } from "@/features/experience-candidates/work-unit";
+import type { ExcludedUnitSummary } from "@/features/experience-candidates/work-unit-selection";
 import type {
-  ExcludedWorkUnit,
-  WorkUnitSelectionExclusionReason,
-} from "@/features/experience-candidates/work-unit-selection";
-import type { WorkUnitSignal } from "@/features/experience-candidates/work-unit-score";
-import type {
-  CandidateDataOutput,
+  CandidateCommitIndex,
   CommitFileChangeWithoutPatch,
   ReadonlyCommitDetail,
 } from "@/lib/github/types";
@@ -50,23 +45,12 @@ export interface StoredAnalysisCandidates {
 /**
  * 제외된 묶음 하나입니다. 정의서가 저장 대상을 "Stage A 선별 요약 수치"라고 적은 자리입니다.
  *
- * 원래 값인 `ExcludedWorkUnit`은 `unit.commits`에 그 묶음의 커밋 상세를 통째로 들고 있습니다.
- * 묶음 상한이 200이고 묶음 하나가 커밋 여럿을 담으므로, 그대로 저장하면 후보 밖 커밋 전량을
- * 저장하는 셈이 되어 "원본 커밋 전량을 저장하지 않는다"는 제약을 깹니다.
- *
- * 그래서 제외 목록 화면(`StageAExclusions`)이 실제로 그리는 필드만 남깁니다. 그 화면은 라벨과
- * 제목과 점수와 신호만 쓰고 묶음 안의 커밋은 한 번도 읽지 않습니다.
+ * 화면이 쓰는 타입(`ExcludedUnitSummary`)을 그대로 씁니다. 이슈 #116 전에는 여기서 원래 값인
+ * `ExcludedWorkUnit`을 줄여 저장했는데, 저장된 분석으로 같은 화면을 다시 그리게 되면서 화면이 받는
+ * 타입도 같은 모양으로 좁혔습니다. 둘이 갈라지면 저장과 복원 사이에 모양을 맞추는 코드가 한 벌 더
+ * 생기고, 그 코드가 어긋나도 양쪽 테스트는 각자 통과합니다.
  */
-export interface StoredExcludedUnit {
-  readonly unitId: string;
-  readonly kind: WorkUnitKind;
-  readonly title: string;
-  /** Pull Request 묶음이 아니면 `null`입니다. 화면이 `PR #번호` 라벨에만 씁니다. */
-  readonly pullRequestNumber: number | null;
-  readonly score: number;
-  readonly reason: WorkUnitSelectionExclusionReason;
-  readonly signals: readonly WorkUnitSignal[];
-}
+export type StoredExcludedUnit = ExcludedUnitSummary;
 
 /** 표의 `stage_a_summary` 칸에 담는 값입니다. */
 export interface StoredStageASummary {
@@ -89,7 +73,7 @@ export interface BuildStoredAnalysisInput {
   readonly repoOwner: string;
   readonly repoName: string;
   readonly contributionItems: readonly string[];
-  readonly data: CandidateDataOutput;
+  readonly data: CandidateCommitIndex;
   readonly candidates: StageBCandidateResult;
   readonly stageASelection: StageASelectionState;
 }
@@ -122,23 +106,6 @@ function withoutPatch(commit: ReadonlyCommitDetail): StoredCommitDetail {
   };
 }
 
-function storedExcludedUnit({
-  unit,
-  score,
-  reason,
-  signals,
-}: ExcludedWorkUnit<ReadonlyCommitDetail>): StoredExcludedUnit {
-  return {
-    unitId: unit.unitId,
-    kind: unit.kind,
-    title: unit.title,
-    pullRequestNumber: unit.kind === "pull_request" ? unit.pullRequest.number : null,
-    score,
-    reason,
-    signals,
-  };
-}
-
 export function buildStoredAnalysis({
   repoOwner,
   repoName,
@@ -159,7 +126,7 @@ export function buildStoredAnalysis({
         .map(withoutPatch),
     },
     stageASummary: {
-      excludedUnits: stageASelection.excludedUnits.map(storedExcludedUnit),
+      excludedUnits: stageASelection.excludedUnits,
       selectedUnitCount: stageASelection.selectedUnitCount,
       thresholdScore: stageASelection.thresholdScore,
       unjudgedShas: stageASelection.unjudgedShas,
