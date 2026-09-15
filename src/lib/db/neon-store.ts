@@ -199,9 +199,11 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
      * 이력은 `||`로 데이터베이스 안에서 이어 붙입니다. 읽어 와서 합친 뒤 되돌려 쓰면 두 요청이 겹칠 때
      * 한쪽의 턴이 사라집니다.
      *
-     * 버전 조건 둘을 모두 `where`에 넣지 않고 새 버전 조건만 코드에서 봅니다. 새 버전은 요청이 들고 온
-     * 값이라 저장된 줄과 비교할 필요가 없고, 저장된 값과 맞춰야 하는 조건은 `block_version = $expected`
-     * 하나뿐이기 때문입니다.
+     * **버전 조건 둘을 모두 `where`에 넣습니다.** 예전에는 "새 버전이 기대 버전보다 크다"를 질의 앞에서
+     * 먼저 보고 아니면 바로 `version_conflict`를 돌려줬습니다. 그러면 없는 인터뷰와 남의 인터뷰에도
+     * `version_conflict`가 나가, 존재와 소유를 먼저 보는 메모리 구현과 판정이 갈립니다. `store.ts`의
+     * 계약은 그 경우를 `not_found`로 정합니다(PR #127 리뷰). 조건을 질의로 옮기면 두 구현이 같은
+     * 순서로 판정하고, 성공 경로의 질의 수도 그대로 하나입니다.
      */
     async appendTurn({
       githubUserId,
@@ -212,9 +214,6 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
       expectedBlockVersion,
     }: AppendTurn): Promise<AppendTurnResult> {
       if (!isUuid(interviewId)) return "not_found";
-      // 버전이 오르지 않는 요청입니다. 질의를 보내면 조건에 걸려 아무것도 바뀌지 않고, 그 뒤에
-      // 존재 확인 질의까지 한 번 더 나갑니다. 요청이 들고 온 값만으로 판정할 수 있으므로 여기서 끝냅니다.
-      if (blockState.version <= expectedBlockVersion) return "version_conflict";
 
       const updated = await run(
         `update interview_session s
@@ -228,6 +227,7 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
             and s.analysis_id = ra.id
             and ra.github_user_id = $2
             and s.block_version = $6
+            and $5::int > $6::int
          returning s.id`,
         [
           interviewId,

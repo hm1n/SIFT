@@ -172,8 +172,12 @@ describe("Neon 저장 계층", () => {
       expect(calls[0].params[5]).toBe(3);
     });
 
-    it("버전이 오르지 않는 요청은 질의하지 않고 version_conflict다", async () => {
-      const { execute, calls } = fakeExecute([[{ id: INTERVIEW_ID }]]);
+    /**
+     * 새 버전 조건도 질의에 싣습니다. 코드에서 먼저 보고 돌려주면 없는 인터뷰와 남의 인터뷰에도
+     * `version_conflict`가 나가, 존재와 소유를 먼저 보는 메모리 구현과 판정이 갈립니다(PR #127 리뷰).
+     */
+    it("버전이 오르지 않는 요청은 있는 인터뷰에서만 version_conflict다", async () => {
+      const { execute, calls } = fakeExecute([[], [{ "?column?": 1 }]]);
       const result = await neonStore(execute).appendTurn({
         githubUserId: OWNER_ID,
         interviewId: INTERVIEW_ID,
@@ -184,7 +188,23 @@ describe("Neon 저장 계층", () => {
       });
 
       expect(result).toBe("version_conflict");
-      expect(calls).toHaveLength(0);
+      expect(calls[0].text).toContain("$5::int > $6::int");
+    });
+
+    // 없는 인터뷰나 남의 인터뷰에 버전이 오르지 않는 요청이 와도 `not_found`입니다. 메모리 구현과
+    // 같은 순서로 판정합니다.
+    it("버전이 오르지 않아도 없는 인터뷰면 not_found다", async () => {
+      const { execute } = fakeExecute([[], []]);
+      const result = await neonStore(execute).appendTurn({
+        githubUserId: OWNER_ID,
+        interviewId: INTERVIEW_ID,
+        turn: [],
+        blockState: blockStateAt(3),
+        progress: emptyInterviewProgress(),
+        expectedBlockVersion: 3,
+      });
+
+      expect(result).toBe("not_found");
     });
 
     /**
