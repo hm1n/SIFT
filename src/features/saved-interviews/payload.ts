@@ -9,8 +9,10 @@ import { isStoredAnalysis } from "./request";
  * 시각을 `Date`가 아니라 ISO 문자열로 내보냅니다. JSON에는 날짜 타입이 없어 `Date`를 그대로 실으면
  * 어차피 문자열이 되는데, 타입만 `Date`로 남으면 받는 쪽이 `getTime()`을 부르다 깨집니다.
  *
- * 목록에 `updatedAt`을 싣고 `openedAt`은 싣지 않습니다. 화면이 보여 주는 "마지막으로 이어간 시각"은
- * `updatedAt`이고, `openedAt`은 90일 정리의 기준이라 화면이 쓰지 않습니다.
+ * 목록에 `updatedAt`과 `openedAt`을 함께 싣습니다. 화면이 보여 주는 "마지막으로 이어간 시각"은
+ * `updatedAt`이고, `openedAt`은 자동 삭제까지 남은 기간을 세는 기준입니다(이슈 #116). 이슈 #115에서는
+ * 화면이 쓰지 않는다는 이유로 싣지 않았는데, 남은 기간을 알리게 되면서 필요해졌습니다. 두 값을 하나로
+ * 합치지 않는 이유는 `store.ts`의 시간 칸 셋 주석에 있습니다.
  */
 export interface InterviewListItemPayload {
   readonly id: string;
@@ -22,6 +24,8 @@ export interface InterviewListItemPayload {
   readonly completedBlockCount: number;
   readonly createdAt: string;
   readonly updatedAt: string;
+  /** 마지막으로 연 시각입니다. 자동 삭제까지 남은 기간을 이 값으로 셉니다. */
+  readonly openedAt: string;
 }
 
 export interface StoredInterviewPayload extends InterviewListItemPayload {
@@ -47,6 +51,7 @@ export function toInterviewListItemPayload(item: InterviewListItem): InterviewLi
     completedBlockCount: item.completedBlockCount,
     createdAt: item.createdAt.toISOString(),
     updatedAt: item.updatedAt.toISOString(),
+    openedAt: item.openedAt.toISOString(),
   };
 }
 

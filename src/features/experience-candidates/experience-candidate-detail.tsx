@@ -10,6 +10,7 @@ import {
 } from "./evidence-verifiability";
 import { candidateTitle, commitTitle, deriveCandidatePeriod, formatCommitDate, pluralCount } from "./candidate-period";
 import { EXPERIENCE_SELECTION_ERROR_COPY } from "./experience-selection";
+import { RETENTION_DAYS } from "@/features/saved-interviews/retention";
 import styles from "./experience-candidate-detail.module.css";
 
 interface ExperienceCandidateDetailProps {
@@ -30,6 +31,17 @@ interface ExperienceCandidateDetailProps {
 // 사라지고, 그것이 이슈 #47 PR #52 1차 리뷰의 P1이었습니다.
 const EVIDENCE_NOTICE_ID = "candidate-evidence-verifiability-notice";
 const VERIFIED_NOTICE_ID = "candidate-repository-verified-notice";
+const STORAGE_NOTICE_ID = "candidate-storage-notice";
+
+/**
+ * 인터뷰를 시작하면 그 시점의 근거 스냅샷이 서버에 저장되고, 거기에는 커밋 메시지와 파일 경로와 코드
+ * 변경 내용이 들어갑니다. 비공개 저장소라면 그 코드가 서버에 남습니다(이슈 #116 Goal 셋째 항목).
+ *
+ * 이 자리에 두는 이유는 여기가 실제로 저장이 일어나는 시점이기 때문입니다. 로그인 화면에 두면 저장이
+ * 일어나기 한참 전이라 읽고 잊습니다. 보관 기간을 함께 적어 "무기한 남는 것은 아니다"까지 한 문장으로
+ * 말합니다.
+ */
+const STORAGE_NOTICE = `Starting an interview saves this evidence — commit messages, file paths, and code changes — to the server, including code from private repositories. It is deleted automatically after ${RETENTION_DAYS} days without opening it.`;
 
 /**
  * 토픽이 빈 배열로 온 후보의 Empty 표시입니다.
@@ -174,17 +186,20 @@ export function ExperienceCandidateDetail({
       </div>
 
       <div className={styles.footer}>
-        <button className={styles.secondaryButton} type="button" onClick={onSelectRepository}>
-          Choose a different repository
-        </button>
-        <button
-          className={styles.primaryButton}
-          type="button"
-          aria-describedby={`${EVIDENCE_NOTICE_ID} ${VERIFIED_NOTICE_ID}`}
-          onClick={onConfirm}
-        >
-          Start interview <span aria-hidden="true">→</span>
-        </button>
+        <p id={STORAGE_NOTICE_ID} className={styles.storageNotice}>{STORAGE_NOTICE}</p>
+        <div className={styles.footerActions}>
+          <button className={styles.secondaryButton} type="button" onClick={onSelectRepository}>
+            Choose a different repository
+          </button>
+          <button
+            className={styles.primaryButton}
+            type="button"
+            aria-describedby={`${EVIDENCE_NOTICE_ID} ${VERIFIED_NOTICE_ID} ${STORAGE_NOTICE_ID}`}
+            onClick={onConfirm}
+          >
+            Start interview <span aria-hidden="true">→</span>
+          </button>
+        </div>
       </div>
     </section>
   );

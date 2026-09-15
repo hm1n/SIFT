@@ -21,6 +21,7 @@ import {
 import { isExperienceEvidenceSnapshot } from "@/features/interview/question-request";
 import { SavedInterviewFetchError, saveSavedInterviewBlock } from "./client";
 import { isRestorableBlockState, type StoredInterviewPayload } from "./payload";
+import { daysUntilDeletion, DELETION_WARNING_DAYS } from "./retention";
 import styles from "./saved-interview-screen.module.css";
 
 /**
@@ -111,6 +112,30 @@ function freshState(key: string, version: number): ScreenState {
   return { key, edits: {}, version, editor: null, save: "idle" };
 }
 
+/**
+ * 자동 삭제까지 남은 기간입니다(이슈 #116, 디자인 원본의 삭제 안내 배너).
+ *
+ * 목록의 `D-n` 배지와 달리 기한이 멀어도 보입니다. 이 화면은 인터뷰 하나를 들여다보는 자리라 "이
+ * 인터뷰가 언제까지 남는가"가 그 인터뷰에 대한 사실의 하나이고, 목록처럼 여러 줄이 경쟁하지 않습니다.
+ *
+ * 인터뷰를 열면 기준 시각이 갱신되므로 이 화면에 들어온 직후에는 대개 90일이 남아 있습니다. 그래도
+ * 적는 이유는 저장이 영구적이지 않다는 사실을 사용자가 알아야 하기 때문입니다.
+ */
+function DeletionNotice({ openedAt }: { openedAt: string }) {
+  const daysLeft = daysUntilDeletion(openedAt);
+  const expiringSoon = daysLeft <= DELETION_WARNING_DAYS;
+  return (
+    <div className={`${styles.deletionNotice} ${expiringSoon ? styles.deletionNoticeWarning : ""}`} role="status">
+      <span className={styles.deletionSymbol} aria-hidden="true">⚠</span>
+      <p className={styles.deletionText}>
+        {expiringSoon
+          ? `This interview will be automatically deleted in ${daysLeft} days.`
+          : `${daysLeft} days until automatic deletion. Opening an interview resets the countdown.`}
+      </p>
+    </div>
+  );
+}
+
 export function SavedInterviewScreen({
   interview,
   onResume,
@@ -197,6 +222,8 @@ export function SavedInterviewScreen({
           <span>{date}</span>
         </div>
       </header>
+
+      <DeletionNotice openedAt={interview.openedAt} />
 
       <div className={styles.body}>
         <div className={styles.column}>

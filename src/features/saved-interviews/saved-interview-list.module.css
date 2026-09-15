@@ -130,6 +130,16 @@
   color: var(--color-scrollbar);
 }
 
+/* 자동 삭제가 가까운 인터뷰의 `D-n` 배지입니다(이슈 #116). 기한이 7일 이하로 남았을 때만 붙습니다. */
+.deletionBadge {
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid var(--color-warning-border);
+  border-radius: 4px;
+  background: var(--color-warning-surface);
+  color: var(--color-warning);
+}
+
 /* 행 위에 겹치지 않고 오른쪽 자리를 차지합니다. 좁은 목록이라 겹치면 제목을 가립니다. */
 .deleteIcon {
   flex-shrink: 0;

@@ -237,7 +237,8 @@ describe("GET /api/interviews", () => {
   });
 
   // JSON에는 날짜 타입이 없습니다. 타입만 `Date`로 남으면 받는 쪽이 `getTime()`을 부르다 깨집니다.
-  it("시각을 ISO 문자열로 내보내고 openedAt은 싣지 않는다", async () => {
+  // 자동 삭제까지 남은 기간을 화면이 세려면 마지막으로 연 시각이 필요합니다(이슈 #116).
+  it("시각을 ISO 문자열로 내보내고 openedAt도 함께 싣는다", async () => {
     const store = createInMemoryStore();
     await seedInterview(store);
 
@@ -245,7 +246,7 @@ describe("GET /api/interviews", () => {
 
     expect(typeof item.createdAt).toBe("string");
     expect(new Date(item.updatedAt).toISOString()).toBe(item.updatedAt);
-    expect(item).not.toHaveProperty("openedAt");
+    expect(new Date(item.openedAt).toISOString()).toBe(item.openedAt);
   });
 
   // 목록 행의 `PAAR n/4`입니다. 응답에 싣지 않으면 화면이 진행도를 그릴 방법이 없습니다.
