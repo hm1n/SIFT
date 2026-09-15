@@ -211,6 +211,52 @@ describe("훅과 route 사이의 저장 계약", () => {
   });
 
   /**
+   * 모델이 계속 실패해도 대화는 남아야 합니다(이슈 #116, backlog 7번).
+   *
+   * `appendTurn`은 블록 버전이 올라야만 쓰므로, 블록 갱신이 매번 실패하는 인터뷰는 저장할 길 자체가
+   * 없었습니다. 2026-09-15에 `.env` 키 이름이 어긋나 인터뷰 두 개의 대화가 한 줄도 저장되지 않은 사고가
+   * 그 구조 때문이었습니다. 끝내는 시점에는 반영을 다시 걸 일이 없으므로 이력만 이어 붙입니다.
+   */
+  it("블록 갱신이 계속 실패해도 끝낼 때 대화는 저장된다", async () => {
+    const store = createInMemoryStore();
+    const interviewId = await seedInterview(store);
+    // 언제나 거절당하는 출력입니다. 그 턴은 반영도 저장도 되지 않은 채 밀립니다.
+    const fetchImpl = routedFetch(store, () => ({
+      ops: [],
+      display: [],
+      evaluation: [],
+      targetResponse: "provided",
+    }));
+    const { result } = renderHook(() =>
+      useExperienceInterview({ snapshot, interviewId, fetchImpl, completeInterview: async () => undefined })
+    );
+
+    await act(async () => {
+      result.current.start();
+    });
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+    await act(async () => {
+      result.current.submitAnswer("로그가 청크마다 전체를 다시 그렸습니다.");
+    });
+    await waitFor(() => expect(result.current.unreflectedReason).toBe("block_update_rejected"));
+    // 인터뷰 중에는 저장하지 않습니다. 반영을 다시 걸 때 그 요청이 저장까지 함께 하기 때문입니다.
+    expect((await store.getInterview(interviewId, OWNER_ID))?.history).toEqual([]);
+
+    await act(async () => {
+      result.current.endInterview();
+    });
+
+    await waitFor(async () =>
+      expect((await store.getInterview(interviewId, OWNER_ID))?.history).toHaveLength(2)
+    );
+    const saved = await store.getInterview(interviewId, OWNER_ID);
+    expect(saved?.history.map((message) => message.text)).toContain("로그가 청크마다 전체를 다시 그렸습니다.");
+    // 블록에는 반영되지 않았으므로 블록 버전은 그대로입니다.
+    expect(saved?.blockVersion).toBe(0);
+    expect(result.current.unsavedTurnCount).toBe(0);
+  });
+
+  /**
    * 미반영 사유는 턴마다 따로 듭니다(PR #127 리뷰). 하나로 두면 화면이 가리키는 턴(가장 오래된
    * 것)과 이유(마지막에 실패한 것)가 어긋나고, 다른 턴 하나가 성공하면 남아 있는 턴의 이유까지
    * 사라집니다.

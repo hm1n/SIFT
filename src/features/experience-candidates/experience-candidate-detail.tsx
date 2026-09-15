@@ -11,6 +11,7 @@ import {
 } from "./evidence-verifiability";
 import { candidateTitle, commitTitle, deriveCandidatePeriod, formatCommitDate, pluralCount } from "./candidate-period";
 import { EXPERIENCE_SELECTION_ERROR_COPY } from "./experience-selection";
+import { RETENTION_DAYS } from "@/features/saved-interviews/retention";
 import styles from "./experience-candidate-detail.module.css";
 
 interface ExperienceCandidateDetailProps {
@@ -31,6 +32,7 @@ interface ExperienceCandidateDetailProps {
 // 사라지고, 그것이 이슈 #47 PR #52 1차 리뷰의 P1이었습니다.
 const EVIDENCE_NOTICE_ID = "candidate-evidence-verifiability-notice";
 const VERIFIED_NOTICE_ID = "candidate-repository-verified-notice";
+const STORAGE_NOTICE_ID = "candidate-storage-notice";
 
 /** 목록에 3개 초과일 때 접어 두는 기준입니다. 디자인의 "View all" 기준과 같습니다. */
 const EVIDENCE_LIST_COLLAPSE_THRESHOLD = 3;
@@ -166,17 +168,22 @@ export function ExperienceCandidateDetail({
       </div>
 
       <div className={styles.footer}>
-        <button className={styles.secondaryButton} type="button" onClick={onSelectRepository}>
-          {CANDIDATE_DETAIL_COPY.chooseAnotherRepository}
-        </button>
-        <button
-          className={styles.primaryButton}
-          type="button"
-          aria-describedby={`${EVIDENCE_NOTICE_ID} ${VERIFIED_NOTICE_ID}`}
-          onClick={onConfirm}
-        >
-          {CANDIDATE_DETAIL_COPY.startInterview} <span aria-hidden="true">→</span>
-        </button>
+        <p id={STORAGE_NOTICE_ID} className={styles.storageNotice}>
+          {CANDIDATE_DETAIL_COPY.storageNotice(RETENTION_DAYS)}
+        </p>
+        <div className={styles.footerActions}>
+          <button className={styles.secondaryButton} type="button" onClick={onSelectRepository}>
+            {CANDIDATE_DETAIL_COPY.chooseAnotherRepository}
+          </button>
+          <button
+            className={styles.primaryButton}
+            type="button"
+            aria-describedby={`${EVIDENCE_NOTICE_ID} ${VERIFIED_NOTICE_ID} ${STORAGE_NOTICE_ID}`}
+            onClick={onConfirm}
+          >
+            {CANDIDATE_DETAIL_COPY.startInterview} <span aria-hidden="true">→</span>
+          </button>
+        </div>
       </div>
     </section>
   );

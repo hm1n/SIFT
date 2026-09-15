@@ -9,7 +9,7 @@ import type {
   ExperienceEvidenceSnapshot,
   StageBCandidateResult,
 } from "./types";
-import type { CandidateDataOutput } from "@/lib/github/types";
+import type { CandidateCommitIndex } from "@/lib/github/types";
 
 /**
  * 인터뷰 대상 확정 상태입니다.
@@ -52,7 +52,7 @@ export { EXPERIENCE_SELECTION_ERROR_COPY } from "@/copy/candidates";
  */
 export function confirmExperienceSelection(
   item: ExperienceCandidateListItem,
-  data: CandidateDataOutput,
+  data: CandidateCommitIndex,
   candidates: StageBCandidateResult
 ): ExperienceSelectionState {
   // 근거 상한은 모델 입력을 묶는 값이므로 실제 첫 질문 프롬프트로 잽니다. JSON 직렬화로 재면

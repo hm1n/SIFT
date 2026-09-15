@@ -177,17 +177,33 @@ export async function handleExperienceBlockUpdate(
     const parsedSave = parseSaveOnlyRequestBody(json);
     if (!parsedSave.ok) return errorResponse(parsedSave.kind, parsedSave.message);
     const { history, state, save } = parsedSave.body;
+    const turn = turnsToSave(history, save.pendingTurnIds);
     let saved: BlockUpdateSaveStatus;
     try {
-      saved = await store.appendTurn({
-        githubUserId,
-        interviewId: save.interviewId,
-        turn: turnsToSave(history, save.pendingTurnIds),
-        blockState: state,
-        // 반영이 이미 끝난 값입니다. 여기서 다시 반영하면 같은 답변의 반응이 두 번 기록됩니다.
-        progress: save.progress,
-        expectedBlockVersion: save.expectedBlockVersion,
-      });
+      /**
+       * 블록에 새로 쓸 것이 없으면 이력만 이어 붙입니다(이슈 #116, backlog 7번).
+       *
+       * `appendTurn`은 블록 버전이 올라야만 씁니다. 모델 호출이 실패한 턴은 블록이 그대로라 그 조건에
+       * 걸려 `version_conflict`가 되고, 모델이 계속 실패하면 그 대화가 영영 저장되지 않습니다. 블록을
+       * 건드리지 않는 저장을 따로 두면 대화만 먼저 남길 수 있습니다.
+       */
+      saved =
+        state.version > save.expectedBlockVersion
+          ? await store.appendTurn({
+              githubUserId,
+              interviewId: save.interviewId,
+              turn,
+              blockState: state,
+              // 반영이 이미 끝난 값입니다. 여기서 다시 반영하면 같은 답변의 반응이 두 번 기록됩니다.
+              progress: save.progress,
+              expectedBlockVersion: save.expectedBlockVersion,
+            })
+          : await store.appendHistory({
+              githubUserId,
+              interviewId: save.interviewId,
+              turn,
+              expectedBlockVersion: save.expectedBlockVersion,
+            });
     } catch {
       saved = "failed";
     }

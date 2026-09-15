@@ -62,6 +62,36 @@ export const CHECKLIST_STATUS_COPY = {
   pending: "대기:",
 } as const;
 
+/**
+ * 저장된 분석을 찾는 동안과 찾지 못했을 때입니다(이슈 #116). `code`는 mono 상태 코드라 영어로 남습니다.
+ *
+ * 실패했을 때 새 분석을 자동으로 시작하지 않는 이유를 함께 적습니다. 이유를 빼면 "왜 아무 일도 안
+ * 일어나지"가 되고, 사용자가 같은 버튼을 반복해 누릅니다.
+ */
+export const SAVED_ANALYSIS_LOOKUP_COPY = {
+  loadingLabel: "저장된 분석을 찾는 중…",
+  loadingSub: "전에 분석한 Repository라면 새로 분석하지 않고 저장된 결과를 엽니다.",
+  missingLabel: "저장된 분석이 더 이상 없습니다.",
+  missingSub: (days: number) =>
+    `열지 않은 채 ${days}일이 지나 지워졌습니다. 이 Repository를 다시 분석할 수 있습니다.`,
+  analyzeAgain: "이 Repository 분석하기",
+  failedLabel: "저장된 분석이 있는지 확인하지 못했습니다.",
+  failedSub: "이 프로젝트가 함께 쓰는 하루 AI 요청이 얼마 되지 않아 새 분석을 자동으로 시작하지 않았습니다.",
+  tryAgain: "다시 시도",
+} as const;
+
+/**
+ * 저장된 분석을 보고 있다는 알림입니다. 저장 시점을 문장 가운데 `<time>`으로 그리므로 앞뒤를 나눠
+ * 둡니다. `SAVED`는 mono 상태 코드라 영어로 남습니다.
+ */
+export const SAVED_ANALYSIS_NOTICE_COPY = {
+  savedOnBefore: "저장된 ",
+  savedOnAfter: " 분석입니다. 그 뒤에 올린 커밋은 이 목록에 없습니다.",
+  /** 기여 내용을 새로 적고 들어왔는데 저장본을 열었을 때입니다. 적은 것이 쓰이지 않았다고 분명히 알립니다. */
+  unusedContribution: " 방금 적은 기여 내용은 반영되지 않았습니다. 반영하려면 다시 분석해 주세요.",
+  reanalyze: "다시 분석",
+} as const;
+
 export const ANALYSIS_COPY = {
   eyebrow: "Repository 분석 중",
   changeRepository: CHANGE_REPOSITORY,

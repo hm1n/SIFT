@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StageBCandidateResult } from "@/features/experience-candidates/types";
+import { toExcludedUnitSummary } from "@/features/experience-candidates/work-unit-selection";
 import type { CandidateDataOutput, ReadonlyCommitDetail } from "@/lib/github/types";
 import { buildStoredAnalysis } from "./analysis-snapshot";
 import type { StageASelectionState } from "./repository-analysis";
@@ -45,12 +46,13 @@ const CANDIDATES: StageBCandidateResult = {
 };
 
 /**
- * 제외된 묶음은 `unit.commits`에 커밋 상세를 통째로 들고 있습니다. 축약본이 그것을 버리는지
- * 확인해야 하므로 fixture에도 커밋을 실어 둡니다.
+ * 제외된 묶음은 Stage A가 낼 때 `unit.commits`에 커밋 상세를 통째로 들고 있습니다. 그것을 버리는 일은
+ * 분석 상태를 만드는 자리(`repository-analysis.ts`)가 하므로, 이 fixture도 같은 변환을 지나온 값으로
+ * 만듭니다. 손으로 줄인 모양을 적으면 변환이 깨져도 이 테스트는 통과합니다.
  */
 const STAGE_A: StageASelectionState = {
   excludedUnits: [
-    {
+    toExcludedUnitSummary({
       unit: {
         kind: "pull_request",
         unitId: "pr:42",
@@ -61,13 +63,13 @@ const STAGE_A: StageASelectionState = {
       score: 7,
       reason: "over_input_budget",
       signals: ["many_files"],
-    },
-    {
+    }),
+    toExcludedUnitSummary({
       unit: { kind: "commit", unitId: "commit:c8", title: "잡무", commits: [commit("c8")] },
       score: 1,
       reason: "over_byte_budget",
       signals: [],
-    },
+    }),
   ],
   selectedUnitCount: 3,
   thresholdScore: 5,
@@ -120,10 +122,10 @@ describe("분석 저장 축약본", () => {
   });
 
   /**
-   * 제외 목록 화면이 그리는 필드만 남깁니다. 묶음이 들고 있는 커밋 상세까지 저장하면 후보 밖
+   * 제외 목록 화면이 그리는 필드만 저장합니다. 묶음이 들고 있는 커밋 상세까지 저장하면 후보 밖
    * 커밋을 전량 저장하는 것이 되어 이슈의 제약을 깹니다.
    */
-  it("Stage A 제외 묶음에서 화면이 쓰는 값만 남기고 커밋 상세는 버린다", () => {
+  it("Stage A 제외 묶음을 화면이 쓰는 모양 그대로 싣는다", () => {
     const stored = buildStoredAnalysis(INPUT);
 
     expect(stored.stageASummary).toEqual({

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { analyzeRepository } from "@/features/repository-analysis/repository-analysis";
 import { emptyInterviewProgress } from "@/features/experience-block/progress";
@@ -10,6 +10,13 @@ import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
 import { encodeSseEvent } from "@/features/interview/sse";
 import { RepositoryFlow } from "./repository-flow";
 
+/**
+ * 기다리는 시간을 늘립니다. 이 파일은 화면과 라우트와 저장 계층을 한 번에 지나고, 이슈 #116부터
+ * 분석 화면이 저장된 분석을 먼저 찾는 단계가 하나 더 붙었습니다. 기본값 1초로는 전체 스위트를 함께
+ * 돌릴 때 간헐적으로 넘습니다(2026-09-15에 서로 다른 테스트가 두 번 흔들렸습니다).
+ */
+configure({ asyncUtilTimeout: 5_000 });
+
 vi.mock("@/features/repository-analysis/repository-analysis", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/features/repository-analysis/repository-analysis")>();
   return { ...original, analyzeRepository: vi.fn(), generateCandidates: vi.fn() };
@@ -17,6 +24,26 @@ vi.mock("@/features/repository-analysis/repository-analysis", async (importOrigi
 
 const routerMock = { push: vi.fn(), refresh: vi.fn(), replace: vi.fn() };
 vi.mock("next/navigation", () => ({ useRouter: () => routerMock }));
+
+const trackEvent = vi.fn();
+const startAnalysisFlow = vi.fn();
+const clearAnalysisFlow = vi.fn();
+vi.mock("@/features/analytics/events", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/features/analytics/events")>();
+  return {
+    ...original,
+    trackEvent: (...args: unknown[]) => trackEvent(...args),
+    startAnalysisFlow: (...args: unknown[]) => startAnalysisFlow(...args),
+    clearAnalysisFlow: (...args: unknown[]) => clearAnalysisFlow(...args),
+  };
+});
+
+/** 상태 전이 판정입니다. 기본값은 아무 이벤트도 만들지 않는 것이고, 예외 격리 테스트만 던지게 바꿉니다. */
+const advanceAnalysisTracker = vi.fn((tracker: unknown) => ({ tracker, events: [] }));
+vi.mock("@/features/analytics/analysis-events", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/features/analytics/analysis-events")>();
+  return { ...original, advanceAnalysisTracker: (tracker: unknown) => advanceAnalysisTracker(tracker) };
+});
 
 const analyzeMock = vi.mocked(analyzeRepository);
 
@@ -35,6 +62,13 @@ function stubFetch(handlers: Record<string, () => Promise<Response> | Response> 
     for (const [prefix, handler] of Object.entries(handlers)) {
       if (url.includes(prefix)) return Promise.resolve(handler());
     }
+    // 저장된 분석이 없는 것이 기본입니다(이슈 #116). 분석 화면은 저장된 것을 먼저 찾아보고 없을
+    // 때만 분석합니다.
+    if (url.includes("/api/analyses")) {
+      return Promise.resolve(
+        Response.json({ error: { kind: "not_found", message: "저장된 분석이 없습니다." } }, { status: 404 })
+      );
+    }
     if (url.includes("/api/interviews")) return Promise.resolve(Response.json({ interviews: [] }));
     return Promise.resolve(Response.json(LIST));
   });
@@ -48,6 +82,11 @@ function repositoryListCalls(calls: readonly string[]): number {
 
 beforeEach(() => {
   analyzeMock.mockReset();
+  trackEvent.mockReset();
+  startAnalysisFlow.mockReset();
+  clearAnalysisFlow.mockReset();
+  advanceAnalysisTracker.mockReset();
+  advanceAnalysisTracker.mockImplementation((tracker: unknown) => ({ tracker, events: [] }));
   stubFetch();
 });
 
@@ -83,6 +122,69 @@ describe("RepositoryFlow", () => {
     expect(
       within(screen.getByRole("region", { name: "Repository" })).getByText("Repository를 선택하지 않았습니다.")
     ).toBeInTheDocument();
+  });
+
+  /**
+   * `flow_id`를 분석 시작 시점에 발급합니다. 저장소를 고른 순간이 아니라 분석을 시작하는 순간이고,
+   * 저장소 이름은 어떤 파라미터로도 나가지 않습니다(이슈 #125).
+   */
+  it("분석을 시작하면 flow_id와 저장소 맥락을 세우고 analysis_requested를 남긴다", async () => {
+    analyzeMock.mockImplementation(async (_repo, _items, onStateChange) => onStateChange({ status: "empty", kind: "no_commits" }));
+    render(<RepositoryFlow />);
+    fireEvent.click(await screen.findByRole("radio", { name: /hello-world/ }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Your Contribution" }), { target: { value: "푸시 알림 구현\n스크롤 복원" } });
+    fireEvent.click(screen.getByRole("button", { name: /분석하기/ }));
+
+    await waitFor(() => expect(startAnalysisFlow).toHaveBeenCalledTimes(1));
+    expect(startAnalysisFlow).toHaveBeenCalledWith({ repoVisibility: "public", repoLanguage: "TypeScript" });
+    expect(trackEvent).toHaveBeenCalledWith({ name: "analysis_requested", contribution_item_count: 2 });
+    expect(JSON.stringify(trackEvent.mock.calls)).not.toContain("hello-world");
+  });
+
+  /**
+   * `flow_id`를 만드는 `crypto.randomUUID`는 보안 컨텍스트에만 있어서, LAN 주소로 띄운 개발
+   * 서버에서는 없습니다. 이 화면이 그 값을 직접 만들면 예외가 계측 밖으로 나와 `setSelection`에
+   * 닿지 못하고 Analyze 버튼이 죽습니다. 값을 만드는 일은 계측 쪽에 있어야 합니다.
+   */
+  it("flow_id를 만들 수 없어도 분석을 시작한다", async () => {
+    const randomUUID = vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(() => {
+      throw new TypeError("crypto.randomUUID is not a function");
+    });
+    analyzeMock.mockImplementation(async (_repo, _items, onStateChange) => onStateChange({ status: "empty", kind: "no_commits" }));
+    render(<RepositoryFlow />);
+    fireEvent.click(await screen.findByRole("radio", { name: /hello-world/ }));
+    fireEvent.click(screen.getByRole("button", { name: /분석하기/ }));
+
+    expect(await screen.findByText("기본 브랜치에 커밋이 없습니다.")).toBeInTheDocument();
+    randomUUID.mockRestore();
+  });
+
+  /**
+   * 계측 실패가 서비스 오류로 보이면 안 됩니다(이슈 #125 제약). 분석 상태를 화면에 반영하기 직전에
+   * 계측이 실행되므로, 여기서 던지면 화면이 로딩에 멈춥니다.
+   */
+  it("계측이 예외를 던져도 분석 결과를 그대로 그린다", async () => {
+    advanceAnalysisTracker.mockImplementation(() => {
+      throw new Error("analytics is broken");
+    });
+    analyzeMock.mockImplementation(async (_repo, _items, onStateChange) => onStateChange({ status: "empty", kind: "no_commits" }));
+    render(<RepositoryFlow />);
+    fireEvent.click(await screen.findByRole("radio", { name: /hello-world/ }));
+    fireEvent.click(screen.getByRole("button", { name: /분석하기/ }));
+
+    expect(await screen.findByText("기본 브랜치에 커밋이 없습니다.")).toBeInTheDocument();
+  });
+
+  /** 비우지 않으면 다음 분석 전에 일어나는 목록 조회가 지난 분석의 `flow_id`를 달고 나갑니다. */
+  it("저장소를 바꾸면 분석 묶음을 비운다", async () => {
+    analyzeMock.mockImplementation(async (_repo, _items, onStateChange) => onStateChange({ status: "empty", kind: "no_commits" }));
+    render(<RepositoryFlow />);
+    fireEvent.click(await screen.findByRole("radio", { name: /hello-world/ }));
+    fireEvent.click(screen.getByRole("button", { name: /분석하기/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "다른 Repository 선택" }));
+
+    await screen.findByRole("heading", { name: "분석할 Repository를 선택하세요." });
+    expect(clearAnalysisFlow).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -131,7 +233,7 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
     analyzeMock.mockImplementation(async (_repo, _items, onStateChange) => {
       onStateChange({
         status: "success",
-        data: { allCommits: [COMMIT], includedCommits: [COMMIT], repository: { fileTree: [], treeTruncated: false, languages: {} } },
+        data: { includedCommits: [COMMIT] },
         candidates: { candidates: [CANDIDATE], insufficientCandidatesReason: null, diffs: [] },
         stageASelection: { excludedUnits: [], thresholdScore: 0, selectedUnitCount: 1, unjudgedShas: [] },
       });
@@ -217,6 +319,7 @@ describe("RepositoryFlow 이어가기", () => {
     completedBlockCount: 1,
     createdAt: "2026-09-10T00:00:00.000Z",
     updatedAt: "2026-09-12T09:00:00.000Z",
+    openedAt: new Date().toISOString(),
   };
   const STORED = {
     ...LIST_ITEM,
@@ -405,5 +508,68 @@ describe("RepositoryFlow 이어가기", () => {
     fireEvent.click(await screen.findByRole("button", { name: /인터뷰 계속하기/ }));
 
     expect(await screen.findByText("이 인터뷰를 열지 못했습니다.")).toBeInTheDocument();
+  });
+
+  /**
+   * 한 분석에서 경험을 여러 개 고를 수 있습니다(이슈 #116). 저장된 인터뷰에서 그 분석으로 돌아가는
+   * 길이 없으면 사용자는 같은 저장소를 다시 분석해야 하는데, Stage B가 쓰는 모델은 하루 요청 수가
+   * 프로젝트 전체에서 20회라 그 길이 사실상 막혀 있습니다.
+   */
+  it("이어가기 화면에서 그 인터뷰가 나온 분석의 후보 목록으로 간다", async () => {
+    const savedAnalysis = {
+      id: STORED.analysisId,
+      createdAt: "2026-09-10T00:00:00.000Z",
+      repoOwner: "octocat",
+      repoName: "hello-world",
+      contributionItems: [],
+      candidates: {
+        candidates: {
+          candidates: [
+            {
+              sha: "bbb",
+              relatedShas: [],
+              summary: "다른 경험 후보입니다.",
+              evidence: "근거입니다.",
+              technicalTopics: [],
+              citedFilePaths: [],
+              source: "automatic_recommendation",
+            },
+          ],
+          insufficientCandidatesReason: null,
+          diffs: [],
+        },
+        includedCommits: [
+          {
+            sha: "bbb",
+            title: "다른 커밋",
+            author: "octocat",
+            date: "2026-08-25T00:00:00Z",
+            parentCount: 1,
+            message: "다른 커밋",
+            additions: 3,
+            deletions: 1,
+            changedFiles: 1,
+            files: [{ path: "src/bbb.ts", status: "modified", additions: 3, deletions: 1, changes: 4 }],
+            pullRequests: [],
+          },
+        ],
+      },
+      stageASummary: { excludedUnits: [], selectedUnitCount: 1, thresholdScore: 0, unjudgedShas: [] },
+    };
+    const { calls } = stubFetch({
+      [`/api/interviews/${INTERVIEW_ID}`]: () => Response.json({ interview: STORED }),
+      "/api/interviews": () => Response.json({ interviews: [LIST_ITEM] }),
+      [`/api/analyses/${STORED.analysisId}`]: () => Response.json({ analysis: savedAnalysis }),
+    });
+    render(<RepositoryFlow />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "이 분석의 다른 경험" }));
+
+    expect((await screen.findAllByText("다른 경험 후보입니다."))[0]).toBeInTheDocument();
+    // 저장된 분석을 그대로 그립니다. 다시 분석하지 않습니다.
+    expect(analyzeMock).not.toHaveBeenCalled();
+    // 저장소 이름이 아니라 그 인터뷰가 가리키는 분석 식별자로 엽니다.
+    expect(calls.some((url) => url.includes(`/api/analyses/${STORED.analysisId}`))).toBe(true);
   });
 });

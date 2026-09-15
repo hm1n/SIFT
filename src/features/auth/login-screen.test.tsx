@@ -11,9 +11,13 @@ import { LoginScreen } from "./login-screen";
 const routerMock = { push: vi.fn(), refresh: vi.fn(), replace: vi.fn() };
 vi.mock("next/navigation", () => ({ useRouter: () => routerMock }));
 
+const trackEvent = vi.fn();
+vi.mock("@/features/analytics/events", () => ({ trackEvent: (...args: unknown[]) => trackEvent(...args) }));
+
 afterEach(() => {
   cleanup();
   routerMock.replace.mockClear();
+  trackEvent.mockClear();
 });
 
 /** 로그인 화면은 layout의 `AuthTransitionProvider` 안에서만 그려집니다. */
@@ -140,5 +144,30 @@ describe("LoginScreen", () => {
     renderLogin(authError);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "GitHub으로 계속하기" })).toBeInTheDocument();
+  });
+});
+
+describe("LoginScreen 계측", () => {
+  it("화면에 들어오면 login_view를 한 번 보낸다", () => {
+    renderLogin();
+    expect(trackEvent.mock.calls.map(([event]) => event)).toEqual([{ name: "login_view" }]);
+  });
+
+  it("오류로 돌아온 진입은 분류를 함께 남긴다", () => {
+    renderLogin("access_denied");
+    expect(trackEvent).toHaveBeenCalledWith({ name: "login_view", auth_error: "access_denied" });
+  });
+
+  /** 주소창의 쿼리는 아무 값이나 들어올 수 있습니다. 판정 근거를 화면 안내표와 같은 표에 둡니다. */
+  it("안내표에 없는 값은 unknown으로 묶는다", () => {
+    renderLogin("없는코드");
+    expect(trackEvent).toHaveBeenCalledWith({ name: "login_view", auth_error: "unknown" });
+  });
+
+  /** `Try again`은 쿼리를 지워 같은 진입 안에서 기본 화면으로 돌아갑니다. 새 진입이 아닙니다. */
+  it("오류 안내에서 기본 화면으로 돌아가도 다시 세지 않는다", () => {
+    const { rerender } = renderLogin("access_denied");
+    rerender(<AuthTransitionProvider><LoginScreen /></AuthTransitionProvider>);
+    expect(trackEvent).toHaveBeenCalledTimes(1);
   });
 });

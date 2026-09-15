@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { SAVED_INTERVIEW_SCREEN_COPY } from "@/copy/saved";
+import { DELETION_NOTICE_COPY, SAVED_INTERVIEW_SCREEN_COPY } from "@/copy/saved";
 import {
   blockEditByteLength,
   blockMarks,
@@ -22,6 +22,8 @@ import {
 import { isExperienceEvidenceSnapshot } from "@/features/interview/question-request";
 import { SavedInterviewFetchError, saveSavedInterviewBlock } from "./client";
 import { isRestorableBlockState, type StoredInterviewPayload } from "./payload";
+import { pluralCount } from "@/features/experience-candidates/candidate-period";
+import { daysUntilDeletion, DELETION_WARNING_DAYS } from "./retention";
 import styles from "./saved-interview-screen.module.css";
 
 /**
@@ -44,6 +46,14 @@ export interface SavedInterviewScreenProps {
   onResume: () => void;
   /** 다른 곳에서 먼저 저장했을 때 최신 내용을 다시 읽습니다. 없으면 그 안내만 보입니다. */
   onLoadLatest?: () => void;
+  /**
+   * 이 인터뷰가 나온 분석의 후보 목록을 엽니다(이슈 #116). 없으면 그 버튼을 그리지 않습니다.
+   *
+   * 한 분석에서 경험을 여러 개 고를 수 있는데, 저장된 인터뷰에서 그 분석으로 돌아가는 길이 없으면
+   * 사용자는 같은 저장소를 다시 분석해야 합니다. Stage B가 쓰는 모델은 하루 요청 수가 프로젝트 전체
+   * 20회라 그 길이 사실상 막혀 있습니다.
+   */
+  onOpenAnalysis?: () => void;
   /** 테스트에서 저장 요청을 대체하는 통로입니다. */
   fetchImpl?: typeof fetch;
 }
@@ -112,10 +122,35 @@ function freshState(key: string, version: number): ScreenState {
   return { key, edits: {}, version, editor: null, save: "idle" };
 }
 
+/**
+ * 자동 삭제까지 남은 기간입니다(이슈 #116, 디자인 원본의 삭제 안내 배너).
+ *
+ * 목록의 `D-n` 배지와 달리 기한이 멀어도 보입니다. 이 화면은 인터뷰 하나를 들여다보는 자리라 "이
+ * 인터뷰가 언제까지 남는가"가 그 인터뷰에 대한 사실의 하나이고, 목록처럼 여러 줄이 경쟁하지 않습니다.
+ *
+ * 인터뷰를 열면 기준 시각이 갱신되므로 이 화면에 들어온 직후에는 대개 90일이 남아 있습니다. 그래도
+ * 적는 이유는 저장이 영구적이지 않다는 사실을 사용자가 알아야 하기 때문입니다.
+ */
+function DeletionNotice({ openedAt }: { openedAt: string }) {
+  const daysLeft = daysUntilDeletion(openedAt);
+  const expiringSoon = daysLeft <= DELETION_WARNING_DAYS;
+  return (
+    <div className={`${styles.deletionNotice} ${expiringSoon ? styles.deletionNoticeWarning : ""}`} role="status">
+      <span className={styles.deletionSymbol} aria-hidden="true">⚠</span>
+      <p className={styles.deletionText}>
+        {expiringSoon
+          ? DELETION_NOTICE_COPY.expiringSoon(pluralCount(daysLeft, "day"))
+          : DELETION_NOTICE_COPY.remaining(pluralCount(daysLeft, "day"))}
+      </p>
+    </div>
+  );
+}
+
 export function SavedInterviewScreen({
   interview,
   onResume,
   onLoadLatest,
+  onOpenAnalysis,
   fetchImpl,
 }: SavedInterviewScreenProps) {
   const candidate = parseStoredCandidate(interview.candidate);
@@ -198,6 +233,8 @@ export function SavedInterviewScreen({
           <span>{date}</span>
         </div>
       </header>
+
+      <DeletionNotice openedAt={interview.openedAt} />
 
       <div className={styles.body}>
         <div className={styles.column}>
@@ -373,6 +410,11 @@ export function SavedInterviewScreen({
 
       <footer className={styles.footer}>
         <span className={styles.footerMeta}>{progress} · {date}</span>
+        {onOpenAnalysis ? (
+          <button type="button" className={styles.openAnalysis} onClick={onOpenAnalysis}>
+            {SAVED_INTERVIEW_SCREEN_COPY.openAnalysis}
+          </button>
+        ) : null}
         <button type="button" className={styles.resume} onClick={onResume}>
           {interview.status === "completed" ? SAVED_INTERVIEW_SCREEN_COPY.review : SAVED_INTERVIEW_SCREEN_COPY.resume}
           <span className={styles.arrow} aria-hidden="true">→</span>

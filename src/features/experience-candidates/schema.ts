@@ -109,7 +109,13 @@ function isLooseStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
-function isCandidate(value: unknown): value is ExperienceCandidate {
+/**
+ * 후보 하나의 모양입니다. Stage B 응답과 저장된 분석이 같은 검사를 씁니다(PR #130 리뷰).
+ *
+ * 저장된 분석을 읽을 때도 이 검사를 거칩니다. 모델 응답에 쓰는 것과 갈라 두면 한쪽만 고쳐지고,
+ * 저장은 성공했는데 화면이 그리다 멈추는 값이 남습니다.
+ */
+export function isCandidate(value: unknown): value is ExperienceCandidate {
   if (!isRecord(value)) return false;
 
   return (

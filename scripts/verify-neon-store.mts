@@ -80,6 +80,31 @@ async function main(): Promise<void> {
   });
   console.log(`분석 줄을 만들었습니다: ${analysisId}`);
 
+  const stored = await store.getAnalysis(analysisId, USER_ID);
+  check("저장한 분석을 식별자로 읽는다", [stored?.repoOwner, stored?.repoName], ["hm1n", "SIFT"]);
+  check("분석의 jsonb 칸을 그대로 돌려준다", stored?.contributionItems, ["성능 개선"]);
+  check("분석에 사용자 번호를 싣지 않는다", "githubUserId" in (stored ?? {}), false);
+  check("남의 분석은 없는 것으로 본다", await store.getAnalysis(analysisId, OTHER_USER_ID), null);
+  check("없는 분석은 null이다", await store.getAnalysis(randomUUID(), USER_ID), null);
+  check("uuid가 아닌 분석 식별자는 null이다", await store.getAnalysis("분석", USER_ID), null);
+  check("저장소 이름으로도 찾는다", (await store.getLatestAnalysisByRepo(USER_ID, "hm1n", "SIFT"))?.id, analysisId);
+  check("분석한 적 없는 저장소는 null이다", await store.getLatestAnalysisByRepo(USER_ID, "hm1n", "다른-저장소"), null);
+  check("남의 분석은 저장소로도 찾지 못한다", await store.getLatestAnalysisByRepo(OTHER_USER_ID, "hm1n", "SIFT"), null);
+
+  /*
+   * 같은 저장소를 다시 분석한 경우입니다. 마지막 줄을 고르는 일을 질의(`order by created_at desc`)가
+   * 하므로 실제 데이터베이스에서만 확인할 수 있습니다. 이 줄도 이 실행이 만든 것이라 끝에서 함께 지웁니다.
+   */
+  const reanalysisId = await store.saveAnalysis({
+    githubUserId: USER_ID,
+    repoOwner: "hm1n",
+    repoName: "SIFT",
+    contributionItems: ["다시 분석"],
+    candidates: { candidates: { candidates: [], insufficientCandidatesReason: null, diffs: [] }, includedCommits: [] },
+    stageASummary: { excludedUnits: [], selectedUnitCount: 0, thresholdScore: 0, unjudgedShas: [] },
+  });
+  check("같은 저장소를 다시 분석하면 마지막 줄을 돌려준다", (await store.getLatestAnalysisByRepo(USER_ID, "hm1n", "SIFT"))?.id, reanalysisId);
+
   check("남의 분석에는 인터뷰를 붙이지 못한다", await store.createInterview({
     githubUserId: OTHER_USER_ID, analysisId, candidateKey: "c1", title: "남의 것", evidence: {},
   }), null);
@@ -155,11 +180,26 @@ async function main(): Promise<void> {
   check("블록 버전을 새 값으로 옮긴다", appended?.blockVersion, 3);
   check("이어 붙인 뒤 updatedAt이 createdAt보다 늦다", (appended!.updatedAt > appended!.createdAt), true);
 
-  const beforeOpen = appended!.openedAt;
+  check("이력만 이어 붙이면 블록 버전은 그대로다", await store.appendHistory({
+    githubUserId: USER_ID, interviewId, turn: [{ role: "question", text: "이력만 남긴 질문" }], expectedBlockVersion: 3,
+  }), "saved");
+  const historyOnly = await store.getInterview(interviewId, USER_ID);
+  check("이력만 붙인 뒤에도 블록 버전이 그대로다", historyOnly?.blockVersion, 3);
+  check("붙인 대화가 이력 끝에 있다", historyOnly?.history.at(-1)?.text, "이력만 남긴 질문");
+  check("버전이 다르면 이력을 붙이지 않는다", await store.appendHistory({
+    githubUserId: USER_ID, interviewId, turn: [{ role: "question", text: "붙지 않아야 하는 질문" }], expectedBlockVersion: 99,
+  }), "version_conflict");
+  check("남의 인터뷰에는 이력을 붙이지 못한다", await store.appendHistory({
+    githubUserId: OTHER_USER_ID, interviewId, turn: [], expectedBlockVersion: 3,
+  }), "not_found");
+  check("이력만 붙여도 updatedAt은 갱신한다", (historyOnly!.updatedAt >= appended!.updatedAt), true);
+
+  // 비교 기준을 마지막 쓰기 뒤의 값으로 잡습니다. 이력만 붙이는 것도 `updatedAt`을 옮깁니다.
+  const beforeOpen = historyOnly!.openedAt;
   await new Promise((resolve) => setTimeout(resolve, 1_100));
   const reopened = await store.getInterview(interviewId, USER_ID);
   check("인터뷰를 열면 openedAt을 갱신한다", (reopened!.openedAt > beforeOpen), true);
-  check("여는 것이 updatedAt을 건드리지 않는다", reopened!.updatedAt.getTime(), appended!.updatedAt.getTime());
+  check("여는 것이 updatedAt을 건드리지 않는다", reopened!.updatedAt.getTime(), historyOnly!.updatedAt.getTime());
 
   /**
    * 목록 행의 `PAAR n/4`입니다. 이 수는 코드가 아니라 질의가 셉니다. `jsonb_each`와 `jsonb_typeof`를
@@ -208,8 +248,15 @@ async function main(): Promise<void> {
    * 확인하지 않으므로, 대상이 어긋난 실행에서는 남의 저장된 인터뷰를 지우게 됩니다.
    */
   const sql = getSql();
-  await sql.query("delete from repository_analysis where id = $1::uuid", [analysisId]);
-  const rest = await sql.query("select count(*)::int as n from repository_analysis where id = $1::uuid", [analysisId]);
+  // 이 실행이 만든 분석 줄이 둘입니다. 둘 다 식별자로 지웁니다.
+  const madeAnalyses = [analysisId, reanalysisId];
+  for (const id of madeAnalyses) {
+    await sql.query("delete from repository_analysis where id = $1::uuid", [id]);
+  }
+  const rest = await sql.query(
+    "select count(*)::int as n from repository_analysis where id = any($1::uuid[])",
+    [madeAnalyses]
+  );
   check("만든 분석 줄을 지웠다", rest[0].n, 0);
 
   console.log(failures === 0 ? "\n모두 통과했습니다." : `\n${failures}건 실패했습니다.`);

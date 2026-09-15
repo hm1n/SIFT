@@ -5,6 +5,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CandidateDataOutput, ReadonlyCommitDetail } from "@/lib/github/types";
 import type { ExperienceCandidate } from "./types";
+import { RETENTION_DAYS } from "@/features/saved-interviews/retention";
 import { ExperienceCandidateDetail } from "./experience-candidate-detail";
 
 const commit = (
@@ -246,5 +247,20 @@ describe("ExperienceCandidateDetail", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "← 후보 목록으로" }));
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * 근거 스냅샷에는 비공개 저장소의 커밋 메시지와 파일 경로와 코드 변경이 들어갑니다. 저장되는 시점에
+   * 그 사실을 알리지 않으면 사용자는 코드가 서버에 남는다는 것을 모른 채 인터뷰를 시작합니다.
+   */
+  it("인터뷰를 시작하면 코드가 서버에 저장된다는 것과 보관 기간을 함께 알린다", () => {
+    renderDetail();
+
+    const notice = screen.getByText(/이 근거를 서버에 저장합니다/);
+    expect(notice).toHaveTextContent("비공개 Repository의 코드도 함께 저장됩니다");
+    expect(notice).toHaveTextContent(`${RETENTION_DAYS}일`);
+    expect(screen.getByRole("button", { name: /인터뷰 시작/ })).toHaveAccessibleDescription(
+      /비공개 Repository/
+    );
   });
 });

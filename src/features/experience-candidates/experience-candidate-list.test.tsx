@@ -10,7 +10,7 @@ import {
   ExperienceCandidateList,
   type StageASelectionDisplay,
 } from "./experience-candidate-list";
-import type { ExcludedWorkUnit } from "./work-unit-selection";
+import { toExcludedUnitSummary, type ExcludedUnitSummary, type ExcludedWorkUnit } from "./work-unit-selection";
 import type { WorkUnit } from "./work-unit";
 
 const commit = (
@@ -63,13 +63,18 @@ function commitWorkUnit(sha: string, title: string): WorkUnit<ReadonlyCommitDeta
   };
 }
 
+/**
+ * 화면이 받는 모양(`ExcludedUnitSummary`)으로 만듭니다. Stage A가 내는 값을 화면 모양으로 줄이는
+ * 일은 `toExcludedUnitSummary`가 하므로 여기서도 그 함수를 지나갑니다. 손으로 같은 모양을 적으면
+ * 변환이 깨져도 이 테스트는 통과합니다.
+ */
 function excludedUnit(
   number: number,
   score: number,
   reason: ExcludedWorkUnit<ReadonlyCommitDetail>["reason"],
   signals: ExcludedWorkUnit<ReadonlyCommitDetail>["signals"] = []
-): ExcludedWorkUnit<ReadonlyCommitDetail> {
-  return { unit: workUnit(number), score, reason, signals };
+): ExcludedUnitSummary {
+  return toExcludedUnitSummary({ unit: workUnit(number), score, reason, signals });
 }
 
 function renderList(candidateItems: readonly ExperienceCandidate[], commits: readonly ReadonlyCommitDetail[], reason: string | null) {
@@ -343,12 +348,14 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
       ...EMPTY_SELECTION,
       thresholdScore: 1,
       selectedUnitCount: 0,
-      excludedUnits: [{
-        unit: commitWorkUnit(sha, "직접 푸시한 변경"),
-        score: 1,
-        reason: "over_input_budget",
-        signals: [],
-      }],
+      excludedUnits: [
+        toExcludedUnitSummary({
+          unit: commitWorkUnit(sha, "직접 푸시한 변경"),
+          score: 1,
+          reason: "over_input_budget",
+          signals: [],
+        }),
+      ],
     });
 
     expect(screen.getByText("Commit abcdef1")).toBeInTheDocument();

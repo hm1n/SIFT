@@ -10,6 +10,19 @@ export const SAVED_INTERVIEW_LIST_COPY = {
   deleteLabel: (title: string) => `인터뷰 삭제: ${title}`,
 } as const;
 
+/**
+ * 자동 삭제까지 남은 기간입니다(이슈 #116). 기한이 가까우면 화면이 경고색으로 바꿉니다.
+ *
+ * 남은 날수는 `pluralCount`가 영어로 셉니다(이슈 #128 사용자 결정). 뒤에 조사가 바로 붙지 않도록
+ * 수량 다음에 빈칸과 명사를 두는 어순을 씁니다.
+ */
+export const DELETION_NOTICE_COPY = {
+  /** 목록 배지의 설명입니다. 배지 자체는 `D-3` 같은 mono 표기라 영어로 남습니다. */
+  badgeTitle: (days: string) => `${days} 뒤에 자동으로 지워집니다`,
+  expiringSoon: (days: string) => `이 인터뷰는 ${days} 뒤에 자동으로 지워집니다.`,
+  remaining: (days: string) => `자동 삭제까지 ${days} 남았습니다. 인터뷰를 열면 기간이 다시 시작됩니다.`,
+} as const;
+
 export const SAVED_INTERVIEW_SCREEN_COPY = {
   /** mono 섹션 라벨입니다. 레퍼런스 `TRANSLATIONS.ko`가 이 항목만은 한국어로 둡니다. */
   paarHeading: "PAAR 경험",
@@ -37,4 +50,6 @@ export const SAVED_INTERVIEW_SCREEN_COPY = {
   cancel: "취소",
   review: "인터뷰 다시 보기",
   resume: "인터뷰 계속하기",
+  /** 같은 분석에서 고를 수 있는 다른 경험으로 갑니다(이슈 #116). */
+  openAnalysis: "이 분석의 다른 경험",
 } as const;
