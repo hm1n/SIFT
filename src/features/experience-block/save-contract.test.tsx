@@ -209,4 +209,47 @@ describe("훅과 route 사이의 저장 계약", () => {
     expect(historyWhenCompleted).toHaveLength(2);
     expect((await store.getInterview(interviewId, OWNER_ID))?.status).toBe("in_progress");
   });
+
+  /**
+   * 미반영 사유는 턴마다 따로 듭니다(PR #127 리뷰). 하나로 두면 화면이 가리키는 턴(가장 오래된
+   * 것)과 이유(마지막에 실패한 것)가 어긋나고, 다른 턴 하나가 성공하면 남아 있는 턴의 이유까지
+   * 사라집니다.
+   */
+  it("여러 턴이 밀리면 화면이 가리키는 턴의 이유를 보인다", async () => {
+    const store = createInMemoryStore();
+    const interviewId = await seedInterview(store);
+    // 첫 답변은 모델 출력이 거절당하고, 두 번째 답변은 전송 자체가 끊깁니다.
+    let call = 0;
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = String(input);
+      if (url === QUESTION_URL) return questionStream("무엇을 해결하려고 했나요?");
+      call += 1;
+      if (call >= 2) throw new TypeError("Failed to fetch");
+      return routedFetch(store, (targetBlock) => ({
+        ops: [],
+        display: [],
+        evaluation: [],
+        targetResponse: "provided",
+        targetBlock,
+      }))(input, init);
+    }) as typeof fetch;
+    const { result } = renderHook(() => useExperienceInterview({ snapshot, interviewId, fetchImpl }));
+
+    await act(async () => {
+      result.current.start();
+    });
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+    await act(async () => {
+      result.current.submitAnswer("첫 답변입니다.");
+    });
+    await waitFor(() => expect(result.current.unreflectedReason).toBe("block_update_rejected"));
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+    await act(async () => {
+      result.current.submitAnswer("두 번째 답변입니다.");
+    });
+
+    // 두 번째 턴이 다른 이유로 실패해도, 화면이 가리키는 것은 먼저 실패한 첫 턴과 그 이유입니다.
+    await waitFor(() => expect(result.current.unsavedTurnCount).toBe(2));
+    expect(result.current.unreflectedReason).toBe("block_update_rejected");
+  });
 });

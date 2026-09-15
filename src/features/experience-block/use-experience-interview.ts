@@ -296,6 +296,14 @@ export function useExperienceInterview({
     turn: BlockUpdateTurn;
     target: NonNullable<InterviewQuestionTarget>;
     askedCountAtQuestion: number;
+    /**
+     * 이 턴의 블록 갱신이 실패한 이유입니다. 아직 시도하지 않았거나 분류를 모르면 `null`입니다.
+     *
+     * 턴마다 따로 듭니다(PR #127 리뷰). 하나로 두면 턴 여럿이 실패했을 때 화면이 가리키는 턴(가장
+     * 오래된 것)과 이유(마지막에 실패한 것)가 어긋나고, 다른 턴 하나가 성공하면 남아 있는 턴의
+     * 이유까지 함께 지워집니다.
+     */
+    reason: BlockUpdateFetchErrorKind | null;
   };
   /**
    * 미반영 턴마다 재처리에 필요한 요청 맥락을 들고 있습니다. 턴 ID로 키를 둬 어느 턴이든 성공하면
@@ -357,6 +365,8 @@ export function useExperienceInterview({
     // `Map`이 넣은 순서를 지키므로 첫 항목이 먼저 실패한 턴입니다.
     const pending = [...unreflectedRef.current.values()];
     setUnreflectedTurnId(pending.length === 0 ? null : pending[0].turn.turnId);
+    // 이유도 같은 턴에서 꺼냅니다. 화면이 둘을 나란히 그리므로 출처가 갈리면 안 됩니다.
+    setUnreflectedReason(pending.length === 0 ? null : pending[0].reason);
     // 미반영 턴이 여럿이면 겨냥한 블록도 여럿입니다. 화면이 어느 카드에 오류를 그릴지 정하려면
     // 가장 오래된 턴 하나가 아니라 전부를 알아야 합니다.
     setUnreflectedBlocks(
@@ -463,14 +473,14 @@ export function useExperienceInterview({
       askedCountAtQuestion: number
     ): Promise<{ readonly ok: boolean; readonly targetResponse: TargetResponse | null }> => {
       if (unmountedRef.current) {
-        unreflectedRef.current.set(turn.turnId, { turn, target, askedCountAtQuestion });
+        unreflectedRef.current.set(turn.turnId, { turn, target, askedCountAtQuestion, reason: null });
         syncUnreflectedTurnId();
         return { ok: false, targetResponse: null };
       }
       const current = optionsRef.current;
       const controller = new AbortController();
       activeAbortRef.current = controller;
-      activeRef.current = { turn, target, askedCountAtQuestion };
+      activeRef.current = { turn, target, askedCountAtQuestion, reason: null };
       setIsBlockUpdating(true);
       setUpdatingBlock(target.targetBlock);
       const save = buildSaveTarget(turn.turnId, askedCountAtQuestion);
@@ -498,21 +508,21 @@ export function useExperienceInterview({
           askedCountAtQuestion
         );
         unreflectedRef.current.delete(turn.turnId);
+        // 이유는 남은 미반영 턴에서 다시 꺼냅니다. 이 턴이 성공했다고 다른 턴의 이유까지 지우지
+        // 않습니다.
         syncUnreflectedTurnId();
-        // 성공했으므로 앞선 실패의 이유를 지웁니다. 남겨 두면 이미 풀린 문제를 계속 알립니다.
-        setUnreflectedReason(null);
         return { ok: true, targetResponse: result.targetResponse };
       } catch (error) {
         // 블록 갱신이 실패했으면 저장도 이뤄지지 않았습니다. 이번 턴을 밀린 턴으로 남겨 다음 저장이
         // 함께 보내게 합니다. 끊긴 호출(`AbortError`)도 같습니다.
         recordSaveResult(turn.turnId, save, "failed", null);
         if (error instanceof DOMException && error.name === "AbortError") return { ok: false, targetResponse: null };
-        // 실패한 이유를 화면까지 올립니다. 분류를 모르는 오류는 서버 문제로 뭉뚱그리지 않고 `null`로
-        // 둡니다. 화면이 일반 문구를 쓰는 편이, 틀린 원인을 단정하는 것보다 낫습니다.
-        setUnreflectedReason(error instanceof BlockUpdateFetchError ? error.kind : null);
+        // 실패한 이유를 그 턴과 함께 둡니다. 분류를 모르는 오류는 서버 문제로 뭉뚱그리지 않고
+        // `null`로 둡니다. 화면이 일반 문구를 쓰는 편이, 틀린 원인을 단정하는 것보다 낫습니다.
+        const reason = error instanceof BlockUpdateFetchError ? error.kind : null;
         // 갱신 실패만으로 같은 블록에 고정하지 않습니다. progress는 건드리지 않고 다음 단계에서
         // 이전 평가 그대로 이동 정책을 적용합니다.
-        unreflectedRef.current.set(turn.turnId, { turn, target, askedCountAtQuestion });
+        unreflectedRef.current.set(turn.turnId, { turn, target, askedCountAtQuestion, reason });
         syncUnreflectedTurnId();
         return { ok: false, targetResponse: null };
       } finally {
