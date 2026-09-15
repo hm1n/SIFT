@@ -1,6 +1,7 @@
 import { blockEditByteLength } from "@/features/experience-block/block-edits";
 import { BLOCK_MAX_BYTES, BLOCK_MAX_STATEMENTS } from "@/features/experience-block/reducer";
 import { BLOCK_KINDS, type BlockKind, type DisplaySentence } from "@/features/experience-block/types";
+import { isCandidate } from "@/features/experience-candidates/schema";
 import { STAGE_B_MAX_TOTAL_PATCH_CHARS } from "@/features/experience-candidates/stage-b";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
 import { isExperienceEvidenceSnapshot, SNAPSHOT_BODY_BYTES } from "@/features/interview/question-request";
@@ -102,12 +103,85 @@ export function parseCreateInterviewBody(value: unknown): ParsedCreateInterview 
   return { ok: true, body: { analysisId, candidateKey, title, evidence } };
 }
 
+/** 파일 한 줄입니다. 근거 화면이 경로와 상태와 증감 수치를 그대로 그립니다. */
+function isStoredFile(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.path === "string" &&
+    typeof value.status === "string" &&
+    typeof value.additions === "number" &&
+    typeof value.deletions === "number" &&
+    typeof value.changes === "number"
+  );
+}
+
+/** 후보가 가리키는 커밋입니다. 후보 목록이 `sha`로 색인을 만들고 상세가 파일을 그립니다. */
+function isStoredCommit(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value.sha) &&
+    Array.isArray(value.files) &&
+    value.files.every(isStoredFile)
+  );
+}
+
+/** 근거 diff입니다. 인터뷰를 시작할 때 `buildExperienceEvidenceSnapshot`이 여기서 patch를 꺼냅니다. */
+function isStoredDiff(value: unknown): boolean {
+  return (
+    isRecord(value) && isNonEmptyString(value.sha) && Array.isArray(value.files) && value.files.every(isStoredFile)
+  );
+}
+
+function isStoredCandidates(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const stageB = value.candidates;
+  if (!isRecord(stageB)) return false;
+  if (!Array.isArray(stageB.candidates) || !stageB.candidates.every(isCandidate)) return false;
+  const reason = stageB.insufficientCandidatesReason;
+  if (reason !== null && typeof reason !== "string") return false;
+  if (!Array.isArray(stageB.diffs) || !stageB.diffs.every(isStoredDiff)) return false;
+  return Array.isArray(value.includedCommits) && value.includedCommits.every(isStoredCommit);
+}
+
+/** Stage A가 제외한 묶음 하나입니다. 제외 목록이 제목과 점수와 신호를 그립니다. */
+function isStoredExcludedUnit(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    isNonEmptyString(value.unitId) &&
+    typeof value.kind === "string" &&
+    typeof value.title === "string" &&
+    (value.pullRequestNumber === null || typeof value.pullRequestNumber === "number") &&
+    typeof value.score === "number" &&
+    typeof value.reason === "string" &&
+    Array.isArray(value.signals) &&
+    value.signals.every((signal) => typeof signal === "string")
+  );
+}
+
+function isStoredStageASummary(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.excludedUnits) &&
+    value.excludedUnits.every(isStoredExcludedUnit) &&
+    typeof value.selectedUnitCount === "number" &&
+    typeof value.thresholdScore === "number" &&
+    Array.isArray(value.unjudgedShas) &&
+    value.unjudgedShas.every((sha) => typeof sha === "string")
+  );
+}
+
 /**
  * 분석 축약본의 모양을 봅니다. 저장할 때는 요청 본문을, 읽을 때는 저장된 값을 이 함수로 봅니다.
  *
  * 읽을 때도 보는 이유는 저장된 값이 오래전에 쓴 것일 수 있기 때문입니다. 저장한 뒤에 `StoredAnalysis`의
  * 모양이 바뀌면 옛 줄은 지금 화면이 기대하는 모양이 아니고, 그대로 화면에 넘기면 후보 목록을 그리다
  * 깨집니다. 읽는 자리에서 걸러 Error 상태로 안내합니다.
+ *
+ * **중첩된 원소까지 봅니다**(PR #130 리뷰). 바깥 모양만 보면 `{candidates: {}, stageASummary: {}}`가
+ * 그대로 저장되고, 읽는 자리도 같은 검사를 쓰므로 그 줄이 멀쩡한 분석으로 돌아옵니다. 화면은
+ * `data.includedCommits.map`에서 멈춥니다. 저장 경계에서 막아야 그런 줄이 애초에 생기지 않고, 읽는
+ * 경계에서도 막아야 이미 쌓인 줄이 화면을 깨지 않습니다. 블록 상태를 `isRestorableBlockState`가
+ * 중첩까지 보는 것과 같은 자리입니다(PR #127 재검증 라운드).
  */
 export function isStoredAnalysis(value: unknown): value is StoredAnalysis {
   if (!isRecord(value)) return false;
@@ -115,8 +189,8 @@ export function isStoredAnalysis(value: unknown): value is StoredAnalysis {
   if (!Array.isArray(value.contributionItems) || value.contributionItems.some((item) => typeof item !== "string")) {
     return false;
   }
-  if (!isRecord(value.candidates)) return false;
-  return isRecord(value.stageASummary);
+  if (!isStoredCandidates(value.candidates)) return false;
+  return isStoredStageASummary(value.stageASummary);
 }
 
 export type ParsedSaveAnalysis =

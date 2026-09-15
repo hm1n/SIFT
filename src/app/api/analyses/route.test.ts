@@ -115,6 +115,33 @@ describe("POST /api/analyses", () => {
     ["기여 항목이 문자열 배열이 아니면", { analysis: { ...ANALYSIS, contributionItems: [1] } }],
     ["후보가 객체가 아니면", { analysis: { ...ANALYSIS, candidates: [] } }],
     ["Stage A 요약이 없으면", { analysis: { ...ANALYSIS, stageASummary: undefined } }],
+    /**
+     * 바깥 모양만 보면 이 넷이 통과해 저장되고, 읽는 자리도 같은 검사를 쓰므로 멀쩡한 분석으로
+     * 돌아옵니다. 화면은 `data.includedCommits.map`과 후보 목록에서 멈춥니다(PR #130 리뷰).
+     */
+    ["후보 칸이 비어 있으면", { analysis: { ...ANALYSIS, candidates: {} } }],
+    ["Stage A 요약이 비어 있으면", { analysis: { ...ANALYSIS, stageASummary: {} } }],
+    [
+      "후보 하나의 모양이 어긋나면",
+      {
+        analysis: {
+          ...ANALYSIS,
+          candidates: {
+            candidates: { candidates: [{ sha: "a1" }], insufficientCandidatesReason: null, diffs: [] },
+            includedCommits: [],
+          },
+        },
+      },
+    ],
+    [
+      "커밋의 파일 목록이 없으면",
+      {
+        analysis: {
+          ...ANALYSIS,
+          candidates: { ...ANALYSIS.candidates, includedCommits: [{ sha: "a1" }] },
+        },
+      },
+    ],
   ])("%s 400이다", async (_label, body) => {
     const response = await handleSaveAnalysis(request(body), createInMemoryStore());
 
@@ -191,6 +218,32 @@ describe("GET /api/analyses", () => {
     await handleSaveAnalysis(request(saveBody()), store);
 
     expect((await find(store, "?owner=hm1n&repo=SIFT", OTHER_ID)).status).toBe(404);
+  });
+
+  /**
+   * 저장 경계를 통과하지 못하는 값이라도 저장 계층에는 이미 그런 줄이 남아 있을 수 있습니다. 모양이
+   * 바뀌기 전에 쓴 줄입니다. 읽는 자리에서도 걸러야 화면이 깨지지 않습니다(PR #130 리뷰).
+   */
+  it("저장된 값이 지금 화면이 그릴 수 있는 모양이 아니면 없는 것으로 답한다", async () => {
+    const store = createInMemoryStore();
+    await handleSaveAnalysis(request(saveBody()), store);
+    const broken = {
+      ...store,
+      getLatestAnalysisByRepo: async () => ({
+        id: "a1",
+        repoOwner: "hm1n",
+        repoName: "SIFT",
+        contributionItems: [],
+        candidates: {},
+        stageASummary: {},
+        createdAt: new Date(),
+      }),
+    } as unknown as SiftStore;
+
+    const response = await find(broken, "?owner=hm1n&repo=SIFT");
+
+    expect(response.status).toBe(404);
+    expect((await response.json()).error.kind).toBe("not_found");
   });
 
   it.each([["?owner=hm1n"], ["?repo=SIFT"], ["?owner=&repo=SIFT"], [""]])(
