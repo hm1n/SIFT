@@ -87,7 +87,7 @@ const BLOCK_LABEL: Record<BlockKind, string> = {
 function formatDate(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return date.toLocaleDateString("ko-KR", { month: "short", day: "numeric" });
 }
 
 /**
@@ -140,8 +140,8 @@ export function SavedInterviewScreen({
    */
   const canEdit = interview.status === "completed";
   const emptyText = canEdit
-    ? "The interview ended without anything to put here."
-    : "The interview hasn't reached this block yet.";
+    ? "여기에 넣을 내용 없이 인터뷰가 끝났습니다."
+    : "인터뷰가 아직 이 블록까지 오지 않았습니다.";
 
   const draft = state.editor?.draft ?? null;
   const parsed = draft === null ? null : parseBlockEdit(draft);
@@ -208,7 +208,7 @@ export function SavedInterviewScreen({
                 <p className={styles.notice}>{EVIDENCE_VERIFIABILITY_NOTICE}</p>
               </>
             ) : (
-              <p className={styles.notice}>This interview was saved without the analysis for this candidate.</p>
+              <p className={styles.notice}>이 인터뷰는 해당 후보의 분석 없이 저장되었습니다.</p>
             )}
           </section>
 
@@ -222,7 +222,7 @@ export function SavedInterviewScreen({
                 <p className={styles.notice}>{EVIDENCE_VERIFIABILITY_NOTICE}</p>
               </>
             ) : (
-              <p className={styles.notice}>No topics were saved with this interview.</p>
+              <p className={styles.notice}>이 인터뷰에는 기술 토픽이 함께 저장되지 않았습니다.</p>
             )}
           </section>
 
@@ -238,7 +238,7 @@ export function SavedInterviewScreen({
                     </span>
                     <span className={styles.commitMain}>
                       <span className={styles.commitTitle}>
-                        {commit.title ?? "Not found in the commit index."}
+                        {commit.title ?? "커밋 색인에서 찾지 못했습니다."}
                       </span>
                       <span className={styles.commitMeta}>
                         {commit.files.length === 1 ? "1 file" : `${commit.files.length} files`}
@@ -248,7 +248,7 @@ export function SavedInterviewScreen({
                 ))}
               </ul>
             ) : (
-              <p className={styles.notice}>The saved evidence can no longer be read.</p>
+              <p className={styles.notice}>저장된 근거를 더 이상 읽을 수 없습니다.</p>
             )}
           </section>
 
@@ -258,7 +258,7 @@ export function SavedInterviewScreen({
               <span className={styles.progress}>{progress}</span>
             </div>
             {blockState === null ? (
-              <p className={styles.notice}>The saved PAAR blocks can no longer be read.</p>
+              <p className={styles.notice}>저장된 PAAR 블록을 더 이상 읽을 수 없습니다.</p>
             ) : (
             <ul className={styles.blocks}>
               {BLOCK_KINDS.map((block) => {
@@ -271,17 +271,17 @@ export function SavedInterviewScreen({
                       </span>
                       <span className={styles.blockLabel}>{BLOCK_LABEL[block]}</span>
                       {/*
-                        블록이 넷이라 "Edit"만으로는 어느 블록을 고치는 버튼인지 이름으로 갈리지
+                        블록이 넷이라 "편집"만으로는 어느 블록을 고치는 버튼인지 이름으로 갈리지
                         않습니다. 보이는 글자는 짧게 두고 이름에만 블록을 붙입니다.
                       */}
                       {canEdit && !isEditing ? (
                         <button
                           type="button"
                           className={styles.editButton}
-                          aria-label={`Edit ${BLOCK_LABEL[block]}`}
+                          aria-label={`${BLOCK_LABEL[block]} 편집`}
                           onClick={() => openEditor(block)}
                         >
-                          Edit
+                          편집
                         </button>
                       ) : null}
                     </div>
@@ -295,7 +295,7 @@ export function SavedInterviewScreen({
                     {isEditing && draft !== null ? (
                       <div className={styles.editor}>
                         <label className={styles.editorLabel} htmlFor={editorId}>
-                          {BLOCK_LABEL[block]} — one sentence per line
+                          {BLOCK_LABEL[block]} — 한 줄에 한 문장
                         </label>
                         <textarea
                           id={editorId}
@@ -313,34 +313,33 @@ export function SavedInterviewScreen({
                           오타 하나를 고쳐도 같으므로, 바뀐 뒤에 배지로 알리는 것은 늦습니다.
                         */}
                         <p id={`${editorId}-note`} className={styles.editorNote}>
-                          Editing drops the repository citations on these sentences. Edited text is shown as
-                          your own statement. {remainingBytes.toLocaleString()} bytes left.
+                          편집하면 이 문장들에 붙은 Repository 인용이 사라집니다. 편집한 내용은 사용자
+                          본인의 진술로 표시됩니다. {remainingBytes.toLocaleString()}바이트 남았습니다.
                         </p>
                         {rejection === "too_many_statements" ? (
                           <p className={styles.editorError}>
-                            Keep it to {BLOCK_MAX_STATEMENTS} lines or fewer. Each line is one sentence.
+                            {BLOCK_MAX_STATEMENTS}줄 이하로 써 주세요. 한 줄이 한 문장입니다.
                           </p>
                         ) : null}
                         {rejection === "block_too_large" ? (
                           <p className={styles.editorError}>
-                            This block is over the {BLOCK_MAX_BYTES.toLocaleString()} byte limit the server
-                            uses.
+                            이 블록이 서버 상한인 {BLOCK_MAX_BYTES.toLocaleString()}바이트를 넘었습니다.
                           </p>
                         ) : null}
                         {state.save === "failed" ? (
                           <p className={styles.editorError}>
-                            Your edit wasn&apos;t saved. The block still holds what you see above.
+                            편집한 내용이 저장되지 않았습니다. 블록에는 위에 보이는 내용이 그대로 남아 있습니다.
                           </p>
                         ) : null}
                         {state.save === "conflict" ? (
                           <div className={styles.editorConflict}>
                             <p className={styles.editorConflictText}>
-                              This interview was changed somewhere else, so your edit wasn&apos;t saved. Load
-                              the latest version before editing again.
+                              다른 곳에서 이 인터뷰가 바뀌어 편집한 내용이 저장되지 않았습니다. 최신
+                              내용을 불러온 뒤 다시 편집해 주세요.
                             </p>
                             {onLoadLatest ? (
                               <button type="button" className={styles.editorCancel} onClick={onLoadLatest}>
-                                Load latest
+                                최신 내용 불러오기
                               </button>
                             ) : null}
                           </div>
@@ -352,14 +351,14 @@ export function SavedInterviewScreen({
                             disabled={rejection !== null || state.save === "saving"}
                             onClick={() => void saveEditor()}
                           >
-                            {state.save === "saving" ? "Saving…" : "Save"}
+                            {state.save === "saving" ? "저장 중…" : "저장"}
                           </button>
                           <button
                             type="button"
                             className={styles.editorCancel}
                             onClick={() => setHeld({ ...state, editor: null, save: "idle" })}
                           >
-                            Cancel
+                            취소
                           </button>
                         </div>
                       </div>
@@ -376,7 +375,7 @@ export function SavedInterviewScreen({
       <footer className={styles.footer}>
         <span className={styles.footerMeta}>{progress} · {date}</span>
         <button type="button" className={styles.resume} onClick={onResume}>
-          {interview.status === "completed" ? "Review interview" : "Continue interview"}
+          {interview.status === "completed" ? "인터뷰 다시 보기" : "인터뷰 계속하기"}
           <span className={styles.arrow} aria-hidden="true">→</span>
         </button>
       </footer>

@@ -33,7 +33,7 @@ export interface SavedInterviewListProps {
 function formatDate(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return date.toLocaleDateString("ko-KR", { month: "short", day: "numeric" });
 }
 
 export function SavedInterviewList({
@@ -56,17 +56,17 @@ export function SavedInterviewList({
         {state.status === "ready" ? <span className={styles.count}>{state.interviews.length}</span> : null}
       </div>
 
-      {state.status === "loading" ? <p className={styles.notice}>Loading interviews...</p> : null}
+      {state.status === "loading" ? <p className={styles.notice}>인터뷰를 불러오는 중...</p> : null}
 
       {state.status === "error" ? (
         <div className={styles.errorBox}>
-          <p className={styles.notice}>Couldn&apos;t load interviews.</p>
-          <button type="button" className={styles.retry} onClick={onRetry}>Try again</button>
+          <p className={styles.notice}>인터뷰를 불러오지 못했습니다.</p>
+          <button type="button" className={styles.retry} onClick={onRetry}>다시 시도</button>
         </div>
       ) : null}
 
       {state.status === "ready" && state.interviews.length === 0 ? (
-        <p className={styles.notice}>No interviews yet. Select an experience candidate to begin.</p>
+        <p className={styles.notice}>인터뷰가 없습니다. 경험 후보를 선택해 시작하세요.</p>
       ) : null}
 
       {state.status === "ready" && state.interviews.length > 0 ? (
@@ -75,10 +75,10 @@ export function SavedInterviewList({
             <li key={interview.id}>
               {confirmingId === interview.id ? (
                 <div className={styles.confirm}>
-                  <p className={styles.confirmText}>Delete this interview? This cannot be undone.</p>
+                  <p className={styles.confirmText}>이 인터뷰를 삭제할까요? 되돌릴 수 없습니다.</p>
                   <div className={styles.confirmActions}>
                     <button type="button" className={styles.cancel} onClick={() => setConfirmingId(null)}>
-                      Cancel
+                      취소
                     </button>
                     <button
                       type="button"
@@ -89,7 +89,7 @@ export function SavedInterviewList({
                         onDelete(interview.id);
                       }}
                     >
-                      Delete
+                      삭제
                     </button>
                   </div>
                 </div>
@@ -118,7 +118,7 @@ export function SavedInterviewList({
                   <button
                     type="button"
                     className={styles.deleteIcon}
-                    aria-label={`Delete interview: ${interview.title}`}
+                    aria-label={`인터뷰 삭제: ${interview.title}`}
                     onClick={() => setConfirmingId(interview.id)}
                   >
                     ✕
