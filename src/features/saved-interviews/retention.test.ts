@@ -9,6 +9,14 @@ describe("보관 기간", () => {
     expect(daysUntilDeletion(new Date(NOW), NOW)).toBe(RETENTION_DAYS);
   });
 
+  /**
+   * `opened_at`은 데이터베이스 시계가, 남은 날수는 브라우저 시계가 셉니다. 브라우저가 몇 초 느리면 방금
+   * 연 인터뷰가 미래로 보이고, 자르지 않으면 보관 기간보다 하루 많은 91이 화면에 뜹니다.
+   */
+  it("연 시각이 지금보다 앞서도 보관 기간을 넘지 않는다", () => {
+    expect(daysUntilDeletion(new Date(NOW + 2_000), NOW)).toBe(RETENTION_DAYS);
+  });
+
   it("하루가 지날 때마다 하루씩 줄어든다", () => {
     expect(daysUntilDeletion(new Date(NOW - 10 * DAY_MS), NOW)).toBe(RETENTION_DAYS - 10);
   });
