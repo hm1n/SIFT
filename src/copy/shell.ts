@@ -1,7 +1,7 @@
 /** 문서 metadata입니다. 검색 결과와 브라우저 탭에 나갑니다. */
 export const DOCUMENT_COPY = {
   title: "SIFT | Repository 분석",
-  description: "실제 GitHub Repository를 근거로 개발 경험을 발견합니다.",
+  description: "GitHub Repository의 코드와 커밋에서 설명할 개발 경험을 찾습니다.",
 } as const;
 
 export const TOP_HEADER_COPY = {
@@ -23,7 +23,7 @@ export const ACCOUNT_MENU_COPY = {
 export const APP_SHELL_COPY = {
   /** 사이드바 landmark의 이름입니다. 보이는 라벨이 없어 여기에만 있습니다. */
   workspace: "워크스페이스",
-  noRepository: "선택된 Repository 없음",
+  noRepository: "Repository를 선택하지 않았습니다.",
   changeRepository: "← Repository 변경",
   noInterviews: "인터뷰가 없습니다. 경험 후보를 선택해 시작하세요.",
   findNewExperience: "새 경험 찾기",

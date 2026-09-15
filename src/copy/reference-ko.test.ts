@@ -32,7 +32,11 @@ const REFERENCE_KO: readonly {
   { key: "signOut", text: "로그아웃" },
   { key: "cancel", text: "취소" },
   { key: "delete", text: "삭제" },
-  { key: "connectingGitHub", text: "GitHub에 연결 중..." },
+  {
+    key: "connectingGitHub",
+    text: "GitHub에 연결 중...",
+    deviation: "화면 문구의 말줄임표를 세 점 대신 한 글자 말줄임표로 통일했습니다.",
+  },
   { key: "noReposMatch", text: "검색 결과가 없습니다. 다른 키워드로 다시 검색해보세요." },
   { key: "contributionHelper", text: "프로젝트에서 주로 기여한 내용을 알려주세요." },
   { key: "contributionPlaceholder", text: "실시간 채팅, 푸시 알림, TypeScript 전환 작업을 주로 담당했습니다." },
