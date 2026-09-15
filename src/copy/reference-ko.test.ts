@@ -50,7 +50,11 @@ const REFERENCE_KO: readonly {
   { key: "contributionPlaceholder", text: "실시간 채팅, 푸시 알림, TypeScript 전환 작업을 주로 담당했습니다." },
   { key: "analyze", text: "분석하기" },
   { key: "findNewExperience", text: "새 경험 찾기" },
-  { key: "loadingSavedInterviews", text: "인터뷰를 불러오는 중..." },
+  {
+    key: "loadingSavedInterviews",
+    text: "인터뷰를 불러오는 중...",
+    deviation: "화면 문구의 말줄임표를 세 점 대신 한 글자 말줄임표로 통일했습니다.",
+  },
   { key: "savedInterviewsError", text: "인터뷰를 불러오지 못했습니다." },
   { key: "deleteInterviewConfirm", text: "이 인터뷰를 삭제할까요? 되돌릴 수 없습니다." },
   { key: "stepHistory", text: "커밋 히스토리 불러오는 중" },

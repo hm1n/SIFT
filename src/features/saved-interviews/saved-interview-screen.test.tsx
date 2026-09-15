@@ -92,7 +92,7 @@ describe("SavedInterviewScreen", () => {
   it("후보를 찾지 못한 인터뷰는 그 사실을 알린다", () => {
     render(<SavedInterviewScreen interview={payload({ candidate: null })} onResume={vi.fn()} />);
 
-    expect(screen.getByText("이 인터뷰에는 후보 분석이 함께 저장되지 않았습니다.")).toBeInTheDocument();
+    expect(screen.getByText("이 인터뷰에는 후보를 고를 때 사용한 분석이 저장되지 않았습니다.")).toBeInTheDocument();
     expect(screen.getByText("이 인터뷰에는 기술 토픽이 없습니다.")).toBeInTheDocument();
   });
 
@@ -206,7 +206,7 @@ describe("SavedInterviewScreen 블록 편집", () => {
     render(<SavedInterviewScreen interview={completed} onResume={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Problem 편집" }));
-    expect(screen.getByText(/Repository 인용이 사라집니다/)).toBeInTheDocument();
+    expect(screen.getByText(/Repository 인용이 사라지고/)).toBeInTheDocument();
   });
 
   it("이어서 고치면 저장된 뒤의 버전으로 보낸다", async () => {
@@ -289,7 +289,7 @@ describe("SavedInterviewScreen 블록 편집", () => {
     });
 
     expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
-    expect(screen.getByText(new RegExp(`${BLOCK_MAX_STATEMENTS}줄 이하로 써 주세요`))).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`최대 ${BLOCK_MAX_STATEMENTS}줄까지 써 주세요`))).toBeInTheDocument();
   });
 
   it("서버가 쓰는 바이트 상한을 넘으면 저장을 막는다", () => {
@@ -299,7 +299,7 @@ describe("SavedInterviewScreen 블록 편집", () => {
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "가".repeat(BLOCK_MAX_BYTES) } });
 
     expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
-    expect(screen.getByText(new RegExp(`${BLOCK_MAX_BYTES.toLocaleString()}바이트를 넘었습니다`))).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(`${BLOCK_MAX_BYTES.toLocaleString()}바이트까지 저장할 수 있습니다`))).toBeInTheDocument();
   });
 
   // 저장되지 않은 문장을 저장된 것처럼 그리면 사용자가 고쳤다고 믿고 떠납니다.
@@ -332,7 +332,7 @@ describe("SavedInterviewScreen 블록 편집", () => {
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "늦게 도착한 편집" } });
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
-    await waitFor(() => expect(screen.getByText(/다른 곳에서 이 인터뷰가 바뀌어/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/다른 곳에서 인터뷰가 바뀌어/)).toBeInTheDocument());
     fireEvent.click(screen.getByRole("button", { name: "최신 내용 불러오기" }));
     expect(onLoadLatest).toHaveBeenCalledTimes(1);
   });

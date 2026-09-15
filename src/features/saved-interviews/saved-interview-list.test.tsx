@@ -111,7 +111,7 @@ describe("SavedInterviewList", () => {
 
   it("불러오는 중임을 알린다", () => {
     renderList({ status: "loading" });
-    expect(screen.getByText("인터뷰를 불러오는 중...")).toBeInTheDocument();
+    expect(screen.getByText("인터뷰를 불러오는 중…")).toBeInTheDocument();
   });
 
   it("실패하면 다시 시도할 수 있다", () => {
