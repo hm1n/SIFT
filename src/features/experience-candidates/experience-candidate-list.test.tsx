@@ -248,12 +248,12 @@ describe("ExperienceCandidateList", () => {
 
   it("대표 SHA를 커밋 색인에서 찾지 못하면 목록과 상세에서 계약 파손을 드러낸다", () => {
     renderList([candidate("abcdef123456", { summary: "" })], [], "하나뿐입니다.");
-    const row = within(screen.getByRole("button", { name: "색인되지 않은 커밋 · abcdef1" }));
+    const row = within(screen.getByRole("button", { name: "목록에 없는 커밋 · abcdef1" }));
 
-    expect(row.getByText("색인되지 않은 커밋 · abcdef1")).toBeInTheDocument();
+    expect(row.getByText("목록에 없는 커밋 · abcdef1")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "색인되지 않은 커밋 · abcdef1" }));
-    expect(screen.getByRole("heading", { name: "색인되지 않은 커밋 · abcdef1" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "목록에 없는 커밋 · abcdef1" }));
+    expect(screen.getByRole("heading", { name: "목록에 없는 커밋 · abcdef1" })).toBeInTheDocument();
     expect(screen.getByText("대표 커밋을 불러온 커밋 목록에서 찾지 못했습니다.")).toBeInTheDocument();
   });
 

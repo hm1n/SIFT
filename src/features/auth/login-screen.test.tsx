@@ -42,15 +42,15 @@ function expectAuthenticating() {
   const status = screen.getByRole("status");
   expect(status).toHaveAttribute("data-status-kind", "loading");
   expect(status).toHaveTextContent("Authenticating");
-  expect(status).toHaveTextContent("GitHub에 연결 중...");
+  expect(status).toHaveTextContent("GitHub에 연결 중…");
   expect(screen.queryByRole("link", { name: "GitHub으로 계속하기" })).not.toBeInTheDocument();
 }
 
 describe("LoginScreen", () => {
   it("세션이 없으면 로고 자리, 제목, 설명, GitHub 로그인 버튼, 약관 문구를 그린다", () => {
     renderLogin();
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/코드를 이야기할 가치가 있는/);
-    expect(screen.getByText(/GitHub 기록을 분석해/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/코드에서 설명할 가치가 있는/);
+    expect(screen.getByText(/GitHub의 코드와 커밋을 근거로/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "GitHub으로 계속하기" })).toHaveAttribute("href", LOGIN_PATH);
     expect(screen.getByText("계속하면 이용약관에 동의하는 것입니다")).toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
@@ -116,9 +116,9 @@ describe("LoginScreen", () => {
   // 이슈 #94 Constraint: 오류 종류별 안내가 사라지지 않습니다. 종류를 합쳐 한 문구로 만들지 않습니다.
   it.each([
     ["access_denied", "GitHub 권한 승인을 취소했습니다. 다시 로그인할 수 있습니다."],
-    ["state_mismatch", "로그인 요청을 확인하지 못했습니다. 처음부터 다시 로그인해 주세요."],
-    ["exchange_failed", "GitHub 인증이 끝나지 않았습니다. 잠시 후 다시 시도해 주세요."],
-    ["config_missing", "서버에 GitHub 로그인 설정이 없습니다. 서버 관리자가 설정을 마쳐야 합니다."],
+    ["state_mismatch", "로그인 요청을 확인할 수 없습니다. 다시 로그인해 주세요."],
+    ["exchange_failed", "GitHub 로그인을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요."],
+    ["config_missing", "GitHub 로그인 설정이 없어 로그인할 수 없습니다. 서버 관리자가 설정을 고쳐야 합니다."],
   ])("%s 는 ERROR / AUTH 상태와 종류별 안내를 그린다", (authError, message) => {
     renderLogin(authError);
     const alert = screen.getByRole("alert");

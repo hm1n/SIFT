@@ -52,7 +52,7 @@ describe("Home", () => {
 
   it("auth_error가 여러 번 오면 첫 값만 쓴다", async () => {
     render(await renderHome({ auth_error: ["state_mismatch", "access_denied"] }));
-    expect(screen.getByRole("alert")).toHaveTextContent("로그인 요청을 확인하지 못했습니다.");
+    expect(screen.getByRole("alert")).toHaveTextContent("로그인 요청을 확인할 수 없습니다.");
   });
 
   // 로그인이 이미 끝난 뒤 남은 쿼리입니다. 세션이 있으면 오류가 아닙니다.

@@ -576,7 +576,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
     await renderAndAnalyze();
 
     // master-detail(#97)부터 이 후보 하나뿐이면 처음부터 선택돼 있어 클릭이 필요 없습니다.
-    expect(screen.getByRole("link", { name: "색인되지 않은 커밋 · aaaaaaa" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "목록에 없는 커밋 · aaaaaaa" })).toHaveAttribute(
       "href",
       `https://github.com/octocat/hello-world/commit/${sha}`
     );

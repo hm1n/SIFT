@@ -215,7 +215,7 @@ describe("ExperienceCandidateDetail", () => {
     expect(screen.getByText("대표 커밋을 불러온 커밋 목록에서 찾지 못했습니다.")).toBeInTheDocument();
     expect(screen.getAllByText("2 commits").length).toBeGreaterThan(0);
 
-    const failedRow = screen.getByRole("link", { name: `색인되지 않은 커밋 · ${candidate.sha.slice(0, 7)}` }).closest("li");
+    const failedRow = screen.getByRole("link", { name: `목록에 없는 커밋 · ${candidate.sha.slice(0, 7)}` }).closest("li");
     expect(failedRow).not.toHaveTextContent("Verified");
   });
 
