@@ -32,6 +32,35 @@ describe("AuthTransition", () => {
     expect(trackEvent).toHaveBeenCalledWith({ name: "login_start" });
   });
 
+  /**
+   * `<a href>`는 기본 이동을 막지 않아 떠나기 전에 여러 번 눌릴 수 있고, `isAuthenticating`은 다시
+   * 그린 뒤에야 true라 두 번째 클릭을 막지 못합니다. 한 번의 시도가 두 번 세어집니다(PR #129 리뷰).
+   */
+  it("연속으로 눌러도 login_start는 한 번만 보낸다", () => {
+    render(<AuthTransitionProvider><LoginLink variant="primary" iconSize={16}>Continue with GitHub</LoginLink></AuthTransitionProvider>);
+    const link = screen.getByRole("link");
+    fireEvent(link, new MouseEvent("click", { bubbles: true, cancelable: true }));
+    fireEvent(link, new MouseEvent("click", { bubbles: true, cancelable: true }));
+    expect(trackEvent).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * 진입점이 헤더와 로그인 화면 둘입니다. 둘을 잇달아 눌러도 로그인 시도는 한 번입니다. 링크마다
+   * 세면 진입점 수만큼 부풀어 오릅니다.
+   */
+  it("두 진입점을 잇달아 눌러도 login_start는 한 번만 보낸다", () => {
+    render(
+      <AuthTransitionProvider>
+        <LoginLink variant="secondary" iconSize={13}>Log in with GitHub</LoginLink>
+        <LoginLink variant="primary" iconSize={16}>Continue with GitHub</LoginLink>
+      </AuthTransitionProvider>
+    );
+    for (const link of screen.getAllByRole("link")) {
+      fireEvent(link, new MouseEvent("click", { bubbles: true, cancelable: true }));
+    }
+    expect(trackEvent).toHaveBeenCalledTimes(1);
+  });
+
   /** 새 탭으로 여는 클릭은 현재 화면을 떠나지 않으므로 로그인 시작이 아닙니다. */
   it("새 탭으로 여는 클릭은 세지 않는다", () => {
     render(<AuthTransitionProvider><LoginLink variant="primary" iconSize={16}>Continue with GitHub</LoginLink></AuthTransitionProvider>);

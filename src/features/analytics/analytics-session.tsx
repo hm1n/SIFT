@@ -12,6 +12,8 @@ export interface AnalyticsSessionProps {
   userId: string | null;
   /** 이번 진입이 로그인 직후일 때만 값이 있습니다. */
   loginResult?: LoginResult;
+  /** 계측을 마친 뒤 남길 주소입니다. 일회성 표시만 빠집니다. `page.tsx`가 만듭니다. */
+  urlAfterReport?: string;
 }
 
 /**
@@ -23,11 +25,14 @@ export interface AnalyticsSessionProps {
  *
  * `login_result`를 "세션이 있는 첫 렌더"로 판정하지 않습니다. 세션 쿠키는 8시간을 살고 새로고침과
  * 로그아웃 갱신마다 서버가 이 페이지를 다시 실행하므로, 그 판정은 로그인 성공 수가 아니라 페이지
- * 로드 수를 세게 됩니다. "세션이 있다"는 "방금 로그인했다"의 대리 지표입니다. 대신 OAuth 콜백이
- * 성공 리다이렉트에 붙여 주는 `?login=success`를 봅니다. 실패가 이미 `?auth_error=`로 오고 있어
- * 성공과 실패가 같은 방식으로 갈립니다.
+ * 로드 수를 세게 됩니다. "세션이 있다"는 "방금 로그인했다"의 대리 지표입니다. 대신 OAuth 라우트가
+ * 붙여 주는 일회성 표시 `?login=`을 성공과 실패 모두에 씁니다.
+ *
+ * 표시는 한 번 읽고 지웁니다. 남겨 두면 새로고침이 같은 로그인을 다시 세고 주소창에도 계속
+ * 보입니다. 지울 때 `auth_error`는 남깁니다. 로그인 화면이 그 값으로 오류 안내를 그리므로 함께
+ * 지우면 안내가 사라집니다. 어느 쿼리를 남길지는 `page.tsx`가 정해 `urlAfterReport`로 넘깁니다.
  */
-export function AnalyticsSession({ userId, loginResult }: AnalyticsSessionProps) {
+export function AnalyticsSession({ userId, loginResult, urlAfterReport }: AnalyticsSessionProps) {
   const router = useRouter();
   const reportedRef = useRef(false);
 
@@ -43,11 +48,8 @@ export function AnalyticsSession({ userId, loginResult }: AnalyticsSessionProps)
         ? { name: "login_result", success: true }
         : { name: "login_result", success: false, error_kind: loginResult.errorKind }
     );
-    // 성공 표시는 한 번 쓰고 지웁니다. 남겨 두면 새로고침이 같은 로그인을 다시 세고 주소창에도
-    // 계속 보입니다. 실패 표시(`auth_error`)는 지우지 않습니다. 로그인 화면이 그 값으로 오류
-    // 안내를 그리므로 지우면 안내가 사라집니다.
-    if (loginResult.success) router.replace("/");
-  }, [loginResult, router]);
+    if (urlAfterReport) router.replace(urlAfterReport);
+  }, [loginResult, router, urlAfterReport]);
 
   return null;
 }

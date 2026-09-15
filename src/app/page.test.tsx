@@ -128,16 +128,31 @@ describe("Home 계측", () => {
     expect(routerMock.replace).not.toHaveBeenCalled();
   });
 
-  it("세션 없이 auth_error가 오면 실패로 남긴다", async () => {
-    render(await renderHome({ auth_error: "state_mismatch" }));
+  it("실패 표시가 있으면 실패로 남기고 auth_error만 남긴 주소로 바꾼다", async () => {
+    render(await renderHome({ auth_error: "state_mismatch", login: "failed" }));
     expect(eventsNamed("login_result")).toEqual([
       { name: "login_result", success: false, error_kind: "state_mismatch" },
     ]);
+    // 오류 안내의 근거는 남기고 일회성 표시만 지웁니다.
+    expect(routerMock.replace).toHaveBeenCalledWith("/?auth_error=state_mismatch");
+  });
+
+  /**
+   * `auth_error`가 있다는 사실로 실패를 세면 그 주소를 새로고침할 때마다 같은 로그인 실패가 다시
+   * 세어집니다. 성공은 표시를 지워 한 번만 세는데 실패만 그러지 않아 둘이 어긋나 있었습니다
+   * (PR #129 리뷰).
+   */
+  it("표시 없이 auth_error만 남은 주소는 실패로 세지 않는다", async () => {
+    render(await renderHome({ auth_error: "state_mismatch" }));
+    expect(eventsNamed("login_result")).toEqual([]);
+    expect(routerMock.replace).not.toHaveBeenCalled();
+    // 안내는 그대로 그립니다. 지우는 것은 세는 근거이지 보여 주는 근거가 아닙니다.
+    expect(eventsNamed("login_view")).toEqual([{ name: "login_view", auth_error: "state_mismatch" }]);
   });
 
   /** 주소창의 쿼리는 아무 값이나 들어올 수 있습니다. 그대로 보내면 GA4 디멘션에 임의 문자열이 쌓입니다. */
   it("표에 없는 auth_error는 unknown으로 묶는다", async () => {
-    render(await renderHome({ auth_error: "아무거나".repeat(100) }));
+    render(await renderHome({ auth_error: "아무거나".repeat(100), login: "failed" }));
     expect(eventsNamed("login_result")).toEqual([
       { name: "login_result", success: false, error_kind: "unknown" },
     ]);

@@ -18,7 +18,13 @@ export const runtime = "nodejs";
  * 지우면 아무나 이 엔드포인트를 크로스사이트로 호출해 진행 중인 남의 로그인을 끊을 수 있습니다.
  */
 function redirect(request: Request, code?: string, clearState = true): Response {
-  const headers = new Headers({ Location: new URL(code ? `/?auth_error=${code}` : "/", request.url).toString() });
+  /**
+   * 실패도 성공처럼 `login` 표시를 함께 붙입니다. `auth_error`만으로 실패를 세면 그 주소를
+   * 새로고침할 때마다 같은 로그인 실패가 다시 세어집니다. `auth_error`는 로그인 화면이 안내를
+   * 그리는 근거라 남고, 계측이 읽고 지우는 것은 `login`뿐입니다(PR #129 리뷰).
+   */
+  const location = code ? `/?auth_error=${code}&login=failed` : "/";
+  const headers = new Headers({ Location: new URL(location, request.url).toString() });
   if (clearState) headers.append("Set-Cookie", deleteOAuthStateCookie());
   return new Response(null, { status: 302, headers });
 }

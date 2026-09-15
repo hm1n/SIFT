@@ -29,7 +29,7 @@ describe("GitHub OAuth login", () => {
   it("redirects with config_missing when configuration is absent", () => {
     delete process.env.GITHUB_OAUTH_CLIENT_ID;
     const response = GET(new Request("https://app.test/api/auth/github/login"));
-    expect(response.headers.get("location")).toBe("https://app.test/?auth_error=config_missing");
+    expect(response.headers.get("location")).toBe("https://app.test/?auth_error=config_missing&login=failed");
     expect(response.headers.get("set-cookie")).toBeNull();
   });
 });
