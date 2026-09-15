@@ -35,7 +35,7 @@ export function mapInterviewLlmError(
   if (NoObjectGeneratedError.isInstance(error)) {
     return new ExperienceCandidateOutputError(
       "schema_validation",
-      `The structured response for ${context} did not match the output schema.`,
+      LLM_ERROR_COPY.schemaMismatch(context),
       { cause: error }
     );
   }

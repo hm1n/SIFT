@@ -48,7 +48,7 @@ function invalidRequest(message: string): Response {
 function bodyTooLarge(): Response {
   return errorResponse(
     "body_too_large",
-    `The request body must be ${Math.floor(MAX_INTERVIEW_STREAM_BODY_BYTES / 1024)}KB or smaller.`,
+    QUESTION_REQUEST_COPY.bodyTooLarge(Math.floor(MAX_INTERVIEW_STREAM_BODY_BYTES / 1024)),
     413
   );
 }

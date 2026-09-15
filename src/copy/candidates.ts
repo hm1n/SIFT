@@ -147,3 +147,13 @@ export const CANDIDATE_ROUTE_COPY = {
   stageBTimeBudget: "최종 선별이 제한 시간 안에 끝나지 않았습니다.",
   stageASelectedNone: "1차 선별에서 경험 후보를 찾지 못했습니다.",
 } as const;
+
+/**
+ * LLM 연결 설정이 어긋났을 때입니다. `llm-provider.ts`가 후보 생성, 블록 갱신, 질문 생성 셋 모두의
+ * 모델을 만들므로 이 문구는 분석 화면과 인터뷰 화면 양쪽에 그려집니다. 환경변수 이름은 사용자가
+ * 아니라 서버를 고치는 사람이 읽는 값이라 영어 그대로 둡니다.
+ */
+export const LLM_PROVIDER_COPY = {
+  localModelMissing: (envName: string) =>
+    `NEXT_PUBLIC_LLM_BASE_URL을 설정하면 ${envName}도 함께 설정해야 합니다.`,
+} as const;

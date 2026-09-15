@@ -220,6 +220,13 @@ export const TRANSPORT_MESSAGE: Record<InterviewStreamTransportErrorKind, string
   stream_interrupted: "질문이 도착하는 중에 연결이 끊어졌습니다.",
 };
 
+/**
+ * 스트림은 이어졌는데 실려 온 내용을 해석하지 못한 경우입니다. 분류는 `stream_interrupted`로 같지만
+ * 사용자에게 알리는 사실이 다릅니다. 연결이 끊어진 것이 아니라 도착한 내용이 깨진 것입니다.
+ * 분류가 같으므로 뒤따르는 안내와 재시도 동작은 `TRANSPORT_MESSAGE` 쪽과 같습니다.
+ */
+export const STREAM_DATA_UNREADABLE_MESSAGE = "질문이 도착하는 중에 내용이 깨졌습니다.";
+
 export const GENERATION_EMPTY_MESSAGE = "질문을 만들지 못했습니다.";
 
 /** 질문 요청 본문 검증과 스트림 라우트가 내려보내는 문구입니다. 화면이 그대로 그립니다. */
@@ -235,6 +242,8 @@ export const QUESTION_REQUEST_COPY = {
   unauthorized: "GitHub 로그인 세션이 필요합니다.",
   serverMisconfigured: "서버 설정 문제로 질문 생성을 시작하지 못했습니다.",
   invalidJson: "보낸 내용을 읽을 수 없습니다.",
+  /** 상한은 `MAX_INTERVIEW_STREAM_BODY_BYTES`입니다. 라우트가 KB로 바꿔 넘깁니다. */
+  bodyTooLarge: (limitKb: number) => `요청 내용이 상한인 ${limitKb}KB를 넘었습니다.`,
   evidenceTooLarge: "질문 근거가 한 번의 요청에 담을 수 있는 크기를 넘었습니다.",
   targetPairRequired: "다음 질문에서 확인할 PAAR 항목 정보가 일부 빠졌습니다.",
   invalidTarget: "다음 질문에서 확인할 PAAR 항목이 올바르지 않습니다.",
@@ -257,6 +266,8 @@ export const LLM_ERROR_COPY = {
   unreachable: "AI에 연결하지 못했습니다.",
   timedOut: (context: string) => `${context}이 제한 시간 안에 끝나지 않았습니다.`,
   failed: (context: string) => `${context}에 실패했습니다.`,
+  /** 구조화 출력이 스키마를 벗어난 경우입니다. 자유 텍스트 스트리밍인 첫 질문 생성에는 걸리지 않습니다. */
+  schemaMismatch: (context: string) => `${context} 결과가 약속한 형식과 다릅니다.`,
 } as const;
 
 /** `mapInterviewLlmError`에 넘기는 작업 이름입니다. 조사가 붙으므로 받침으로 끝나야 합니다. */

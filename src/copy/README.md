@@ -17,7 +17,9 @@
 담습니다.
 
 - 화면 컴포넌트가 그리는 모든 문구
-- 화면이 `error.message`를 그대로 그리는 오류 문구. 그 자리는 둘뿐입니다. `interview-stream-view.tsx`의 오류 박스와 `repository-analysis-view.tsx`의 `StatusScreen` sub입니다. 그래서 그 두 경로로 흘러드는 서버 문구(`api/candidates/**`, `api/interview/stream`, `llm-error.ts`, `schema.ts`, `candidate-client.ts`, `question-request.ts`, `question-stream.ts`)까지 여기 있습니다.
+- 화면이 `error.message`를 그대로 그리는 오류 문구. 그 자리는 둘뿐입니다. `interview-stream-view.tsx`의 오류 박스와 `repository-analysis-view.tsx`의 `StatusScreen` sub입니다. 그래서 그 두 경로로 흘러드는 서버 문구(`api/candidates/**`, `api/interview/stream`, `llm-error.ts`, `llm-provider.ts`, `sse.ts`, `schema.ts`, `candidate-client.ts`, `question-request.ts`, `question-stream.ts`)까지 여기 있습니다.
+
+  이 목록은 한 번 빠뜨렸습니다. 처음 옮길 때 `sse.ts`와 `llm-provider.ts`가 빠졌고, `llm-error.ts`는 목록에 있었는데도 한 갈래만 영어로 남았습니다. 셋 다 분류(`kind`)는 맞아서 기존 테스트가 통과했습니다. **한 파일을 옮길 때는 그 파일이 만드는 message를 전부 세어야 합니다.** 일부만 옮기면 남은 것은 타입으로도 테스트로도 드러나지 않습니다.
 
 담지 않습니다.
 

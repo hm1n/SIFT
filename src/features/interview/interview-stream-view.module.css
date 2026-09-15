@@ -3,8 +3,11 @@
  *
  * #98은 3열 배치만 하고 이 파일에서는 높이 규칙 두 줄만 고쳤습니다. 그 결과 헤더와 코드 패널과
  * PAAR가 토큰·영어인 화면에서 이 열만 `#5b52d6` 계열 보라색과 한국어로 남아 한 화면 안에서
- * 갈렸습니다. 그래서 색 52개를 전부 `globals.css` 토큰으로 옮겼습니다. 문구는
- * `interview-stream-view.tsx`에서 함께 영어로 옮겼습니다. 후속 backlog 22번이 여기서 닫힙니다.
+ * 갈렸습니다. 그래서 색 52개를 전부 `globals.css` 토큰으로 옮겼습니다. 후속 backlog 22번이 여기서
+ * 닫힙니다.
+ *
+ * 그때 문구도 `interview-stream-view.tsx`에서 함께 영어로 옮겼는데, 이슈 #128이 그 결정을 뒤집어
+ * 화면 문구를 한국어로 되돌렸습니다. 지금 문구는 `src/copy/interview.ts`에 있습니다.
  *
  * 타이포그래피와 버튼 모양은 디자인 원본(`Chat Interface Design/src/App.tsx`의 `MessageRow`·
  * `MessageContent`·composer)과 먼저 개편된 `experience-candidate-detail.module.css`를 따릅니다.

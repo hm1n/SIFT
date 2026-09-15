@@ -1,6 +1,7 @@
 import { APICallError } from "ai";
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { QUESTION_REQUEST_COPY } from "@/copy/interview";
 import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
 import {
   INTERVIEW_QUESTION_MAX_PROMPT_BYTES,
@@ -132,7 +133,14 @@ describe("POST /api/interview/stream", () => {
     );
 
     expect(response.status).toBe(413);
-    await expect(response.json()).resolves.toMatchObject({ error: { kind: "body_too_large" } });
+    // 화면이 이 `message`를 오류 박스 첫 줄에 그대로 그립니다(`interview-stream-view.tsx`).
+    // 분류만 맞고 문구가 영어로 남아 있던 것이 이슈 #128에서 드러났습니다.
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        kind: "body_too_large",
+        message: QUESTION_REQUEST_COPY.bodyTooLarge(Math.floor(MAX_INTERVIEW_STREAM_BODY_BYTES / 1024)),
+      },
+    });
   });
 
   it("프롬프트가 상한을 넘으면 LLM을 부르기 전에 422로 거절한다", async () => {
