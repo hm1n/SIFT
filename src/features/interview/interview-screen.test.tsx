@@ -182,14 +182,27 @@ describe("InterviewScreen", () => {
     expect(stream.compareDocumentPosition(paar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  // #98은 PAAR 자리와 빈 상태만 둡니다. 블록 내용은 #89~#91의 범위입니다.
-  it("PAAR 패널은 0 OF 04 빈 상태만 둔다", () => {
+  // #98이 자리와 빈 상태만 두던 것을 #91이 블록 카드 넷으로 채웠습니다.
+  it("PAAR 패널은 첫 질문 전에 카드 넷을 시작 전 상태로 그린다", () => {
     render(
       <InterviewScreen snapshot={evidenceSnapshotFixture()} onBack={vi.fn()} fetchImpl={pendingFetch()} />
     );
 
     expect(screen.getByText("/ 00 OF 04")).toBeInTheDocument();
-    expect(screen.getByText(/No PAAR block has been filled yet/)).toBeInTheDocument();
+    for (const label of ["Problem", "Analyze", "Action", "Result"]) {
+      expect(screen.getByRole("heading", { level: 4, name: label })).toBeInTheDocument();
+    }
+    expect(screen.getAllByText(/hasn't reached this block yet/)).toHaveLength(4);
+  });
+
+  // 개수는 헤더 토글과 패널 머리글 두 곳이 같은 값을 그려야 합니다. 리터럴로 두면 갈립니다.
+  it("채워진 블록 수를 헤더 토글과 패널 머리글이 같이 그린다", () => {
+    render(
+      <InterviewScreen snapshot={evidenceSnapshotFixture()} onBack={vi.fn()} fetchImpl={pendingFetch()} />
+    );
+
+    expect(screen.getByRole("button", { name: "PAAR 0/4" })).toBeInTheDocument();
+    expect(screen.getByText("/ 00 OF 04")).toBeInTheDocument();
   });
 
   // 종료 조작은 디자인 원본에서 PAAR 패널의 맨 아래 자리입니다. 스트림 훅이 화면 밖으로 나간 뒤에도
@@ -282,6 +295,10 @@ describe("InterviewScreen", () => {
     const confirm = screen.getByRole("group", { name: /clears this conversation for good/ });
     expect(confirm).toHaveTextContent("clears this conversation for good");
     expect(confirm).toHaveTextContent("any answer you're still writing");
+    // 저장 계층이 없어 블록과 편집 내용도 함께 사라집니다. 확인 문구가 대화만 말하면 사용자는 고친
+    // 문장이 남는다고 읽습니다(이슈 #91 Tasks).
+    expect(confirm).toHaveTextContent("the PAAR blocks, and any edits you made to them");
+    expect(confirm).toHaveTextContent("Nothing here is saved");
 
     fireEvent.click(screen.getByRole("button", { name: "Continue the interview" }));
     expect(onBack).not.toHaveBeenCalled();

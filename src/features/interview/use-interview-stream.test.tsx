@@ -2,6 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { INTERVIEW_HISTORY_ITEM_MAX_BYTES, INTERVIEW_HISTORY_MAX_ITEMS } from "./history";
 import { evidenceSnapshotFixture } from "./question-fixture";
@@ -543,6 +544,43 @@ describe("useInterviewStream", () => {
         targetBlock: "problem",
         targetElement: "a",
       });
+    });
+
+    it("Strict Mode로 두 번 마운트해도 onBeforeQuestion 결과로 다음 질문을 요청한다", async () => {
+      // Strict Mode는 개발에서 effect를 setup → cleanup → setup으로 실행합니다. 언마운트 표시를
+      // setup에서 되돌리지 않으면 첫 cleanup이 남긴 값 때문에 `onBeforeQuestion`의 결과를 항상
+      // 버려, 다음 질문을 시작하지 않고 connecting에서 멈춥니다.
+      const sources: ReturnType<typeof controllableResponse>[] = [];
+      const fetchImpl = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async () => {
+        const source = controllableResponse();
+        sources.push(source);
+        return source.response;
+      });
+      const onBeforeQuestion = vi.fn(async () => ({
+        kind: "ask" as const,
+        target: { targetBlock: "action" as const, targetElement: "b" as const },
+        lastOutcome: null,
+      }));
+      const { result } = renderHook(
+        () => useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, onBeforeQuestion, ...immediate }),
+        { wrapper: StrictMode }
+      );
+      await waitFor(() => expect(sources.length).toBeGreaterThan(0));
+      // 앞선 마운트의 스트림은 cleanup이 끊었으므로 마지막 요청만 살아 있습니다.
+      const asked = sources.length;
+      completeQuestion(sources[asked - 1], "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+      act(() => {
+        expect(result.current.submitAnswer("첫 답변")).toBe(true);
+      });
+
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(asked + 1));
+      expect(JSON.parse(String(fetchImpl.mock.calls[asked]?.[1]?.body))).toMatchObject({
+        targetBlock: "action",
+        targetElement: "b",
+      });
+      expect(result.current.status).not.toBe("done");
     });
 
     it("onBeforeQuestion이 정한 대상을 다음 질문 요청 본문에 싣고, 진행 중에는 상태가 connecting이다", async () => {

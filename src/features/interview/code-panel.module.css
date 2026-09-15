@@ -9,7 +9,13 @@
  * 구분하지 못해도 추가와 삭제를 읽을 수 있습니다. 값은 `globals.css`의 diff 토큰입니다.
  */
 
-.panel { display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; border-right: 1px solid var(--color-border); background: var(--color-card); }
+/*
+ * `position: relative`는 스크린리더 전용 문구(`.visuallyHidden` 계열) 때문입니다. 그 요소들은
+ * `position: absolute`인데 위치 잡을 조상이 없으면 초기 컨테이닝 블록을 기준으로 놓입니다. 그러면
+ * 스크롤 영역 안에 있어도 잘리지 않고, 정적 위치가 아래로 갈수록 문서 자체가 길어져 화면 아래에
+ * 빈 스크롤 영역이 생깁니다(2026-09-15 실측: body.scrollHeight 422, html.scrollHeight 1036).
+ */
+.panel { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; border-right: 1px solid var(--color-border); background: var(--color-card); }
 
 .panelHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; border-bottom: 1px solid var(--color-border); padding: 8px 12px; }
 .panelHeading { margin: 0; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); font-weight: 400; letter-spacing: var(--label-tracking); text-transform: uppercase; }

@@ -6,6 +6,9 @@ import { CodePanel } from "./code-panel";
 import { InterviewStreamView } from "./interview-stream-view";
 import { PAAR_BLOCK_COUNT, PaarPanel } from "./paar-panel";
 import { ResizeHandle } from "./resize-handle";
+import { filledBlockCount, type BlockEdits } from "@/features/experience-block/block-edits";
+import { BLOCK_LABELS } from "@/features/experience-block/block-labels";
+import type { BlockKind, DisplaySentence } from "@/features/experience-block/types";
 import { useExperienceInterview } from "@/features/experience-block/use-experience-interview";
 import styles from "./interview-screen.module.css";
 
@@ -117,6 +120,19 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
    */
   const stream = useExperienceInterview({ snapshot, fetchImpl });
 
+  /*
+   * 종료 뒤 사용자가 고친 블록 문장입니다. 패널 안이 아니라 여기 두는 이유는 헤더 토글과 좁은 폭
+   * 탭이 같은 `n/4` 개수를 그리기 때문입니다. 편집 상태가 패널 안에만 있으면 사용자가 블록을 지웠을
+   * 때 패널 머리글과 헤더 토글의 숫자가 갈립니다.
+   *
+   * 저장 계층이 없어 이 값은 이 화면을 떠나면 사라집니다. 사라진다는 사실은 뒤로가기 확인 문구가
+   * 알립니다.
+   */
+  const [blockEdits, setBlockEdits] = useState<BlockEdits>({});
+  const editBlock = (block: BlockKind, sentences: readonly DisplaySentence[]) =>
+    setBlockEdits((edits) => ({ ...edits, [block]: sentences }));
+  const filledBlocks = filledBlockCount(stream.blockState, blockEdits);
+
   const title =
     snapshot.representativeCommit.title ??
     `Representative commit ${snapshot.candidateSha.slice(0, 7)}`;
@@ -188,7 +204,7 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
               aria-pressed={showPaarPanel}
               onClick={() => setShowPaarPanel((shown) => !shown)}
             >
-              PAAR 0/{PAAR_BLOCK_COUNT}
+              PAAR {filledBlocks}/{PAAR_BLOCK_COUNT}
             </button>
           </div>
         )}
@@ -205,7 +221,8 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
         <div className={styles.backConfirm} role="group" aria-labelledby={backConfirmId}>
           <p id={backConfirmId} className={styles.backConfirmText}>
             Going back to the candidate list clears this conversation for good, along with any answer
-            you&apos;re still writing.
+            you&apos;re still writing, the PAAR blocks, and any edits you made to them. Reloading the
+            page clears them too. Nothing here is saved.
           </p>
           <div className={styles.backActions}>
             <button className={styles.backConfirmButton} type="button" onClick={onBack} autoFocus>
@@ -250,7 +267,7 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
             aria-pressed={activeColumn === "paar"}
             onClick={() => setActiveColumn("paar")}
           >
-            PAAR 0/{PAAR_BLOCK_COUNT}
+            PAAR {filledBlocks}/{PAAR_BLOCK_COUNT}
           </button>
         </div>
       ) : null}
@@ -278,7 +295,16 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
         ) : null}
 
         <div className={`${styles.chatColumn} ${columnClass("interview")}`}>
-          <InterviewStreamView stream={stream} />
+          {/*
+            더 물을 질문이 없으면 블록 이름을 넘기지 않습니다. 그때 `currentTarget`은 마지막으로
+            물었던 블록에 그대로 멈춰 있어, 아직 그 블록을 채우는 중이라고 잘못 읽힙니다.
+          */}
+          <InterviewStreamView
+            stream={stream}
+            currentBlockLabel={
+              stream.isReadyToFinish ? undefined : BLOCK_LABELS[stream.currentTarget.targetBlock]
+            }
+          />
         </div>
 
         {isTabMode || showPaarPanel ? (
@@ -297,7 +323,7 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
               className={`${styles.paarColumn} ${columnClass("paar")}`}
               style={{ width: `${fitted.paar}px` }}
             >
-              <PaarPanel isEnded={stream.isEnded} onEnd={stream.endInterview} />
+              <PaarPanel stream={stream} edits={blockEdits} onEditBlock={editBlock} />
             </div>
           </>
         ) : null}

@@ -73,6 +73,37 @@ PR #11 리뷰에서 Codex bot이 같은 지적을 다시 제기했다. 2026-08-2
 - 파일 트리는 `git/trees/HEAD`를 조회하므로 커밋 목록에서 고정한 head SHA와 메타데이터 스냅샷이 어긋날 수 있다. 실제 불일치가 관측되거나 Stage B가 동일 스냅샷을 요구할 때 커밋 커서의 head SHA를 메타데이터 route까지 전달하는 방식을 검토한다.
 - `fetchAuthoredCommits`와 `fetchAuthoredCommitsBatch`가 409 및 부분 실패 분류를 각각 가진다. 전자는 수동 검증 스크립트에서 사용 중이므로 이번 리뷰 수정에서 재작성하지 않았다. 분류 변경이 필요해질 때 배치 함수 반복으로 통합한다.
 
+### 9. `githubFetch`에 요청 제한 시간도 재시도도 없다
+
+`commits.ts`의 `githubFetch`는 `fetch`를 그대로 부르고 실패하면 `GitHubFetchError("network")`로 바꾼다. 제한 시간을 걸지 않고 한 번도 다시 시도하지 않는다. 그래서 연결이 한 번 흔들리면 그 요청을 담은 작업 전체가 실패한다.
+
+2026-09-14에 로컬에서 실제로 드러났다. `api.github.com`의 AAAA(IPv6) 조회가 11초를 끌다 `ENOTFOUND`로 끝나고, undici의 Happy Eyeballs가 그 사이 자체 연결 제한 10초에 걸려 `UND_ERR_CONNECT_TIMEOUT`을 냈다. 첫 요청만 실패하고 두 번째부터는 OS가 실패를 캐시해 정상이었다. 즉 **한 번만 다시 시도했으면 통과했을 실패**였다.
+
+관측값은 다음과 같다.
+
+| 호출 | 결과 |
+| --- | --- |
+| `dns.lookup(family: 6)` | 11,076ms 뒤 `ENOTFOUND` |
+| `fetch` 1회차 | 10,726ms 뒤 `UND_ERR_CONNECT_TIMEOUT` |
+| `fetch` 2회차 | 200, 455ms |
+| `fetch` 3회차 | 200, 34ms |
+
+사용자에게는 `/api/candidates/stage-b`가 10.2초 뒤 502로, `/api/github/commit-details`가 27.9초 뒤 500으로 보였다.
+
+**미룬 이유**: 원인이 코드가 아니라 로컬 IPv6 DNS였고, `NODE_OPTIONS=--dns-result-order=ipv4first`로 dev 서버를 띄우면 같은 요청이 75ms에 끝난다(확인함). 재시도를 넣으면 실패를 덮어 원인 파악이 늦어지는 값도 함께 치른다.
+
+**다시 꺼내는 신호**: 배포 환경에서 `network` 분류의 실패가 관측되거나, 여러 사용자에게서 첫 요청만 실패하는 양상이 보일 때. 넣는다면 `githubFetch` 한 곳에 `AbortSignal.timeout`과 1회 재시도를 두고, 재시도 여부를 오류에 남겨 실패가 조용히 덮이지 않게 한다.
+
+### 10. `partial_failure`가 진짜 원인을 상태 코드에서 지운다
+
+`fetchCommitDetailsBatch`는 하나라도 성공한 뒤 실패하면 `RepositoryContributionFetchError("partial_failure")`로 감싼다. `STATUS_BY_KIND`에서 `partial_failure`는 500이다. 그래서 안쪽 원인이 무엇이든 바깥은 500이 된다.
+
+원인이 `rate_limit`이면 429여야 할 응답이 500으로 나간다. 9번의 사례에서도 안쪽은 `network`(502)인데 바깥은 500이었다. 본문의 `causeKind`에는 원인이 남아 있으므로 정보 자체가 사라지지는 않지만, 상태 코드만 보는 쪽은 전부 서버 오류로 읽는다.
+
+**미룬 이유**: 화면은 본문의 `kind`와 `causeKind`를 읽으므로 사용자에게 보이는 안내는 이미 원인별로 갈린다. 상태 코드로 판단하는 소비자가 아직 없다.
+
+**다시 꺼내는 신호**: 재시도 정책이나 모니터링이 상태 코드로 갈래를 나누기 시작할 때. 고친다면 `errorResponse`가 `partial_failure`의 `causeKind`를 상태 코드에 반영하되, 부분 결과를 담은 응답이 2xx로 보이지 않게 경계를 함께 정한다.
+
 ## 확인 필요
 
 - 위 항목 중 어느 것이 실데이터 검증에서 먼저 드러나는지 관측되지 않았다.

@@ -161,12 +161,20 @@ export interface InterviewStreamViewProps {
    * 두 열은 형제이므로 공통 부모가 훅을 들고 양쪽에 나눠 줍니다.
    */
   stream: InterviewStreamState;
+  /**
+   * 지금 채우는 중인 블록 이름입니다. 답변 입력 아래에 적어 사용자가 무엇을 묻고 있는지 알게
+   * 합니다(이슈 #91 Approach 6). 더 물을 질문이 없으면 호출부가 넘기지 않습니다.
+   *
+   * 블록 자체가 아니라 이름만 받습니다. 이 컴포넌트는 블록 계약을 몰라도 되고, 테스트용 스트림
+   * 경로에는 블록이 아예 없습니다.
+   */
+  currentBlockLabel?: string;
 }
 
 /**
  * 질문 스트리밍의 표시 기반입니다. 상태는 받기만 하고 만들지 않습니다.
  */
-export function InterviewStreamView({ stream }: InterviewStreamViewProps) {
+export function InterviewStreamView({ stream, currentBlockLabel }: InterviewStreamViewProps) {
   const {
     messages,
     status,
@@ -409,10 +417,17 @@ export function InterviewStreamView({ stream }: InterviewStreamViewProps) {
             />
             <div className={styles.composerFooter}>
               {/*
-                디자인의 이 자리에는 PAAR 블록 진행 상태가 들어갑니다. 그 계약이 아직 없어(#89~#91)
-                비워 두되, `aria-describedby`가 가리키는 대상이라 **DOM에서 지우지는 않습니다.** 가리킬
-                것이 없는 `aria-describedby`는 설명이 통째로 사라지는 결함이고, 이슈 #47 PR #52 1차
-                리뷰의 P1이 정확히 그것이었습니다.
+                디자인의 이 자리에는 PAAR 블록 진행 상태가 들어갑니다(#91에서 채웠습니다). 답변이
+                상한을 넘은 동안에는 감춥니다. 그때 이 옆에 서는 것은 안내가 아니라 왜 보낼 수 없는지를
+                알리는 오류 문장이고, 둘을 나란히 두면 오류가 잘립니다.
+              */}
+              {isDraftTooLong || currentBlockLabel === undefined ? null : (
+                <span className={styles.blockProgress}>PAAR · {currentBlockLabel}</span>
+              )}
+              {/*
+                답변 안내입니다. `aria-describedby`가 가리키는 대상이라 **DOM에서 지우지는 않습니다.**
+                가리킬 것이 없는 `aria-describedby`는 설명이 통째로 사라지는 결함이고, 이슈 #47 PR #52
+                1차 리뷰의 P1이 정확히 그것이었습니다.
 
                 평소에는 시각적으로만 숨기고, 답변이 상한을 넘은 동안에는 보입니다. 그때는 안내가 아니라
                 왜 보낼 수 없는지를 알리는 오류이고, 보이지 않으면 사용자는 버튼이 잠긴 이유를 알 수
