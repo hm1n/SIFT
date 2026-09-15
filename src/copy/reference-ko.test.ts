@@ -120,7 +120,7 @@ const REFERENCE_KO: readonly {
   {
     key: "answerQuestion",
     text: "질문에 답하세요...",
-    deviation: "같은 문장으로 시작하되 코드 블록을 써도 된다는 안내를 덧붙입니다. 이 Repository는 답변에 코드가 들어옵니다.",
+    deviation: "자연스러운 존댓말로 고치고 코드 블록을 써도 된다는 안내를 덧붙였습니다. 이 Repository는 답변에 코드가 들어옵니다.",
   },
   {
     key: "experiencesFound",

@@ -98,7 +98,7 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
 
     expect(screen.getByText("Experience")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "재시도 큐 도입" })).toBeInTheDocument();
-    expect(screen.getByText("질문을 준비하고 있습니다.")).toBeInTheDocument();
+    expect(screen.getByText("첫 질문을 준비하고 있습니다.")).toBeInTheDocument();
     // 근거는 #98부터 왼쪽 코드 패널이 그립니다.
     expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /aaa\.ts/ })).toBeInTheDocument();
@@ -246,7 +246,7 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
     fireEvent.click(screen.getByRole("button", { name: /상한 절단/ }));
     fireEvent.click(screen.getByRole("button", { name: CONFIRM_LABEL }));
 
-    expect(screen.getByText(/맞추려고 코드 변경을 줄였습니다/)).toBeInTheDocument();
+    expect(screen.getByText(/코드 변경 일부를 뺐습니다/)).toBeInTheDocument();
   });
 
   it("파일 단위로 절단 표시된 patch도 인터뷰 화면이 알린다", () => {
@@ -273,7 +273,7 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
     fireEvent.click(screen.getByRole("button", { name: /상위 절단 표시/ }));
     fireEvent.click(screen.getByRole("button", { name: CONFIRM_LABEL }));
 
-    expect(screen.getByText(/이 diff는 잘렸습니다/)).toBeInTheDocument();
+    expect(screen.getByText(/이 diff는 일부만 보여 줍니다/)).toBeInTheDocument();
   });
 
   // PR #105 Codex 리뷰 P1: 인터뷰 활성 여부를 상위가 모르면 AppShell 사이드바의 Repository 변경가

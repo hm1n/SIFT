@@ -81,7 +81,7 @@ export const CANDIDATE_DETAIL_COPY = {
 } as const;
 
 /** 색인에서 커밋을 못 찾았을 때 제목 자리에 쓰는 대체 문구입니다. */
-export const COMMIT_NOT_INDEXED_TITLE = (shortSha: string) => `색인되지 않은 커밋 · ${shortSha}`;
+export const COMMIT_NOT_INDEXED_TITLE = (shortSha: string) => `목록에 없는 커밋 · ${shortSha}`;
 
 /**
  * 근거 스냅샷을 만들지 못한 이유별 안내입니다. master-detail에서는 목록이 항상 상세와 함께 보이므로

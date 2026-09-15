@@ -220,7 +220,7 @@ describe("CodePanel", () => {
 
     const fileMode = screen.getByRole("button", { name: /^File/ });
     expect(fileMode).toBeDisabled();
-    expect(fileMode).toHaveAccessibleName(/변경 patch만 실려 있고/);
+    expect(fileMode).toHaveAccessibleName(/GitHub에서 받은 변경 내용에는 파일 전체가 없습니다/);
     expect(screen.getByRole("button", { name: "Diff" })).toHaveAttribute("aria-pressed", "true");
   });
 
@@ -228,7 +228,7 @@ describe("CodePanel", () => {
     const base = snapshot();
     render(<CodePanel snapshot={{ ...base, patchBudget: truncatedBudget(base.patchBudget) }} />);
 
-    expect(screen.getByText(/맞추려고 코드 변경을 줄였습니다/)).toBeInTheDocument();
+    expect(screen.getByText(/코드 변경 일부를 뺐습니다/)).toBeInTheDocument();
   });
 
   it("파일 단위 절단 표시도 알린다", () => {
@@ -240,7 +240,7 @@ describe("CodePanel", () => {
       />
     );
 
-    expect(screen.getByText(/이 diff는 잘렸습니다/)).toBeInTheDocument();
+    expect(screen.getByText(/이 diff는 일부만 보여 줍니다/)).toBeInTheDocument();
   });
 
   // 보는 자리가 달라 하나가 있어도 나머지를 감추지 않습니다. 앞은 스냅샷 전체의 상한 절단이고
@@ -251,8 +251,8 @@ describe("CodePanel", () => {
     });
     render(<CodePanel snapshot={{ ...base, patchBudget: truncatedBudget(base.patchBudget) }} />);
 
-    expect(screen.getByText(/맞추려고 코드 변경을 줄였습니다/)).toBeInTheDocument();
-    expect(screen.getByText(/이 diff는 잘렸습니다/)).toBeInTheDocument();
+    expect(screen.getByText(/코드 변경 일부를 뺐습니다/)).toBeInTheDocument();
+    expect(screen.getByText(/이 diff는 일부만 보여 줍니다/)).toBeInTheDocument();
   });
 
   it("patch 본문이 없는 이유를 예산 소진과 GitHub 미제공으로 구분한다", () => {
@@ -269,7 +269,7 @@ describe("CodePanel", () => {
       />
     );
 
-    expect(screen.getByText(/근거 입력 한도를 모두 써서/)).toBeInTheDocument();
+    expect(screen.getByText(/근거가 너무 많아/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /b\.ts/ }));
 
@@ -303,7 +303,7 @@ describe("CodePanel", () => {
       />
     );
 
-    expect(screen.getByText(/커밋 색인에서 찾지 못했습니다/)).toBeInTheDocument();
+    expect(screen.getByText(/불러온 커밋 목록에서 찾지 못했습니다/)).toBeInTheDocument();
   });
 
   // 디자인에 이 문구들의 자리가 없어 시각적으로 숨기지만, DOM에서 지우면 스크린리더가 확인 가능·불가

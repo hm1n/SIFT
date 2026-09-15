@@ -131,7 +131,7 @@ describe("PaarPanel 블록 상태", () => {
   it("인터뷰가 끝났는데 내용이 없으면 채워지지 않음으로 그린다", () => {
     render(<PanelHarness stream={baseStream({ isEnded: true, endReason: "user" })} />);
 
-    expect(screen.getAllByText("비어 있음")).toHaveLength(4);
+    expect(screen.getAllByText("미완료")).toHaveLength(4);
     expect(screen.getAllByText(/이 블록은 채우지 못한 채 인터뷰가 끝났습니다/)).toHaveLength(4);
   });
 
@@ -146,7 +146,7 @@ describe("PaarPanel 블록 상태", () => {
       />
     );
 
-    expect(screen.getByText("채움")).toBeInTheDocument();
+    expect(screen.getByText("완료")).toBeInTheDocument();
     expect(screen.getByText("결과 문장")).toBeInTheDocument();
   });
 });
@@ -289,7 +289,7 @@ describe("PaarPanel 종료 조작", () => {
     const endInterview = vi.fn();
     render(<PanelHarness stream={baseStream({ isReadyToFinish: true, endInterview })} />);
 
-    expect(screen.getByText(/더 물을 질문이 없습니다/)).toBeInTheDocument();
+    expect(screen.getByText(/PAAR 블록을 모두 채웠습니다/)).toBeInTheDocument();
     expect(endInterview).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "인터뷰 완료" })).toBeInTheDocument();
   });
@@ -354,7 +354,7 @@ describe("PaarPanel 반영 실패 이유", () => {
       />
     );
 
-    expect(screen.getByText(/검증을 통과하지 못했습니다/)).toBeInTheDocument();
+    expect(screen.getByText(/AI가 보낸 내용을 확인할 수 없습니다/)).toBeInTheDocument();
     expect(screen.queryByText(/서버 설정 문제입니다/)).not.toBeInTheDocument();
   });
 
@@ -362,7 +362,7 @@ describe("PaarPanel 반영 실패 이유", () => {
   it("모르는 이유에는 일반 문구를 적는다", () => {
     render(<PanelHarness stream={baseStream({ unreflectedTurnId: "t1", unreflectedReason: null })} />);
 
-    expect(screen.getByText("블록 갱신이 끝나지 않았습니다.")).toBeInTheDocument();
+    expect(screen.getByText("마지막 답변을 반영하지 못했습니다.")).toBeInTheDocument();
   });
 
   // 반영 실패가 곧 저장 실패라는 사실을 안내가 말해야 합니다. 둘을 따로 읽으면 사용자는 대화가

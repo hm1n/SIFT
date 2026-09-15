@@ -167,10 +167,7 @@ export function CodePanel({ snapshot }: CodePanelProps) {
       */}
       {snapshot.patchBudget.truncatedByBudget ? (
         <p className={styles.panelNotice}>
-          {CODE_PANEL_COPY.budgetTrimmed(
-            snapshot.patchBudget.maxInputTokens.toLocaleString("en-US"),
-            snapshot.patchBudget.patchBytes.toLocaleString("en-US")
-          )}
+          {CODE_PANEL_COPY.budgetTrimmed(snapshot.patchBudget.patchBytes.toLocaleString("en-US"))}
         </p>
       ) : null}
 

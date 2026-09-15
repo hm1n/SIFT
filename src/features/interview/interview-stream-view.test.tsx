@@ -134,7 +134,7 @@ describe("InterviewStreamView", () => {
 
     render(<StreamViewHarness fetchImpl={fetchImpl} {...renderOptions} />);
 
-    expect(await screen.findByText("질문을 준비하고 있습니다.")).toBeInTheDocument();
+    expect(await screen.findByText("첫 질문을 준비하고 있습니다.")).toBeInTheDocument();
   });
 
   it("도착한 순서대로 내용을 이어 붙여 표시한다", async () => {
@@ -169,7 +169,7 @@ describe("InterviewStreamView", () => {
 
     const button = await screen.findByRole("button", { name: "새 메시지 보기" });
     const description = document.getElementById(button.getAttribute("aria-describedby") ?? "");
-    expect(description).toHaveTextContent("자동 스크롤이 멈춘 사이에 새 내용이 도착했습니다.");
+    expect(description).toHaveTextContent("새 내용이 도착했지만 자동 스크롤은 멈춰 있습니다.");
   });
 
   it("하단으로 돌아오면 안내를 지우고 자동 스크롤을 재개한다", async () => {
@@ -242,7 +242,7 @@ describe("InterviewStreamView", () => {
     render(<StreamViewHarness fetchImpl={fetchImpl} {...renderOptions} />);
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("질문 스트림을 열지 못했습니다.");
+    expect(alert).toHaveTextContent("질문을 받을 연결을 만들지 못했습니다.");
     expect(alert).toHaveTextContent("아직 도착한 내용이 없습니다.");
   });
 
@@ -260,7 +260,7 @@ describe("InterviewStreamView", () => {
     render(<StreamViewHarness fetchImpl={fetchImpl} {...renderOptions} />);
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("질문 생성 서비스가 호출 한도에 걸렸습니다.");
+    expect(alert).toHaveTextContent("AI 요청 한도에 도달했습니다.");
     expect(alert).toHaveTextContent("잠시 후 다시 시도해 주세요.");
     // 한도 초과에 네트워크 확인 안내가 나가면 안 됩니다.
     expect(alert).not.toHaveTextContent("네트워크를 확인한");
@@ -283,8 +283,8 @@ describe("InterviewStreamView", () => {
     render(<StreamViewHarness fetchImpl={fetchImpl} {...renderOptions} />);
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("질문 생성 서비스가 요청을 받아들이지 않았습니다.");
-    expect(alert).toHaveTextContent("다시 시도해도 같은 결과가 나옵니다.");
+    expect(alert).toHaveTextContent("AI가 이 요청을 받아들이지 않았습니다.");
+    expect(alert).toHaveTextContent("다시 시도해도 해결되지 않습니다.");
     expect(alert).not.toHaveTextContent("over the size limit");
   });
 
@@ -310,9 +310,9 @@ describe("InterviewStreamView", () => {
     render(<StreamViewHarness fetchImpl={fetchImpl} {...renderOptions} />);
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("질문 생성 서비스가 응답하지 않았습니다.");
+    expect(alert).toHaveTextContent("AI가 응답하지 않았습니다.");
     expect(alert).toHaveTextContent("잠시 후 다시 시도해 주세요.");
-    expect(alert).not.toHaveTextContent("다시 시도해도 같은 결과가 나옵니다.");
+    expect(alert).not.toHaveTextContent("다시 시도해도 해결되지 않습니다.");
     expect(screen.getByRole("button", { name: "다시 시도" })).toBeInTheDocument();
   });
 
@@ -421,7 +421,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("지금까지 받은 내용은 사라집니다");
-    expect(alert).not.toHaveTextContent("이미 받은 내용은 그대로 두었습니다");
+    expect(alert).not.toHaveTextContent("받은 내용은 그대로 남아 있습니다");
   });
 
   it("서버 설정 실패를 전송 실패로 뭉개지 않는다", async () => {
@@ -441,7 +441,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("서버 설정 문제로 요청을 처리하지 못했습니다.");
-    expect(alert).toHaveTextContent("다시 시도해도 같은 결과가 나옵니다.");
+    expect(alert).toHaveTextContent("다시 시도해도 해결되지 않습니다.");
     expect(alert).not.toHaveTextContent("네트워크를 확인한");
   });
 
@@ -457,7 +457,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
     render(<StreamViewHarness fetchImpl={fetchImpl} snapshot={snapshot} {...renderOptions} />);
 
     const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("다시 시도해도 같은 결과가 나옵니다");
+    expect(alert).toHaveTextContent("다시 시도해도 해결되지 않습니다");
     expect(screen.queryByRole("button", { name: "다시 시도" })).not.toBeInTheDocument();
   });
 
@@ -484,8 +484,8 @@ describe("InterviewStreamView 실제 생성 경로", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("The conversation history is over the limit.");
     // 기다리면 풀리는 실패와 갈라 씁니다. 대화를 줄이는 조작이 없으므로 종료를 가리킵니다.
-    expect(alert).toHaveTextContent("다시 시도해도 같은 결과가 나옵니다");
-    expect(alert).toHaveTextContent("이 인터뷰를 끝내고");
+    expect(alert).toHaveTextContent("다시 시도해도 해결되지 않습니다");
+    expect(alert).toHaveTextContent("인터뷰를 완료한 뒤");
     expect(alert).not.toHaveTextContent("잠시 후 다시 시도해 주세요");
     // 같은 이력을 그대로 다시 보내면 같은 413이 옵니다. 누를 자리를 남기지 않습니다.
     expect(screen.queryByRole("button", { name: "다시 시도" })).not.toBeInTheDocument();
@@ -564,7 +564,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       // 상한을 넘으면 같은 자리가 왜 보낼 수 없는지로 바뀝니다.
       fireEvent.change(input, { target: { value: "가".repeat(INTERVIEW_HISTORY_ITEM_MAX_BYTES) } });
       expect(described()).not.toBeNull();
-      expect(described()).toHaveTextContent("메시지 하나의 크기 상한을 넘었습니다");
+      expect(described()).toHaveTextContent("답변은 한 메시지에");
     });
 
     /*
@@ -582,7 +582,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       expect(screen.queryByText("PAAR · Problem")).not.toBeInTheDocument();
       expect(
         document.getElementById(input.getAttribute("aria-describedby") ?? "")
-      ).toHaveTextContent("메시지 하나의 크기 상한을 넘었습니다");
+      ).toHaveTextContent("답변은 한 메시지에");
     });
 
     it("보낼 수 없는 상태에서는 단축키도 보내지 않는다", async () => {
@@ -643,7 +643,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       expect(submit).toBeDisabled();
       // Loading은 질문 영역 한 곳에서만 나옵니다.
       expect(screen.getByText("다음 질문을 준비하고 있습니다.")).toBeInTheDocument();
-      expect(screen.queryByText("질문을 준비하고 있습니다.")).not.toBeInTheDocument();
+      expect(screen.queryByText("첫 질문을 준비하고 있습니다.")).not.toBeInTheDocument();
 
       // 답변 제출 하나가 블록 갱신 호출 하나(이슈 #90)와 다음 질문 요청 하나를 만듭니다: 첫 질문, 블록 갱신, 둘째 질문 순서로 3회입니다.
       await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
@@ -681,7 +681,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       expect(submit).toBeDisabled();
       expect(input).toHaveAttribute("aria-invalid", "true");
       const hint = document.getElementById(input.getAttribute("aria-describedby") ?? "");
-      expect(hint).toHaveTextContent("메시지 하나의 크기 상한을 넘었습니다");
+      expect(hint).toHaveTextContent("답변은 한 메시지에");
       expect(hint).toHaveTextContent("4,500바이트");
       fireEvent.submit(submit.closest("form")!);
       expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -787,7 +787,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       // 청크 반영과 안내 표시는 서로 다른 렌더에서 일어납니다. 동기로 잡으면 뒤 렌더를 기다리지
       // 못해 테스트가 간헐적으로 실패합니다.
       await screen.findByRole("button", { name: "새 메시지 보기" });
-      expect(screen.getByText(/새 내용이 도착했습니다/)).toBeInTheDocument();
+      expect(screen.getByText(/새 내용이 도착했지만/)).toBeInTheDocument();
 
       fireEvent.click(screen.getByRole("button", { name: "새 메시지 보기" }));
       expect(log.scrollTop).toBe(1_000);
@@ -848,7 +848,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       // 확인 단계에서는 아직 아무것도 닫히지 않습니다. 사라지는 것을 모두 알립니다.
       const confirm = screen.getByRole("group");
       expect(confirm).toHaveTextContent("쓰던 답변은 사라집니다");
-      expect(confirm).toHaveTextContent("대화는 읽기 전용이 됩니다");
+      expect(confirm).toHaveTextContent("대화를 읽기만 할 수 있습니다");
       expect(confirm).toHaveTextContent("다시 이어갈 수 없습니다");
       expect(input).toBeEnabled();
 

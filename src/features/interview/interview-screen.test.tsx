@@ -137,7 +137,7 @@ describe("InterviewScreen", () => {
       <InterviewScreen snapshot={evidenceSnapshotFixture()} onBack={vi.fn()} fetchImpl={pendingFetch()} />
     );
 
-    expect(screen.getByText("질문을 준비하고 있습니다.")).toBeInTheDocument();
+    expect(screen.getByText("첫 질문을 준비하고 있습니다.")).toBeInTheDocument();
   });
 
   it("도착한 질문을 표시한다", async () => {
@@ -176,7 +176,7 @@ describe("InterviewScreen", () => {
     );
 
     const code = screen.getByRole("region", { name: "Code / Evidence" });
-    const stream = screen.getByRole("region", { name: "AI 질문 스트림" });
+    const stream = screen.getByRole("region", { name: "AI 질문" });
     const paar = screen.getByRole("region", { name: "PAAR" });
     expect(code.compareDocumentPosition(stream) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(stream.compareDocumentPosition(paar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -235,7 +235,7 @@ describe("InterviewScreen", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Code" }));
     expect(screen.queryByRole("region", { name: "Code / Evidence" })).not.toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "AI 질문 스트림" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "AI 질문" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Code" }));
     expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
@@ -307,7 +307,7 @@ describe("InterviewScreen", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "← 뒤로" }));
 
-    const confirm = screen.getByRole("group", { name: /이 대화는 여기서 닫힙니다/ });
+    const confirm = screen.getByRole("group", { name: /저장된 대화와 PAAR 블록은 왼쪽 Interviews에 남습니다/ });
     expect(confirm).toHaveTextContent("이미 보낸 답변 1개가 아직 저장되지 않아 함께 사라집니다");
   });
 
@@ -322,18 +322,14 @@ describe("InterviewScreen", () => {
     // 이 버튼이 대화의 유일본을 지우는 자리입니다. 확인을 지나쳐 바로 돌아가면 제출한 답변과 작성
     // 중인 답변이 함께 사라집니다.
     expect(onBack).not.toHaveBeenCalled();
-    const confirm = screen.getByRole("group", { name: /이 대화가 완전히 사라집니다/ });
-    expect(confirm).toHaveTextContent("이 대화가 완전히 사라집니다");
-    expect(confirm).toHaveTextContent("쓰던 답변과 PAAR 블록도 함께 사라집니다");
-    // 저장 계층이 없어 블록도 함께 사라집니다. 확인 문구가 대화만 말하면 사용자는 블록이 남는다고
-    // 읽습니다(이슈 #91 Tasks). 편집은 더 이상 이 화면에 없으므로 문구에서도 뺐습니다(이슈 #115).
-    expect(confirm).toHaveTextContent("쓰던 답변과 PAAR 블록도 함께 사라집니다");
-    expect(confirm).toHaveTextContent("이 화면의 내용은 저장되지 않습니다");
+    const confirm = screen.getByRole("group", { name: /대화, 쓰던 답변, PAAR 블록이 모두 사라집니다/ });
+    expect(confirm).toHaveTextContent("대화, 쓰던 답변, PAAR 블록이 모두 사라집니다");
+    expect(confirm).toHaveTextContent("페이지를 새로 고쳐도 복구할 수 없습니다");
 
     fireEvent.click(screen.getByRole("button", { name: "인터뷰 계속하기" }));
     expect(onBack).not.toHaveBeenCalled();
     expect(
-      screen.queryByRole("group", { name: /이 대화가 완전히 사라집니다/ })
+      screen.queryByRole("group", { name: /대화, 쓰던 답변, PAAR 블록이 모두 사라집니다/ })
     ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "← 뒤로" }));
