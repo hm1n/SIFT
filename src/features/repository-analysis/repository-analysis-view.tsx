@@ -3,6 +3,12 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { StatusScreen } from "@/components/shell/status-screen";
+import {
+  ANALYSIS_CHECKLIST_COPY,
+  ANALYSIS_COPY,
+  ANALYSIS_EMPTY_COPY,
+  CHECKLIST_STATUS_COPY,
+} from "@/copy/repository";
 import { SESSION_PATH } from "@/lib/github/auth-paths";
 import type { RepositorySummary } from "@/lib/github/types";
 import { ExperienceCandidateList, StageAExclusions } from "@/features/experience-candidates/experience-candidate-list";
@@ -28,27 +34,15 @@ const INITIAL_STATE: AnalysisState = { status: "idle" };
  * 갈라지므로 여기서만 매핑하고 `repository-analysis.ts`의 실제 단계 수·순서는 바꾸지 않습니다.
  */
 const CHECKLIST_STEPS = [
-  { key: "commits", label: "커밋 히스토리 불러오는 중" },
-  { key: "commit_details", label: "커밋 상세 불러오는 중" },
-  { key: "repository_metadata", label: "Repository 메타데이터 불러오는 중" },
-  { key: "deriving", label: "파생 지표 계산 중" },
-  { key: "stage_a", label: "경험 후보 찾는 중" },
-  { key: "stage_b", label: "후보 확정 중" },
+  { key: "commits" },
+  { key: "commit_details" },
+  { key: "repository_metadata" },
+  { key: "deriving" },
+  { key: "stage_a" },
+  { key: "stage_b" },
 ] as const;
 
 type ChecklistKey = (typeof CHECKLIST_STEPS)[number]["key"];
-
-/**
- * ✓·●·○ 기호는 `aria-hidden`이고 완료·진행·대기 구분이 `data-state`와 CSS에만 있어 스크린리더에는
- * 여섯 항목의 라벨만 똑같이 나열됐습니다(PR #105 Codex 리뷰 P1). 항목마다 상태 문구를 시각적으로
- * 숨겨 함께 두면 `checklistStatus`의 `aria-live="polite"`가 단계 전환마다 바뀌는 이 문구를 읽어,
- * 기존 `LoadingState`가 `role="status"`로 현재 단계 제목을 알리던 것과 같은 효과를 냅니다.
- */
-const CHECKLIST_STATUS_TEXT: Record<"done" | "active" | "pending", string> = {
-  done: "완료:",
-  active: "진행 중:",
-  pending: "대기:",
-};
 
 function checklistKeyFor(loading: LoadingPhase): ChecklistKey {
   if (loading.step === "details") {
@@ -216,7 +210,7 @@ export function RepositoryAnalysisView({
       {state.status === "error" ? (
         <ErrorState
           error={state.error}
-          retryLabel={state.retryPoint ? "후보 생성 다시 시도" : "분석 전체 다시 시도"}
+          retryLabel={state.retryPoint ? ANALYSIS_COPY.retryCandidates : ANALYSIS_COPY.retryAll}
           onRetry={retry}
           onReauthenticate={reauthenticate}
           onSelectRepository={onSelectRepository}
@@ -259,7 +253,7 @@ function LoadingChecklist({
   return (
     <div className={styles.loadingScreen}>
       <header className={styles.header}>
-        <p className={styles.eyebrow}>Repository 분석 중</p>
+        <p className={styles.eyebrow}>{ANALYSIS_COPY.eyebrow}</p>
         <h1>{repository.owner} / {repository.name}</h1>
         {meta ? <p className={styles.meta}>{meta}</p> : null}
       </header>
@@ -285,8 +279,8 @@ function LoadingChecklist({
                   {symbolState === "done" ? "✓" : symbolState === "active" ? "●" : "○"}
                 </span>
                 <span className={styles.checklistLabel}>
-                  <span className={styles.visuallyHidden}>{CHECKLIST_STATUS_TEXT[symbolState]} </span>
-                  {step.label}
+                  <span className={styles.visuallyHidden}>{CHECKLIST_STATUS_COPY[symbolState]} </span>
+                  {ANALYSIS_CHECKLIST_COPY[step.key]}
                 </span>
                 {progress ? <span className={styles.checklistProgress}>{progress}</span> : null}
               </li>
@@ -296,42 +290,11 @@ function LoadingChecklist({
       </div>
 
       <footer className={styles.footer}>
-        <button className={styles.changeRepository} type="button" onClick={onSelectRepository}>← Repository 변경</button>
+        <button className={styles.changeRepository} type="button" onClick={onSelectRepository}>{ANALYSIS_COPY.changeRepository}</button>
       </footer>
     </div>
   );
 }
-
-const EMPTY_COPY: Record<EmptyKind | "no_final_candidates", { code: string; label: string; description: string }> = {
-  no_commits: {
-    code: "No Commits",
-    label: "분석할 커밋이 없습니다.",
-    description: "기본 브랜치에서 커밋을 찾지 못했습니다. 커밋 히스토리가 있는 Repository를 선택해 주세요.",
-  },
-  no_author_commits: {
-    code: "No Author Commits",
-    label: "직접 작성한 커밋을 찾지 못했습니다.",
-    description:
-      "기본 브랜치에 커밋은 있지만 지금 로그인한 GitHub 계정이 작성한 커밋이 없습니다. 직접 작성한 커밋이 있는 Repository를 선택해 주세요.",
-  },
-  no_analyzable_commits: {
-    code: "No Analyzable Commits",
-    label: "이 Repository는 분석하기 어렵습니다.",
-    description:
-      "커밋은 있지만 merge, 문서, 의존성, 오타, 포매팅 커밋을 제외하면 남는 커밋이 없습니다. 커밋 히스토리가 있는 다른 Repository를 선택해 주세요.",
-  },
-  no_stage_a_candidates: {
-    code: "No Candidates",
-    label: "설명할 가치가 있는 경험 후보를 찾지 못했습니다.",
-    description:
-      "기여 항목과 맞거나 커밋 메시지·변경 규모로 보아 설명할 가치가 있다고 볼 만한 커밋이 없습니다. 다른 Repository를 선택해 주세요.",
-  },
-  no_final_candidates: {
-    code: "No Final Candidates",
-    label: "최종 경험 후보를 만들지 못했습니다.",
-    description: "기준을 낮추거나 후보를 임의로 채우지 않습니다. 다른 Repository를 선택해 주세요.",
-  },
-};
 
 function EmptyState({
   kind,
@@ -347,7 +310,7 @@ function EmptyState({
   stageASelection?: StageASelectionState;
   onSelectRepository: () => void;
 }) {
-  const copy = EMPTY_COPY[kind];
+  const copy = ANALYSIS_EMPTY_COPY[kind];
   return (
     <div className={styles.stateStack}>
       <StatusScreen
@@ -355,7 +318,7 @@ function EmptyState({
         code={copy.code}
         label={copy.label}
         sub={reason ? <>{reason} {copy.description}</> : copy.description}
-        action={{ label: "다른 Repository 선택", onClick: onSelectRepository }}
+        action={{ label: ANALYSIS_COPY.chooseAnother, onClick: onSelectRepository }}
       />
       {/* StageAExclusions는 <details>를 그리는 블록 엘리먼트라 StatusScreen의 sub(<p>) 안에는 못 넣고
           형제로 둡니다. StatusScreen 계약은 바꾸지 않습니다. */}
@@ -398,9 +361,9 @@ function errorStatusCode(kind: string): string {
 
 function ErrorState({ error, retryLabel, onRetry, onReauthenticate, onSelectRepository }: ErrorStateProps) {
   const action = error.recovery === "reauthenticate"
-    ? { label: "GitHub에 다시 로그인", onClick: onReauthenticate }
+    ? { label: ANALYSIS_COPY.logInAgain, onClick: onReauthenticate }
     : error.recovery === "select_repository"
-      ? { label: "다른 Repository 선택", onClick: onSelectRepository }
+      ? { label: ANALYSIS_COPY.chooseAnother, onClick: onSelectRepository }
       : { label: retryLabel, onClick: onRetry };
   return (
     <StatusScreen

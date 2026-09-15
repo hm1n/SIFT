@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
+import { SAVED_INTERVIEW_SCREEN_COPY } from "@/copy/saved";
 import {
   blockEditByteLength,
   blockMarks,
@@ -140,8 +141,8 @@ export function SavedInterviewScreen({
    */
   const canEdit = interview.status === "completed";
   const emptyText = canEdit
-    ? "이 블록은 채우지 못한 채 인터뷰가 끝났습니다."
-    : "대화를 진행하면 AI가 이 블록을 채웁니다.";
+    ? SAVED_INTERVIEW_SCREEN_COPY.blockEmptyEnded
+    : SAVED_INTERVIEW_SCREEN_COPY.blockEmptyPending;
 
   const draft = state.editor?.draft ?? null;
   const parsed = draft === null ? null : parseBlockEdit(draft);
@@ -208,7 +209,7 @@ export function SavedInterviewScreen({
                 <p className={styles.notice}>{EVIDENCE_VERIFIABILITY_NOTICE}</p>
               </>
             ) : (
-              <p className={styles.notice}>이 인터뷰에는 후보 분석이 함께 저장되지 않았습니다.</p>
+              <p className={styles.notice}>{SAVED_INTERVIEW_SCREEN_COPY.noCandidateAnalysis}</p>
             )}
           </section>
 
@@ -222,7 +223,7 @@ export function SavedInterviewScreen({
                 <p className={styles.notice}>{EVIDENCE_VERIFIABILITY_NOTICE}</p>
               </>
             ) : (
-              <p className={styles.notice}>이 인터뷰에는 기술 토픽이 없습니다.</p>
+              <p className={styles.notice}>{SAVED_INTERVIEW_SCREEN_COPY.noTopics}</p>
             )}
           </section>
 
@@ -238,7 +239,7 @@ export function SavedInterviewScreen({
                     </span>
                     <span className={styles.commitMain}>
                       <span className={styles.commitTitle}>
-                        {commit.title ?? "커밋 색인에서 찾지 못했습니다."}
+                        {commit.title ?? SAVED_INTERVIEW_SCREEN_COPY.commitNotIndexed}
                       </span>
                       <span className={styles.commitMeta}>
                         {commit.files.length === 1 ? "1 file" : `${commit.files.length} files`}
@@ -248,17 +249,17 @@ export function SavedInterviewScreen({
                 ))}
               </ul>
             ) : (
-              <p className={styles.notice}>저장된 근거를 읽을 수 없습니다.</p>
+              <p className={styles.notice}>{SAVED_INTERVIEW_SCREEN_COPY.evidenceUnreadable}</p>
             )}
           </section>
 
           <section className={styles.section} aria-labelledby="saved-paar-heading">
             <div className={styles.sectionHeader}>
-              <p id="saved-paar-heading" className={styles.sectionEyebrow}>PAAR 경험</p>
+              <p id="saved-paar-heading" className={styles.sectionEyebrow}>{SAVED_INTERVIEW_SCREEN_COPY.paarHeading}</p>
               <span className={styles.progress}>{progress}</span>
             </div>
             {blockState === null ? (
-              <p className={styles.notice}>저장된 PAAR 블록을 읽을 수 없습니다.</p>
+              <p className={styles.notice}>{SAVED_INTERVIEW_SCREEN_COPY.blocksUnreadable}</p>
             ) : (
             <ul className={styles.blocks}>
               {BLOCK_KINDS.map((block) => {
@@ -278,10 +279,10 @@ export function SavedInterviewScreen({
                         <button
                           type="button"
                           className={styles.editButton}
-                          aria-label={`${BLOCK_LABEL[block]} 편집`}
+                          aria-label={SAVED_INTERVIEW_SCREEN_COPY.editLabel(BLOCK_LABEL[block])}
                           onClick={() => openEditor(block)}
                         >
-                          편집
+                          {SAVED_INTERVIEW_SCREEN_COPY.edit}
                         </button>
                       ) : null}
                     </div>
@@ -295,7 +296,7 @@ export function SavedInterviewScreen({
                     {isEditing && draft !== null ? (
                       <div className={styles.editor}>
                         <label className={styles.editorLabel} htmlFor={editorId}>
-                          {BLOCK_LABEL[block]} — 한 줄에 한 문장
+                          {SAVED_INTERVIEW_SCREEN_COPY.editorLabel(BLOCK_LABEL[block])}
                         </label>
                         <textarea
                           id={editorId}
@@ -313,33 +314,31 @@ export function SavedInterviewScreen({
                           오타 하나를 고쳐도 같으므로, 바뀐 뒤에 배지로 알리는 것은 늦습니다.
                         */}
                         <p id={`${editorId}-note`} className={styles.editorNote}>
-                          편집하면 이 문장들에 붙은 Repository 인용이 사라집니다. 편집한 내용은 사용자
-                          본인의 진술로 표시됩니다. {remainingBytes.toLocaleString()}바이트 남았습니다.
+                          {SAVED_INTERVIEW_SCREEN_COPY.editorNote(remainingBytes.toLocaleString())}
                         </p>
                         {rejection === "too_many_statements" ? (
                           <p className={styles.editorError}>
-                            {BLOCK_MAX_STATEMENTS}줄 이하로 써 주세요. 한 줄이 한 문장입니다.
+                            {SAVED_INTERVIEW_SCREEN_COPY.tooManyStatements(BLOCK_MAX_STATEMENTS)}
                           </p>
                         ) : null}
                         {rejection === "block_too_large" ? (
                           <p className={styles.editorError}>
-                            이 블록이 서버 상한인 {BLOCK_MAX_BYTES.toLocaleString()}바이트를 넘었습니다.
+                            {SAVED_INTERVIEW_SCREEN_COPY.blockTooLarge(BLOCK_MAX_BYTES.toLocaleString())}
                           </p>
                         ) : null}
                         {state.save === "failed" ? (
                           <p className={styles.editorError}>
-                            편집한 내용이 저장되지 않았습니다. 블록에는 위에 보이는 내용이 그대로 남아 있습니다.
+                            {SAVED_INTERVIEW_SCREEN_COPY.saveFailed}
                           </p>
                         ) : null}
                         {state.save === "conflict" ? (
                           <div className={styles.editorConflict}>
                             <p className={styles.editorConflictText}>
-                              다른 곳에서 이 인터뷰가 바뀌어 편집한 내용이 저장되지 않았습니다. 최신
-                              내용을 불러온 뒤 다시 편집해 주세요.
+                              {SAVED_INTERVIEW_SCREEN_COPY.saveConflict}
                             </p>
                             {onLoadLatest ? (
                               <button type="button" className={styles.editorCancel} onClick={onLoadLatest}>
-                                최신 내용 불러오기
+                                {SAVED_INTERVIEW_SCREEN_COPY.loadLatest}
                               </button>
                             ) : null}
                           </div>
@@ -351,14 +350,14 @@ export function SavedInterviewScreen({
                             disabled={rejection !== null || state.save === "saving"}
                             onClick={() => void saveEditor()}
                           >
-                            {state.save === "saving" ? "저장 중…" : "저장"}
+                            {state.save === "saving" ? SAVED_INTERVIEW_SCREEN_COPY.saving : SAVED_INTERVIEW_SCREEN_COPY.save}
                           </button>
                           <button
                             type="button"
                             className={styles.editorCancel}
                             onClick={() => setHeld({ ...state, editor: null, save: "idle" })}
                           >
-                            취소
+                            {SAVED_INTERVIEW_SCREEN_COPY.cancel}
                           </button>
                         </div>
                       </div>
@@ -375,7 +374,7 @@ export function SavedInterviewScreen({
       <footer className={styles.footer}>
         <span className={styles.footerMeta}>{progress} · {date}</span>
         <button type="button" className={styles.resume} onClick={onResume}>
-          {interview.status === "completed" ? "인터뷰 다시 보기" : "인터뷰 계속하기"}
+          {interview.status === "completed" ? SAVED_INTERVIEW_SCREEN_COPY.review : SAVED_INTERVIEW_SCREEN_COPY.resume}
           <span className={styles.arrow} aria-hidden="true">→</span>
         </button>
       </footer>

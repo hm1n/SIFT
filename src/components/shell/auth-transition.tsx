@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, type MouseEvent, type ReactNode, useContext, useEffect, useState } from "react";
+import { TOP_HEADER_COPY } from "@/copy/shell";
 import { LOGIN_PATH } from "@/lib/github/auth-paths";
 import { ButtonLink, type ButtonVariant } from "./button";
 import { GitHubIcon } from "./sift-mark";
@@ -71,7 +72,7 @@ export function LoginLink({ variant, className, iconSize, children }: LoginLinkP
   return (
     <ButtonLink variant={variant} className={className} href={LOGIN_PATH} onClick={handleClick} aria-busy={isAuthenticating || undefined}>
       <GitHubIcon size={iconSize} />
-      {isAuthenticating ? "GitHub에 연결 중…" : children}
+      {isAuthenticating ? TOP_HEADER_COPY.connecting : children}
     </ButtonLink>
   );
 }

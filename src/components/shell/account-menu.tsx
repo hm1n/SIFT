@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
+import { ACCOUNT_MENU_COPY } from "@/copy/shell";
 import { SESSION_PATH } from "@/lib/github/auth-paths";
 import styles from "./top-header.module.css";
 
@@ -63,7 +64,7 @@ export function AccountMenu({ fetchImpl }: AccountMenuProps) {
         onClick={() => setIsOpen((open) => !open)}
       >
         <span className={styles.avatar} aria-hidden="true">G</span>
-        <span className={styles.accountLabel}>계정</span>
+        <span className={styles.accountLabel}>{ACCOUNT_MENU_COPY.trigger}</span>
         <span className={styles.chevron} aria-hidden="true">▾</span>
       </button>
       {isOpen ? (
@@ -71,13 +72,13 @@ export function AccountMenu({ fetchImpl }: AccountMenuProps) {
           <div className={styles.menuHeader}>
             <span className={styles.avatar} aria-hidden="true">G</span>
             <div>
-              <p className={styles.menuTitle}>로그인됨</p>
-              <p className={styles.menuSub}>GitHub 계정</p>
+              <p className={styles.menuTitle}>{ACCOUNT_MENU_COPY.signedIn}</p>
+              <p className={styles.menuSub}>{ACCOUNT_MENU_COPY.account}</p>
             </div>
           </div>
           <div className={styles.menuBody}>
             <button type="button" role="menuitem" className={styles.menuItem} onClick={signOut} disabled={isSigningOut}>
-              {isSigningOut ? "로그아웃 중…" : "로그아웃"}
+              {isSigningOut ? ACCOUNT_MENU_COPY.signingOut : ACCOUNT_MENU_COPY.signOut}
             </button>
           </div>
         </div>

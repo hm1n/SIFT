@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { APP_SHELL_COPY } from "@/copy/shell";
 import styles from "./app-shell.module.css";
 
 export interface ShellRepository {
@@ -42,7 +43,7 @@ export function AppShell({ repository, onChangeRepository, interviews, onFindNew
     : "";
   return (
     <div className={styles.shell}>
-      <aside className={styles.sidebar} aria-label="워크스페이스">
+      <aside className={styles.sidebar} aria-label={APP_SHELL_COPY.workspace}>
         <section className={styles.repository} aria-label="Repository">
           <span className={styles.sectionLabel}>Repository</span>
           <div className={styles.repositoryInfo}>
@@ -53,12 +54,12 @@ export function AppShell({ repository, onChangeRepository, interviews, onFindNew
                 {meta ? <p className={styles.repositoryMeta}>{meta}</p> : null}
               </>
             ) : (
-              <p className={styles.noRepository}>선택된 Repository 없음</p>
+              <p className={styles.noRepository}>{APP_SHELL_COPY.noRepository}</p>
             )}
           </div>
           {onChangeRepository ? (
             <button type="button" className={styles.changeRepository} onClick={onChangeRepository}>
-              ← Repository 변경
+              {APP_SHELL_COPY.changeRepository}
             </button>
           ) : null}
         </section>
@@ -66,14 +67,14 @@ export function AppShell({ repository, onChangeRepository, interviews, onFindNew
           {interviews ?? (
             <>
               <span className={styles.sectionLabel}>Interviews</span>
-              <p className={styles.emptyInterviews}>인터뷰가 없습니다. 경험 후보를 선택해 시작하세요.</p>
+              <p className={styles.emptyInterviews}>{APP_SHELL_COPY.noInterviews}</p>
             </>
           )}
         </section>
         {onFindNewExperience ? (
           <div className={styles.sidebarFooter}>
             <button type="button" className={styles.findNew} onClick={onFindNewExperience}>
-              <span className={styles.plus} aria-hidden="true">+</span> 새 경험 찾기
+              <span className={styles.plus} aria-hidden="true">+</span> {APP_SHELL_COPY.findNewExperience}
             </button>
           </div>
         ) : null}

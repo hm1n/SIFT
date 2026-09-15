@@ -4,18 +4,8 @@ import { useRouter } from "next/navigation";
 import { LoginLink, useAuthTransition } from "@/components/shell/auth-transition";
 import { SiftMark } from "@/components/shell/sift-mark";
 import { StatusScreen } from "@/components/shell/status-screen";
+import { AUTH_ERROR_COPY, LOGIN_COPY } from "@/copy/auth";
 import styles from "./login-screen.module.css";
-
-/**
- * OAuth 라우트가 `?auth_error=`로 돌려보내는 오류 종류별 안내입니다. 종류는 콜백 라우트와 로그인 라우트가 정합니다.
- * 이슈 #94 Constraint대로 종류를 합쳐 한 문구로 만들지 않습니다. 제목은 디자인의 한 문장으로 고정하고 여기 문구를 sub에 씁니다.
- */
-export const AUTH_ERROR_COPY: Record<string, string> = {
-  access_denied: "GitHub 권한 승인을 취소했습니다. 다시 로그인할 수 있습니다.",
-  state_mismatch: "로그인 요청을 확인하지 못했습니다. 처음부터 다시 로그인해 주세요.",
-  exchange_failed: "GitHub 인증이 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.",
-  config_missing: "서버에 GitHub 로그인 설정이 없습니다. 서버 관리자가 설정을 마쳐야 합니다.",
-};
 
 export interface LoginScreenProps {
   /** `page.tsx`가 `searchParams.auth_error`에서 읽어 넘기는 오류 종류입니다. 표에 없는 값은 안내로 취급하지 않습니다. */
@@ -41,8 +31,8 @@ export function LoginScreen({ authError }: LoginScreenProps) {
       <StatusScreen
         kind="loading"
         code="Authenticating"
-        label="GitHub에 연결 중..."
-        sub="권한 승인을 위해 GitHub으로 이동합니다."
+        label={LOGIN_COPY.authenticatingLabel}
+        sub={LOGIN_COPY.authenticatingSub}
       />
     );
   }
@@ -52,10 +42,10 @@ export function LoginScreen({ authError }: LoginScreenProps) {
       <StatusScreen
         kind="error"
         code="ERROR / AUTH"
-        label="GitHub에 연결할 수 없습니다."
+        label={LOGIN_COPY.errorLabel}
         sub={AUTH_ERROR_COPY[authError]}
         // 디자인대로 로그인 화면으로 돌아갑니다. 쿼리를 지우면 서버가 오류 없는 화면을 다시 그립니다.
-        action={{ label: "다시 시도", onClick: () => router.replace("/") }}
+        action={{ label: LOGIN_COPY.tryAgain, onClick: () => router.replace("/") }}
       />
     );
   }
@@ -69,12 +59,12 @@ export function LoginScreen({ authError }: LoginScreenProps) {
           </div>
         </div>
         <div className={styles.copy}>
-          <h1 className={styles.title}>코드를 이야기할 가치가 있는<br />경험으로 만듭니다.</h1>
-          <p className={styles.description}>GitHub 기록을 분석해 실제 근거로<br />기술 면접을 준비합니다.</p>
+          <h1 className={styles.title}>{LOGIN_COPY.title[0]}<br />{LOGIN_COPY.title[1]}</h1>
+          <p className={styles.description}>{LOGIN_COPY.description[0]}<br />{LOGIN_COPY.description[1]}</p>
         </div>
         <div className={styles.actions}>
-          <LoginLink variant="primary" className={styles.login} iconSize={16}>GitHub으로 계속하기</LoginLink>
-          <p className={styles.terms}>계속하면 이용약관에 동의하는 것입니다</p>
+          <LoginLink variant="primary" className={styles.login} iconSize={16}>{LOGIN_COPY.continueWithGitHub}</LoginLink>
+          <p className={styles.terms}>{LOGIN_COPY.terms}</p>
         </div>
       </div>
     </div>

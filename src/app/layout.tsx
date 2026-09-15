@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist_Mono, Inter } from "next/font/google";
 import { cookies } from "next/headers";
+import { DOCUMENT_COPY } from "@/copy/shell";
 import { AuthTransitionProvider } from "@/components/shell/auth-transition";
 import { TopHeader } from "@/components/shell/top-header";
 import { GITHUB_SESSION_COOKIE } from "@/lib/github/auth-session";
@@ -24,10 +25,7 @@ const geistMono = Geist_Mono({
  */
 const PRETENDARD_CSS = "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css";
 
-export const metadata: Metadata = {
-  title: "SIFT | Repository 분석",
-  description: "실제 GitHub Repository를 근거로 개발 경험을 발견합니다.",
-};
+export const metadata: Metadata = DOCUMENT_COPY;
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const cookieStore = await cookies();

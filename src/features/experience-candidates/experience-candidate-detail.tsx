@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CANDIDATE_DETAIL_COPY } from "@/copy/candidates";
 import type { ReadonlyCommitDetail, RepositoryRef } from "@/lib/github/types";
 import type { EvidenceSnapshotFailureReason, ExperienceCandidateListItem } from "./types";
 import {
@@ -30,15 +31,6 @@ interface ExperienceCandidateDetailProps {
 // 사라지고, 그것이 이슈 #47 PR #52 1차 리뷰의 P1이었습니다.
 const EVIDENCE_NOTICE_ID = "candidate-evidence-verifiability-notice";
 const VERIFIED_NOTICE_ID = "candidate-repository-verified-notice";
-
-/**
- * 토픽이 빈 배열로 온 후보의 Empty 표시입니다.
- *
- * #97의 `SCHEMA_GAP_NOTICE`("No corresponding data in the Repository schema...")를 대신합니다.
- * 그 문구는 스키마에 필드가 없다는 뜻이었고, 이제 필드가 있으므로 "이 후보에서는 고를 것이
- * 없었다"는 다른 사실을 말해야 합니다(이슈 #110).
- */
-const TOPICS_EMPTY_NOTICE = "이 후보의 diff와 커밋 메시지에서는 기술 토픽을 찾지 못했습니다.";
 
 /** 목록에 3개 초과일 때 접어 두는 기준입니다. 디자인의 "View all" 기준과 같습니다. */
 const EVIDENCE_LIST_COLLAPSE_THRESHOLD = 3;
@@ -98,7 +90,7 @@ export function ExperienceCandidateDetail({
       <div className={styles.header}>
         <p className={styles.eyebrow}>Experience</p>
         <h2>{title}</h2>
-        {commit === null ? <p className={styles.notice}>대표 커밋을 커밋 색인에서 찾지 못했습니다.</p> : null}
+        {commit === null ? <p className={styles.notice}>{CANDIDATE_DETAIL_COPY.commitNotIndexed}</p> : null}
         <div className={styles.meta}>
           <span>{pluralCount(commitCount, "commit")}</span>
           {period ? <span>{period.start === period.end ? period.start : `${period.start} – ${period.end}`}</span> : null}
@@ -124,7 +116,7 @@ export function ExperienceCandidateDetail({
               <p className={styles.evidenceNotice}>{EVIDENCE_VERIFIABILITY_NOTICE}</p>
             </>
           ) : (
-            <p className={styles.topicsEmpty}>{TOPICS_EMPTY_NOTICE}</p>
+            <p className={styles.topicsEmpty}>{CANDIDATE_DETAIL_COPY.topicsEmpty}</p>
           )}
         </section>
 
@@ -159,7 +151,7 @@ export function ExperienceCandidateDetail({
           </div>
           {evidenceEntries.length > EVIDENCE_LIST_COLLAPSE_THRESHOLD ? (
             <button className={styles.viewAllButton} type="button" onClick={() => setShowAllEvidence((value) => !value)}>
-              {showAllEvidence ? "간단히 보기" : `전체 ${pluralCount(evidenceEntries.length, "commit")} 보기 →`}
+              {showAllEvidence ? CANDIDATE_DETAIL_COPY.showLess : CANDIDATE_DETAIL_COPY.viewAll(pluralCount(evidenceEntries.length, "commit"))}
             </button>
           ) : null}
         </section>
@@ -168,14 +160,14 @@ export function ExperienceCandidateDetail({
           <div className={styles.selectionError} role="alert" data-selection-error={selectionError}>
             <strong>{EXPERIENCE_SELECTION_ERROR_COPY[selectionError].title}</strong>
             <span>{EXPERIENCE_SELECTION_ERROR_COPY[selectionError].message}</span>
-            <button className={styles.backButton} type="button" onClick={onBack}>← 후보 목록으로</button>
+            <button className={styles.backButton} type="button" onClick={onBack}>{CANDIDATE_DETAIL_COPY.backToList}</button>
           </div>
         ) : null}
       </div>
 
       <div className={styles.footer}>
         <button className={styles.secondaryButton} type="button" onClick={onSelectRepository}>
-          다른 Repository 선택
+          {CANDIDATE_DETAIL_COPY.chooseAnotherRepository}
         </button>
         <button
           className={styles.primaryButton}
@@ -183,7 +175,7 @@ export function ExperienceCandidateDetail({
           aria-describedby={`${EVIDENCE_NOTICE_ID} ${VERIFIED_NOTICE_ID}`}
           onClick={onConfirm}
         >
-          인터뷰 시작 <span aria-hidden="true">→</span>
+          {CANDIDATE_DETAIL_COPY.startInterview} <span aria-hidden="true">→</span>
         </button>
       </div>
     </section>

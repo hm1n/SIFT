@@ -1,4 +1,5 @@
 import { jsonSchema } from "ai";
+import { CANDIDATE_CONTRACT_COPY } from "@/copy/candidates";
 import { ExperienceCandidateOutputError } from "./errors";
 import type {
   ExperienceCandidate,
@@ -147,7 +148,7 @@ export function validateExperienceCandidateOutput(
   ) {
     throw new ExperienceCandidateOutputError(
       "schema_validation",
-      "구조화된 경험 후보 응답이 출력 스키마와 맞지 않습니다."
+      CANDIDATE_CONTRACT_COPY.schemaMismatch
     );
   }
 
@@ -155,7 +156,7 @@ export function validateExperienceCandidateOutput(
   if (new Set(representativeShas).size !== representativeShas.length) {
     throw new ExperienceCandidateOutputError(
       "schema_validation",
-      "대표 커밋 SHA는 후보마다 서로 달라야 합니다."
+      CANDIDATE_CONTRACT_COPY.duplicateSha
     );
   }
 
@@ -175,7 +176,7 @@ export function validateExperienceCandidateOutput(
   if (!reasonIsValid) {
     throw new ExperienceCandidateOutputError(
       "schema_validation",
-      "후보가 0개일 때는 사유가 있어야 하고, null이 아니라 비어 있지 않은 문자열이어야 합니다."
+      CANDIDATE_CONTRACT_COPY.reasonRequired
     );
   }
 
@@ -197,7 +198,7 @@ export function assertCandidateShas(
   if (unknownShas.length > 0) {
     throw new ExperienceCandidateOutputError(
       "unknown_sha",
-      `입력에 없는 커밋 SHA가 들어 있습니다: ${unknownShas.join(", ")}`,
+      CANDIDATE_CONTRACT_COPY.unknownShas(unknownShas.join(", ")),
       { unknownShas }
     );
   }
@@ -241,7 +242,7 @@ export function assertCandidateEvidence(
     if (unrelatedShas.length > 0) {
       throw new ExperienceCandidateOutputError(
         "unrelated_sha",
-        `대표 커밋과 같은 PR에 속하지 않는 관련 SHA가 있습니다: ${unrelatedShas.join(", ")}`,
+        CANDIDATE_CONTRACT_COPY.unrelatedShas(unrelatedShas.join(", ")),
         { unknownShas: unrelatedShas }
       );
     }
@@ -255,7 +256,7 @@ export function assertCandidateEvidence(
     if (unknownPaths.length > 0) {
       throw new ExperienceCandidateOutputError(
         "unknown_file_path",
-        `Repository 근거에 없는 파일 경로를 인용했습니다: ${unknownPaths.join(", ")}`
+        CANDIDATE_CONTRACT_COPY.unknownPaths(unknownPaths.join(", "))
       );
     }
   }
@@ -282,7 +283,7 @@ export function createExperienceCandidateOutputSchema(maxCandidates: number) {
               ? error
               : new ExperienceCandidateOutputError(
                   "schema_validation",
-                  "구조화된 경험 후보 응답 검증에 실패했습니다.",
+                  CANDIDATE_CONTRACT_COPY.validationFailed,
                   { cause: error }
                 ),
         };

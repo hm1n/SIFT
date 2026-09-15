@@ -43,31 +43,8 @@ export interface ConfirmedExperience {
   readonly snapshot: ExperienceEvidenceSnapshot;
 }
 
-/**
- * 근거 스냅샷을 만들지 못한 이유별 안내입니다. 무엇이 부족한지 알리고 다른 후보 선택으로
- * 유도합니다. master-detail에서는 목록이 항상 상세와 함께 보이므로 "뒤로가기"가 화면 이동이
- * 아니라 이 안내를 닫는 것뿐입니다. 문구도 그에 맞춥니다.
- */
-export const EXPERIENCE_SELECTION_ERROR_COPY: Record<
-  EvidenceSnapshotFailureReason,
-  { readonly title: string; readonly message: string }
-> = {
-  representative_commit_not_indexed: {
-    title: "이 경험으로는 인터뷰를 시작할 수 없습니다",
-    message:
-      "대표 커밋을 커밋 색인에서 찾지 못해 제목, 메시지, PR 정보, 변경 파일을 근거로 쓸 수 없습니다. 이 안내를 닫고 다른 경험을 선택해 주세요.",
-  },
-  no_repository_evidence: {
-    title: "이 경험으로는 인터뷰를 시작할 수 없습니다",
-    message:
-      "대표 커밋과 관련 커밋 어디에도 변경 파일이 없어 물어볼 코드가 없습니다. 이 안내를 닫고 다른 경험을 선택해 주세요.",
-  },
-  evidence_input_too_large: {
-    title: "이 경험의 근거가 인터뷰 입력 한도를 넘습니다",
-    message:
-      "코드 변경을 빼고 커밋 메시지와 변경 파일 목록만으로도 한도를 넘습니다. 이 안내를 닫고 다른 경험을 선택해 주세요.",
-  },
-};
+/** 실패 이유별 안내는 `@/copy/candidates`에 있습니다. */
+export { EXPERIENCE_SELECTION_ERROR_COPY } from "@/copy/candidates";
 
 /**
  * 상세 화면의 선택 액션이 호출합니다. 확정 시점에 근거 스냅샷을 만들고, 재선택하면 이전 확정

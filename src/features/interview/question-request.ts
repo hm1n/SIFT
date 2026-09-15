@@ -1,3 +1,4 @@
+import { QUESTION_REQUEST_COPY } from "@/copy/interview";
 import {
   INTERVIEW_HISTORY_ITEM_MAX_BYTES,
   INTERVIEW_HISTORY_MAX_BYTES,
@@ -250,13 +251,13 @@ export function parseInterviewStreamRequestBody(
     return {
       ok: false,
       kind: "invalid_request",
-      message: "근거 스냅샷 형식이 올바르지 않습니다.",
+      message: QUESTION_REQUEST_COPY.invalidSnapshot,
     };
   }
 
   const rawHistory = value.history ?? [];
   if (!Array.isArray(rawHistory) || !rawHistory.every(isHistoryMessage)) {
-    return { ok: false, kind: "invalid_request", message: "대화 이력 형식이 올바르지 않습니다." };
+    return { ok: false, kind: "invalid_request", message: QUESTION_REQUEST_COPY.invalidHistory };
   }
   const history: readonly InterviewHistoryMessage[] = rawHistory;
   if (!isWellFormedInterviewHistory(history)) {
@@ -264,7 +265,7 @@ export function parseInterviewStreamRequestBody(
       ok: false,
       kind: "invalid_request",
       message:
-        "대화 이력은 질문으로 시작해 질문과 답변이 번갈아 나오고 답변으로 끝나야 하며 빈 항목이 없어야 합니다.",
+        QUESTION_REQUEST_COPY.historyShape,
     };
   }
 
@@ -272,14 +273,14 @@ export function parseInterviewStreamRequestBody(
     return {
       ok: false,
       kind: "history_too_large",
-      message: `대화 이력은 최대 ${INTERVIEW_HISTORY_MAX_ITEMS}개 항목까지만 담을 수 있습니다.`,
+      message: QUESTION_REQUEST_COPY.historyTooManyItems(INTERVIEW_HISTORY_MAX_ITEMS),
     };
   }
   if (history.some((message) => interviewHistoryItemBytes(message) > INTERVIEW_HISTORY_ITEM_MAX_BYTES)) {
     return {
       ok: false,
       kind: "history_too_large",
-      message: `질문과 답변은 각각 최대 ${INTERVIEW_HISTORY_ITEM_MAX_BYTES}바이트까지만 담을 수 있습니다.`,
+      message: QUESTION_REQUEST_COPY.historyItemTooLarge(INTERVIEW_HISTORY_ITEM_MAX_BYTES),
     };
   }
 
@@ -289,15 +290,15 @@ export function parseInterviewStreamRequestBody(
     return {
       ok: false,
       kind: "invalid_request",
-      message: "대상 블록과 대상 요소는 함께 있거나 함께 없어야 합니다.",
+      message: QUESTION_REQUEST_COPY.targetPairRequired,
     };
   }
   if (hasTargetBlock && (!isBlockKind(value.targetBlock) || !isBlockElement(value.targetElement))) {
-    return { ok: false, kind: "invalid_request", message: "대상 블록이나 대상 요소가 올바르지 않습니다." };
+    return { ok: false, kind: "invalid_request", message: QUESTION_REQUEST_COPY.invalidTarget };
   }
 
   if (value.lastOutcome !== undefined && !isLastOutcome(value.lastOutcome)) {
-    return { ok: false, kind: "invalid_request", message: "직전 처리 결과 형식이 올바르지 않습니다." };
+    return { ok: false, kind: "invalid_request", message: QUESTION_REQUEST_COPY.invalidLastOutcome };
   }
 
   return {

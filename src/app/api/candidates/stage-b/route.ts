@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { CANDIDATE_ROUTE_COPY } from "@/copy/candidates";
 import { ExperienceCandidateOutputError } from "@/features/experience-candidates/errors";
 import { resolveLlmTimeoutMs } from "@/features/experience-candidates/llm-provider";
 import {
@@ -67,14 +68,14 @@ export async function handleStageB(
     const declaredLength = Number(request.headers.get("content-length"));
     if (declaredLength > MAX_STAGE_B_BODY_BYTES) {
       return Response.json(
-        { error: { kind: "body_too_large", message: "요청 본문은 4.5MB 이하여야 합니다." } },
+        { error: { kind: "body_too_large", message: CANDIDATE_ROUTE_COPY.bodyTooLarge } },
         { status: 413 }
       );
     }
     const actualLength = new TextEncoder().encode(await request.clone().text()).byteLength;
     if (actualLength > MAX_STAGE_B_BODY_BYTES) {
       return Response.json(
-        { error: { kind: "body_too_large", message: "요청 본문은 4.5MB 이하여야 합니다." } },
+        { error: { kind: "body_too_large", message: CANDIDATE_ROUTE_COPY.bodyTooLarge } },
         { status: 413 }
       );
     }
@@ -87,14 +88,14 @@ export async function handleStageB(
       new Set(candidates.map(({ sha }) => sha)).size !== candidates.length
     ) {
       return Response.json(
-        { error: { kind: "invalid_request", message: "Stage B 입력 형식이 올바르지 않습니다." } },
+        { error: { kind: "invalid_request", message: CANDIDATE_ROUTE_COPY.stageBInvalid } },
         { status: 422 }
       );
     }
     if (candidates.length === 0) {
       return Response.json({
         candidates: [],
-        insufficientCandidatesReason: "Stage A가 후보를 하나도 고르지 못했습니다.",
+        insufficientCandidatesReason: CANDIDATE_ROUTE_COPY.stageASelectedNone,
         diffs: [],
       });
     }
@@ -103,7 +104,7 @@ export async function handleStageB(
       if (remaining() < STAGE_B_MIN_LLM_BUDGET_MS) {
         throw new ExperienceCandidateOutputError(
           "llm_timeout",
-          "Stage B가 실행 시간 예산을 넘겼습니다."
+          CANDIDATE_ROUTE_COPY.stageBTimeBudget
         );
       }
     };
@@ -147,7 +148,7 @@ export async function handleStageB(
       return githubErrorResponse(error);
     }
     return Response.json(
-      { error: { kind: "server_error", message: "Stage B 분석에 실패했습니다." } },
+      { error: { kind: "server_error", message: CANDIDATE_ROUTE_COPY.stageBFailed } },
       { status: 500 }
     );
   }

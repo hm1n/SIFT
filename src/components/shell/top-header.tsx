@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { TOP_HEADER_COPY } from "@/copy/shell";
 import { AccountMenu } from "./account-menu";
 import { LoginLink } from "./auth-transition";
 import { SiftMark } from "./sift-mark";
@@ -22,14 +23,14 @@ export interface TopHeaderProps {
 export function TopHeader({ isAuthenticated, fetchImpl }: TopHeaderProps) {
   return (
     <header className={styles.header}>
-      <Link className={styles.brand} href="/" aria-label="SIFT 홈">
+      <Link className={styles.brand} href="/" aria-label={TOP_HEADER_COPY.homeLabel}>
         <SiftMark size={16} />
         <span className={styles.brandName}>SIFT</span>
       </Link>
       {isAuthenticated ? (
         <AccountMenu fetchImpl={fetchImpl} />
       ) : (
-        <LoginLink variant="secondary" iconSize={13}>GitHub으로 로그인</LoginLink>
+        <LoginLink variant="secondary" iconSize={13}>{TOP_HEADER_COPY.logIn}</LoginLink>
       )}
     </header>
   );

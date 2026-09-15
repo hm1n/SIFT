@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/shell/button";
 import { StatusScreen } from "@/components/shell/status-screen";
+import { REPOSITORY_FETCH_ERROR_SUB, REPOSITORY_SELECT_COPY } from "@/copy/repository";
 import { SESSION_PATH } from "@/lib/github/auth-paths";
 import { GitHubFetchError, type GitHubFetchErrorKind } from "@/lib/github/errors";
 import type { RepositorySummary } from "@/lib/github/types";
@@ -19,18 +20,6 @@ type ListState =
   | { status: "loading" }
   | { status: "error"; kind: GitHubFetchErrorKind }
   | { status: "ready"; repositories: RepositorySummary[] };
-
-/**
- * 목록 조회 실패 안내입니다. 제목은 한 문장으로 고정하고 sub만 원인별로 갈립니다.
- * 인증 취소는 다시 시도로 풀리지 않으므로 로그인 화면의 ERROR / AUTH 형식으로 다시 로그인을 안내합니다.
- */
-const ERROR_SUB: Record<Exclude<GitHubFetchErrorKind, "auth_revoked">, string> = {
-  rate_limit: "GitHub rate limit에 걸렸습니다. 잠시 후 다시 시도해 주세요.",
-  network: "서버에 연결하지 못했습니다. 연결 상태를 확인하고 다시 시도해 주세요.",
-  repo_not_found: "GitHub이 오류를 돌려주었습니다.",
-  server_error: "GitHub이 오류를 돌려주었습니다.",
-  partial_failure: "GitHub이 오류를 돌려주었습니다.",
-};
 
 export interface RepositorySelectScreenProps {
   onAnalyze: (repository: RepositorySummary, contributionItems: string[]) => void;
@@ -90,7 +79,7 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
   }
 
   if (list.status === "loading") {
-    return <StatusScreen kind="loading" code="Loading Repositories" label="GitHub에서 Repository 목록을 불러오는 중..." sub="" />;
+    return <StatusScreen kind="loading" code="Loading Repositories" label={REPOSITORY_SELECT_COPY.loadingLabel} sub="" />;
   }
 
   if (list.status === "error") {
@@ -99,9 +88,9 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
         <StatusScreen
           kind="error"
           code="ERROR / AUTH"
-          label="GitHub에 연결할 수 없습니다."
-          sub="GitHub 세션이 더 이상 유효하지 않습니다. 다시 로그인해 주세요."
-          action={{ label: "다시 로그인", onClick: () => void reauthenticate() }}
+          label={REPOSITORY_SELECT_COPY.authErrorLabel}
+          sub={REPOSITORY_SELECT_COPY.authErrorSub}
+          action={{ label: REPOSITORY_SELECT_COPY.logInAgain, onClick: () => void reauthenticate() }}
         />
       );
     }
@@ -109,10 +98,10 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
       <StatusScreen
         kind="error"
         code="ERROR / GITHUB"
-        label="Repository 목록을 불러올 수 없습니다."
-        sub={ERROR_SUB[list.kind]}
+        label={REPOSITORY_SELECT_COPY.fetchErrorLabel}
+        sub={REPOSITORY_FETCH_ERROR_SUB[list.kind]}
         action={{
-          label: "다시 시도",
+          label: REPOSITORY_SELECT_COPY.tryAgain,
           onClick: () => {
             setList({ status: "loading" });
             setAttempt((count) => count + 1);
@@ -128,8 +117,8 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
       <StatusScreen
         kind="empty"
         code="No Repositories"
-        label="분석할 수 있는 Repository가 없습니다."
-        sub="GitHub 계정에 Repository가 하나 이상 있는지 확인해 주세요."
+        label={REPOSITORY_SELECT_COPY.emptyLabel}
+        sub={REPOSITORY_SELECT_COPY.emptySub}
       />
     );
   }
@@ -172,8 +161,8 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
   return (
     <div className={styles.screen}>
       <header className={styles.header}>
-        <p className={styles.eyebrow}>Repository 선택</p>
-        <h1 className={styles.title}>분석할 Repository를 선택하세요.</h1>
+        <p className={styles.eyebrow}>{REPOSITORY_SELECT_COPY.eyebrow}</p>
+        <h1 className={styles.title}>{REPOSITORY_SELECT_COPY.title}</h1>
       </header>
 
       <div className={styles.body}>
@@ -189,13 +178,13 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
                 className={styles.search}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Repository 검색..."
-                aria-label="Repository 검색"
+                placeholder={REPOSITORY_SELECT_COPY.searchPlaceholder}
+                aria-label={REPOSITORY_SELECT_COPY.searchLabel}
                 autoComplete="off"
               />
             </div>
             {filtered.length === 0 ? (
-              <p className={styles.noMatch}>검색 결과가 없습니다. 다른 키워드로 다시 검색해보세요.</p>
+              <p className={styles.noMatch}>{REPOSITORY_SELECT_COPY.noMatch}</p>
             ) : (
               <div role="radiogroup" aria-label="Repositories">
                 {filtered.map((repository, index) => {
@@ -239,14 +228,14 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
               <span className={styles.label} id={labelId}>Your Contribution</span>
               <span className={styles.optional}>Optional</span>
             </div>
-            <p className={styles.contributionCopy} id={copyId}>프로젝트에서 주로 기여한 내용을 알려주세요.</p>
+            <p className={styles.contributionCopy} id={copyId}>{REPOSITORY_SELECT_COPY.contributionHelp}</p>
             <div className={styles.textareaFrame}>
               <textarea
                 ref={textareaRef}
                 className={styles.textarea}
                 value={contribution}
                 onChange={(event) => setContribution(event.target.value)}
-                placeholder="실시간 채팅, 푸시 알림, TypeScript 전환 작업을 주로 담당했습니다."
+                placeholder={REPOSITORY_SELECT_COPY.contributionPlaceholder}
                 rows={3}
                 aria-labelledby={labelId}
                 aria-describedby={copyId}
@@ -257,13 +246,13 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
       </div>
 
       <footer className={styles.footer}>
-        <span className={styles.selection}>{selected ? `${selected.owner} / ${selected.name}` : "선택된 Repository 없음"}</span>
+        <span className={styles.selection}>{selected ? `${selected.owner} / ${selected.name}` : REPOSITORY_SELECT_COPY.noSelection}</span>
         <Button
           variant="primary"
           disabled={selected === null}
           onClick={() => selected && onAnalyze(selected, parseContributionItems(contribution))}
         >
-          분석하기 <span className={styles.arrow} aria-hidden="true">→</span>
+          {REPOSITORY_SELECT_COPY.analyze} <span className={styles.arrow} aria-hidden="true">→</span>
         </Button>
       </footer>
     </div>

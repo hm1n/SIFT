@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { CANDIDATE_LIST_COPY } from "@/copy/candidates";
 import type { ExperienceCandidateListItem, StageBCandidateResult } from "./types";
 import type { CandidateDataOutput, ReadonlyCommitDetail } from "@/lib/github/types";
 import type { RepositoryRef } from "@/lib/github/types";
@@ -148,11 +149,11 @@ export function ExperienceCandidateList({
       <div className={styles.layout}>
         <div className={styles.listPanel}>
           <p className={styles.eyebrow}>Candidates</p>
-          <p className={styles.listSubtitle}>{`${pluralCount(candidates.candidates.length, "experience")} 발견`}</p>
+          <p className={styles.listSubtitle}>{CANDIDATE_LIST_COPY.found(pluralCount(candidates.candidates.length, "experience"))}</p>
           {candidates.insufficientCandidatesReason ? (
             <p className={styles.insufficientReason}>
-              <strong>후보가 더 없는 이유: </strong>
-              {candidates.insufficientCandidatesReason} 기준을 낮추거나 후보를 임의로 채우지 않습니다.
+              <strong>{CANDIDATE_LIST_COPY.insufficientLabel}</strong>
+              {candidates.insufficientCandidatesReason} {CANDIDATE_LIST_COPY.insufficientTail}
             </p>
           ) : null}
           <ul className={styles.candidateList} aria-label="Candidates">
@@ -260,7 +261,7 @@ export function StageAExclusions({
 
   return (
     <section className={styles.exclusions} aria-labelledby="stage-a-exclusions-heading">
-      <h3 id="stage-a-exclusions-heading">1차 선별에서 제외됨</h3>
+      <h3 id="stage-a-exclusions-heading">{CANDIDATE_LIST_COPY.exclusionsHeading}</h3>
 
       {overInputBudget.length > 0 ? (
         <details className={styles.exclusionDetails}>
@@ -277,12 +278,12 @@ export function StageAExclusions({
             `llm-wiki/raw/2026-09-11-Stage-A-개별-예산-선별-설계-session-log.md`에 있습니다.
           */}
           <summary>
-            <span>{`Repository가 커서 전체 작업 묶음 ${totalUnitCount}개 가운데 ${selectedUnitCount}개만 판단했습니다`}</span>
+            <span>{CANDIDATE_LIST_COPY.judgedSummary(selectedUnitCount, totalUnitCount)}</span>
           </summary>
           <p className={styles.exclusionReason}>
             {WORK_UNIT_SELECTION_EXCLUSION_COPY.over_input_budget}
-            {" 분석할 수 있는 분량 안에서 점수 순으로 골랐고, 점수가 같으면 더 최근 커밋을 우선했습니다."}
-            <span className={styles.heuristicNotice}> 점수는 자동으로 계산한 heuristic이고 Repository에서 확인한 사실이 아닙니다.</span>
+            {CANDIDATE_LIST_COPY.selectionRule}
+            <span className={styles.heuristicNotice}>{CANDIDATE_LIST_COPY.heuristicNotice}</span>
           </p>
           <ul className={`${styles.exclusionList} ${styles.scrollableList}`}>
             {overInputBudget.map(({ unit, score, signals }) => (
@@ -305,7 +306,7 @@ export function StageAExclusions({
       {overBudget.length > 0 ? (
         <details className={styles.exclusionDetails}>
           <summary>
-            <span>{`한 번에 보낼 수 있는 분량을 넘어 제외한 ${pluralCount(overBudget.length, "work unit")}`}</span>
+            <span>{CANDIDATE_LIST_COPY.overBudgetSummary(pluralCount(overBudget.length, "work unit"))}</span>
           </summary>
           <p className={styles.exclusionReason}>{WORK_UNIT_SELECTION_EXCLUSION_COPY.over_byte_budget}</p>
           <ul className={`${styles.exclusionList} ${styles.scrollableList}`}>
@@ -329,10 +330,10 @@ export function StageAExclusions({
       {unjudgedShas.length > 0 ? (
         <details className={styles.exclusionDetails}>
           <summary>
-            <span>{`모델이 판단하지 않은 ${pluralCount(unjudgedShas.length, "work unit")}`}</span>
+            <span>{CANDIDATE_LIST_COPY.unjudgedSummary(pluralCount(unjudgedShas.length, "work unit"))}</span>
           </summary>
           <p className={styles.exclusionReason}>
-            모델이 이 묶음들에 대해 아무 판단도 돌려주지 않았습니다. 제외된 것이 아니라 판단이 없는 것입니다.
+            {CANDIDATE_LIST_COPY.unjudgedReason}
           </p>
           <ul className={styles.exclusionList}>
             {unjudgedShas.map((sha) => (

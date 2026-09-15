@@ -1,4 +1,5 @@
 import { generateObject } from "ai";
+import { LLM_ERROR_CONTEXT } from "@/copy/interview";
 import type { NextRequest } from "next/server";
 import { applyBlockUpdate, blockConflicts, markDisplay } from "@/features/experience-block/reducer";
 import {
@@ -211,7 +212,7 @@ export async function handleExperienceBlockUpdate(
       AbortSignal.any([request.signal, AbortSignal.timeout(INTERVIEW_QUESTION_TOTAL_TIMEOUT_MS)])
     );
   } catch (error) {
-    const mapped = mapInterviewLlmError(error, "블록 갱신");
+    const mapped = mapInterviewLlmError(error, LLM_ERROR_CONTEXT.blockUpdate);
     return errorResponse(mapped.kind, mapped.message);
   }
 

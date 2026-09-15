@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { AppShell } from "@/components/shell/app-shell";
 import { Button } from "@/components/shell/button";
 import { StatusScreen } from "@/components/shell/status-screen";
+import { LEAVE_CONFIRM_COPY, RESUME_ERROR_COPY } from "@/copy/repository";
 import { InterviewScreen } from "@/features/interview/interview-screen";
 import { RepositoryAnalysisView } from "@/features/repository-analysis/repository-analysis-view";
 import { SavedInterviewList } from "@/features/saved-interviews/saved-interview-list";
@@ -34,24 +35,10 @@ type Mode =
   | { readonly kind: "analysis"; readonly summary: RepositorySummary; readonly contributionItems: readonly string[] }
   | { readonly kind: "resume"; readonly interviewId: string; readonly stage: "review" | "interview" };
 
-/** 저장된 인터뷰를 읽지 못한 이유별 안내입니다. 없어진 인터뷰와 연결 실패는 사용자가 할 일이 다릅니다. */
+/** 읽지 못한 이유별 안내입니다. 없어진 인터뷰와 연결 실패는 사용자가 할 일이 다릅니다. */
 const RESUME_ERROR: Record<string, { code: string; label: string; sub: string }> = {
-  not_found: {
-    code: "ERROR / NOT FOUND",
-    label: "이 인터뷰를 찾을 수 없습니다.",
-    sub: "삭제되었을 수 있습니다. 왼쪽 Interviews에서 다른 인터뷰를 선택해 주세요.",
-  },
-  unauthorized: {
-    code: "ERROR / AUTH",
-    label: "세션이 만료되었습니다.",
-    sub: "이 인터뷰를 이어가려면 다시 로그인해 주세요.",
-  },
-};
-
-const RESUME_ERROR_FALLBACK = {
-  code: "ERROR / STORAGE",
-  label: "이 인터뷰를 열지 못했습니다.",
-  sub: "서버가 응답하지 않았습니다. 잠시 후 다시 시도해 주세요.",
+  not_found: RESUME_ERROR_COPY.not_found,
+  unauthorized: RESUME_ERROR_COPY.unauthorized,
 };
 
 export function RepositoryFlow() {
@@ -207,10 +194,9 @@ export function RepositoryFlow() {
             aria-labelledby={leaveConfirmTitleId}
             aria-describedby={leaveConfirmDescId}
           >
-            <p id={leaveConfirmTitleId} className={styles.leaveConfirmTitle}>저장되지 않은 답변이 있습니다.</p>
+            <p id={leaveConfirmTitleId} className={styles.leaveConfirmTitle}>{LEAVE_CONFIRM_COPY.title}</p>
             <p id={leaveConfirmDescId} className={styles.leaveConfirmText}>
-              지금 나가면 아직 저장되지 않은 답변이 사라집니다. 이미 저장된 내용은 왼쪽 Interviews에
-              남아 있어 거기서 다시 이어갈 수 있습니다.
+              {LEAVE_CONFIRM_COPY.description}
             </p>
             <div className={styles.leaveConfirmActions}>
               <Button
@@ -222,9 +208,9 @@ export function RepositoryFlow() {
                   run();
                 }}
               >
-                나가기
+                {LEAVE_CONFIRM_COPY.leave}
               </Button>
-              <Button variant="secondary" onClick={() => setPendingNavigation(null)}>인터뷰 계속하기</Button>
+              <Button variant="secondary" onClick={() => setPendingNavigation(null)}>{LEAVE_CONFIRM_COPY.stay}</Button>
             </div>
           </div>
         </div>
@@ -282,18 +268,18 @@ function ResumedInterview({
   onEnded: () => void;
 }) {
   if (state.status === "loading") {
-    return <StatusScreen kind="loading" code="Loading Interview" label="저장된 인터뷰를 여는 중..." sub="" />;
+    return <StatusScreen kind="loading" code="Loading Interview" label={RESUME_ERROR_COPY.loadingLabel} sub="" />;
   }
 
   if (state.status === "error") {
-    const copy = RESUME_ERROR[state.kind] ?? RESUME_ERROR_FALLBACK;
+    const copy = RESUME_ERROR[state.kind] ?? RESUME_ERROR_COPY.fallback;
     return (
       <StatusScreen
         kind="error"
         code={copy.code}
         label={copy.label}
         sub={copy.sub}
-        action={{ label: "다시 시도", onClick: onRetry }}
+        action={{ label: RESUME_ERROR_COPY.tryAgain, onClick: onRetry }}
       />
     );
   }
@@ -317,10 +303,10 @@ function ResumedInterview({
     return (
       <StatusScreen
         kind="error"
-        code="ERROR / STORAGE"
-        label="이 인터뷰를 열지 못했습니다."
-        sub="저장된 근거나 블록을 읽을 수 없습니다. 저장된 내용은 계속 확인할 수 있습니다."
-        action={{ label: "요약으로 돌아가기", onClick: onBackToReview }}
+        code={RESUME_ERROR_COPY.unreadable.code}
+        label={RESUME_ERROR_COPY.unreadable.label}
+        sub={RESUME_ERROR_COPY.unreadable.sub}
+        action={{ label: RESUME_ERROR_COPY.backToSummary, onClick: onBackToReview }}
       />
     );
   }

@@ -1,6 +1,11 @@
 import { useId, useState } from "react";
+import {
+  BLOCK_UPDATE_ERROR_CAUSE,
+  PAAR_CARD_EMPTY_COPY,
+  PAAR_CARD_STATE_COPY,
+  PAAR_PANEL_COPY,
+} from "@/copy/interview";
 import { BlockSentences } from "@/features/experience-block/block-sentences";
-import type { BlockUpdateFetchErrorKind } from "@/features/experience-block/client";
 import { filledBlockCount } from "@/features/experience-block/block-edits";
 import { BLOCK_LABELS } from "@/features/experience-block/block-labels";
 import { blockConflicts, markDisplay } from "@/features/experience-block/reducer";
@@ -23,46 +28,10 @@ export const PAAR_BLOCK_COUNT = BLOCK_KINDS.length;
  * 원인을 말하지 않는 편이 낫습니다. 문장은 `interview-stream-view.tsx`의 생성 실패 문구와 같은
  * 방식으로 씁니다.
  */
-export const BLOCK_UPDATE_ERROR_CAUSE: Partial<Record<BlockUpdateFetchErrorKind, string>> = {
-  network: "서버에 연결하지 못했습니다.",
-  llm_network: "블록 갱신 서비스에 연결하지 못했습니다.",
-  llm_timeout: "갱신이 제한 시간 안에 끝나지 않았습니다.",
-  llm_rate_limit: "블록 갱신 서비스가 호출 한도에 걸렸습니다.",
-  llm_failure: "블록 갱신 서비스가 응답하지 않았습니다.",
-  llm_request: "블록 갱신 서비스가 요청을 받아들이지 않았습니다.",
-  // 설정 문제는 다시 시도해도 같은 결과입니다. 사용자가 아니라 서버가 고쳐야 한다고 분명히 적습니다.
-  llm_auth: "블록 갱신 서비스 인증에 실패했습니다. 서버 설정 문제입니다.",
-  llm_configuration: "블록 갱신 서비스 설정이 잘못되었습니다. 서버 설정 문제입니다.",
-  unauthorized: "로그인 세션이 더 이상 유효하지 않습니다. 다시 로그인해 주세요.",
-  // 모델 출력이 흔들린 경우입니다. 같은 답변으로 다시 시도하면 통과할 수 있습니다.
-  block_update_rejected: "모델 출력이 검증을 통과하지 못했습니다.",
-  schema_validation: "모델 출력이 검증을 통과하지 못했습니다.",
-  json_parse: "모델 출력을 읽지 못했습니다.",
-  unknown_sha: "모델이 이 경험의 근거에 없는 커밋을 인용했습니다.",
-  unrelated_sha: "모델이 이 경험의 근거에 없는 커밋을 인용했습니다.",
-  unknown_file_path: "모델이 이 경험의 근거에 없는 파일을 인용했습니다.",
-  history_too_large: "이 대화가 길어 한 번의 갱신 요청에 담을 수 없습니다.",
-  claims_too_large: "이 경험의 블록이 커서 한 번의 갱신 요청에 담을 수 없습니다.",
-  body_too_large: "요청이 커져 보낼 수 없습니다.",
-  server_error: "서버 설정 문제로 요청을 처리하지 못했습니다.",
-};
+export { BLOCK_UPDATE_ERROR_CAUSE } from "@/copy/interview";
 
 /** 카드가 그리는 네 가지 상태입니다. 이슈 #91 Approach 2의 표와 같습니다. */
 type CardState = "pending" | "collecting" | "filled" | "unfilled";
-
-const CARD_STATE_LABELS: Readonly<Record<CardState, string>> = {
-  pending: "시작 전",
-  collecting: "수집 중",
-  filled: "채움",
-  unfilled: "비어 있음",
-};
-
-const CARD_EMPTY_TEXT: Readonly<Record<CardState, string>> = {
-  pending: "대화를 진행하면 AI가 이 블록을 채웁니다.",
-  collecting: "AI가 마지막 답변을 이 블록에 반영하고 있습니다.",
-  filled: "",
-  unfilled: "이 블록은 채우지 못한 채 인터뷰가 끝났습니다.",
-};
 
 /**
  * 카드 상태를 정합니다.
@@ -105,19 +74,19 @@ function BlockCard({ block, stream }: BlockCardProps) {
       <div className={styles.cardHeader}>
         <h4 className={styles.cardTitle}>{BLOCK_LABELS[block]}</h4>
         <span className={styles.cardState} data-state={state}>
-          {CARD_STATE_LABELS[state]}
+          {PAAR_CARD_STATE_COPY[state]}
         </span>
       </div>
 
       <BlockSentences
         marks={marks}
         conflicts={blockConflicts(blockState, block)}
-        emptyText={CARD_EMPTY_TEXT[state]}
+        emptyText={PAAR_CARD_EMPTY_COPY[state]}
       />
 
       {/* 어느 블록이 미반영인지만 알립니다. 다시 처리하는 버튼은 패널 위에 하나만 둡니다. */}
       {unreflectedBlocks.includes(block) ? (
-        <p className={styles.cardError}>이 블록을 겨냥한 답변이 아직 반영되지 않았습니다.</p>
+        <p className={styles.cardError}>{PAAR_PANEL_COPY.cardNotReflected}</p>
       ) : null}
     </div>
   );
@@ -192,7 +161,7 @@ export function PaarPanel({ stream, isSaved = false }: PaarPanelProps) {
         {unreflectedTurnId === null ? null : (
           <div className={styles.unreflected}>
             <p className={styles.unreflectedText}>
-              마지막 답변이 아직 반영되지 않았고, 그래서 저장도 되지 않았습니다.
+              {PAAR_PANEL_COPY.unreflected}
             </p>
             {/*
               이유를 함께 적습니다. 반영 실패는 저장 실패이기도 해서, 원인을 모르면 사용자가 같은
@@ -200,7 +169,7 @@ export function PaarPanel({ stream, isSaved = false }: PaarPanelProps) {
             */}
             <p className={styles.unreflectedCause}>
               {(unreflectedReason === null ? undefined : BLOCK_UPDATE_ERROR_CAUSE[unreflectedReason]) ??
-                "블록 갱신이 끝나지 않았습니다."}
+                PAAR_PANEL_COPY.updateUnfinished}
             </p>
             <button
               type="button"
@@ -208,7 +177,7 @@ export function PaarPanel({ stream, isSaved = false }: PaarPanelProps) {
               disabled={isBlockUpdating}
               onClick={retryUnreflectedBlockUpdate}
             >
-              {isBlockUpdating ? "다시 시도 중…" : "다시 시도"}
+              {isBlockUpdating ? PAAR_PANEL_COPY.retrying : PAAR_PANEL_COPY.retry}
             </button>
           </div>
         )}
@@ -224,7 +193,7 @@ export function PaarPanel({ stream, isSaved = false }: PaarPanelProps) {
       */}
       {isReadyToFinish && !isEnded ? (
         <p className={styles.readyNotice}>
-          더 물을 질문이 없습니다. 원하는 때에 인터뷰를 완료할 수 있습니다.
+          {PAAR_PANEL_COPY.readyToFinish}
         </p>
       ) : null}
 
@@ -245,21 +214,19 @@ export function PaarPanel({ stream, isSaved = false }: PaarPanelProps) {
                   그 인터뷰의 요약으로 돌아가고, 블록 편집은 거기서 엽니다. 저장되지 않는 인터뷰에는
                   돌아갈 요약이 없으므로 고칠 기회도 없습니다. 있지도 않은 편집을 약속하지 않습니다.
                 */}
-                {isSaved
-                  ? "인터뷰를 끝내면 답변 입력이 닫히고 대화는 읽기 전용이 됩니다. 쓰던 답변은 사라집니다. 인터뷰는 왼쪽 Interviews에 남아 있고, 거기서 다시 열어 PAAR 블록을 고칠 수 있습니다."
-                  : "인터뷰를 끝내면 답변 입력이 닫히고 대화는 읽기 전용이 됩니다. 쓰던 답변은 사라집니다. 이 인터뷰는 저장되지 않으므로 PAAR 블록은 지금 상태로 남고 나중에 고칠 수 없습니다. 후보 목록으로 돌아가면 대화도 함께 사라지고 다시 이어갈 수 없습니다."}
+                {isSaved ? PAAR_PANEL_COPY.endConfirmSaved : PAAR_PANEL_COPY.endConfirmUnsaved}
               </p>
               <div className={styles.endActions}>
                 {/* 확인 문구를 읽지 않고 누르는 일을 줄이려고 초점을 확인 버튼으로 옮깁니다. */}
                 <button type="button" className={styles.endButton} onClick={endInterview} autoFocus>
-                  인터뷰 완료
+                  {PAAR_PANEL_COPY.end}
                 </button>
                 <button
                   type="button"
                   className={styles.endCancelButton}
                   onClick={() => setIsConfirmingEnd(false)}
                 >
-                  인터뷰 계속하기
+                  {PAAR_PANEL_COPY.stay}
                 </button>
               </div>
             </div>
@@ -269,7 +236,7 @@ export function PaarPanel({ stream, isSaved = false }: PaarPanelProps) {
               className={styles.endButton}
               onClick={() => setIsConfirmingEnd(true)}
             >
-              인터뷰 완료
+              {PAAR_PANEL_COPY.end}
             </button>
           )}
         </div>

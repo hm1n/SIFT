@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SAVED_INTERVIEW_LIST_COPY } from "@/copy/saved";
 import { BLOCK_KINDS } from "@/features/experience-block/types";
 import type { InterviewListItemPayload } from "./payload";
 import styles from "./saved-interview-list.module.css";
@@ -56,17 +57,17 @@ export function SavedInterviewList({
         {state.status === "ready" ? <span className={styles.count}>{state.interviews.length}</span> : null}
       </div>
 
-      {state.status === "loading" ? <p className={styles.notice}>인터뷰를 불러오는 중...</p> : null}
+      {state.status === "loading" ? <p className={styles.notice}>{SAVED_INTERVIEW_LIST_COPY.loading}</p> : null}
 
       {state.status === "error" ? (
         <div className={styles.errorBox}>
-          <p className={styles.notice}>인터뷰를 불러오지 못했습니다.</p>
-          <button type="button" className={styles.retry} onClick={onRetry}>다시 시도</button>
+          <p className={styles.notice}>{SAVED_INTERVIEW_LIST_COPY.error}</p>
+          <button type="button" className={styles.retry} onClick={onRetry}>{SAVED_INTERVIEW_LIST_COPY.retry}</button>
         </div>
       ) : null}
 
       {state.status === "ready" && state.interviews.length === 0 ? (
-        <p className={styles.notice}>인터뷰가 없습니다. 경험 후보를 선택해 시작하세요.</p>
+        <p className={styles.notice}>{SAVED_INTERVIEW_LIST_COPY.empty}</p>
       ) : null}
 
       {state.status === "ready" && state.interviews.length > 0 ? (
@@ -75,10 +76,10 @@ export function SavedInterviewList({
             <li key={interview.id}>
               {confirmingId === interview.id ? (
                 <div className={styles.confirm}>
-                  <p className={styles.confirmText}>이 인터뷰를 삭제할까요? 되돌릴 수 없습니다.</p>
+                  <p className={styles.confirmText}>{SAVED_INTERVIEW_LIST_COPY.deleteConfirm}</p>
                   <div className={styles.confirmActions}>
                     <button type="button" className={styles.cancel} onClick={() => setConfirmingId(null)}>
-                      취소
+                      {SAVED_INTERVIEW_LIST_COPY.cancel}
                     </button>
                     <button
                       type="button"
@@ -89,7 +90,7 @@ export function SavedInterviewList({
                         onDelete(interview.id);
                       }}
                     >
-                      삭제
+                      {SAVED_INTERVIEW_LIST_COPY.delete}
                     </button>
                   </div>
                 </div>
@@ -118,7 +119,7 @@ export function SavedInterviewList({
                   <button
                     type="button"
                     className={styles.deleteIcon}
-                    aria-label={`인터뷰 삭제: ${interview.title}`}
+                    aria-label={SAVED_INTERVIEW_LIST_COPY.deleteLabel(interview.title)}
                     onClick={() => setConfirmingId(interview.id)}
                   >
                     ✕

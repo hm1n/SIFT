@@ -33,21 +33,8 @@ export interface WorkUnitScore {
   readonly signals: readonly WorkUnitSignal[];
 }
 
-/**
- * 신호를 사용자에게 보여 줄 문구입니다. 점수만 표시하면 왜 위로 올라왔는지 알 수 없습니다.
- * 신호가 늘면 `Record`가 누락을 컴파일 오류로 잡습니다.
- */
-export const WORK_UNIT_SIGNAL_COPY: Record<WorkUnitSignal, string> = {
-  dependency_added: "새 의존성을 추가했습니다",
-  infrastructure_added: "배포나 인프라 설정을 추가했습니다",
-  file_rewritten_repeatedly: "같은 파일을 여러 번 크게 다시 썼습니다",
-  revert_or_hotfix: "revert나 hotfix가 들어 있습니다",
-  large_refactor: "코드를 많이 지웠습니다",
-  performance_or_refactor_prefix: "성능이나 리팩터링 커밋이 들어 있습니다",
-  many_commits: "커밋이 많습니다",
-  long_span: "여러 날에 걸쳐 작업했습니다",
-  many_files: "변경한 파일이 많습니다",
-};
+/** 신호 문구는 `@/copy/candidates`에 있습니다. 신호가 늘면 그쪽 `Record`가 누락을 컴파일 오류로 잡습니다. */
+export { WORK_UNIT_SIGNAL_COPY } from "@/copy/candidates";
 
 export const MANY_COMMITS_THRESHOLD = 5;
 export const LONG_SPAN_DAYS_THRESHOLD = 3;
