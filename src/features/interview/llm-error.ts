@@ -24,6 +24,7 @@ import {
  */
 export function mapInterviewLlmError(
   error: unknown,
+  /** 실패한 작업의 한국어 이름입니다. 문구가 `이`·`에`를 붙이므로 받침으로 끝나는 명사를 넘깁니다(`질문 생성`, `블록 갱신`). */
   context: string
 ): ExperienceCandidateOutputError {
   if (error instanceof ExperienceCandidateOutputError) return error;
@@ -40,12 +41,12 @@ export function mapInterviewLlmError(
   if (LoadAPIKeyError.isInstance(error)) {
     return new ExperienceCandidateOutputError(
       "llm_configuration",
-      "The LLM API key is not configured.",
+      "LLM API 키가 설정되지 않았습니다.",
       { cause: error }
     );
   }
   if (error instanceof DOMException && ["AbortError", "TimeoutError"].includes(error.name)) {
-    return new ExperienceCandidateOutputError("llm_timeout", `${context} timed out.`, {
+    return new ExperienceCandidateOutputError("llm_timeout", `${context}이 제한 시간 안에 끝나지 않았습니다.`, {
       cause: error,
     });
   }
@@ -58,7 +59,7 @@ export function mapInterviewLlmError(
       error.statusCode === 403 ||
       (error.statusCode === 400 && isAuthFailureResponseBody(error.responseBody))
     ) {
-      return new ExperienceCandidateOutputError("llm_auth", "LLM authentication failed.", {
+      return new ExperienceCandidateOutputError("llm_auth", "LLM 인증에 실패했습니다.", {
         cause: error,
       });
     }
@@ -69,26 +70,26 @@ export function mapInterviewLlmError(
       error.statusCode === 429 ||
       (error.statusCode === 413 && isRateLimitResponseBody(error.responseBody))
     ) {
-      return new ExperienceCandidateOutputError("llm_rate_limit", "The LLM call limit was reached.", {
+      return new ExperienceCandidateOutputError("llm_rate_limit", "LLM 호출 한도에 걸렸습니다.", {
         cause: error,
       });
     }
     if (error.statusCode === 413) {
       return new ExperienceCandidateOutputError(
         "llm_request",
-        "The question evidence is larger than the LLM accepts.",
+        "질문 근거가 LLM이 받을 수 있는 크기를 넘습니다.",
         { cause: error }
       );
     }
     if (error.statusCode === 408 || error.statusCode === 504) {
-      return new ExperienceCandidateOutputError("llm_timeout", `${context} timed out.`, {
+      return new ExperienceCandidateOutputError("llm_timeout", `${context}이 제한 시간 안에 끝나지 않았습니다.`, {
         cause: error,
       });
     }
     if (error.statusCode === 404) {
       return new ExperienceCandidateOutputError(
         "llm_configuration",
-        "The LLM model configuration is not valid.",
+        "LLM 모델 설정이 올바르지 않습니다.",
         { cause: error }
       );
     }
@@ -97,25 +98,25 @@ export function mapInterviewLlmError(
     // 기다리면 풀리는 실패이므로 재시도 가능한 `llm_failure`로 두고, 문구에서 원인이 일시 장애임을
     // 밝힙니다. 504는 위에서 이미 시간 초과로 갈라 두었습니다.
     if ((error.statusCode ?? 0) >= 500) {
-      return new ExperienceCandidateOutputError("llm_failure", "The question generation service is temporarily unavailable.", {
+      return new ExperienceCandidateOutputError("llm_failure", "질문 생성 서비스를 일시적으로 쓸 수 없습니다.", {
         cause: error,
       });
     }
     if (error.statusCode === 400 || error.statusCode === 409 || error.statusCode === 422) {
-      return new ExperienceCandidateOutputError("llm_request", "The LLM rejected the request.", {
+      return new ExperienceCandidateOutputError("llm_request", "LLM이 요청을 거절했습니다.", {
         cause: error,
       });
     }
-    return new ExperienceCandidateOutputError("llm_failure", `${context} failed.`, {
+    return new ExperienceCandidateOutputError("llm_failure", `${context}에 실패했습니다.`, {
       cause: error,
     });
   }
   if (error instanceof TypeError) {
-    return new ExperienceCandidateOutputError("llm_network", "Could not reach the LLM.", {
+    return new ExperienceCandidateOutputError("llm_network", "LLM에 연결하지 못했습니다.", {
       cause: error,
     });
   }
-  return new ExperienceCandidateOutputError("llm_failure", `${context} failed.`, {
+  return new ExperienceCandidateOutputError("llm_failure", `${context}에 실패했습니다.`, {
     cause: error,
   });
 }

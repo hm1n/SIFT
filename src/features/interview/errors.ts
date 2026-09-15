@@ -165,8 +165,8 @@ export class InterviewStreamError extends Error {
 }
 
 const TRANSPORT_MESSAGE: Record<InterviewStreamTransportErrorKind, string> = {
-  stream_connect_failed: "Could not open the question stream.",
-  stream_interrupted: "The connection dropped while the question was arriving.",
+  stream_connect_failed: "질문 스트림을 열지 못했습니다.",
+  stream_interrupted: "질문이 도착하는 중에 연결이 끊어졌습니다.",
 };
 
 export function transportError(
@@ -176,7 +176,7 @@ export function transportError(
   return new InterviewStreamError(kind, TRANSPORT_MESSAGE[kind], options);
 }
 
-export const GENERATION_EMPTY_MESSAGE = "Could not build a question.";
+export const GENERATION_EMPTY_MESSAGE = "질문을 만들지 못했습니다.";
 
 /** 청크 없이 끝난 생성입니다. 서버와 수신부가 같은 문구를 쓰도록 여기 한 곳에 둡니다. */
 export function generationEmptyError(options?: ErrorOptions): InterviewStreamError {

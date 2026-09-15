@@ -75,7 +75,7 @@ describe("PaarPanel 블록 상태", () => {
   it("첫 질문 전에는 네 카드가 모두 시작 전이다", () => {
     render(<PanelHarness stream={baseStream()} />);
 
-    expect(screen.getAllByText("Not started")).toHaveLength(4);
+    expect(screen.getAllByText("시작 전")).toHaveLength(4);
     expect(screen.getByText("/ 00 OF 04")).toBeInTheDocument();
   });
 
@@ -86,8 +86,8 @@ describe("PaarPanel 블록 상태", () => {
       />
     );
 
-    expect(screen.getByText("Collecting")).toBeInTheDocument();
-    expect(screen.getAllByText("Not started")).toHaveLength(3);
+    expect(screen.getByText("수집 중")).toBeInTheDocument();
+    expect(screen.getAllByText("시작 전")).toHaveLength(3);
   });
 
   it("재처리로 다른 블록을 갱신하는 동안 현재 타깃 카드를 수집 중으로 그리지 않는다", () => {
@@ -106,7 +106,7 @@ describe("PaarPanel 블록 상태", () => {
       />
     );
 
-    const collecting = screen.getAllByText("Collecting");
+    const collecting = screen.getAllByText("수집 중");
     expect(collecting).toHaveLength(1);
     // PROBLEM 카드 하나만 수집 중이고 ACTION 카드는 아직 시작 전입니다.
     expect(collecting[0].closest("div")?.textContent).toContain("Problem");
@@ -131,8 +131,8 @@ describe("PaarPanel 블록 상태", () => {
   it("인터뷰가 끝났는데 내용이 없으면 채워지지 않음으로 그린다", () => {
     render(<PanelHarness stream={baseStream({ isEnded: true, endReason: "user" })} />);
 
-    expect(screen.getAllByText("Not filled")).toHaveLength(4);
-    expect(screen.getAllByText(/ended without anything to put here/)).toHaveLength(4);
+    expect(screen.getAllByText("비어 있음")).toHaveLength(4);
+    expect(screen.getAllByText(/여기에 넣을 내용 없이 인터뷰가 끝났습니다/)).toHaveLength(4);
   });
 
   it("평가가 비어 있어도 문장이 있으면 채워짐으로 그린다", () => {
@@ -146,7 +146,7 @@ describe("PaarPanel 블록 상태", () => {
       />
     );
 
-    expect(screen.getByText("Filled")).toBeInTheDocument();
+    expect(screen.getByText("채움")).toBeInTheDocument();
     expect(screen.getByText("결과 문장")).toBeInTheDocument();
   });
 });
@@ -201,7 +201,7 @@ describe("PaarPanel 출처와 충돌 표시", () => {
       />
     );
 
-    const conflict = screen.getByText("Conflicts with the evidence · needs checking");
+    const conflict = screen.getByText("근거와 어긋납니다 · 확인이 필요합니다");
     const sentence = screen.getByText("남아 있는 문장");
     expect(conflict).toBeInTheDocument();
     expect(screen.getByText("커밋에는 그 변경이 없습니다")).toBeInTheDocument();
@@ -226,9 +226,9 @@ describe("PaarPanel 미반영 상태", () => {
       />
     );
 
-    expect(screen.getByText(/Your latest answer/)).toBeInTheDocument();
-    expect(screen.getByText(/An answer aimed at this block/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(screen.getByText(/마지막 답변이/)).toBeInTheDocument();
+    expect(screen.getByText(/이 블록을 겨냥한 답변이/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
     expect(retry).toHaveBeenCalledTimes(1);
   });
 
@@ -242,7 +242,7 @@ describe("PaarPanel 미반영 상태", () => {
       />
     );
 
-    const button = screen.getByRole("button", { name: "Retrying…" });
+    const button = screen.getByRole("button", { name: "다시 시도 중…" });
     expect(button).toBeDisabled();
     fireEvent.click(button);
     expect(retry).not.toHaveBeenCalled();
@@ -280,8 +280,8 @@ describe("PaarPanel 종료 조작", () => {
     render(<PanelHarness stream={baseStream({ endInterview })} />);
 
     expect(screen.getByText("/ 00 OF 04")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "End interview" }));
-    fireEvent.click(screen.getByRole("button", { name: "End the interview" }));
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 끝내기" }));
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 끝내기" }));
     expect(endInterview).toHaveBeenCalledTimes(1);
   });
 
@@ -289,9 +289,9 @@ describe("PaarPanel 종료 조작", () => {
     const endInterview = vi.fn();
     render(<PanelHarness stream={baseStream({ isReadyToFinish: true, endInterview })} />);
 
-    expect(screen.getByText(/nothing left to ask/)).toBeInTheDocument();
+    expect(screen.getByText(/더 물을 질문이 없습니다/)).toBeInTheDocument();
     expect(endInterview).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "End interview" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "인터뷰 끝내기" })).toBeInTheDocument();
   });
 
   it("저장되지 않는 인터뷰의 종료 확인 문구는 블록을 고칠 수 없다고 알린다", () => {
@@ -299,15 +299,15 @@ describe("PaarPanel 종료 조작", () => {
     // "나중에 고칠 수 있다"고 적으면 있지도 않은 조작을 약속하게 됩니다.
     render(<PanelHarness stream={baseStream()} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "End interview" }));
-    expect(screen.getByRole("group")).toHaveTextContent("cannot edit them afterwards");
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 끝내기" }));
+    expect(screen.getByRole("group")).toHaveTextContent("나중에 고칠 수 없습니다");
   });
 
   it("저장되는 인터뷰의 종료 확인 문구는 목록에서 다시 열어 고칠 수 있다고 알린다", () => {
     render(<PaarPanel stream={baseStream()} isSaved />);
 
-    fireEvent.click(screen.getByRole("button", { name: "End interview" }));
-    expect(screen.getByRole("group")).toHaveTextContent("open it again from there to edit the PAAR blocks");
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 끝내기" }));
+    expect(screen.getByRole("group")).toHaveTextContent("거기서 다시 열어 PAAR 블록을 고칠 수 있습니다");
   });
 });
 
@@ -344,7 +344,7 @@ describe("PaarPanel 반영 실패 이유", () => {
       />
     );
 
-    expect(screen.getByText(/server configuration problem/)).toBeInTheDocument();
+    expect(screen.getByText(/서버 설정 문제입니다/)).toBeInTheDocument();
   });
 
   it("모델 출력이 흔들린 경우와 설정 문제를 다른 문장으로 적는다", () => {
@@ -354,15 +354,15 @@ describe("PaarPanel 반영 실패 이유", () => {
       />
     );
 
-    expect(screen.getByText(/did not pass validation/)).toBeInTheDocument();
-    expect(screen.queryByText(/server configuration problem/)).not.toBeInTheDocument();
+    expect(screen.getByText(/검증을 통과하지 못했습니다/)).toBeInTheDocument();
+    expect(screen.queryByText(/서버 설정 문제입니다/)).not.toBeInTheDocument();
   });
 
   // 틀린 원인을 단정하는 것보다 원인을 말하지 않는 편이 낫습니다.
   it("모르는 이유에는 일반 문구를 적는다", () => {
     render(<PanelHarness stream={baseStream({ unreflectedTurnId: "t1", unreflectedReason: null })} />);
 
-    expect(screen.getByText("The block update didn't finish.")).toBeInTheDocument();
+    expect(screen.getByText("블록 갱신이 끝나지 않았습니다.")).toBeInTheDocument();
   });
 
   // 반영 실패가 곧 저장 실패라는 사실을 안내가 말해야 합니다. 둘을 따로 읽으면 사용자는 대화가
@@ -370,6 +370,6 @@ describe("PaarPanel 반영 실패 이유", () => {
   it("저장도 되지 않았다고 함께 알린다", () => {
     render(<PanelHarness stream={baseStream({ unreflectedTurnId: "t1" })} />);
 
-    expect(screen.getByText(/hasn't been saved either/)).toBeInTheDocument();
+    expect(screen.getByText(/그래서 저장도 되지 않았습니다/)).toBeInTheDocument();
   });
 });

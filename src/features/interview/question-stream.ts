@@ -68,7 +68,7 @@ export function createQuestionSseStream(
           send({
             type: "error",
             kind: resolveGenerationErrorKind(error),
-            message: error instanceof Error ? error.message : "Question generation failed.",
+            message: error instanceof Error ? error.message : "질문 생성에 실패했습니다.",
           });
           finish();
         } catch {

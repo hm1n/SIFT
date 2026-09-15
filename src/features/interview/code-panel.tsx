@@ -45,9 +45,9 @@ export const CODE_PANEL_VERIFIED_NOTICE_ID = "code-panel-repository-verified-not
 
 /** 파일 행에 붙는 한 글자 표시와 스크린리더가 읽는 말입니다. */
 const STATUS_MARK: Record<EvidenceFileStatus, { mark: string; label: string }> = {
-  added: { mark: "A", label: "Added" },
-  modified: { mark: "M", label: "Modified" },
-  deleted: { mark: "D", label: "Deleted" },
+  added: { mark: "A", label: "추가됨" },
+  modified: { mark: "M", label: "수정됨" },
+  deleted: { mark: "D", label: "삭제됨" },
 };
 
 /**
@@ -55,8 +55,8 @@ const STATUS_MARK: Record<EvidenceFileStatus, { mark: string; label: string }> =
  * 상한 때문에 뺀 것이고 뒤는 애초에 받은 적이 없는 것입니다.
  */
 const PATCH_OMITTED_COPY: Record<EvidencePatchOmittedReason, string> = {
-  budget_exhausted: "The evidence input limit was used up, so this file's diff body wasn't carried.",
-  not_provided: "GitHub didn't provide a patch for this file.",
+  budget_exhausted: "근거 입력 한도를 모두 써서 이 파일의 diff 본문을 싣지 못했습니다.",
+  not_provided: "GitHub이 이 파일의 patch를 제공하지 않았습니다.",
 };
 
 const padded = (count: number) => String(count).padStart(2, "0");
@@ -94,7 +94,7 @@ export function CodePanel({ snapshot }: CodePanelProps) {
         <h3 id="code-panel-heading" className={styles.panelHeading}>
           Code / Evidence
         </h3>
-        <div className={styles.viewModes} role="group" aria-label="View mode">
+        <div className={styles.viewModes} role="group" aria-label="보기 모드">
           <button type="button" className={styles.viewMode} aria-pressed={true}>
             Diff
           </button>
@@ -105,7 +105,7 @@ export function CodePanel({ snapshot }: CodePanelProps) {
           <button type="button" className={styles.viewMode} disabled aria-pressed={false}>
             File
             <span className={styles.visuallyHidden}>
-              — unavailable. The evidence snapshot carries only changed patches, not full file contents.
+              — 쓸 수 없습니다. 근거 스냅샷에는 변경 patch만 실려 있고 파일 전체 원문은 없습니다.
             </span>
           </button>
         </div>
@@ -125,7 +125,7 @@ export function CodePanel({ snapshot }: CodePanelProps) {
             aria-controls="code-panel-file-tree"
             onClick={() => setFilesCollapsed((collapsed) => !collapsed)}
           >
-            {filesCollapsed ? "Expand file list" : "Collapse file list"}
+            {filesCollapsed ? "파일 목록 펼치기" : "파일 목록 접기"}
           </button>
         </div>
 
@@ -178,9 +178,9 @@ export function CodePanel({ snapshot }: CodePanelProps) {
       */}
       {snapshot.patchBudget.truncatedByBudget ? (
         <p className={styles.panelNotice}>
-          Code changes were trimmed to fit the estimated evidence input limit of{" "}
-          {snapshot.patchBudget.maxInputTokens.toLocaleString("en-US")} tokens. Patches actually
-          carried: {snapshot.patchBudget.patchBytes.toLocaleString("en-US")} bytes.
+          근거 입력 한도 추정치 {snapshot.patchBudget.maxInputTokens.toLocaleString("en-US")} tokens에
+          맞추려고 코드 변경을 줄였습니다. 실제로 실은 patch는{" "}
+          {snapshot.patchBudget.patchBytes.toLocaleString("en-US")} bytes입니다.
         </p>
       ) : null}
 
@@ -199,10 +199,10 @@ export function CodePanel({ snapshot }: CodePanelProps) {
       ) : null}
       {snapshot.unverifiableItems.length > 0 ? (
         <section className={styles.visuallyHidden} aria-labelledby="code-panel-unverifiable-heading">
-          <h4 id="code-panel-unverifiable-heading">What can&apos;t be confirmed from the Repository</h4>
+          <h4 id="code-panel-unverifiable-heading">Repository에서 확인할 수 없는 것</h4>
           <p>
-            The items below can&apos;t be confirmed from commits and diffs. They are the points you
-            need to explain yourself in the interview.
+            아래 항목은 커밋과 diff로 확인할 수 없습니다. 인터뷰에서 사용자가 직접 설명해야 하는
+            지점입니다.
           </p>
           <ul>
             {snapshot.unverifiableItems.map((item) => (
@@ -244,7 +244,7 @@ function SelectedFileDiff({
                 type="button"
                 className={styles.commitStep}
                 disabled={commitIndex === 0}
-                aria-label="Previous commit"
+                aria-label="이전 커밋"
                 onClick={() => onCommitIndexChange(commitIndex - 1)}
               >
                 ←
@@ -257,7 +257,7 @@ function SelectedFileDiff({
               type="button"
               className={styles.commitStep}
               disabled={commitIndex === file.commits.length - 1}
-              aria-label="Next commit"
+              aria-label="다음 커밋"
               onClick={() => onCommitIndexChange(commitIndex + 1)}
             >
               →
@@ -271,7 +271,7 @@ function SelectedFileDiff({
         */}
         {commit.indexed ? null : (
           <p className={styles.commitTitle}>
-            Not found in the commit index — title, message, and PR info can&apos;t be confirmed.
+            커밋 색인에서 찾지 못했습니다. 제목, 메시지, PR 정보를 확인할 수 없습니다.
           </p>
         )}
         {commit.title === null ? null : <p className={styles.commitTitle}>{commit.title}</p>}
@@ -286,7 +286,7 @@ function SelectedFileDiff({
           <p className={styles.sectionLabel}>No diff body</p>
           <p>
             {commit.file.patchOmittedReason === null
-              ? "This commit carries no diff body for this file."
+              ? "이 커밋에는 이 파일의 diff 본문이 없습니다."
               : PATCH_OMITTED_COPY[commit.file.patchOmittedReason]}
           </p>
         </div>
@@ -305,7 +305,7 @@ function SelectedFileDiff({
       */}
       {commit.file.patchTruncated ? (
         <p className={styles.diffNotice}>
-          This diff was truncated. What&apos;s shown isn&apos;t the whole change for this file.
+          이 diff는 잘렸습니다. 보이는 내용이 이 파일의 변경 전체가 아닙니다.
         </p>
       ) : null}
     </div>

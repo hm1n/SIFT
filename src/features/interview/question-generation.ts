@@ -523,7 +523,7 @@ export async function startInterviewQuestionStream(
     cleanup();
     throw mapInterviewLlmError(
       signal.reason ?? new DOMException("aborted", "AbortError"),
-      "Question generation"
+      "질문 생성"
     );
   }
 
@@ -555,7 +555,7 @@ export async function startInterviewQuestionStream(
       }
     } catch (error) {
       cleanup();
-      throw mapInterviewLlmError(error, "Question generation");
+      throw mapInterviewLlmError(error, "질문 생성");
     }
   };
 

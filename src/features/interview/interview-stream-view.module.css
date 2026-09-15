@@ -32,10 +32,11 @@
  * 생겼고, 대화가 짧을 때 메시지 블록이 화면 높이를 따라 늘어났습니다. 메시지 높이는 내용이 정합니다.
  * `experience-candidate-list.module.css`의 `.candidateList`가 같은 이유로 같은 선언을 씁니다.
  *
- * 줄바꿈은 `word-break: keep-all`입니다. 한국어를 어절 단위로 끊습니다. 이전의 `overflow-wrap: anywhere`
- * 는 글자 아무 데서나 끊어서, 좁아진 대화 열에서 한 단어가 두 줄로 갈라졌습니다.
+ * 줄바꿈 규칙은 `globals.css`의 body에 있습니다(이슈 #128). 예전에는 이 파일에만 `word-break: keep-all`이
+ * 있었는데, 화면 문구를 한국어로 옮기면서 모든 화면이 같은 규칙을 써야 해 한 자리로 올렸습니다. 아래
+ * 예외 규칙이 코드 블록과 인라인 코드에서만 되돌립니다.
  */
-.log { display: grid; align-content: start; flex: 1; min-height: 0; overflow-y: auto; background: var(--color-card); word-break: keep-all; overflow-wrap: break-word; }
+.log { display: grid; align-content: start; flex: 1; min-height: 0; overflow-y: auto; background: var(--color-card); }
 
 /*
  * 메시지 한 줄입니다. 고정폭 라벨 칸과 본문 칸을 가로로 놓습니다(디자인 원본 `MessageRow`).
@@ -176,3 +177,10 @@
 .saveNoticeAction { flex-shrink: 0; border: 0; background: transparent; color: var(--color-muted-foreground); cursor: pointer; font-family: var(--font-mono); font-size: var(--label-size-sm); padding: 0; text-decoration: underline; text-underline-offset: 2px; }
 .saveNoticeAction:hover,
 .saveNoticeAction:focus-visible { color: var(--color-foreground); }
+
+/*
+ * mono 영역 예외입니다. `globals.css`의 body가 한국어 자연어에 `word-break: keep-all`을 걸어
+ * 두므로, Repository 원본값과 코드를 그리는 아래 자리에서는 되돌립니다. 이 값들은 어절이 없는
+ * 경로·SHA·코드라 어절 단위 금지가 뜻을 갖지 않고, 긴 토큰이 칸을 넘길 때 끊어야 합니다.
+ */
+.message code, .codeBlock pre, .plainCode { word-break: normal; overflow-wrap: normal; }

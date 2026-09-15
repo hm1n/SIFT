@@ -250,13 +250,13 @@ export function parseInterviewStreamRequestBody(
     return {
       ok: false,
       kind: "invalid_request",
-      message: "The evidence snapshot format is not valid.",
+      message: "근거 스냅샷 형식이 올바르지 않습니다.",
     };
   }
 
   const rawHistory = value.history ?? [];
   if (!Array.isArray(rawHistory) || !rawHistory.every(isHistoryMessage)) {
-    return { ok: false, kind: "invalid_request", message: "The conversation history format is not valid." };
+    return { ok: false, kind: "invalid_request", message: "대화 이력 형식이 올바르지 않습니다." };
   }
   const history: readonly InterviewHistoryMessage[] = rawHistory;
   if (!isWellFormedInterviewHistory(history)) {
@@ -264,7 +264,7 @@ export function parseInterviewStreamRequestBody(
       ok: false,
       kind: "invalid_request",
       message:
-        "The conversation history must start with a question, alternate question and answer, end with an answer, and contain no empty items.",
+        "대화 이력은 질문으로 시작해 질문과 답변이 번갈아 나오고 답변으로 끝나야 하며 빈 항목이 없어야 합니다.",
     };
   }
 
@@ -272,14 +272,14 @@ export function parseInterviewStreamRequestBody(
     return {
       ok: false,
       kind: "history_too_large",
-      message: `The conversation history must have at most ${INTERVIEW_HISTORY_MAX_ITEMS} items.`,
+      message: `대화 이력은 최대 ${INTERVIEW_HISTORY_MAX_ITEMS}개 항목까지만 담을 수 있습니다.`,
     };
   }
   if (history.some((message) => interviewHistoryItemBytes(message) > INTERVIEW_HISTORY_ITEM_MAX_BYTES)) {
     return {
       ok: false,
       kind: "history_too_large",
-      message: `Each question and answer must be at most ${INTERVIEW_HISTORY_ITEM_MAX_BYTES} bytes.`,
+      message: `질문과 답변은 각각 최대 ${INTERVIEW_HISTORY_ITEM_MAX_BYTES}바이트까지만 담을 수 있습니다.`,
     };
   }
 

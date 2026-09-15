@@ -58,14 +58,14 @@ describe("createQuestionSseStream", () => {
     const events = await readEvents(
       createQuestionSseStream(
         questionStream("첫 조각", [
-          new ExperienceCandidateOutputError("llm_rate_limit", "The LLM call limit was reached."),
+          new ExperienceCandidateOutputError("llm_rate_limit", "LLM 호출 한도에 걸렸습니다."),
         ])
       )
     );
 
     expect(events).toEqual([
       { type: "chunk", seq: 1, text: "첫 조각" },
-      { type: "error", kind: "llm_rate_limit", message: "The LLM call limit was reached." },
+      { type: "error", kind: "llm_rate_limit", message: "LLM 호출 한도에 걸렸습니다." },
     ]);
   });
 
