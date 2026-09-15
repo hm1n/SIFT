@@ -51,6 +51,13 @@ export interface RestoredInterview {
   readonly history: readonly InterviewHistoryMessage[];
   readonly blockState: ExperienceBlockState;
   readonly progress: InterviewProgress;
+  /**
+   * 저장된 인터뷰의 상태입니다. `completed`면 대화를 읽기 전용으로 열고 질문을 요청하지 않습니다.
+   *
+   * 이 값이 없으면 끝낸 인터뷰를 다시 열었을 때 훅이 다음 질문을 고르고 요청합니다. 사용자가 끝낸
+   * 대화가 다시 자라나고, 목록의 끝남 표시와 화면이 어긋납니다.
+   */
+  readonly status?: "in_progress" | "completed";
 }
 
 /**
@@ -76,6 +83,8 @@ function initialAsk(restore: RestoredInterview | undefined): {
   }
   // 저장된 대화는 질문과 답변이 짝을 이루므로 답변 수가 곧 지금까지의 턴 수입니다.
   const turnsUsed = restore.history.filter((message) => message.role === "answer").length;
+  // 끝난 인터뷰는 다음에 물을 것을 고르지 않습니다. 다시 열어도 읽기만 합니다.
+  if (restore.status === "completed") return { target: null, progress: restore.progress, turnsUsed };
   // `lastTarget`을 넘기지 않습니다. 직전 질문이 어느 블록을 겨냥했는지는 저장하는 값에 없고,
   // 진행 상태의 `askedCount`로 짐작하는 것은 상태를 직접 나타내지 않는 대리 지표입니다. 그래서
   // 이어가기는 같은 블록을 이어가는 것을 우선하지 않고, 아직 다루지 않은 블록을 먼저 묻습니다.
@@ -109,6 +118,13 @@ export interface UseExperienceInterviewOptions {
    * 저장된 상태만 진행 중으로 남습니다.
    */
   completeInterview?: (interviewId: string) => Promise<void>;
+  /**
+   * 인터뷰가 끝났다고 서버에 알린 뒤 불립니다. 화면이 이 인터뷰의 요약으로 돌아가는 데 씁니다.
+   *
+   * 요청이 실패해도 부릅니다. 끝낸 것은 사용자의 조작이고 이미 일어난 일이라, 서버에 기록하지
+   * 못했다고 해서 화면이 끝나지 않은 것처럼 남아 있으면 안 됩니다.
+   */
+  onCompleted?: () => void;
   /**
    * 저장된 인터뷰를 이어갈 때 그 인터뷰의 상태입니다. 없으면 빈 상태에서 시작합니다.
    *
@@ -193,6 +209,7 @@ export function useExperienceInterview({
   interviewId = null,
   restore,
   completeInterview = completeSavedInterview,
+  onCompleted,
   fetchImpl,
   retryDelaysMs,
   sleep,
@@ -218,7 +235,10 @@ export function useExperienceInterview({
 
   // 저장된 상태만으로 더 물을 것이 없으면 이어가자마자 완료 대기입니다.
   const [isReadyToFinish, setIsReadyToFinish] = useState(initial.target === null);
-  const [endReason, setEndReason] = useState<ExperienceInterviewEndReason | null>(null);
+  // 끝난 인터뷰를 다시 연 것도 이미 끝난 것입니다. 사용자가 끝냈던 것이므로 사유도 그대로 둡니다.
+  const [endReason, setEndReason] = useState<ExperienceInterviewEndReason | null>(
+    restore?.status === "completed" ? "user" : null
+  );
   const [unreflectedTurnId, setUnreflectedTurnId] = useState<string | null>(null);
   const [unreflectedBlocks, setUnreflectedBlocks] = useState<readonly BlockKind[]>([]);
 
@@ -334,13 +354,13 @@ export function useExperienceInterview({
     );
   }, []);
 
-  const optionsRef = useRef({ questionUrl, blockUpdateUrl, snapshot, interviewId, completeInterview, fetchImpl, retryDelaysMs, sleep, scheduleFrame, cancelFrame });
+  const optionsRef = useRef({ questionUrl, blockUpdateUrl, snapshot, interviewId, completeInterview, onCompleted, fetchImpl, retryDelaysMs, sleep, scheduleFrame, cancelFrame });
   useEffect(() => {
-    optionsRef.current = { questionUrl, blockUpdateUrl, snapshot, interviewId, completeInterview, fetchImpl, retryDelaysMs, sleep, scheduleFrame, cancelFrame };
+    optionsRef.current = { questionUrl, blockUpdateUrl, snapshot, interviewId, completeInterview, onCompleted, fetchImpl, retryDelaysMs, sleep, scheduleFrame, cancelFrame };
   });
 
   /** 한 번만 보냅니다. 사용자 종료와 열 턴 자동 종료가 겹쳐도 같은 표시를 두 번 쓰지 않습니다. */
-  const completedRef = useRef(false);
+  const completedRef = useRef(restore?.status === "completed");
   /**
    * 인터뷰를 끝난 것으로 표시합니다. 저장하지 않는 인터뷰에는 표시할 줄이 없으므로 아무 일도 하지
    * 않습니다. 실패는 삼킵니다. 종료 자체는 이미 화면에서 일어났고 사용자가 다시 할 수 있는 일이
@@ -350,7 +370,12 @@ export function useExperienceInterview({
     const id = optionsRef.current.interviewId;
     if (id === null || id === undefined || completedRef.current) return;
     completedRef.current = true;
-    void optionsRef.current.completeInterview(id).catch(() => undefined);
+    void optionsRef.current
+      .completeInterview(id)
+      .catch(() => undefined)
+      .finally(() => {
+        if (!unmountedRef.current) optionsRef.current.onCompleted?.();
+      });
   }, []);
 
   /**
@@ -598,6 +623,7 @@ export function useExperienceInterview({
     cancelFrame,
     initialTarget: initial.target,
     initialMessages: restore?.history,
+    initiallyEnded: restore?.status === "completed",
     // 더 물을 것이 없는 상태로 이어가면 질문을 요청하지 않습니다.
     autoStart: initial.target !== null,
     onBeforeQuestion,

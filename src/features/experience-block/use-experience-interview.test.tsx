@@ -1347,6 +1347,88 @@ describe("useExperienceInterview 이어가기", () => {
     });
   });
 
+  /**
+   * 끝낸 인터뷰를 다시 열었을 때 훅이 질문을 새로 요청하면, 사용자가 끝낸 대화가 다시 자라나고
+   * 목록의 끝남 표시와 화면이 어긋납니다.
+   */
+  it("끝난 인터뷰를 다시 열면 질문을 요청하지 않고 읽기 전용으로 연다", async () => {
+    const fetchImpl = makeFetchImpl({ questionSources: [], blockUpdateResponses: [] });
+    const { result } = renderHook(() =>
+      useExperienceInterview({
+        questionUrl: QUESTION_URL,
+        blockUpdateUrl: BLOCK_UPDATE_URL,
+        snapshot,
+        interviewId: INTERVIEW_ID,
+        completeInterview: async () => undefined,
+        restore: {
+          history: HISTORY,
+          blockState: restoredState({ problem: ASKABLE }),
+          progress: recordAsked(emptyInterviewProgress(), "problem", "a"),
+          status: "completed",
+        },
+        fetchImpl,
+        ...immediate,
+      })
+    );
+
+    await waitFor(() => expect(result.current.isEnded).toBe(true));
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(result.current.canSubmitAnswer).toBe(false);
+  });
+
+  // 끝낸 인터뷰의 요약 화면으로 돌아가는 데 씁니다.
+  it("끝내면 서버에 알린 뒤 끝났다고 알린다", async () => {
+    const q1 = controllableResponse();
+    const fetchImpl = makeFetchImpl({ questionSources: [q1], blockUpdateResponses: [] });
+    const order: string[] = [];
+    const { result } = renderHook(() =>
+      useExperienceInterview({
+        questionUrl: QUESTION_URL,
+        blockUpdateUrl: BLOCK_UPDATE_URL,
+        snapshot,
+        interviewId: INTERVIEW_ID,
+        completeInterview: async () => {
+          order.push("표시");
+        },
+        onCompleted: () => order.push("알림"),
+        fetchImpl,
+        ...immediate,
+      })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      result.current.endInterview();
+    });
+
+    await waitFor(() => expect(order).toEqual(["표시", "알림"]));
+  });
+
+  // 저장하지 않는 인터뷰에는 돌아갈 요약이 없습니다.
+  it("인터뷰 줄이 없으면 끝내도 알리지 않는다", async () => {
+    const q1 = controllableResponse();
+    const fetchImpl = makeFetchImpl({ questionSources: [q1], blockUpdateResponses: [] });
+    const onCompleted = vi.fn();
+    const { result } = renderHook(() =>
+      useExperienceInterview({
+        questionUrl: QUESTION_URL,
+        blockUpdateUrl: BLOCK_UPDATE_URL,
+        snapshot,
+        interviewId: null,
+        onCompleted,
+        fetchImpl,
+        ...immediate,
+      })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      result.current.endInterview();
+    });
+
+    expect(onCompleted).not.toHaveBeenCalled();
+  });
+
   // 더 물을 것이 없는 상태를 이어가면서 질문을 요청하면 모델이 이미 충분한 블록을 한 번 더 묻습니다.
   it("저장된 상태만으로 더 물을 것이 없으면 질문을 요청하지 않고 완료 대기로 시작한다", async () => {
     const fetchImpl = makeFetchImpl({ questionSources: [], blockUpdateResponses: [] });

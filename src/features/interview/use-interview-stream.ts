@@ -88,6 +88,13 @@ export interface UseInterviewStreamOptions {
    */
   initialMessages?: readonly InterviewHistoryMessage[];
   /**
+   * 끝난 인터뷰를 다시 열 때 참입니다(이슈 #115). 대화는 그대로 보이되 읽기 전용입니다.
+   *
+   * 이 값이 없으면 끝낸 인터뷰를 다시 열었을 때 훅이 질문을 새로 요청합니다. 사용자가 끝낸 대화가
+   * 다시 자라나고, 목록의 "끝남" 표시와 화면이 어긋납니다.
+   */
+  initiallyEnded?: boolean;
+  /**
    * 답변 제출 뒤, 질문을 요청하기 전에 끼워 넣을 비동기 작업입니다(이슈 #90 Approach 4, "답변
    * 제출부터 질문 요청까지를 하나의 취소 가능한 작업으로 묶는다"). 블록 갱신 호출과 다음 질문 대상
    * 선택이 여기 들어갑니다.
@@ -222,6 +229,7 @@ export function useInterviewStream({
   cancelFrame = defaultCancelFrame,
   initialTarget = null,
   initialMessages = EMPTY_HISTORY,
+  initiallyEnded = false,
   onBeforeQuestion,
 }: UseInterviewStreamOptions): InterviewStreamState {
   const [messages, setMessages] = useState<readonly InterviewStreamMessage[]>(() => toStreamMessages(initialMessages));
@@ -230,13 +238,13 @@ export function useInterviewStream({
   const [receivedSeq, setReceivedSeq] = useState(0);
   const [removedHistory, setRemovedHistory] = useState<readonly InterviewHistoryMessage[]>([]);
   const [isLastQuestionTooLong, setIsLastQuestionTooLong] = useState(false);
-  const [isEnded, setIsEnded] = useState(false);
+  const [isEnded, setIsEnded] = useState(initiallyEnded);
 
   const messagesRef = useRef<readonly InterviewStreamMessage[]>(messages);
   // 상태와 같은 값을 ref에도 둡니다. `retry`가 이벤트 안에서 다음 렌더를 기다리지 않고 읽습니다.
   const isLastQuestionTooLongRef = useRef(false);
   // 종료도 같은 이유로 ref에 둡니다. 종료와 같은 틱에 들어온 제출을 다음 렌더 전에 거절해야 합니다.
-  const isEndedRef = useRef(false);
+  const isEndedRef = useRef(initiallyEnded);
   // 이어가기로 받은 대화가 있으면 그 다음 번호부터 붙입니다. 0에서 시작하면 새 메시지가 복원된
   // 메시지와 같은 `id`를 받아 React가 둘을 같은 항목으로 봅니다.
   const messageCountRef = useRef(messages.length);

@@ -270,6 +270,53 @@ describe("RepositoryFlow 이어가기", () => {
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
   });
 
+  /**
+   * 끝낸 뒤에 읽기 전용 대화 앞에 남겨 두면 사용자가 무엇을 해야 하는지 알 수 없습니다. 방금 끝낸
+   * 인터뷰의 요약으로 돌아가 무엇이 채워졌는지 보이게 합니다.
+   */
+  it("인터뷰를 끝내면 그 인터뷰의 요약 화면으로 돌아간다", async () => {
+    let completed = false;
+    stubFetch({
+      [`/api/interviews/${INTERVIEW_ID}`]: () => {
+        // 끝내면 상태가 바뀝니다. 요약은 서버에서 다시 읽은 값을 그립니다.
+        if (!completed) return Response.json({ interview: STORED });
+        return Response.json({ interview: { ...STORED, status: "completed", completedBlockCount: 2 } });
+      },
+      "/api/interviews": () => Response.json({ interviews: [LIST_ITEM] }),
+      "/api/interview/stream": () => new Response(new ReadableStream(), { status: 200 }),
+    });
+    render(<RepositoryFlow />);
+    fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Continue interview/ }));
+    await screen.findByRole("region", { name: "Code / Evidence" });
+
+    completed = true;
+    fireEvent.click(screen.getByRole("button", { name: "End interview" }));
+    fireEvent.click(screen.getByRole("button", { name: "End the interview" }));
+
+    // 끝난 인터뷰라 버튼 문구가 이어가기가 아니라 다시 보기입니다.
+    expect(await screen.findByRole("button", { name: /Review interview/ })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Code / Evidence" })).not.toBeInTheDocument();
+  });
+
+  // 끝난 인터뷰를 다시 열면 대화가 다시 자라나면 안 됩니다.
+  it("끝난 인터뷰를 다시 열면 질문을 요청하지 않는다", async () => {
+    const { calls } = stubFetch({
+      [`/api/interviews/${INTERVIEW_ID}`]: () =>
+        Response.json({ interview: { ...STORED, status: "completed" } }),
+      "/api/interviews": () =>
+        Response.json({ interviews: [{ ...LIST_ITEM, status: "completed" }] }),
+      "/api/interview/stream": () => new Response(new ReadableStream(), { status: 200 }),
+    });
+    render(<RepositoryFlow />);
+    fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
+
+    fireEvent.click(await screen.findByRole("button", { name: /Review interview/ }));
+
+    await screen.findByRole("region", { name: "Code / Evidence" });
+    expect(calls.filter((url) => url.includes("/api/interview/stream"))).toHaveLength(0);
+  });
+
   it("새 경험 찾기는 Repository 선택으로 돌아간다", async () => {
     stubWithSavedInterview(() => Response.json({ interview: STORED }));
     render(<RepositoryFlow />);

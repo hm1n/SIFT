@@ -82,6 +82,8 @@ interface ExperienceCandidateListProps {
   onLoadLatestInterview?: () => void;
   /** 저장되지 않은 턴이 있는지 상위에 알립니다. 이탈 확인을 받을지 흐름이 판단합니다. */
   onUnsavedInterviewChange?: (hasUnsaved: boolean) => void;
+  /** 인터뷰를 끝냈을 때 알립니다. 흐름이 그 인터뷰의 요약 화면으로 옮깁니다. */
+  onInterviewEnded?: () => void;
 }
 
 export function ExperienceCandidateList({
@@ -95,6 +97,7 @@ export function ExperienceCandidateList({
   interviewId,
   onLoadLatestInterview,
   onUnsavedInterviewChange,
+  onInterviewEnded,
 }: ExperienceCandidateListProps) {
   const items = useMemo(() => createExperienceCandidateListItems(data, candidates), [data, candidates]);
   // 목록 행과 상세 양쪽이 관련 커밋의 date를 봐야 해서 여기서 한 번만 모읍니다.
@@ -134,6 +137,7 @@ export function ExperienceCandidateList({
         interviewId={interviewId}
         onLoadLatest={onLoadLatestInterview}
         onUnsavedChange={onUnsavedInterviewChange}
+        onEnded={onInterviewEnded}
         onBack={returnToCandidates}
       />
     );

@@ -225,6 +225,11 @@ export interface PaarPanelProps {
   /** 종료 후 사용자가 고친 블록 문장입니다. 개수 표시도 같은 값을 봐야 해서 화면이 들고 있습니다. */
   edits: BlockEdits;
   onEditBlock: (block: BlockKind, sentences: readonly DisplaySentence[]) => void;
+  /**
+   * 이 인터뷰가 저장되는 중인지입니다(이슈 #115). 종료 확인 문구가 갈립니다. 저장되는 인터뷰는
+   * 끝내도 사라지지 않고 Interviews에 남으므로 "다시 이어갈 수 없다"고 말하면 안 됩니다.
+   */
+  isSaved?: boolean;
 }
 
 /**
@@ -238,7 +243,7 @@ export interface PaarPanelProps {
  * 하지만, 이슈 #78이 사용자가 언제든 인터뷰를 끝낼 수 있도록 정했습니다. 경위는
  * `llm-wiki/wiki/2026-09-14-PAAR-블록-패널과-종료-후-편집.md`에 있습니다.
  */
-export function PaarPanel({ stream, edits, onEditBlock }: PaarPanelProps) {
+export function PaarPanel({ stream, edits, onEditBlock, isSaved = false }: PaarPanelProps) {
   const {
     blockState,
     isEnded,
@@ -322,9 +327,13 @@ export function PaarPanel({ stream, edits, onEditBlock }: PaarPanelProps) {
           {isConfirmingEnd ? (
             <div className={styles.endConfirm} role="group" aria-labelledby={endConfirmId}>
               <p id={endConfirmId} className={styles.endConfirmText}>
-                Ending the interview closes the answer box and leaves the conversation read-only. Any
-                answer you are still writing is discarded. You can edit the PAAR blocks afterwards.
-                Going back to the candidate list clears the conversation too, and it cannot be resumed.
+                {/*
+                  저장되는 인터뷰는 끝내도 사라지지 않고 Interviews에 남습니다(이슈 #115). 끝내면
+                  그 인터뷰의 요약으로 돌아가고, 블록 편집은 거기서 다시 열어 이어갑니다.
+                */}
+                {isSaved
+                  ? "Ending the interview closes the answer box and leaves the conversation read-only. Any answer you are still writing is discarded. The interview stays in Interviews on the left, and you can open it again from there to edit the PAAR blocks."
+                  : "Ending the interview closes the answer box and leaves the conversation read-only. Any answer you are still writing is discarded. You can edit the PAAR blocks afterwards. Going back to the candidate list clears the conversation too, and it cannot be resumed."}
               </p>
               <div className={styles.endActions}>
                 {/* 확인 문구를 읽지 않고 누르는 일을 줄이려고 초점을 확인 버튼으로 옮깁니다. */}

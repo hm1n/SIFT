@@ -73,6 +73,8 @@ export interface RepositoryAnalysisViewProps {
   onLoadLatestInterview?: (interviewId: string) => void;
   /** 저장되지 않은 턴이 있는지 알립니다. 이탈 확인을 받을지 흐름이 판단합니다. */
   onUnsavedInterviewChange?: (hasUnsaved: boolean) => void;
+  /** 인터뷰를 끝냈을 때 그 인터뷰의 요약 화면으로 옮깁니다. */
+  onInterviewEnded?: (interviewId: string) => void;
   /** 다른 Repository 선택입니다. 선택 화면으로 되돌아가는 일은 `RepositoryFlow`가 합니다. */
   onSelectRepository: () => void;
   /** `ExperienceCandidateList`로 그대로 전달합니다. `RepositoryFlow`가 사이드바 이탈 확인에 씁니다. */
@@ -98,6 +100,7 @@ export function RepositoryAnalysisView({
   onInterviewCreated,
   onLoadLatestInterview,
   onUnsavedInterviewChange,
+  onInterviewEnded,
 }: RepositoryAnalysisViewProps) {
   const router = useRouter();
   const [state, setState] = useState<AnalysisState>(INITIAL_STATE);
@@ -232,6 +235,7 @@ export function RepositoryAnalysisView({
             interviewId={interviewId}
             onLoadLatestInterview={interviewId === null ? undefined : () => onLoadLatestInterview?.(interviewId)}
             onUnsavedInterviewChange={onUnsavedInterviewChange}
+            onInterviewEnded={interviewId === null ? undefined : () => onInterviewEnded?.(interviewId)}
           />
         </div>
       ) : null}

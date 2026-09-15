@@ -90,7 +90,7 @@ export function RepositoryFlow() {
    * 모든 이동이 이 함수를 지납니다. 사이드바의 목록과 새 경험 찾기는 인터뷰 화면 밖에 있어서, 각
    * 화면이 스스로 확인을 걸면 이 두 경로가 그대로 빠져나갑니다(PR #105 Codex 리뷰 P1과 같은 자리).
    */
-  function navigate(next: Mode) {
+  function navigate(next: Mode, options: { readonly confirm?: boolean } = {}) {
     const wasInterviewOpen = interviewActiveRef.current;
     const run = () => {
       interviewActiveRef.current = false;
@@ -99,7 +99,7 @@ export function RepositoryFlow() {
       // 인터뷰를 떠날 때마다 목록을 다시 읽습니다. 진행도와 끝난 표시가 그 사이에 바뀝니다.
       if (wasInterviewOpen) interviews.reload();
     };
-    if (wasInterviewOpen && hasUnsavedRef.current) {
+    if (options.confirm !== false && wasInterviewOpen && hasUnsavedRef.current) {
       setPendingNavigation({ run });
       return;
     }
@@ -108,6 +108,20 @@ export function RepositoryFlow() {
 
   function openInterview(interviewId: string) {
     navigate({ kind: "resume", interviewId, stage: "review" });
+  }
+
+  /**
+   * 인터뷰를 끝냈을 때입니다. 그 인터뷰의 요약 화면으로 옮기고 저장된 값을 다시 읽습니다.
+   *
+   * 끝낸 직후의 요약은 방금 끝낸 내용을 담아야 하므로 서버에서 다시 읽습니다. 화면이 들고 있던 값은
+   * 이어가기로 들어올 때 읽은 것이라 이번 대화에서 채운 블록이 빠져 있습니다.
+   */
+  function showEndedInterview(interviewId: string) {
+    setResumeAttempt((count) => count + 1);
+    // 이탈을 한 번 더 묻지 않습니다. 끝내기는 사용자가 이미 그만하겠다고 말한 조작이고, 그 시점에
+    // 훅이 밀린 턴의 저장을 한 번 더 시도합니다. 여기서 확인을 또 띄우면 "인터뷰 계속하기"가 이미
+    // 끝난 인터뷰를 가리키게 됩니다.
+    navigate({ kind: "resume", interviewId, stage: "review" }, { confirm: false });
   }
 
   /** 다른 탭이 먼저 저장했을 때입니다. 저장된 값을 다시 읽어 그 상태로 화면을 다시 세웁니다. */
@@ -149,6 +163,7 @@ export function RepositoryFlow() {
             onInterviewCreated={interviews.reload}
             onLoadLatestInterview={loadLatest}
             onUnsavedInterviewChange={setUnsaved}
+            onInterviewEnded={showEndedInterview}
           />
         ) : null}
 
@@ -162,6 +177,7 @@ export function RepositoryFlow() {
             onInterviewActiveChange={setActive}
             onUnsavedChange={setUnsaved}
             onLoadLatest={() => loadLatest(mode.interviewId)}
+            onEnded={() => showEndedInterview(mode.interviewId)}
           />
         ) : null}
       </AppShell>
@@ -236,6 +252,7 @@ function ResumedInterview({
   onInterviewActiveChange,
   onUnsavedChange,
   onLoadLatest,
+  onEnded,
 }: {
   mode: Extract<Mode, { kind: "resume" }>;
   state: ReturnType<typeof useSavedInterview>;
@@ -245,6 +262,7 @@ function ResumedInterview({
   onInterviewActiveChange: (active: boolean) => void;
   onUnsavedChange: (hasUnsaved: boolean) => void;
   onLoadLatest: () => void;
+  onEnded: () => void;
 }) {
   if (state.status === "loading") {
     return <StatusScreen kind="loading" code="Loading Interview" label="Opening the saved interview..." sub="" />;
@@ -277,6 +295,7 @@ function ResumedInterview({
       onInterviewActiveChange={onInterviewActiveChange}
       onUnsavedChange={onUnsavedChange}
       onLoadLatest={onLoadLatest}
+      onEnded={onEnded}
     />
   );
 }
@@ -289,6 +308,7 @@ function ResumedInterviewScreen({
   onInterviewActiveChange,
   onUnsavedChange,
   onLoadLatest,
+  onEnded,
 }: {
   interview: StoredInterviewPayload;
   snapshot: ExperienceEvidenceSnapshot;
@@ -296,6 +316,7 @@ function ResumedInterviewScreen({
   onInterviewActiveChange: (active: boolean) => void;
   onUnsavedChange: (hasUnsaved: boolean) => void;
   onLoadLatest: () => void;
+  onEnded: () => void;
 }) {
   // 렌더 중에 부르면 흐름의 상태를 렌더 도중에 바꾸게 됩니다. 커밋된 뒤에 알립니다.
   useEffect(() => {
@@ -311,9 +332,11 @@ function ResumedInterviewScreen({
         history: interview.history,
         blockState: interview.blockState,
         progress: interview.progress,
+        status: interview.status,
       }}
       onLoadLatest={onLoadLatest}
       onUnsavedChange={onUnsavedChange}
+      onEnded={onEnded}
       onBack={onBack}
     />
   );

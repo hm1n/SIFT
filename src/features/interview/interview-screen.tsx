@@ -29,6 +29,13 @@ export interface InterviewScreenProps {
   onLoadLatest?: () => void;
   /** 저장되지 않은 턴이 있는지 알립니다. 이 화면을 떠날 때 확인을 받을지 흐름이 판단합니다. */
   onUnsavedChange?: (hasUnsaved: boolean) => void;
+  /**
+   * 사용자가 인터뷰를 끝냈을 때 불립니다. 끝난 인터뷰의 요약 화면으로 돌아가는 데 씁니다.
+   *
+   * 저장하지 않는 인터뷰에서는 불리지 않습니다. 돌아갈 요약이 없기 때문입니다. 그때는 끝낸 대화가
+   * 읽기 전용으로 이 화면에 그대로 남습니다.
+   */
+  onEnded?: () => void;
   /** 테스트에서 스트림 응답을 대체하는 통로입니다. */
   fetchImpl?: typeof fetch;
 }
@@ -132,6 +139,7 @@ export function InterviewScreen({
   restore,
   onLoadLatest,
   onUnsavedChange,
+  onEnded,
   fetchImpl,
 }: InterviewScreenProps) {
   /*
@@ -140,7 +148,7 @@ export function InterviewScreen({
    * 종료 조작이 오른쪽 PAAR 패널 아래에 있고 종료 상태를 읽는 것은 가운데 대화 열입니다. 두 열은
    * 형제라 한쪽이 훅을 들면 다른 쪽이 볼 수 없습니다. 공통 부모인 여기서 들고 양쪽에 나눠 줍니다.
    */
-  const stream = useExperienceInterview({ snapshot, interviewId, restore, fetchImpl });
+  const stream = useExperienceInterview({ snapshot, interviewId, restore, onCompleted: onEnded, fetchImpl });
 
   /*
    * 저장이 밀린 턴이 있는지를 위로 알립니다(이슈 #115). 흐름 컴포넌트가 이 화면을 떠날 때 확인을
@@ -366,7 +374,7 @@ export function InterviewScreen({
               className={`${styles.paarColumn} ${columnClass("paar")}`}
               style={{ width: `${fitted.paar}px` }}
             >
-              <PaarPanel stream={stream} edits={blockEdits} onEditBlock={editBlock} />
+              <PaarPanel stream={stream} edits={blockEdits} onEditBlock={editBlock} isSaved={Boolean(interviewId)} />
             </div>
           </>
         ) : null}
