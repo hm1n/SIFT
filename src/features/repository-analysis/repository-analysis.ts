@@ -37,11 +37,46 @@ export type LoadingPhase =
   // 시간 같은 대리 지표로 가짜 전환을 만들지 않고 두 단계를 하나의 Loading으로 표현합니다.
   | { step: "stage_b" };
 
+/**
+ * 실제 분석 단계 여섯 개입니다. 순서는 `route-client.ts`의 `fetchContributionsFromApi`가 보고하는
+ * 순서(commit_details 완료 뒤 repository_metadata)와 같습니다.
+ *
+ * `LoadingPhase`의 `details` 스텝 하나가 `commit_details`·`repository_metadata` 두 단계로 갈리므로
+ * 매핑이 필요합니다. 그 매핑을 화면(`repository-analysis-view.tsx`의 Loading 체크리스트)에 두면
+ * 화면 개편이 계측 어휘를 함께 바꿉니다. 단계는 화면이 아니라 분석 로직이 정하는 값이므로 여기
+ * 둡니다. 화면과 `analysis_stage_done`이 같은 함수를 봅니다(이슈 #125).
+ */
+export const ANALYSIS_STAGES = [
+  "commits",
+  "commit_details",
+  "repository_metadata",
+  "deriving",
+  "stage_a",
+  "stage_b",
+] as const;
+
+export type AnalysisStage = (typeof ANALYSIS_STAGES)[number];
+
+export function analysisStageOf(loading: LoadingPhase): AnalysisStage {
+  if (loading.step === "details") {
+    return loading.phase === "repository_metadata" ? "repository_metadata" : "commit_details";
+  }
+  return loading.step;
+}
+
 export type EmptyKind =
   | "no_commits"
   | "no_author_commits"
   | "no_analyzable_commits"
   | "no_stage_a_candidates";
+
+/**
+ * Empty 갈래 전체입니다. `no_final_candidates`는 `reason`을 함께 실어야 해서 `AnalysisState`에서
+ * 별도 변형으로 갈라져 있고 `EmptyKind`에 들어가 있지 않습니다. 화면 안내표와 `analysis_empty`의
+ * `empty_kind`는 다섯 갈래를 모두 다뤄야 하므로 둘이 같은 타입을 봅니다.
+ */
+export type AnalysisEmptyKind = EmptyKind | "no_final_candidates";
+
 export type RecoveryAction = "retry" | "reauthenticate" | "select_repository";
 
 /**
