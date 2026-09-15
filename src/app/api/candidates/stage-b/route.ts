@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { CANDIDATE_ROUTE_COPY } from "@/copy/candidates";
 import { ExperienceCandidateOutputError } from "@/features/experience-candidates/errors";
 import { resolveLlmTimeoutMs } from "@/features/experience-candidates/llm-provider";
 import {
@@ -67,14 +68,14 @@ export async function handleStageB(
     const declaredLength = Number(request.headers.get("content-length"));
     if (declaredLength > MAX_STAGE_B_BODY_BYTES) {
       return Response.json(
-        { error: { kind: "body_too_large", message: "The request body must be 4.5MB or smaller." } },
+        { error: { kind: "body_too_large", message: CANDIDATE_ROUTE_COPY.bodyTooLarge } },
         { status: 413 }
       );
     }
     const actualLength = new TextEncoder().encode(await request.clone().text()).byteLength;
     if (actualLength > MAX_STAGE_B_BODY_BYTES) {
       return Response.json(
-        { error: { kind: "body_too_large", message: "The request body must be 4.5MB or smaller." } },
+        { error: { kind: "body_too_large", message: CANDIDATE_ROUTE_COPY.bodyTooLarge } },
         { status: 413 }
       );
     }
@@ -87,14 +88,14 @@ export async function handleStageB(
       new Set(candidates.map(({ sha }) => sha)).size !== candidates.length
     ) {
       return Response.json(
-        { error: { kind: "invalid_request", message: "The Stage B input format is not valid." } },
+        { error: { kind: "invalid_request", message: CANDIDATE_ROUTE_COPY.stageBInvalid } },
         { status: 422 }
       );
     }
     if (candidates.length === 0) {
       return Response.json({
         candidates: [],
-        insufficientCandidatesReason: "Stage A selected no candidates.",
+        insufficientCandidatesReason: CANDIDATE_ROUTE_COPY.stageASelectedNone,
         diffs: [],
       });
     }
@@ -103,7 +104,7 @@ export async function handleStageB(
       if (remaining() < STAGE_B_MIN_LLM_BUDGET_MS) {
         throw new ExperienceCandidateOutputError(
           "llm_timeout",
-          "Stage B went over its execution time budget."
+          CANDIDATE_ROUTE_COPY.stageBTimeBudget
         );
       }
     };
@@ -147,7 +148,7 @@ export async function handleStageB(
       return githubErrorResponse(error);
     }
     return Response.json(
-      { error: { kind: "server_error", message: "Stage B analysis failed." } },
+      { error: { kind: "server_error", message: CANDIDATE_ROUTE_COPY.stageBFailed } },
       { status: 500 }
     );
   }

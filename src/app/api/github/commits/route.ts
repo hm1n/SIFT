@@ -14,7 +14,7 @@ export async function POST(request: NextRequest): Promise<Response> {
     try {
       cursor = decodeCommitCursor(body.cursor);
     } catch {
-      throw new GitHubRouteRequestError("invalid_request", "The cursor is corrupted or invalid.", 422);
+      throw new GitHubRouteRequestError("invalid_request", "커서 값이 손상되었거나 올바르지 않습니다.", 422);
     }
     const result = await fetchAuthoredCommitsBatch(auth, cursor, GITHUB_BATCH_LIMITS.commitPages);
     return Response.json({

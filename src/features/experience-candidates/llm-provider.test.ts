@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { LLM_PROVIDER_COPY } from "@/copy/candidates";
 import { ExperienceCandidateOutputError } from "./errors";
 import {
   createInterviewQuestionModel,
@@ -160,6 +161,11 @@ describe("NEXT_PUBLIC_LLM_BASE_URL 설정", () => {
       expect(caught).toBeInstanceOf(ExperienceCandidateOutputError);
       expect((caught as ExperienceCandidateOutputError).kind).toBe("llm_configuration");
       expect((caught as ExperienceCandidateOutputError).message).toContain(envName);
+      // 이 문구는 분석 화면과 인터뷰 화면이 `error.message`로 그대로 그립니다. 환경변수 이름만
+      // 영어로 남고 문장은 한국어여야 합니다(이슈 #128).
+      expect((caught as ExperienceCandidateOutputError).message).toBe(
+        LLM_PROVIDER_COPY.localModelMissing(envName)
+      );
     }
   });
 

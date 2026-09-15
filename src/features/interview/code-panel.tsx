@@ -1,15 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { CODE_PANEL_COPY, FILE_STATUS_LABEL, PATCH_OMITTED_COPY } from "@/copy/interview";
 import {
   EVIDENCE_VERIFIABILITY_NOTICE,
   RELATED_COMMITS_VERIFICATION_NOTICE,
   REPOSITORY_VERIFIED_NOTICE,
 } from "@/features/experience-candidates/evidence-verifiability";
-import type {
-  EvidencePatchOmittedReason,
-  ExperienceEvidenceSnapshot,
-} from "@/features/experience-candidates/types";
+import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
 import { parsePatch, type DiffLine } from "./diff-patch";
 import {
   collectEvidenceFiles,
@@ -43,20 +41,11 @@ import styles from "./code-panel.module.css";
 export const CODE_PANEL_EVIDENCE_NOTICE_ID = "code-panel-evidence-verifiability-notice";
 export const CODE_PANEL_VERIFIED_NOTICE_ID = "code-panel-repository-verified-notice";
 
-/** 파일 행에 붙는 한 글자 표시와 스크린리더가 읽는 말입니다. */
-const STATUS_MARK: Record<EvidenceFileStatus, { mark: string; label: string }> = {
-  added: { mark: "A", label: "Added" },
-  modified: { mark: "M", label: "Modified" },
-  deleted: { mark: "D", label: "Deleted" },
-};
-
-/**
- * patch 본문이 없는 이유입니다. 예산 소진과 GitHub 미제공은 사용자에게 뜻이 다릅니다. 앞은 우리가
- * 상한 때문에 뺀 것이고 뒤는 애초에 받은 적이 없는 것입니다.
- */
-const PATCH_OMITTED_COPY: Record<EvidencePatchOmittedReason, string> = {
-  budget_exhausted: "The evidence input limit was used up, so this file's diff body wasn't carried.",
-  not_provided: "GitHub didn't provide a patch for this file.",
+/** 파일 행에 붙는 한 글자 표시입니다. 스크린리더가 읽는 말은 `FILE_STATUS_LABEL`에 있습니다. */
+const STATUS_MARK: Record<EvidenceFileStatus, string> = {
+  added: "A",
+  modified: "M",
+  deleted: "D",
 };
 
 const padded = (count: number) => String(count).padStart(2, "0");
@@ -94,7 +83,7 @@ export function CodePanel({ snapshot }: CodePanelProps) {
         <h3 id="code-panel-heading" className={styles.panelHeading}>
           Code / Evidence
         </h3>
-        <div className={styles.viewModes} role="group" aria-label="View mode">
+        <div className={styles.viewModes} role="group" aria-label={CODE_PANEL_COPY.viewModeLabel}>
           <button type="button" className={styles.viewMode} aria-pressed={true}>
             Diff
           </button>
@@ -105,7 +94,7 @@ export function CodePanel({ snapshot }: CodePanelProps) {
           <button type="button" className={styles.viewMode} disabled aria-pressed={false}>
             File
             <span className={styles.visuallyHidden}>
-              — unavailable. The evidence snapshot carries only changed patches, not full file contents.
+              {CODE_PANEL_COPY.fileModeUnavailable}
             </span>
           </button>
         </div>
@@ -125,7 +114,7 @@ export function CodePanel({ snapshot }: CodePanelProps) {
             aria-controls="code-panel-file-tree"
             onClick={() => setFilesCollapsed((collapsed) => !collapsed)}
           >
-            {filesCollapsed ? "Expand file list" : "Collapse file list"}
+            {filesCollapsed ? CODE_PANEL_COPY.expandFiles : CODE_PANEL_COPY.collapseFiles}
           </button>
         </div>
 
@@ -143,9 +132,9 @@ export function CodePanel({ snapshot }: CodePanelProps) {
                       onClick={() => selectFile(file.path)}
                     >
                       <span className={styles.fileStatus} data-status={file.status} aria-hidden="true">
-                        {STATUS_MARK[file.status].mark}
+                        {STATUS_MARK[file.status]}
                       </span>
-                      <span className={styles.visuallyHidden}>{STATUS_MARK[file.status].label}</span>
+                      <span className={styles.visuallyHidden}>{FILE_STATUS_LABEL[file.status]}</span>
                       <span className={styles.filename}>{file.filename}</span>
                       <span className={styles.fileStat} data-kind="add">
                         +{file.additions}
@@ -178,9 +167,7 @@ export function CodePanel({ snapshot }: CodePanelProps) {
       */}
       {snapshot.patchBudget.truncatedByBudget ? (
         <p className={styles.panelNotice}>
-          Code changes were trimmed to fit the estimated evidence input limit of{" "}
-          {snapshot.patchBudget.maxInputTokens.toLocaleString("en-US")} tokens. Patches actually
-          carried: {snapshot.patchBudget.patchBytes.toLocaleString("en-US")} bytes.
+          {CODE_PANEL_COPY.budgetTrimmed(snapshot.patchBudget.patchBytes.toLocaleString("en-US"))}
         </p>
       ) : null}
 
@@ -199,11 +186,8 @@ export function CodePanel({ snapshot }: CodePanelProps) {
       ) : null}
       {snapshot.unverifiableItems.length > 0 ? (
         <section className={styles.visuallyHidden} aria-labelledby="code-panel-unverifiable-heading">
-          <h4 id="code-panel-unverifiable-heading">What can&apos;t be confirmed from the Repository</h4>
-          <p>
-            The items below can&apos;t be confirmed from commits and diffs. They are the points you
-            need to explain yourself in the interview.
-          </p>
+          <h4 id="code-panel-unverifiable-heading">{CODE_PANEL_COPY.unverifiableHeading}</h4>
+          <p>{CODE_PANEL_COPY.unverifiableIntro}</p>
           <ul>
             {snapshot.unverifiableItems.map((item) => (
               <li key={item}>{item}</li>
@@ -244,7 +228,7 @@ function SelectedFileDiff({
                 type="button"
                 className={styles.commitStep}
                 disabled={commitIndex === 0}
-                aria-label="Previous commit"
+                aria-label={CODE_PANEL_COPY.previousCommit}
                 onClick={() => onCommitIndexChange(commitIndex - 1)}
               >
                 ←
@@ -257,7 +241,7 @@ function SelectedFileDiff({
               type="button"
               className={styles.commitStep}
               disabled={commitIndex === file.commits.length - 1}
-              aria-label="Next commit"
+              aria-label={CODE_PANEL_COPY.nextCommit}
               onClick={() => onCommitIndexChange(commitIndex + 1)}
             >
               →
@@ -271,7 +255,7 @@ function SelectedFileDiff({
         */}
         {commit.indexed ? null : (
           <p className={styles.commitTitle}>
-            Not found in the commit index — title, message, and PR info can&apos;t be confirmed.
+            {CODE_PANEL_COPY.commitNotIndexed}
           </p>
         )}
         {commit.title === null ? null : <p className={styles.commitTitle}>{commit.title}</p>}
@@ -286,7 +270,7 @@ function SelectedFileDiff({
           <p className={styles.sectionLabel}>No diff body</p>
           <p>
             {commit.file.patchOmittedReason === null
-              ? "This commit carries no diff body for this file."
+              ? CODE_PANEL_COPY.noPatchBody
               : PATCH_OMITTED_COPY[commit.file.patchOmittedReason]}
           </p>
         </div>
@@ -305,7 +289,7 @@ function SelectedFileDiff({
       */}
       {commit.file.patchTruncated ? (
         <p className={styles.diffNotice}>
-          This diff was truncated. What&apos;s shown isn&apos;t the whole change for this file.
+          {CODE_PANEL_COPY.diffTruncated}
         </p>
       ) : null}
     </div>

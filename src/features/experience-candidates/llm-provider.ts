@@ -1,5 +1,6 @@
 import { createGoogle } from "@ai-sdk/google";
 import { createGroq } from "@ai-sdk/groq";
+import { LLM_PROVIDER_COPY } from "@/copy/candidates";
 import { ExperienceCandidateOutputError } from "./errors";
 
 /**
@@ -64,7 +65,7 @@ export function requireLocalModel(config: LocalLlmConfig, model: string | null, 
     // 모델 설정 오류로 뭉개져 원인이 환경변수 누락이라는 사실이 드러나지 않습니다.
     throw new ExperienceCandidateOutputError(
       "llm_configuration",
-      `If NEXT_PUBLIC_LLM_BASE_URL is set, ${envName} must be set too.`
+      LLM_PROVIDER_COPY.localModelMissing(envName)
     );
   }
   return createGroq({ baseURL: config.baseURL, apiKey: config.apiKey })(model);

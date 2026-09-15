@@ -1,6 +1,11 @@
 import { useId, useState } from "react";
+import {
+  BLOCK_UPDATE_ERROR_CAUSE,
+  PAAR_CARD_EMPTY_COPY,
+  PAAR_CARD_STATE_COPY,
+  PAAR_PANEL_COPY,
+} from "@/copy/interview";
 import { BlockSentences } from "@/features/experience-block/block-sentences";
-import type { BlockUpdateFetchErrorKind } from "@/features/experience-block/client";
 import { filledBlockCount } from "@/features/experience-block/block-edits";
 import { BLOCK_LABELS } from "@/features/experience-block/block-labels";
 import { blockConflicts, markDisplay } from "@/features/experience-block/reducer";
@@ -11,58 +16,8 @@ import styles from "./paar-panel.module.css";
 /** PAAR 블록은 PROBLEM·ANALYZE·ACTION·RESULT 넷입니다. */
 export const PAAR_BLOCK_COUNT = BLOCK_KINDS.length;
 
-/**
- * 답변이 블록에 반영되지 않은 이유입니다. 분류를 문장으로 옮기는 자리이고, 목적은 사용자가 다시
- * 시도하면 풀릴 일인지 아닌지를 가리는 것입니다.
- *
- * 문구를 넣은 계기는 2026-09-15의 사고입니다. `.env`의 키 이름이 어긋나 블록 갱신이 매번 인증 실패로
- * 끝났는데 화면에는 "반영되지 않았습니다"만 떠서, 설정 문제라는 것이 드러나기까지 인터뷰 두 개의
- * 대화가 통째로 사라졌습니다. 저장이 이 요청에 얹혀 가므로 반영 실패는 곧 저장 실패입니다.
- *
- * 분류를 다 적지 않습니다. 없는 분류에는 아래의 일반 문구가 나갑니다. 틀린 원인을 단정하는 것보다
- * 원인을 말하지 않는 편이 낫습니다. 문장은 `interview-stream-view.tsx`의 생성 실패 문구와 같은
- * 방식으로 씁니다.
- */
-export const BLOCK_UPDATE_ERROR_CAUSE: Partial<Record<BlockUpdateFetchErrorKind, string>> = {
-  network: "Could not reach the server.",
-  llm_network: "Could not reach the block update service.",
-  llm_timeout: "The update did not finish in time.",
-  llm_rate_limit: "The block update service hit its call limit.",
-  llm_failure: "The block update service did not respond.",
-  llm_request: "The block update service did not accept the request.",
-  // 설정 문제는 다시 시도해도 같은 결과입니다. 사용자가 아니라 서버가 고쳐야 한다고 분명히 적습니다.
-  llm_auth: "Authentication with the block update service failed. This is a server configuration problem.",
-  llm_configuration: "The block update service is misconfigured. This is a server configuration problem.",
-  unauthorized: "Your sign-in session is no longer valid. Sign in again.",
-  // 모델 출력이 흔들린 경우입니다. 같은 답변으로 다시 시도하면 통과할 수 있습니다.
-  block_update_rejected: "The model's output did not pass validation.",
-  schema_validation: "The model's output did not pass validation.",
-  json_parse: "The model's output could not be read.",
-  unknown_sha: "The model cited a commit that isn't in this experience's evidence.",
-  unrelated_sha: "The model cited a commit that isn't in this experience's evidence.",
-  unknown_file_path: "The model cited a file that isn't in this experience's evidence.",
-  history_too_large: "This conversation is too long for one update request.",
-  claims_too_large: "This experience's blocks are too large for one update request.",
-  body_too_large: "This request grew too large to send.",
-  server_error: "A server configuration problem stopped the request from being handled.",
-};
-
 /** 카드가 그리는 네 가지 상태입니다. 이슈 #91 Approach 2의 표와 같습니다. */
 type CardState = "pending" | "collecting" | "filled" | "unfilled";
-
-const CARD_STATE_LABELS: Readonly<Record<CardState, string>> = {
-  pending: "Not started",
-  collecting: "Collecting",
-  filled: "Filled",
-  unfilled: "Not filled",
-};
-
-const CARD_EMPTY_TEXT: Readonly<Record<CardState, string>> = {
-  pending: "The interview hasn't reached this block yet.",
-  collecting: "Working your latest answer into this block.",
-  filled: "",
-  unfilled: "The interview ended without anything to put here.",
-};
 
 /**
  * 카드 상태를 정합니다.
@@ -105,19 +60,19 @@ function BlockCard({ block, stream }: BlockCardProps) {
       <div className={styles.cardHeader}>
         <h4 className={styles.cardTitle}>{BLOCK_LABELS[block]}</h4>
         <span className={styles.cardState} data-state={state}>
-          {CARD_STATE_LABELS[state]}
+          {PAAR_CARD_STATE_COPY[state]}
         </span>
       </div>
 
       <BlockSentences
         marks={marks}
         conflicts={blockConflicts(blockState, block)}
-        emptyText={CARD_EMPTY_TEXT[state]}
+        emptyText={PAAR_CARD_EMPTY_COPY[state]}
       />
 
       {/* 어느 블록이 미반영인지만 알립니다. 다시 처리하는 버튼은 패널 위에 하나만 둡니다. */}
       {unreflectedBlocks.includes(block) ? (
-        <p className={styles.cardError}>An answer aimed at this block hasn&apos;t been reflected yet.</p>
+        <p className={styles.cardError}>{PAAR_PANEL_COPY.cardNotReflected}</p>
       ) : null}
     </div>
   );
@@ -192,7 +147,7 @@ export function PaarPanel({ stream, isSaved = false }: PaarPanelProps) {
         {unreflectedTurnId === null ? null : (
           <div className={styles.unreflected}>
             <p className={styles.unreflectedText}>
-              Your latest answer hasn&apos;t been reflected yet, so it hasn&apos;t been saved either.
+              {PAAR_PANEL_COPY.unreflected}
             </p>
             {/*
               이유를 함께 적습니다. 반영 실패는 저장 실패이기도 해서, 원인을 모르면 사용자가 같은
@@ -200,7 +155,7 @@ export function PaarPanel({ stream, isSaved = false }: PaarPanelProps) {
             */}
             <p className={styles.unreflectedCause}>
               {(unreflectedReason === null ? undefined : BLOCK_UPDATE_ERROR_CAUSE[unreflectedReason]) ??
-                "The block update didn't finish."}
+                PAAR_PANEL_COPY.updateUnfinished}
             </p>
             <button
               type="button"
@@ -208,7 +163,7 @@ export function PaarPanel({ stream, isSaved = false }: PaarPanelProps) {
               disabled={isBlockUpdating}
               onClick={retryUnreflectedBlockUpdate}
             >
-              {isBlockUpdating ? "Retrying…" : "Try again"}
+              {isBlockUpdating ? PAAR_PANEL_COPY.retrying : PAAR_PANEL_COPY.retry}
             </button>
           </div>
         )}
@@ -224,7 +179,7 @@ export function PaarPanel({ stream, isSaved = false }: PaarPanelProps) {
       */}
       {isReadyToFinish && !isEnded ? (
         <p className={styles.readyNotice}>
-          There&apos;s nothing left to ask. You can end the interview whenever you&apos;re ready.
+          {PAAR_PANEL_COPY.readyToFinish}
         </p>
       ) : null}
 
@@ -245,21 +200,19 @@ export function PaarPanel({ stream, isSaved = false }: PaarPanelProps) {
                   그 인터뷰의 요약으로 돌아가고, 블록 편집은 거기서 엽니다. 저장되지 않는 인터뷰에는
                   돌아갈 요약이 없으므로 고칠 기회도 없습니다. 있지도 않은 편집을 약속하지 않습니다.
                 */}
-                {isSaved
-                  ? "Ending the interview closes the answer box and leaves the conversation read-only. Any answer you are still writing is discarded. The interview stays in Interviews on the left, and you can open it again from there to edit the PAAR blocks."
-                  : "Ending the interview closes the answer box and leaves the conversation read-only. Any answer you are still writing is discarded. This interview isn't being saved, so the PAAR blocks stay as they are and you cannot edit them afterwards. Going back to the candidate list clears the conversation too, and it cannot be resumed."}
+                {isSaved ? PAAR_PANEL_COPY.endConfirmSaved : PAAR_PANEL_COPY.endConfirmUnsaved}
               </p>
               <div className={styles.endActions}>
                 {/* 확인 문구를 읽지 않고 누르는 일을 줄이려고 초점을 확인 버튼으로 옮깁니다. */}
                 <button type="button" className={styles.endButton} onClick={endInterview} autoFocus>
-                  End the interview
+                  {PAAR_PANEL_COPY.end}
                 </button>
                 <button
                   type="button"
                   className={styles.endCancelButton}
                   onClick={() => setIsConfirmingEnd(false)}
                 >
-                  Continue the interview
+                  {PAAR_PANEL_COPY.stay}
                 </button>
               </div>
             </div>
@@ -269,7 +222,7 @@ export function PaarPanel({ stream, isSaved = false }: PaarPanelProps) {
               className={styles.endButton}
               onClick={() => setIsConfirmingEnd(true)}
             >
-              End interview
+              {PAAR_PANEL_COPY.end}
             </button>
           )}
         </div>

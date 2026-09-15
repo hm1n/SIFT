@@ -1,4 +1,5 @@
 import { jsonSchema } from "ai";
+import { CANDIDATE_CONTRACT_COPY } from "@/copy/candidates";
 import { ExperienceCandidateOutputError } from "./errors";
 import type {
   ExperienceCandidate,
@@ -153,7 +154,7 @@ export function validateExperienceCandidateOutput(
   ) {
     throw new ExperienceCandidateOutputError(
       "schema_validation",
-      "The structured experience candidate response did not match the output schema."
+      CANDIDATE_CONTRACT_COPY.schemaMismatch
     );
   }
 
@@ -161,7 +162,7 @@ export function validateExperienceCandidateOutput(
   if (new Set(representativeShas).size !== representativeShas.length) {
     throw new ExperienceCandidateOutputError(
       "schema_validation",
-      "Representative commit SHAs must be distinct across candidates."
+      CANDIDATE_CONTRACT_COPY.duplicateSha
     );
   }
 
@@ -181,7 +182,7 @@ export function validateExperienceCandidateOutput(
   if (!reasonIsValid) {
     throw new ExperienceCandidateOutputError(
       "schema_validation",
-      "When there are zero candidates a reason is required, and it must be a non-empty string rather than null."
+      CANDIDATE_CONTRACT_COPY.reasonRequired
     );
   }
 
@@ -203,7 +204,7 @@ export function assertCandidateShas(
   if (unknownShas.length > 0) {
     throw new ExperienceCandidateOutputError(
       "unknown_sha",
-      `Contains commit SHAs that are not in the input set: ${unknownShas.join(", ")}`,
+      CANDIDATE_CONTRACT_COPY.unknownShas(unknownShas.join(", ")),
       { unknownShas }
     );
   }
@@ -247,7 +248,7 @@ export function assertCandidateEvidence(
     if (unrelatedShas.length > 0) {
       throw new ExperienceCandidateOutputError(
         "unrelated_sha",
-        `Some related SHAs do not belong to the same PR as the representative commit: ${unrelatedShas.join(", ")}`,
+        CANDIDATE_CONTRACT_COPY.unrelatedShas(unrelatedShas.join(", ")),
         { unknownShas: unrelatedShas }
       );
     }
@@ -261,7 +262,7 @@ export function assertCandidateEvidence(
     if (unknownPaths.length > 0) {
       throw new ExperienceCandidateOutputError(
         "unknown_file_path",
-        `Some cited file paths are not in the Repository evidence: ${unknownPaths.join(", ")}`
+        CANDIDATE_CONTRACT_COPY.unknownPaths(unknownPaths.join(", "))
       );
     }
   }
@@ -288,7 +289,7 @@ export function createExperienceCandidateOutputSchema(maxCandidates: number) {
               ? error
               : new ExperienceCandidateOutputError(
                   "schema_validation",
-                  "Validation of the structured experience candidate response failed.",
+                  CANDIDATE_CONTRACT_COPY.validationFailed,
                   { cause: error }
                 ),
         };

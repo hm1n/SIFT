@@ -1,3 +1,4 @@
+import { QUESTION_REQUEST_COPY } from "@/copy/interview";
 import { isServerErrorKind } from "./errors";
 import type { InterviewStreamErrorKind } from "./errors";
 import type { InterviewQuestionStream } from "./question-generation";
@@ -68,7 +69,7 @@ export function createQuestionSseStream(
           send({
             type: "error",
             kind: resolveGenerationErrorKind(error),
-            message: error instanceof Error ? error.message : "Question generation failed.",
+            message: error instanceof Error ? error.message : QUESTION_REQUEST_COPY.generationFailed,
           });
           finish();
         } catch {

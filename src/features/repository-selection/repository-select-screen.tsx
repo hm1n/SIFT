@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/shell/button";
 import { StatusScreen } from "@/components/shell/status-screen";
+import { REPOSITORY_FETCH_ERROR_SUB, REPOSITORY_SELECT_COPY } from "@/copy/repository";
 import { SESSION_PATH } from "@/lib/github/auth-paths";
 import { GitHubFetchError, type GitHubFetchErrorKind } from "@/lib/github/errors";
 import type { RepositorySummary } from "@/lib/github/types";
@@ -19,18 +20,6 @@ type ListState =
   | { status: "loading" }
   | { status: "error"; kind: GitHubFetchErrorKind }
   | { status: "ready"; repositories: RepositorySummary[] };
-
-/**
- * 목록 조회 실패 안내입니다. 제목은 디자인의 `Unable to load repositories.`로 고정하고 sub만 원인별로 갈립니다.
- * 인증 취소는 Try again으로 풀리지 않으므로 로그인 화면의 ERROR / AUTH 형식으로 다시 로그인을 안내합니다.
- */
-const ERROR_SUB: Record<Exclude<GitHubFetchErrorKind, "auth_revoked">, string> = {
-  rate_limit: "GitHub rate limit reached. Wait a moment and try again.",
-  network: "We couldn't reach the server. Check your connection and try again.",
-  repo_not_found: "GitHub returned an error.",
-  server_error: "GitHub returned an error.",
-  partial_failure: "GitHub returned an error.",
-};
 
 export interface RepositorySelectScreenProps {
   onAnalyze: (repository: RepositorySummary, contributionItems: string[]) => void;
@@ -90,7 +79,7 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
   }
 
   if (list.status === "loading") {
-    return <StatusScreen kind="loading" code="Loading Repositories" label="Fetching repositories from GitHub..." sub="" />;
+    return <StatusScreen kind="loading" code="Loading Repositories" label={REPOSITORY_SELECT_COPY.loadingLabel} sub="" />;
   }
 
   if (list.status === "error") {
@@ -99,9 +88,9 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
         <StatusScreen
           kind="error"
           code="ERROR / AUTH"
-          label="Unable to connect to GitHub."
-          sub="Your GitHub session is no longer valid. Log in again to continue."
-          action={{ label: "Log in again", onClick: () => void reauthenticate() }}
+          label={REPOSITORY_SELECT_COPY.authErrorLabel}
+          sub={REPOSITORY_SELECT_COPY.authErrorSub}
+          action={{ label: REPOSITORY_SELECT_COPY.logInAgain, onClick: () => void reauthenticate() }}
         />
       );
     }
@@ -109,10 +98,10 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
       <StatusScreen
         kind="error"
         code="ERROR / GITHUB"
-        label="Unable to load repositories."
-        sub={ERROR_SUB[list.kind]}
+        label={REPOSITORY_SELECT_COPY.fetchErrorLabel}
+        sub={REPOSITORY_FETCH_ERROR_SUB[list.kind]}
         action={{
-          label: "Try again",
+          label: REPOSITORY_SELECT_COPY.tryAgain,
           onClick: () => {
             setList({ status: "loading" });
             setAttempt((count) => count + 1);
@@ -128,8 +117,8 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
       <StatusScreen
         kind="empty"
         code="No Repositories"
-        label="No repositories available for analysis."
-        sub="Make sure your GitHub account has at least one repository."
+        label={REPOSITORY_SELECT_COPY.emptyLabel}
+        sub={REPOSITORY_SELECT_COPY.emptySub}
       />
     );
   }
@@ -172,8 +161,8 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
   return (
     <div className={styles.screen}>
       <header className={styles.header}>
-        <p className={styles.eyebrow}>Select Repository</p>
-        <h1 className={styles.title}>Choose a repository to analyze.</h1>
+        <p className={styles.eyebrow}>{REPOSITORY_SELECT_COPY.eyebrow}</p>
+        <h1 className={styles.title}>{REPOSITORY_SELECT_COPY.title}</h1>
       </header>
 
       <div className={styles.body}>
@@ -189,13 +178,13 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
                 className={styles.search}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search repositories..."
-                aria-label="Search repositories"
+                placeholder={REPOSITORY_SELECT_COPY.searchPlaceholder}
+                aria-label={REPOSITORY_SELECT_COPY.searchLabel}
                 autoComplete="off"
               />
             </div>
             {filtered.length === 0 ? (
-              <p className={styles.noMatch}>No repositories match your search.</p>
+              <p className={styles.noMatch}>{REPOSITORY_SELECT_COPY.noMatch}</p>
             ) : (
               <div role="radiogroup" aria-label="Repositories">
                 {filtered.map((repository, index) => {
@@ -239,14 +228,14 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
               <span className={styles.label} id={labelId}>Your Contribution</span>
               <span className={styles.optional}>Optional</span>
             </div>
-            <p className={styles.contributionCopy} id={copyId}>Tell us what you mainly contributed to this project.</p>
+            <p className={styles.contributionCopy} id={copyId}>{REPOSITORY_SELECT_COPY.contributionHelp}</p>
             <div className={styles.textareaFrame}>
               <textarea
                 ref={textareaRef}
                 className={styles.textarea}
                 value={contribution}
                 onChange={(event) => setContribution(event.target.value)}
-                placeholder="e.g. I mainly built the realtime chat, push notifications, and the TypeScript migration."
+                placeholder={REPOSITORY_SELECT_COPY.contributionPlaceholder}
                 rows={3}
                 aria-labelledby={labelId}
                 aria-describedby={copyId}
@@ -257,13 +246,13 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
       </div>
 
       <footer className={styles.footer}>
-        <span className={styles.selection}>{selected ? `${selected.owner} / ${selected.name}` : "No repository selected"}</span>
+        <span className={styles.selection}>{selected ? `${selected.owner} / ${selected.name}` : REPOSITORY_SELECT_COPY.noSelection}</span>
         <Button
           variant="primary"
           disabled={selected === null}
           onClick={() => selected && onAnalyze(selected, parseContributionItems(contribution))}
         >
-          Analyze <span className={styles.arrow} aria-hidden="true">→</span>
+          {REPOSITORY_SELECT_COPY.analyze} <span className={styles.arrow} aria-hidden="true">→</span>
         </Button>
       </footer>
     </div>

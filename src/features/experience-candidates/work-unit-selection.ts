@@ -115,20 +115,8 @@ export interface WorkUnitSelection<TCommit extends ScorableCommit> {
   readonly bytes: number;
 }
 
-/**
- * 사용자에게 보여줄 제외 사유 문구입니다.
- *
- * **제외 결과만 적습니다.** 화면(`experience-candidate-list.tsx`)이 이 문장 뒤에 선택 기준을
- * 이어 붙이므로 기준을 여기서도 말하면 같은 말이 두 번 나옵니다. 이어 붙는 자리라 마침표로
- * 끝내야 두 문장이 됩니다.
- */
-export const WORK_UNIT_SELECTION_EXCLUSION_COPY: Record<
-  WorkUnitSelectionExclusionReason,
-  string
-> = {
-  over_input_budget: "This unit did not make it.",
-  over_byte_budget: "This single unit alone exceeds what one request can carry.",
-};
+/** 제외 사유 문구는 `@/copy/candidates`에 있습니다. */
+export { WORK_UNIT_SELECTION_EXCLUSION_COPY } from "@/copy/candidates";
 
 /**
  * Stage A에 보낼 작업 묶음을 점수 순으로 고릅니다.

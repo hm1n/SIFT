@@ -17,6 +17,15 @@ import {
   saveRepositoryAnalysis,
   SavedInterviewFetchError,
 } from "@/features/saved-interviews/client";
+import {
+  ANALYSIS_CHECKLIST_COPY,
+  ANALYSIS_COPY,
+  ANALYSIS_EMPTY_COPY,
+  CHECKLIST_STATUS_COPY,
+  SAVED_ANALYSIS_LOOKUP_COPY,
+  SAVED_ANALYSIS_NOTICE_COPY,
+} from "@/copy/repository";
+import { RETENTION_DAYS } from "@/features/saved-interviews/retention";
 import type { StoredAnalysisPayload } from "@/features/saved-interviews/payload";
 import { buildStoredAnalysis } from "./analysis-snapshot";
 import {
@@ -59,14 +68,7 @@ type LookupState =
  * 들면 단계가 하나 늘 때 체크리스트에서 조용히 빠지고 화면만 뒤처집니다. 이 형태는 라벨이 빠진
  * 단계를 컴파일이 잡고, 순서도 `ANALYSIS_STAGES` 한 곳에서만 정해집니다.
  */
-const CHECKLIST_LABELS: Record<AnalysisStage, string> = {
-  commits: "Fetching commit history",
-  commit_details: "Fetching commit details",
-  repository_metadata: "Fetching repository metadata",
-  deriving: "Computing derived metrics",
-  stage_a: "Selecting experience candidates",
-  stage_b: "Finalizing candidates",
-};
+const CHECKLIST_LABELS: Record<AnalysisStage, string> = ANALYSIS_CHECKLIST_COPY;
 
 const CHECKLIST_STEPS = ANALYSIS_STAGES.map((key) => ({ key, label: CHECKLIST_LABELS[key] }));
 
@@ -76,11 +78,7 @@ const CHECKLIST_STEPS = ANALYSIS_STAGES.map((key) => ({ key, label: CHECKLIST_LA
  * 숨겨 함께 두면 `checklistStatus`의 `aria-live="polite"`가 단계 전환마다 바뀌는 이 문구를 읽어,
  * 기존 `LoadingState`가 `role="status"`로 현재 단계 제목을 알리던 것과 같은 효과를 냅니다.
  */
-const CHECKLIST_STATUS_TEXT: Record<"done" | "active" | "pending", string> = {
-  done: "Completed:",
-  active: "In progress:",
-  pending: "Pending:",
-};
+const CHECKLIST_STATUS_TEXT: Record<"done" | "active" | "pending", string> = CHECKLIST_STATUS_COPY;
 
 /**
  * `AppShell`의 사이드바 메타 표기(`ShellRepository` 기준 `visibility`·`language`)와 같은 형식입니다.
@@ -458,31 +456,30 @@ export function RepositoryAnalysisView({
         <StatusScreen
           kind="loading"
           code="LOADING"
-          label="Looking for a saved analysis…"
-          sub="If this repository was analyzed before, the saved result opens instead of a new analysis."
+          label={SAVED_ANALYSIS_LOOKUP_COPY.loadingLabel}
+          sub={SAVED_ANALYSIS_LOOKUP_COPY.loadingSub}
         />
       ) : null}
       {lookup.status === "missing" ? (
         <StatusScreen
           kind="empty"
           code="NOT FOUND"
-          label="This saved analysis is no longer available."
-          sub="It may have been deleted after 90 days without opening it. You can analyze this repository again."
-          action={{ label: "Analyze this repository", onClick: analyzeAgain }}
+          label={SAVED_ANALYSIS_LOOKUP_COPY.missingLabel}
+          sub={SAVED_ANALYSIS_LOOKUP_COPY.missingSub(RETENTION_DAYS)}
+          action={{ label: SAVED_ANALYSIS_LOOKUP_COPY.analyzeAgain, onClick: analyzeAgain }}
         />
       ) : null}
       {lookup.status === "failed" ? (
         <StatusScreen
           kind="error"
           code="ERROR / STORAGE"
-          label="Couldn't check for a saved analysis."
+          label={SAVED_ANALYSIS_LOOKUP_COPY.failedLabel}
           sub={
             <>
-              A new analysis isn&apos;t started automatically, because it would use one of the few daily model
-              requests this project shares. {lookup.message}
+              {SAVED_ANALYSIS_LOOKUP_COPY.failedSub} {lookup.message}
             </>
           }
-          action={{ label: "Try again", onClick: () => void openRepository(++runRef.current) }}
+          action={{ label: SAVED_ANALYSIS_LOOKUP_COPY.tryAgain, onClick: () => void openRepository(++runRef.current) }}
         />
       ) : null}
       {state.status === "loading" ? <LoadingChecklist repository={repository} loading={state.loading} onSelectRepository={onSelectRepository} /> : null}
@@ -497,7 +494,7 @@ export function RepositoryAnalysisView({
       {state.status === "error" ? (
         <ErrorState
           error={state.error}
-          retryLabel={state.retryPoint ? "Retry candidate generation" : "Retry full analysis"}
+          retryLabel={state.retryPoint ? ANALYSIS_COPY.retryCandidates : ANALYSIS_COPY.retryAll}
           onRetry={retry}
           onReauthenticate={reauthenticate}
           onSelectRepository={onSelectRepository}
@@ -556,14 +553,14 @@ function SavedAnalysisNotice({
     <div className={styles.savedNotice} role="status">
       <span className={styles.savedNoticeCode}>SAVED</span>
       <p className={styles.savedNoticeText}>
-        Showing the analysis saved on{" "}
+        {SAVED_ANALYSIS_NOTICE_COPY.savedOnBefore}
         <time dateTime={savedAt}>
-          {Number.isNaN(date.getTime()) ? savedAt : date.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
+          {Number.isNaN(date.getTime()) ? savedAt : date.toLocaleDateString("ko-KR", { year: "numeric", month: "short", day: "numeric" })}
         </time>
-        . Commits pushed since then are not in this list.
-        {unusedContributionItems ? " The contributions you just described are not reflected here — analyze again to use them." : ""}
+        {SAVED_ANALYSIS_NOTICE_COPY.savedOnAfter}
+        {unusedContributionItems ? SAVED_ANALYSIS_NOTICE_COPY.unusedContribution : ""}
       </p>
-      <Button variant="secondary" onClick={onReanalyze}>Analyze again</Button>
+      <Button variant="secondary" onClick={onReanalyze}>{SAVED_ANALYSIS_NOTICE_COPY.reanalyze}</Button>
     </div>
   );
 }
@@ -584,7 +581,7 @@ function LoadingChecklist({
   return (
     <div className={styles.loadingScreen}>
       <header className={styles.header}>
-        <p className={styles.eyebrow}>Analyzing Repository</p>
+        <p className={styles.eyebrow}>{ANALYSIS_COPY.eyebrow}</p>
         <h1>{repository.owner} / {repository.name}</h1>
         {meta ? <p className={styles.meta}>{meta}</p> : null}
       </header>
@@ -621,42 +618,14 @@ function LoadingChecklist({
       </div>
 
       <footer className={styles.footer}>
-        <button className={styles.changeRepository} type="button" onClick={onSelectRepository}>← Change repository</button>
+        <button className={styles.changeRepository} type="button" onClick={onSelectRepository}>{ANALYSIS_COPY.changeRepository}</button>
       </footer>
     </div>
   );
 }
 
-const EMPTY_COPY: Record<AnalysisEmptyKind, { code: string; label: string; description: string }> = {
-  no_commits: {
-    code: "No Commits",
-    label: "No commits found to analyze.",
-    description: "No commits were found on the default branch. Choose a repository with commit history.",
-  },
-  no_author_commits: {
-    code: "No Author Commits",
-    label: "No commits authored by you were found.",
-    description:
-      "The default branch has commits, but none are authored by the current GitHub account. Choose a repository where you have authored commits.",
-  },
-  no_analyzable_commits: {
-    code: "No Analyzable Commits",
-    label: "This repository is difficult to analyze.",
-    description:
-      "There are commits, but none remain once merge, docs, dependency, typo, and formatting commits are excluded. Choose a different repository with commit history.",
-  },
-  no_stage_a_candidates: {
-    code: "No Candidates",
-    label: "No experience candidates worth explaining were found.",
-    description:
-      "No commits matched your contribution items or stood out as worth explaining based on commit messages and change stats. Choose a different repository.",
-  },
-  no_final_candidates: {
-    code: "No Final Candidates",
-    label: "Unable to produce final experience candidates.",
-    description: "We don't lower the bar or fill in candidates artificially. Choose a different repository.",
-  },
-};
+const EMPTY_COPY: Record<AnalysisEmptyKind, { code: string; label: string; description: string }> =
+  ANALYSIS_EMPTY_COPY;
 
 function EmptyState({
   kind,
@@ -680,7 +649,7 @@ function EmptyState({
         code={copy.code}
         label={copy.label}
         sub={reason ? <>{reason} {copy.description}</> : copy.description}
-        action={{ label: "Choose a different repository", onClick: onSelectRepository }}
+        action={{ label: ANALYSIS_COPY.chooseAnother, onClick: onSelectRepository }}
       />
       {/* StageAExclusions는 <details>를 그리는 블록 엘리먼트라 StatusScreen의 sub(<p>) 안에는 못 넣고
           형제로 둡니다. StatusScreen 계약은 바꾸지 않습니다. */}
@@ -723,9 +692,9 @@ function errorStatusCode(kind: string): string {
 
 function ErrorState({ error, retryLabel, onRetry, onReauthenticate, onSelectRepository }: ErrorStateProps) {
   const action = error.recovery === "reauthenticate"
-    ? { label: "Log in to GitHub again", onClick: onReauthenticate }
+    ? { label: ANALYSIS_COPY.logInAgain, onClick: onReauthenticate }
     : error.recovery === "select_repository"
-      ? { label: "Choose a different repository", onClick: onSelectRepository }
+      ? { label: ANALYSIS_COPY.chooseAnother, onClick: onSelectRepository }
       : { label: retryLabel, onClick: onRetry };
   return (
     <StatusScreen

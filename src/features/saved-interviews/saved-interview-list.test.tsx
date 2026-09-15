@@ -48,7 +48,7 @@ describe("SavedInterviewList", () => {
     expect(row).toHaveTextContent("hm1n / SIFT");
     expect(row).toHaveTextContent("PAAR 2/4");
     // 저장된 값은 ISO 문자열입니다. 사람이 읽는 형식으로 바꿔서 보입니다.
-    expect(row).toHaveTextContent("Sep 12");
+    expect(row).toHaveTextContent("9월 12일");
   });
 
   it("고르면 그 인터뷰를 알린다", () => {
@@ -77,20 +77,20 @@ describe("SavedInterviewList", () => {
   it("삭제는 그 행에서 확인을 받은 뒤에 알린다", () => {
     const { onDelete } = renderList({ status: "ready", interviews: [item()] });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete interview: 스트리밍 렌더링 최적화" }));
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 삭제: 스트리밍 렌더링 최적화" }));
 
-    expect(screen.getByText("Delete this interview? This cannot be undone.")).toBeInTheDocument();
+    expect(screen.getByText("이 인터뷰를 삭제할까요? 되돌릴 수 없습니다.")).toBeInTheDocument();
     expect(onDelete).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "삭제" }));
     expect(onDelete).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111");
   });
 
   it("확인을 취소하면 아무것도 지우지 않고 행으로 돌아온다", () => {
     const { onDelete } = renderList({ status: "ready", interviews: [item()] });
-    fireEvent.click(screen.getByRole("button", { name: "Delete interview: 스트리밍 렌더링 최적화" }));
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 삭제: 스트리밍 렌더링 최적화" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "취소" }));
 
     expect(onDelete).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: /^스트리밍 렌더링 최적화/ })).toBeInTheDocument();
@@ -109,19 +109,19 @@ describe("SavedInterviewList", () => {
 
   it("저장된 인터뷰가 없으면 시작하는 방법을 알린다", () => {
     renderList({ status: "ready", interviews: [] });
-    expect(screen.getByText("No interviews yet. Select an experience candidate to begin.")).toBeInTheDocument();
+    expect(screen.getByText("인터뷰가 없습니다. 경험 후보를 선택해 시작하세요.")).toBeInTheDocument();
   });
 
   it("불러오는 중임을 알린다", () => {
     renderList({ status: "loading" });
-    expect(screen.getByText("Loading interviews...")).toBeInTheDocument();
+    expect(screen.getByText("인터뷰를 불러오는 중…")).toBeInTheDocument();
   });
 
   it("실패하면 다시 시도할 수 있다", () => {
     const { onRetry } = renderList({ status: "error" });
 
-    expect(screen.getByText("Couldn't load interviews.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(screen.getByText("인터뷰를 불러오지 못했습니다.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
@@ -149,7 +149,7 @@ describe("SavedInterviewList", () => {
         interviews: [item({ id: "soon", title: "곧 지워짐", openedAt: openedDaysAgo(RETENTION_DAYS - 1) })],
       });
 
-      expect(screen.getByTitle("Automatically deleted in 1 day")).toBeInTheDocument();
+      expect(screen.getByTitle("1 day 뒤에 자동으로 지워집니다")).toBeInTheDocument();
     });
 
     /**
@@ -176,7 +176,7 @@ describe("SavedInterviewList", () => {
         interviews: [item({ openedAt: openedDaysAgo(RETENTION_DAYS + 5) })],
       });
 
-      expect(screen.getByText("No interviews yet. Select an experience candidate to begin.")).toBeInTheDocument();
+      expect(screen.getByText("인터뷰가 없습니다. 경험 후보를 선택해 시작하세요.")).toBeInTheDocument();
     });
   });
 });

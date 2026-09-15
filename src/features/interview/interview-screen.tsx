@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { INTERVIEW_SCREEN_COPY } from "@/copy/interview";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
 import { CodePanel } from "./code-panel";
 import { InterviewStreamView } from "./interview-stream-view";
@@ -167,7 +168,7 @@ export function InterviewScreen({
 
   const title =
     snapshot.representativeCommit.title ??
-    `Representative commit ${snapshot.candidateSha.slice(0, 7)}`;
+    INTERVIEW_SCREEN_COPY.representativeCommit(snapshot.candidateSha.slice(0, 7));
 
   // 대화가 실제로 사라지는 자리는 여기입니다. `onBack`이 후보 목록의 확정 상태를 비우고 이 화면을
   // 내리므로 대화의 유일본이 사라집니다. 인터뷰 종료는 입력만 닫고 대화를 남기므로, 두 조작의 확인
@@ -214,7 +215,7 @@ export function InterviewScreen({
             type="button"
             onClick={() => setIsConfirmingBack(true)}
           >
-            ← Candidates
+            {INTERVIEW_SCREEN_COPY.back}
           </button>
           <span className={styles.headerDivider} aria-hidden="true" />
           <p className={styles.eyebrow}>Experience</p>
@@ -258,8 +259,8 @@ export function InterviewScreen({
               알립니다.
             */}
             {interviewId
-              ? "Going back to the candidate list closes this conversation here. What has been saved stays in Interviews on the left, so you can pick it up later. Any answer you're still writing is lost."
-              : "Going back to the candidate list clears this conversation for good, along with any answer you're still writing and the PAAR blocks. Reloading the page clears them too. Nothing here is saved."}
+              ? INTERVIEW_SCREEN_COPY.leaveSaved
+              : INTERVIEW_SCREEN_COPY.leaveUnsaved}
             {/*
               제출했는데 아직 저장되지 않은 답변이 있으면 그것도 함께 사라집니다(PR #127 리뷰). 위
               문구는 "쓰던 답변"만 말하므로, 사용자는 보낸 답변은 모두 저장됐다고 읽습니다.
@@ -267,22 +268,20 @@ export function InterviewScreen({
             {interviewId && hasUnsaved ? (
               <>
                 {" "}
-                {stream.unsavedTurnCount === 1
-                  ? "One answer you already sent hasn't been saved yet, and it is lost too."
-                  : `${stream.unsavedTurnCount} answers you already sent haven't been saved yet, and they are lost too.`}
+                {INTERVIEW_SCREEN_COPY.unsavedTurns(stream.unsavedTurnCount)}
               </>
             ) : null}
           </p>
           <div className={styles.backActions}>
             <button className={styles.backConfirmButton} type="button" onClick={onBack} autoFocus>
-              Back to candidates
+              {INTERVIEW_SCREEN_COPY.leaveConfirm}
             </button>
             <button
               className={styles.backCancelButton}
               type="button"
               onClick={() => setIsConfirmingBack(false)}
             >
-              Continue the interview
+              {INTERVIEW_SCREEN_COPY.stay}
             </button>
           </div>
         </div>
@@ -293,7 +292,7 @@ export function InterviewScreen({
         서버나 URL에 남기지 않습니다. 폭이 다시 넓어지면 세 열 배치로 돌아갑니다.
       */}
       {isTabMode ? (
-        <div className={styles.tabBar} role="group" aria-label="Workspace view">
+        <div className={styles.tabBar} role="group" aria-label={INTERVIEW_SCREEN_COPY.workspaceView}>
           <button
             className={styles.tab}
             type="button"
@@ -308,7 +307,7 @@ export function InterviewScreen({
             aria-pressed={activeColumn === "interview"}
             onClick={() => setActiveColumn("interview")}
           >
-            Interview
+            {INTERVIEW_SCREEN_COPY.interviewTab}
           </button>
           <button
             className={styles.tab}
@@ -332,7 +331,7 @@ export function InterviewScreen({
             </div>
             {isTabMode ? null : (
               <ResizeHandle
-                label="Resize the code panel"
+                label={INTERVIEW_SCREEN_COPY.resizeCodePanel}
                 width={fitted.code}
                 min={CODE_PANEL.min}
                 max={CODE_PANEL.max}
@@ -367,7 +366,7 @@ export function InterviewScreen({
             {/* 오른쪽 열이라 오른쪽으로 끌면 좁아집니다. 부호를 여기서 뒤집습니다. */}
             {isTabMode ? null : (
               <ResizeHandle
-                label="Resize the PAAR panel"
+                label={INTERVIEW_SCREEN_COPY.resizePaarPanel}
                 width={fitted.paar}
                 min={PAAR_PANEL.min}
                 max={PAAR_PANEL.max}

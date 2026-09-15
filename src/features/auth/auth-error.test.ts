@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { AUTH_ERROR_COPY, toAuthErrorParam } from "./auth-error";
+import { AUTH_ERROR_COPY } from "@/copy/auth";
+import { toAuthErrorParam } from "./auth-error";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -32,8 +33,12 @@ describe("toAuthErrorParam", () => {
  * 다시 화면 파일로 되돌리는 변경은 여기서 막힙니다.
  */
 describe("서버와 클라이언트 경계", () => {
-  it("이 모듈은 클라이언트 모듈이 아니어야 합니다", () => {
-    const source = readFileSync(join(HERE, "auth-error.ts"), "utf8");
-    expect(source.trimStart().startsWith('"use client"')).toBe(false);
+  // 안내표가 `@/copy/auth`로 옮겨 가면서(이슈 #128) 경계가 두 파일로 늘었습니다. 한쪽만 지키면
+  // import 사슬을 타고 클라이언트 경계가 다시 들어옵니다.
+  it.each([
+    ["auth-error.ts", join(HERE, "auth-error.ts")],
+    ["copy/auth.ts", join(HERE, "..", "..", "copy", "auth.ts")],
+  ])("%s는 클라이언트 모듈이 아니어야 합니다", (_name, path) => {
+    expect(readFileSync(path, "utf8").trimStart().startsWith('"use client"')).toBe(false);
   });
 });
