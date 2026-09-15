@@ -10,10 +10,10 @@ export interface AccountMenuProps {
 }
 
 /**
- * 로그인 뒤 헤더 오른쪽의 계정 메뉴입니다. 항목은 Sign out 하나입니다.
+ * 로그인 뒤 헤더 오른쪽의 계정 메뉴입니다. 항목은 로그아웃 하나입니다.
  *
  * 세션 쿠키에는 GitHub 사용자 정보가 없으므로 이니셜과 사용자명 자리에 GitHub 마크 문구를 둡니다.
- * Sign out은 세션 삭제 라우트를 부른 뒤 첫 화면으로 이동하고 서버 컴포넌트를 다시 그립니다. 헤더는 layout이
+ * 로그아웃은 세션 삭제 라우트를 부른 뒤 첫 화면으로 이동하고 서버 컴포넌트를 다시 그립니다. 헤더는 layout이
  * 쿠키를 읽어 그리므로 갱신만으로 로그인 전 상태가 되고, `RepositoryAnalysisView`는 바뀐 `hasSession` prop을
  * 따라갑니다.
  */
@@ -63,7 +63,7 @@ export function AccountMenu({ fetchImpl }: AccountMenuProps) {
         onClick={() => setIsOpen((open) => !open)}
       >
         <span className={styles.avatar} aria-hidden="true">G</span>
-        <span className={styles.accountLabel}>Account</span>
+        <span className={styles.accountLabel}>계정</span>
         <span className={styles.chevron} aria-hidden="true">▾</span>
       </button>
       {isOpen ? (
@@ -71,13 +71,13 @@ export function AccountMenu({ fetchImpl }: AccountMenuProps) {
           <div className={styles.menuHeader}>
             <span className={styles.avatar} aria-hidden="true">G</span>
             <div>
-              <p className={styles.menuTitle}>Signed in</p>
-              <p className={styles.menuSub}>GitHub account</p>
+              <p className={styles.menuTitle}>로그인됨</p>
+              <p className={styles.menuSub}>GitHub 계정</p>
             </div>
           </div>
           <div className={styles.menuBody}>
             <button type="button" role="menuitem" className={styles.menuItem} onClick={signOut} disabled={isSigningOut}>
-              {isSigningOut ? "Signing out…" : "Sign out"}
+              {isSigningOut ? "로그아웃 중…" : "로그아웃"}
             </button>
           </div>
         </div>

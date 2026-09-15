@@ -22,14 +22,14 @@ export interface TopHeaderProps {
 export function TopHeader({ isAuthenticated, fetchImpl }: TopHeaderProps) {
   return (
     <header className={styles.header}>
-      <Link className={styles.brand} href="/" aria-label="SIFT home">
+      <Link className={styles.brand} href="/" aria-label="SIFT 홈">
         <SiftMark size={16} />
         <span className={styles.brandName}>SIFT</span>
       </Link>
       {isAuthenticated ? (
         <AccountMenu fetchImpl={fetchImpl} />
       ) : (
-        <LoginLink variant="secondary" iconSize={13}>Log in with GitHub</LoginLink>
+        <LoginLink variant="secondary" iconSize={13}>GitHub으로 로그인</LoginLink>
       )}
     </header>
   );

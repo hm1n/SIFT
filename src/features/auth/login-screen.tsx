@@ -11,10 +11,10 @@ import styles from "./login-screen.module.css";
  * 이슈 #94 Constraint대로 종류를 합쳐 한 문구로 만들지 않습니다. 제목은 디자인의 한 문장으로 고정하고 여기 문구를 sub에 씁니다.
  */
 export const AUTH_ERROR_COPY: Record<string, string> = {
-  access_denied: "You cancelled the GitHub authorization. You can log in again.",
-  state_mismatch: "We couldn't verify the login request. Start the login again from the beginning.",
-  exchange_failed: "GitHub authentication didn't complete. Try again in a moment.",
-  config_missing: "The server has no GitHub login configuration. A server administrator needs to complete the setup.",
+  access_denied: "GitHub 권한 승인을 취소했습니다. 다시 로그인할 수 있습니다.",
+  state_mismatch: "로그인 요청을 확인하지 못했습니다. 처음부터 다시 로그인해 주세요.",
+  exchange_failed: "GitHub 인증이 끝나지 않았습니다. 잠시 후 다시 시도해 주세요.",
+  config_missing: "서버에 GitHub 로그인 설정이 없습니다. 서버 관리자가 설정을 마쳐야 합니다.",
 };
 
 export interface LoginScreenProps {
@@ -41,8 +41,8 @@ export function LoginScreen({ authError }: LoginScreenProps) {
       <StatusScreen
         kind="loading"
         code="Authenticating"
-        label="Connecting to GitHub..."
-        sub="Redirecting you to GitHub to authorize access."
+        label="GitHub에 연결 중..."
+        sub="권한 승인을 위해 GitHub으로 이동합니다."
       />
     );
   }
@@ -52,10 +52,10 @@ export function LoginScreen({ authError }: LoginScreenProps) {
       <StatusScreen
         kind="error"
         code="ERROR / AUTH"
-        label="Unable to connect to GitHub."
+        label="GitHub에 연결할 수 없습니다."
         sub={AUTH_ERROR_COPY[authError]}
         // 디자인대로 로그인 화면으로 돌아갑니다. 쿼리를 지우면 서버가 오류 없는 화면을 다시 그립니다.
-        action={{ label: "Try again", onClick: () => router.replace("/") }}
+        action={{ label: "다시 시도", onClick: () => router.replace("/") }}
       />
     );
   }
@@ -69,12 +69,12 @@ export function LoginScreen({ authError }: LoginScreenProps) {
           </div>
         </div>
         <div className={styles.copy}>
-          <h1 className={styles.title}>Turn your code into experiences<br />worth talking about.</h1>
-          <p className={styles.description}>Analyze your GitHub history and prepare<br />for technical interviews with real evidence.</p>
+          <h1 className={styles.title}>코드를 이야기할 가치가 있는<br />경험으로 만듭니다.</h1>
+          <p className={styles.description}>GitHub 기록을 분석해 실제 근거로<br />기술 면접을 준비합니다.</p>
         </div>
         <div className={styles.actions}>
-          <LoginLink variant="primary" className={styles.login} iconSize={16}>Continue with GitHub</LoginLink>
-          <p className={styles.terms}>By continuing you agree to our terms</p>
+          <LoginLink variant="primary" className={styles.login} iconSize={16}>GitHub으로 계속하기</LoginLink>
+          <p className={styles.terms}>계속하면 이용약관에 동의하는 것입니다</p>
         </div>
       </div>
     </div>

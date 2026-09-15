@@ -25,8 +25,8 @@ const geistMono = Geist_Mono({
 const PRETENDARD_CSS = "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css";
 
 export const metadata: Metadata = {
-  title: "SIFT | Repository analysis",
-  description: "Discover development experience grounded in your actual GitHub repository.",
+  title: "SIFT | Repository 분석",
+  description: "실제 GitHub Repository를 근거로 개발 경험을 발견합니다.",
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {

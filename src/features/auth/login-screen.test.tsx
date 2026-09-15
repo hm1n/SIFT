@@ -42,40 +42,40 @@ function expectAuthenticating() {
   const status = screen.getByRole("status");
   expect(status).toHaveAttribute("data-status-kind", "loading");
   expect(status).toHaveTextContent("Authenticating");
-  expect(status).toHaveTextContent("Connecting to GitHub...");
-  expect(screen.queryByRole("link", { name: "Continue with GitHub" })).not.toBeInTheDocument();
+  expect(status).toHaveTextContent("GitHub에 연결 중...");
+  expect(screen.queryByRole("link", { name: "GitHub으로 계속하기" })).not.toBeInTheDocument();
 }
 
 describe("LoginScreen", () => {
   it("세션이 없으면 로고 자리, 제목, 설명, GitHub 로그인 버튼, 약관 문구를 그린다", () => {
     renderLogin();
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/Turn your code into experiences/);
-    expect(screen.getByText(/Analyze your GitHub history/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Continue with GitHub" })).toHaveAttribute("href", LOGIN_PATH);
-    expect(screen.getByText("By continuing you agree to our terms")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/코드를 이야기할 가치가 있는/);
+    expect(screen.getByText(/GitHub 기록을 분석해/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "GitHub으로 계속하기" })).toHaveAttribute("href", LOGIN_PATH);
+    expect(screen.getByText("계속하면 이용약관에 동의하는 것입니다")).toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("버튼을 누르면 브라우저가 이동하기 전까지 AUTHENTICATING 상태를 그린다", () => {
     renderLogin();
-    click("Continue with GitHub");
+    click("GitHub으로 계속하기");
     expectAuthenticating();
   });
 
   // PR #100 리뷰: 헤더의 로그인 링크도 진입점이므로 같은 AUTHENTICATING을 그려야 합니다.
   it("헤더의 로그인 링크로 시작한 인증도 AUTHENTICATING 상태를 그린다", () => {
     renderWithHeader();
-    click("Log in with GitHub");
+    click("GitHub으로 로그인");
     expectAuthenticating();
-    expect(screen.getByRole("link", { name: "Connecting to GitHub…" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("link", { name: "GitHub에 연결 중…" })).toHaveAttribute("aria-busy", "true");
   });
 
   // 오류 판정이 인증 중 판정보다 앞에 있으면 오류 화면 위에서 시작한 인증이 오류 화면에 머무릅니다.
   it("ERROR / AUTH 화면에서 헤더 로그인을 눌러도 AUTHENTICATING으로 바뀐다", () => {
     renderWithHeader("exchange_failed");
     expect(screen.getByRole("alert")).toBeInTheDocument();
-    click("Log in with GitHub");
+    click("GitHub으로 로그인");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expectAuthenticating();
   });
@@ -88,14 +88,14 @@ describe("LoginScreen", () => {
     ["가운데 버튼", { button: 1 }],
   ])("%s 클릭은 새 탭으로 여는 것이므로 로그인 화면을 유지한다", (_name, init) => {
     renderLogin();
-    click("Continue with GitHub", init);
-    expect(screen.getByRole("link", { name: "Continue with GitHub" })).toBeInTheDocument();
+    click("GitHub으로 계속하기", init);
+    expect(screen.getByRole("link", { name: "GitHub으로 계속하기" })).toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
   });
 
   it.each([
-    ["Continue with GitHub", renderLogin],
-    ["Log in with GitHub", renderWithHeader],
+    ["GitHub으로 계속하기", renderLogin],
+    ["GitHub으로 로그인", renderWithHeader],
   ])("%s 로 시작한 인증은 bfcache에서 복원되면 풀려 로그인 화면으로 돌아간다", (name, renderScreen) => {
     renderScreen();
     click(name);
@@ -103,35 +103,35 @@ describe("LoginScreen", () => {
     const pageshow = new Event("pageshow");
     Object.defineProperty(pageshow, "persisted", { value: true });
     fireEvent(window, pageshow);
-    expect(screen.getByRole("link", { name: "Continue with GitHub" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "GitHub으로 계속하기" })).toBeInTheDocument();
   });
 
   it("bfcache가 아닌 pageshow는 상태를 바꾸지 않는다", () => {
     renderLogin();
-    click("Continue with GitHub");
+    click("GitHub으로 계속하기");
     fireEvent(window, new Event("pageshow"));
     expect(screen.getByRole("status")).toBeInTheDocument();
   });
 
   // 이슈 #94 Constraint: 오류 종류별 안내가 사라지지 않습니다. 종류를 합쳐 한 문구로 만들지 않습니다.
   it.each([
-    ["access_denied", "You cancelled the GitHub authorization. You can log in again."],
-    ["state_mismatch", "We couldn't verify the login request. Start the login again from the beginning."],
-    ["exchange_failed", "GitHub authentication didn't complete. Try again in a moment."],
-    ["config_missing", "The server has no GitHub login configuration. A server administrator needs to complete the setup."],
+    ["access_denied", "GitHub 권한 승인을 취소했습니다. 다시 로그인할 수 있습니다."],
+    ["state_mismatch", "로그인 요청을 확인하지 못했습니다. 처음부터 다시 로그인해 주세요."],
+    ["exchange_failed", "GitHub 인증이 끝나지 않았습니다. 잠시 후 다시 시도해 주세요."],
+    ["config_missing", "서버에 GitHub 로그인 설정이 없습니다. 서버 관리자가 설정을 마쳐야 합니다."],
   ])("%s 는 ERROR / AUTH 상태와 종류별 안내를 그린다", (authError, message) => {
     renderLogin(authError);
     const alert = screen.getByRole("alert");
     expect(alert).toHaveAttribute("data-status-kind", "error");
     expect(alert).toHaveTextContent("ERROR / AUTH");
-    expect(alert).toHaveTextContent("Unable to connect to GitHub.");
+    expect(alert).toHaveTextContent("GitHub에 연결할 수 없습니다.");
     expect(alert).toHaveTextContent(message);
-    expect(screen.queryByRole("link", { name: "Continue with GitHub" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "GitHub으로 계속하기" })).not.toBeInTheDocument();
   });
 
   it("Try again은 auth_error 쿼리를 지워 로그인 화면으로 돌아간다", () => {
     renderLogin("exchange_failed");
-    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
     expect(routerMock.replace).toHaveBeenCalledWith("/");
   });
 
@@ -139,6 +139,6 @@ describe("LoginScreen", () => {
   it.each(["__proto__", "constructor", "toString", "없는코드"])("%s 는 로그인 오류 안내로 취급하지 않는다", (authError) => {
     renderLogin(authError);
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Continue with GitHub" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "GitHub으로 계속하기" })).toBeInTheDocument();
   });
 });

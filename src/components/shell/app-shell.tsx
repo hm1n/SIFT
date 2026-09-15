@@ -17,7 +17,7 @@ export interface AppShellProps {
    * 고르기 전에도 골라 이어갈 수 있어야 하기 때문입니다(이슈 #115).
    */
   repository: ShellRepository | null;
-  /** 생략하면 Change repository를 그리지 않습니다. 고를 Repository가 없는 화면에서 씁니다. */
+  /** 생략하면 Repository 변경 버튼을 그리지 않습니다. 고를 Repository가 없는 화면에서 씁니다. */
   onChangeRepository?: () => void;
   /**
    * 사이드바 Interviews 영역의 내용입니다. 저장된 인터뷰 목록이 들어갑니다. 목록을 셸이 직접 그리지
@@ -42,7 +42,7 @@ export function AppShell({ repository, onChangeRepository, interviews, onFindNew
     : "";
   return (
     <div className={styles.shell}>
-      <aside className={styles.sidebar} aria-label="Workspace">
+      <aside className={styles.sidebar} aria-label="워크스페이스">
         <section className={styles.repository} aria-label="Repository">
           <span className={styles.sectionLabel}>Repository</span>
           <div className={styles.repositoryInfo}>
@@ -53,12 +53,12 @@ export function AppShell({ repository, onChangeRepository, interviews, onFindNew
                 {meta ? <p className={styles.repositoryMeta}>{meta}</p> : null}
               </>
             ) : (
-              <p className={styles.noRepository}>No repository selected</p>
+              <p className={styles.noRepository}>선택된 Repository 없음</p>
             )}
           </div>
           {onChangeRepository ? (
             <button type="button" className={styles.changeRepository} onClick={onChangeRepository}>
-              ← Change repository
+              ← Repository 변경
             </button>
           ) : null}
         </section>
@@ -66,14 +66,14 @@ export function AppShell({ repository, onChangeRepository, interviews, onFindNew
           {interviews ?? (
             <>
               <span className={styles.sectionLabel}>Interviews</span>
-              <p className={styles.emptyInterviews}>No interviews yet. Select an experience candidate to begin.</p>
+              <p className={styles.emptyInterviews}>인터뷰가 없습니다. 경험 후보를 선택해 시작하세요.</p>
             </>
           )}
         </section>
         {onFindNewExperience ? (
           <div className={styles.sidebarFooter}>
             <button type="button" className={styles.findNew} onClick={onFindNewExperience}>
-              <span className={styles.plus} aria-hidden="true">+</span> Find new experience
+              <span className={styles.plus} aria-hidden="true">+</span> 새 경험 찾기
             </button>
           </div>
         ) : null}
