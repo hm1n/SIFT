@@ -4,7 +4,15 @@ import * as candidatesCopy from "./candidates";
 import * as interviewCopy from "./interview";
 import * as repositoryCopy from "./repository";
 import * as savedCopy from "./saved";
+import * as sharedCopy from "./shared";
 import * as shellCopy from "./shell";
+import { LOGIN_COPY } from "./auth";
+import { CANDIDATE_DETAIL_COPY } from "./candidates";
+import { INTERVIEW_SCREEN_COPY, PAAR_PANEL_COPY, STREAM_VIEW_COPY } from "./interview";
+import { REPOSITORY_SELECT_COPY, RESUME_ERROR_COPY } from "./repository";
+import { SAVED_INTERVIEW_LIST_COPY, SAVED_INTERVIEW_SCREEN_COPY } from "./saved";
+import { CONTINUE_INTERVIEW } from "./shared";
+import { ACCOUNT_MENU_COPY, APP_SHELL_COPY } from "./shell";
 
 /**
  * 레퍼런스 `Chat Interface Design/src/App.tsx`의 `TRANSLATIONS.ko`를 옮겨 둔 것입니다.
@@ -23,15 +31,23 @@ const REFERENCE_KO: readonly {
   readonly key: string;
   readonly text: string;
   readonly deviation?: string;
+  /**
+   * 이 문구를 실제로 그리는 상수입니다. 있으면 뭉친 문자열 검색 대신 이 값과 직접 맞춥니다.
+   *
+   * 짧은 문구에는 검색이 통하지 않습니다. 취소 버튼 둘을 `그만두기`로 바꿔도 OAuth 오류 문구의
+   * "권한 승인을 취소했습니다"가 `취소`를 품고 있어 통과했습니다. 여덟 자 이하 항목은 전부 여기에
+   * 상수를 답니다. 긴 문장은 우연히 겹칠 일이 없어 검색으로 둡니다.
+   */
+  readonly at?: readonly string[];
 }[] = [
   // --- 그대로 씁니다 ---
   { key: "landingCTA", text: "GitHub으로 계속하기" },
   { key: "landingLogIn", text: "GitHub으로 로그인" },
   { key: "terms", text: "계속하면 이용약관에 동의하는 것입니다" },
   { key: "githubAccount", text: "GitHub 계정" },
-  { key: "signOut", text: "로그아웃" },
-  { key: "cancel", text: "취소" },
-  { key: "delete", text: "삭제" },
+  { key: "signOut", text: "로그아웃", at: [ACCOUNT_MENU_COPY.signOut] },
+  { key: "cancel", text: "취소", at: [SAVED_INTERVIEW_LIST_COPY.cancel, SAVED_INTERVIEW_SCREEN_COPY.cancel] },
+  { key: "delete", text: "삭제", at: [SAVED_INTERVIEW_LIST_COPY.delete] },
   {
     key: "connectingGitHub",
     text: "GitHub에 연결 중...",
@@ -48,8 +64,8 @@ const REFERENCE_KO: readonly {
     deviation: "사용자가 맡은 일을 말로 답하기 쉬운 질문으로 바꿨습니다.",
   },
   { key: "contributionPlaceholder", text: "실시간 채팅, 푸시 알림, TypeScript 전환 작업을 주로 담당했습니다." },
-  { key: "analyze", text: "분석하기" },
-  { key: "findNewExperience", text: "새 경험 찾기" },
+  { key: "analyze", text: "분석하기", at: [REPOSITORY_SELECT_COPY.analyze] },
+  { key: "findNewExperience", text: "새 경험 찾기", at: [APP_SHELL_COPY.findNewExperience] },
   {
     key: "loadingSavedInterviews",
     text: "인터뷰를 불러오는 중...",
@@ -59,21 +75,21 @@ const REFERENCE_KO: readonly {
   { key: "deleteInterviewConfirm", text: "이 인터뷰를 삭제할까요? 되돌릴 수 없습니다." },
   { key: "stepHistory", text: "커밋 히스토리 불러오는 중" },
   { key: "stepCandidates", text: "경험 후보 찾는 중" },
-  { key: "showLess", text: "간단히 보기" },
-  { key: "startInterview", text: "인터뷰 시작" },
-  { key: "continueInterview", text: "인터뷰 계속하기" },
+  { key: "showLess", text: "간단히 보기", at: [CANDIDATE_DETAIL_COPY.showLess] },
+  { key: "startInterview", text: "인터뷰 시작", at: [CANDIDATE_DETAIL_COPY.startInterview] },
+  { key: "continueInterview", text: "인터뷰 계속하기", at: [CONTINUE_INTERVIEW, SAVED_INTERVIEW_SCREEN_COPY.resume] },
   { key: "reviewInterview", text: "인터뷰 다시 보기" },
-  { key: "paarExperience", text: "PAAR 경험" },
-  { key: "backToCandidates", text: "← 뒤로" },
-  { key: "send", text: "전송" },
-  { key: "finishInterview", text: "인터뷰 완료" },
+  { key: "paarExperience", text: "PAAR 경험", at: [SAVED_INTERVIEW_SCREEN_COPY.paarHeading] },
+  { key: "backToCandidates", text: "← 뒤로", at: [INTERVIEW_SCREEN_COPY.back] },
+  { key: "send", text: "전송", at: [STREAM_VIEW_COPY.send] },
+  { key: "finishInterview", text: "인터뷰 완료", at: [PAAR_PANEL_COPY.end] },
   { key: "unsavedAnswerNotice", text: "마지막 답변이 저장되지 않았습니다." },
-  { key: "unsavedAnswerRetry", text: "다시 저장" },
+  { key: "unsavedAnswerRetry", text: "다시 저장", at: [STREAM_VIEW_COPY.retrySave] },
   { key: "staleSessionNotice", text: "다른 탭에서 이 인터뷰가 변경됐습니다." },
   { key: "loadLatest", text: "최신 내용 불러오기" },
   { key: "noInterviewsYet", text: "인터뷰가 없습니다. 경험 후보를 선택해 시작하세요." },
   { key: "errAuthLabel", text: "GitHub에 연결할 수 없습니다." },
-  { key: "tryAgain", text: "다시 시도" },
+  { key: "tryAgain", text: "다시 시도", at: [LOGIN_COPY.tryAgain, STREAM_VIEW_COPY.retry, PAAR_PANEL_COPY.retry, REPOSITORY_SELECT_COPY.tryAgain, RESUME_ERROR_COPY.tryAgain, SAVED_INTERVIEW_LIST_COPY.retry] },
 
   // --- 의도적으로 다르게 씁니다 ---
   {
@@ -147,7 +163,15 @@ const REFERENCE_KO: readonly {
 
 /** 모든 copy 모듈의 문자열 값입니다. 함수로 만든 문구는 대표 인자를 넣어 펼칩니다. */
 function allCopyText(): string {
-  const modules = [authCopy, candidatesCopy, interviewCopy, repositoryCopy, savedCopy, shellCopy];
+  const modules = [
+    authCopy,
+    candidatesCopy,
+    interviewCopy,
+    repositoryCopy,
+    savedCopy,
+    sharedCopy,
+    shellCopy,
+  ];
   const out: string[] = [];
   const visit = (value: unknown) => {
     if (typeof value === "string") {
@@ -181,10 +205,23 @@ describe("레퍼런스 TRANSLATIONS.ko 대조", () => {
 
   it.each(REFERENCE_KO.filter((entry) => entry.deviation === undefined))(
     "$key: 레퍼런스 문구를 그대로 씁니다",
-    ({ text: reference }) => {
-      expect(text).toContain(reference);
+    ({ text: reference, at }) => {
+      // `at`이 있으면 그 자리가 정확히 이 문구인지 봅니다. 없으면 어딘가에 있는지만 봅니다.
+      if (at) for (const actual of at) expect(actual).toBe(reference);
+      else expect(text).toContain(reference);
     }
   );
+
+  /**
+   * `at`을 단 항목은 화면 상수를 직접 맞추므로 뭉친 검색이 필요 없습니다. 반대로 `at`이 없는 항목은
+   * 검색에 기대므로, 짧아서 우연히 통과할 수 있는 문구가 남아 있으면 안 됩니다.
+   */
+  it("검색에만 기대는 항목은 우연히 겹칠 수 없을 만큼 깁니다", () => {
+    const searchOnly = REFERENCE_KO.filter(
+      (entry) => entry.deviation === undefined && entry.at === undefined
+    );
+    expect(searchOnly.filter((entry) => entry.text.length <= 8)).toEqual([]);
+  });
 
   it.each(REFERENCE_KO.filter((entry) => entry.deviation !== undefined))(
     "$key: 의도적으로 다르게 씁니다",
