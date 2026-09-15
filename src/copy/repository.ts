@@ -174,7 +174,7 @@ export const PARTIAL_FETCH_COPY = {
 export const DIFF_REFETCH_GUIDANCE: Record<Exclude<GitHubFetchErrorKind, "partial_failure">, string> = {
   rate_limit: "GitHub 요청 한도가 풀린 뒤 후보 생성을 다시 시도해 주세요.",
   auth_revoked: "로그인이 만료되었거나 권한이 회수되었습니다. GitHub에 다시 로그인해 주세요.",
-  repo_not_found: "Repository가 삭제되었거나 이름이 바뀌지 않았는지 확인한 뒤 다시 선택해 주세요.",
+  repo_not_found: "Repository가 삭제됐거나 이름이 바뀌었는지 확인한 뒤 다시 선택해 주세요.",
   network: "네트워크 연결을 확인한 뒤 후보 생성을 다시 시도해 주세요.",
   server_error: "GitHub 서버 문제일 수 있습니다. 잠시 후 후보 생성을 다시 시도해 주세요.",
 };
