@@ -138,7 +138,7 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
 
     const alert = screen.getByRole("alert");
     expect(alert).toHaveAttribute("data-selection-error", "representative_commit_not_indexed");
-    expect(alert).toHaveTextContent("대표 커밋을 커밋 색인에서 찾지 못해");
+    expect(alert).toHaveTextContent("대표 커밋을 불러온 커밋 목록에서 찾지 못해");
     expect(screen.queryByText("AI 인터뷰")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: CANDIDATE_BACK_LABEL }));
@@ -193,7 +193,7 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
     const action = screen.getByRole("button", { name: CONFIRM_LABEL });
 
     expect(action).toHaveAccessibleName(CONFIRM_LABEL);
-    expect(action).toHaveAccessibleDescription(/Unverifiable · AI가 쓴 해석입니다/);
+    expect(action).toHaveAccessibleDescription(/Unverifiable · AI가 해석한 내용입니다/);
     expect(action).toHaveAccessibleDescription(/Verified/);
   });
 
@@ -213,10 +213,10 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
     fireEvent.click(screen.getByRole("button", { name: CONFIRM_LABEL }));
 
     expect(
-      screen.getByText(/근거로서 실제로 관련 있는지는 확인할 수 없습니다/)
+      screen.getByText(/실제로 이 경험과 관련 있는지는 AI가 판단했습니다/)
     ).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Code / Evidence" })).toHaveAccessibleDescription(
-      /Unverifiable · AI가 쓴 해석입니다/
+      /Unverifiable · AI가 해석한 내용입니다/
     );
   });
 

@@ -100,7 +100,7 @@ describe("ExperienceCandidateDetail", () => {
 
     expect(screen.getByText("Why worth discussing")).toBeInTheDocument();
     expect(screen.getByText("상세 근거를 표시합니다.")).toBeInTheDocument();
-    expect(screen.getAllByText("Unverifiable · AI가 쓴 해석입니다").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Unverifiable · AI가 해석한 내용입니다").length).toBeGreaterThan(0);
   });
 
   /**
@@ -116,7 +116,7 @@ describe("ExperienceCandidateDetail", () => {
     expect(screen.getByText("CSS Modules")).toBeInTheDocument();
     expect(screen.queryByText(/No corresponding data in the Repository schema/)).not.toBeInTheDocument();
     // 토픽은 LLM 해석이므로 Why worth discussing과 같은 안내가 하나 더 붙습니다.
-    expect(screen.getAllByText("Unverifiable · AI가 쓴 해석입니다")).toHaveLength(2);
+    expect(screen.getAllByText("Unverifiable · AI가 해석한 내용입니다")).toHaveLength(2);
   });
 
   /** 토픽이 빈 배열로 와도 화면이 정상 동작하고, 없다는 사실을 문장으로 알립니다. */
@@ -158,13 +158,13 @@ describe("ExperienceCandidateDetail", () => {
   it("관련 커밋이 있으면 AI 선택 안내를 표시하고 없으면 표시하지 않는다", () => {
     renderDetail();
     expect(
-      screen.getByText(/근거로서 실제로 관련 있는지는 확인할 수 없습니다/)
+      screen.getByText(/실제로 이 경험과 관련 있는지는 AI가 판단했습니다/)
     ).toBeInTheDocument();
 
     cleanup();
     renderDetail({ ...candidate, relatedShas: [] });
     expect(
-      screen.queryByText(/근거로서 실제로 관련 있는지는 확인할 수 없습니다/)
+      screen.queryByText(/실제로 이 경험과 관련 있는지는 AI가 판단했습니다/)
     ).not.toBeInTheDocument();
   });
 
@@ -212,7 +212,7 @@ describe("ExperienceCandidateDetail", () => {
     renderDetail(candidate, null);
 
     expect(screen.getByRole("heading", { name: candidate.summary })).toBeInTheDocument();
-    expect(screen.getByText("대표 커밋을 커밋 색인에서 찾지 못했습니다.")).toBeInTheDocument();
+    expect(screen.getByText("대표 커밋을 불러온 커밋 목록에서 찾지 못했습니다.")).toBeInTheDocument();
     expect(screen.getAllByText("2 commits").length).toBeGreaterThan(0);
 
     const failedRow = screen.getByRole("link", { name: `색인되지 않은 커밋 · ${candidate.sha.slice(0, 7)}` }).closest("li");

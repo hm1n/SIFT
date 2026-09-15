@@ -254,7 +254,7 @@ describe("ExperienceCandidateList", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "색인되지 않은 커밋 · abcdef1" }));
     expect(screen.getByRole("heading", { name: "색인되지 않은 커밋 · abcdef1" })).toBeInTheDocument();
-    expect(screen.getByText("대표 커밋을 커밋 색인에서 찾지 못했습니다.")).toBeInTheDocument();
+    expect(screen.getByText("대표 커밋을 불러온 커밋 목록에서 찾지 못했습니다.")).toBeInTheDocument();
   });
 
   it("행의 접근성 이름은 보이는 제목과 같다", () => {
@@ -372,7 +372,7 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
     // 개별 항목 단위 예산 검사로 바뀌면서(2026-09-11) 단일 점수 경계로는 더 이상 설명하지
     // 않습니다.
     expect(
-      screen.getByText("Repository가 커서 전체 작업 묶음 12개 가운데 10개만 판단했습니다")
+      screen.getByText("Repository가 커서 전체 커밋 묶음 12개 가운데 10개만 판단했습니다")
     ).toBeInTheDocument();
     // 제외 사유와 선택 기준이 두 문장으로 갈라져야 합니다. 문장 경계가 없으면
     // "did not make it Units were picked..."처럼 이어집니다(PR #120 리뷰).
@@ -402,7 +402,7 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
     });
 
     expect(
-      screen.getByText("Repository가 커서 전체 작업 묶음 12개 가운데 10개만 판단했습니다")
+      screen.getByText("Repository가 커서 전체 커밋 묶음 12개 가운데 10개만 판단했습니다")
     ).toBeInTheDocument();
     expect(screen.getByText("한 번에 보낼 수 있는 분량을 넘어 제외한 1 work unit")).toBeInTheDocument();
   });
@@ -411,7 +411,7 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
     renderListWithSelection({ ...EMPTY_SELECTION, unjudgedShas: ["deadbeef00112233"] });
 
     expect(screen.getByText("모델이 판단하지 않은 1 work unit")).toBeInTheDocument();
-    expect(screen.getByText(/판단이 없는 것입니다/)).toBeInTheDocument();
+    expect(screen.getByText(/선별에서 제외한 것은 아닙니다/)).toBeInTheDocument();
     expect(screen.getByText("deadbee")).toBeInTheDocument();
   });
 
@@ -455,7 +455,7 @@ describe("ExperienceCandidateList의 Stage A 제외 표시(이슈 #58 Task 8·9)
       excludedUnits: many,
     });
 
-    const summaryText = "Repository가 커서 전체 작업 묶음 66개 가운데 10개만 판단했습니다";
+    const summaryText = "Repository가 커서 전체 커밋 묶음 66개 가운데 10개만 판단했습니다";
     expect(screen.getByText(summaryText)).toBeInTheDocument();
     const details = screen.getByText(summaryText).closest("details");
     const list = details?.querySelector("ul");

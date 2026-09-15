@@ -24,7 +24,7 @@ describe("POST /api/candidates/stage-b", () => {
     const generate = vi.fn();
     const response = await handleStageB(request({ owner: "o", repo: "r", candidates: [] }), generate, undefined, fetchDetail);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ candidates: [], insufficientCandidatesReason: "Stage A가 후보를 하나도 고르지 못했습니다.", diffs: [] });
+    expect(await response.json()).toEqual({ candidates: [], insufficientCandidatesReason: "1차 선별에서 경험 후보를 찾지 못했습니다.", diffs: [] });
     expect(fetchDetail).not.toHaveBeenCalled();
     expect(generate).not.toHaveBeenCalled();
   });
@@ -85,7 +85,7 @@ describe("POST /api/candidates/stage-b", () => {
       return { ...detail, sha };
     });
     expect(response.status).toBe(504);
-    expect(await response.json()).toMatchObject({ error: { kind: "llm_timeout", message: "Stage B가 실행 시간 예산을 넘겼습니다." } });
+    expect(await response.json()).toMatchObject({ error: { kind: "llm_timeout", message: "최종 선별이 제한 시간 안에 끝나지 않았습니다." } });
     expect(generate).not.toHaveBeenCalled();
   });
 

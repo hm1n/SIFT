@@ -313,14 +313,14 @@ describe("CodePanel", () => {
 
     const panel = screen.getByRole("region", { name: "Code / Evidence" });
     expect(panel).toHaveAccessibleDescription(/Verified/);
-    expect(panel).toHaveAccessibleDescription(/Unverifiable · AI가 쓴 해석입니다/);
+    expect(panel).toHaveAccessibleDescription(/Unverifiable · AI가 해석한 내용입니다/);
   });
 
   it("관련 커밋이 있으면 관련성 판단이 확인 불가라는 안내를 남긴다", () => {
     render(<CodePanel snapshot={evidenceSnapshotFixture()} />);
 
     expect(
-      screen.getByText(/근거로서 실제로 관련 있는지는 확인할 수 없습니다/)
+      screen.getByText(/실제로 이 경험과 관련 있는지는 AI가 판단했습니다/)
     ).toBeInTheDocument();
   });
 
