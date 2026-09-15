@@ -453,6 +453,8 @@ describe("RepositoryAnalysisView 저장된 분석으로 열기", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Analyze this repository" }));
     await waitFor(() => expect(analyzeMock).toHaveBeenCalled());
+    // 안내가 남아 있으면 분석이 도는 동안에도 "사라졌다"는 말이 함께 보입니다(PR #130 리뷰).
+    expect(screen.queryByText("This saved analysis is no longer available.")).not.toBeInTheDocument();
   });
 
   it("저장된 분석이 없으면 분석을 시작한다", async () => {

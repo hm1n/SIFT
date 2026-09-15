@@ -362,6 +362,13 @@ export function RepositoryAnalysisView({
 
   function restart() {
     runRef.current += 1;
+    /**
+     * 찾아보는 단계를 끝난 것으로 표시합니다(PR #130 리뷰). 여기서 하지 않으면 `missing` 안내가
+     * 분석이 도는 동안에도, 후보가 나온 뒤에도 화면에 함께 남습니다. 부르는 자리마다 적지 않고
+     * 이 함수에 두는 이유는 다시 분석하는 길이 셋이기 때문입니다(`analyzeAgain`, 저장 안내의
+     * `Analyze again`, Error 상태의 다시 시도).
+     */
+    setLookup({ status: "done" });
     // 다시 분석하면 앞 분석의 줄을 가리키는 식별자는 더 이상 이 화면의 결과가 아닙니다.
     analysisIdRef.current = null;
     savingAnalysisRef.current = null;
