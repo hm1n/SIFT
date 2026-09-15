@@ -443,7 +443,13 @@ export function RepositoryAnalysisView({
       ) : null}
       {state.status === "success" ? (
         <div className={styles.content}>
-          {savedAt !== null ? <SavedAnalysisNotice savedAt={savedAt} onReanalyze={restart} /> : null}
+          {savedAt !== null ? (
+            <SavedAnalysisNotice
+              savedAt={savedAt}
+              unusedContributionItems={contributionItems.length > 0}
+              onReanalyze={restart}
+            />
+          ) : null}
           <ExperienceCandidateList
             repository={{ owner: repository.owner, repo: repository.name }}
             data={state.data}
@@ -469,8 +475,20 @@ export function RepositoryAnalysisView({
  * 저장된 값이라는 사실을 감추면 사용자는 지금 저장소 상태를 본다고 오해합니다. 저장 뒤에 올라온
  * 커밋은 이 후보 목록에 없습니다. 다시 분석하는 길도 여기서 함께 엽니다. 자동으로 다시 분석하지
  * 않기로 한 이상(`openRepository`), 사용자가 고를 자리가 없으면 옛 결과에 갇힙니다.
+ *
+ * 선택 화면에서 기여 항목을 적고 들어왔는데 저장된 분석이 열리면 그 입력은 쓰이지 않습니다. 기여
+ * 항목은 분석을 새로 돌릴 때만 들어가기 때문입니다. 말하지 않으면 사용자는 자기가 적은 것이 후보
+ * 선정에 반영된 목록을 본다고 여깁니다.
  */
-function SavedAnalysisNotice({ savedAt, onReanalyze }: { savedAt: string; onReanalyze: () => void }) {
+function SavedAnalysisNotice({
+  savedAt,
+  unusedContributionItems,
+  onReanalyze,
+}: {
+  savedAt: string;
+  unusedContributionItems: boolean;
+  onReanalyze: () => void;
+}) {
   const date = new Date(savedAt);
   return (
     <div className={styles.savedNotice} role="status">
@@ -481,6 +499,7 @@ function SavedAnalysisNotice({ savedAt, onReanalyze }: { savedAt: string; onRean
           {Number.isNaN(date.getTime()) ? savedAt : date.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}
         </time>
         . Commits pushed since then are not in this list.
+        {unusedContributionItems ? " The contributions you just described are not reflected here — analyze again to use them." : ""}
       </p>
       <Button variant="secondary" onClick={onReanalyze}>Analyze again</Button>
     </div>

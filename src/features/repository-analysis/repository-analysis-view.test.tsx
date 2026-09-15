@@ -339,6 +339,31 @@ describe("RepositoryAnalysisView 저장된 분석으로 열기", () => {
     expect(screen.getByText("Sep 10, 2026")).toBeInTheDocument();
   });
 
+  /**
+   * 선택 화면에서 기여 항목을 적고 들어와도 저장된 분석이 열리면 그 입력은 쓰이지 않습니다. 말하지
+   * 않으면 사용자는 자기가 적은 것이 반영된 후보 목록을 본다고 여깁니다(자체 리뷰 P2-2).
+   */
+  it("적어 온 기여 항목이 저장된 분석에 반영되지 않았다고 알린다", async () => {
+    renderWithSaved(vi.fn<typeof fetchAnalysisByRepository>().mockResolvedValue(storedAnalysis()));
+
+    expect(await screen.findByText(/contributions you just described are not reflected/)).toBeInTheDocument();
+  });
+
+  it("적어 온 기여 항목이 없으면 그 안내를 하지 않는다", async () => {
+    render(
+      <RepositoryAnalysisView
+        repository={REPOSITORY}
+        contributionItems={[]}
+        onSelectRepository={onSelectRepository}
+        fetchAnalysis={vi.fn<typeof fetchAnalysisByRepository>().mockResolvedValue(storedAnalysis())}
+        saveAnalysis={vi.fn<typeof saveRepositoryAnalysis>().mockResolvedValue("a-new")}
+      />
+    );
+
+    await screen.findByText(/Showing the analysis saved on/);
+    expect(screen.queryByText(/contributions you just described/)).not.toBeInTheDocument();
+  });
+
   it("다시 분석하면 저장된 결과 안내가 사라지고 분석이 시작된다", async () => {
     renderWithSaved(vi.fn<typeof fetchAnalysisByRepository>().mockResolvedValue(storedAnalysis()));
     await screen.findByText(/Showing the analysis saved on/);
