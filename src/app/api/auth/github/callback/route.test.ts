@@ -43,12 +43,14 @@ function request(query: string, stateCookie = "state") {
 }
 
 describe("GitHub OAuth callback", () => {
-  it("sets the session, deletes state, and redirects home", async () => {
+  // 성공 표시 `?login=success`는 계측이 로그인 성공을 세는 유일한 근거입니다. 이 표시가 빠지면
+  // `login_result`가 나가지 않고, 세션 유무로 대신 판정하면 새로고침까지 로그인 성공으로 세어집니다(이슈 #125).
+  it("sets the session, deletes state, and redirects home with the login success marker", async () => {
     stubGitHub();
     const response = await GET(request("code=code&state=state"));
     const cookies = response.headers.getSetCookie();
     expect(response.status).toBe(302);
-    expect(response.headers.get("location")).toBe("https://app.test/");
+    expect(response.headers.get("location")).toBe("https://app.test/?login=success");
     expect(cookies).toHaveLength(2);
     expect(cookies[0]).toContain("github_session=");
     expect(cookies[0]).toContain("Max-Age=28800");
@@ -58,7 +60,7 @@ describe("GitHub OAuth callback", () => {
 
   it("maps a denied authorization to access_denied and deletes state", async () => {
     const response = await GET(request("error=access_denied&state=state"));
-    expect(response.headers.get("location")).toBe("https://app.test/?auth_error=access_denied");
+    expect(response.headers.get("location")).toBe("https://app.test/?auth_error=access_denied&login=failed");
     expect(response.headers.getSetCookie()).toEqual([expect.stringContaining("github_oauth_state=; ")]);
     expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
   });
@@ -70,26 +72,26 @@ describe("GitHub OAuth callback", () => {
     ["an error without a state", "error=access_denied"],
   ])("keeps the state cookie on %s", async (_label, query) => {
     const response = await GET(request(query));
-    expect(response.headers.get("location")).toBe("https://app.test/?auth_error=state_mismatch");
+    expect(response.headers.get("location")).toBe("https://app.test/?auth_error=state_mismatch&login=failed");
     expect(response.headers.get("set-cookie")).toBeNull();
   });
 
   it("maps missing OAuth configuration to config_missing", async () => {
     delete process.env.GITHUB_OAUTH_CLIENT_SECRET;
     const response = await GET(request("code=code&state=state"));
-    expect(response.headers.get("location")).toBe("https://app.test/?auth_error=config_missing");
+    expect(response.headers.get("location")).toBe("https://app.test/?auth_error=config_missing&login=failed");
   });
 
   it("maps a missing code to exchange_failed", async () => {
     const response = await GET(request("state=state"));
-    expect(response.headers.get("location")).toBe("https://app.test/?auth_error=exchange_failed");
+    expect(response.headers.get("location")).toBe("https://app.test/?auth_error=exchange_failed&login=failed");
   });
 
   it("maps a missing session encryption key to config_missing", async () => {
     delete process.env[GITHUB_SESSION_KEY_ENV];
     stubGitHub();
     const response = await GET(request("code=code&state=state"));
-    expect(response.headers.get("location")).toBe("https://app.test/?auth_error=config_missing");
+    expect(response.headers.get("location")).toBe("https://app.test/?auth_error=config_missing&login=failed");
     expect(response.headers.get("set-cookie")).not.toContain("github_session=");
   });
 
@@ -108,13 +110,13 @@ describe("GitHub OAuth callback", () => {
   it("maps a client credential error to config_missing", async () => {
     stubGitHub({ exchange: () => Response.json({ error: "incorrect_client_credentials" }) });
     const response = await GET(request("code=code&state=state"));
-    expect(response.headers.get("location")).toBe("https://app.test/?auth_error=config_missing");
+    expect(response.headers.get("location")).toBe("https://app.test/?auth_error=config_missing&login=failed");
   });
 
   it("maps exchange failures to exchange_failed", async () => {
     stubGitHub({ exchange: () => new Response("", { status: 500 }) });
     const response = await GET(request("code=code&state=state"));
-    expect(response.headers.get("location")).toBe("https://app.test/?auth_error=exchange_failed");
+    expect(response.headers.get("location")).toBe("https://app.test/?auth_error=exchange_failed&login=failed");
     expect(response.headers.get("set-cookie")).toContain("github_oauth_state=; ");
   });
 
@@ -136,7 +138,7 @@ describe("GitHub OAuth callback", () => {
   ])("maps %s to exchange_failed without setting a session", async (_label, user) => {
     stubGitHub({ user });
     const response = await GET(request("code=code&state=state"));
-    expect(response.headers.get("location")).toBe("https://app.test/?auth_error=exchange_failed");
+    expect(response.headers.get("location")).toBe("https://app.test/?auth_error=exchange_failed&login=failed");
     expect(response.headers.getSetCookie()).not.toContainEqual(expect.stringContaining("github_session="));
   });
 });

@@ -8,6 +8,7 @@ import type { ExcludedWorkUnit } from "@/features/experience-candidates/work-uni
 import type { ReadonlyCommitDetail } from "@/lib/github/types";
 import { SESSION_PATH } from "@/lib/github/auth-paths";
 import {
+  ANALYSIS_STAGES,
   analyzeRepository,
   generateCandidates,
   type AnalysisError,
@@ -182,6 +183,16 @@ describe("RepositoryAnalysisView Loading", () => {
     await renderAndAnalyze();
     const items = screen.getAllByRole("listitem");
     expect(items.map((item) => item.getAttribute("data-state"))).toEqual(states);
+  });
+
+  /**
+   * 체크리스트를 `ANALYSIS_STAGES`에서 폅니다. 배열을 따로 들면 단계가 하나 늘 때 화면에서 조용히
+   * 빠지고, `analysis_stage_done`은 나가는데 사용자는 그 단계를 못 보는 상태가 됩니다.
+   */
+  it("체크리스트 항목이 분석 단계 수와 같다", async () => {
+    mockState({ status: "loading", loading: { step: "commits" } });
+    await renderAndAnalyze();
+    expect(screen.getAllByRole("listitem")).toHaveLength(ANALYSIS_STAGES.length);
   });
 
   // PR #105 Codex 리뷰 P1: 완료·진행·대기 구분이 aria-hidden 기호와 CSS에만 있으면 스크린리더는

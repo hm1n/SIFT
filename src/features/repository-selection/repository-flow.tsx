@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { AppShell } from "@/components/shell/app-shell";
 import { Button } from "@/components/shell/button";
 import { StatusScreen } from "@/components/shell/status-screen";
+import { clearAnalysisFlow, startAnalysisFlow, trackEvent } from "@/features/analytics/events";
 import { InterviewScreen } from "@/features/interview/interview-screen";
 import { RepositoryAnalysisView } from "@/features/repository-analysis/repository-analysis-view";
 import { SavedInterviewList } from "@/features/saved-interviews/saved-interview-list";
@@ -103,6 +104,15 @@ export function RepositoryFlow() {
       // 사용자가 확인 대화에서 "인터뷰 계속하기"를 눌러도 이미 벌어진 일이 됩니다(PR #127 리뷰).
       options.onRun?.();
       setMode(next);
+      /**
+       * 분석 화면을 떠나면 그 분석의 묶음이 끝납니다. 비우지 않으면 다음 분석을 시작하기 전에
+       * 일어나는 이벤트(`repo_list_loaded`)가 지난 분석의 `flow_id`를 달고 나갑니다.
+       *
+       * 이동이 전부 이 함수를 지나므로 여기 한 곳에서만 비웁니다. 되돌아가기마다 비우면 이어가기로
+       * 빠지는 경로가 그대로 빠져나갑니다. 세운 적이 없을 때 지우기를 걸러내는 일은
+       * `clearAnalysisFlow`가 자기 안에서 합니다.
+       */
+      if (next.kind !== "analysis") clearAnalysisFlow();
       // 인터뷰를 떠날 때마다 목록을 다시 읽습니다. 진행도와 끝난 표시가 그 사이에 바뀝니다.
       if (wasInterviewOpen) interviews.reload();
     };
@@ -111,6 +121,27 @@ export function RepositoryFlow() {
       return;
     }
     run();
+  }
+
+  /**
+   * 분석 한 번을 묶는 `flow_id`를 여기서 발급합니다. 저장소를 고른 순간이 아니라 분석을 시작하는
+   * 순간입니다. `flow_id`의 정의가 "분석 한 번"이고, 화면 순서가 바뀌어도 분석 시작이라는 액션은
+   * 남기 때문입니다. `repo_visibility`와 `repo_language`도 같은 시점부터 공통 파라미터로 붙습니다.
+   *
+   * 재시도는 같은 `flow_id`를 그대로 씁니다. 실패한 분석과 그 재시도는 한 번의 분석 시도이고,
+   * 분석 화면을 떠나면 `navigate`가 비워 다음 분석에 새 값이 발급됩니다.
+   *
+   * `flow_id` 자체는 여기서 만들지 않습니다. 계측이 쓰는 값을 화면이 만들면 그 생성이 실패할 때
+   * 예외가 계측 밖으로 나와 분석 시작을 막습니다.
+   *
+   * 저장된 인터뷰를 잇는 경로(`openInterview`)는 이 자리를 지나지 않아 분석 이벤트가 하나도 남지
+   * 않습니다. 진입 경로를 가르는 파라미터는 아직 없습니다
+   * (`llm-wiki/wiki/2026-09-15-GA4-계측-후속-backlog.md` 3번).
+   */
+  function startAnalysis(summary: RepositorySummary, contributionItems: readonly string[]) {
+    startAnalysisFlow({ repoVisibility: summary.visibility, repoLanguage: summary.language });
+    trackEvent({ name: "analysis_requested", contribution_item_count: contributionItems.length });
+    navigate({ kind: "analysis", summary, contributionItems });
   }
 
   function openInterview(interviewId: string) {
@@ -167,7 +198,7 @@ export function RepositoryFlow() {
       >
         {mode.kind === "select" ? (
           <RepositorySelectScreen
-            onAnalyze={(summary, contributionItems) => navigate({ kind: "analysis", summary, contributionItems })}
+            onAnalyze={startAnalysis}
           />
         ) : null}
 
