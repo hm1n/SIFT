@@ -4,6 +4,7 @@ import {
   fetchAuthenticatedUser,
   fetchAuthenticatedUserLogin,
   fetchAuthoredCommits,
+  githubFetch,
 } from "./commits";
 import { GitHubFetchError } from "./errors";
 
@@ -43,6 +44,33 @@ function mockRepoAndBranch(fetchMock: ReturnType<typeof vi.fn>, headSha = HEAD_S
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
+  vi.restoreAllMocks();
+});
+
+describe("githubFetch 진단", () => {
+  it("연결 오류 원인을 보존하고 개발 서버에 코드와 소요 시간만 기록한다", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const cause = Object.assign(new Error("sensitive original message"), { code: "ECONNRESET" });
+    const original = new TypeError("fetch failed", { cause });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(original));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const error = await githubFetch(COMMITS_URL, AUTH.token).catch((caught) => caught);
+    expect(error).toMatchObject({ kind: "network", cause: original });
+    expect(log).toHaveBeenCalledWith("[githubFetch] network failure", {
+      url: COMMITS_URL, elapsedMs: expect.any(Number), name: "TypeError", code: undefined, causeCode: "ECONNRESET",
+    });
+    expect(JSON.stringify(log.mock.calls)).not.toContain(AUTH.token);
+    expect(JSON.stringify(log.mock.calls)).not.toContain("sensitive original message");
+  });
+
+  it("운영에서는 진단 로그 없이 기존 network 오류를 반환한다", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(githubFetch(COMMITS_URL, AUTH.token)).rejects.toMatchObject({ kind: "network" });
+    expect(log).not.toHaveBeenCalled();
+  });
 });
 
 describe("fetchAllCommits", () => {
