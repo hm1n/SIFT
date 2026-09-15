@@ -65,11 +65,23 @@ export function trackEvent(event: AnalyticsEvent): void {
   }
 }
 
+/** 이 페이지에서 `user_id`를 실제로 세운 적이 있는지입니다. 아래 주석이 이 값이 필요한 이유입니다. */
+let userIdApplied = false;
+
 /**
  * `user_id`입니다. `githubUserId`를 서버에서 HMAC으로 변환한 값이고 로그인 전에는 붙지 않습니다.
  * 변환은 `lib/analytics/user-id.ts`가 하고 값은 `src/app/page.tsx`가 prop으로 내려보냅니다.
+ *
+ * 값이 없을 때 gtag를 부르지 않습니다. `gtag('set', { user_id: null })`을 부르면 gtag가 그 자리를
+ * 빈 문자열로 직렬화해 이후 모든 이벤트에 `uid=`를 실어 보냅니다. 2026-09-15에 실제 수집 요청을
+ * 가로채 확인했습니다. 로그인 전에는 붙지 않아야 하므로 아예 세우지 않습니다.
+ *
+ * 한 번이라도 세운 뒤에 비우는 경우는 지웁니다. 로그아웃은 새로고침 없이 서버 컴포넌트만 다시
+ * 그리므로, 지우지 않으면 로그아웃한 사용자의 이벤트에 앞 사용자의 `user_id`가 계속 붙습니다.
  */
 export function setAnalyticsUser(userId: string | null): void {
+  if (userId === null && !userIdApplied) return;
+  userIdApplied = userId !== null;
   safelySetGaParams({ user_id: userId });
 }
 

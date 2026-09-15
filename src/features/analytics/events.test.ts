@@ -61,8 +61,24 @@ describe("공통 파라미터", () => {
     expect(setGaParams).toHaveBeenCalledWith({ user_id: "hashed-user" });
   });
 
-  /** 로그아웃하면 다음 이벤트부터 `user_id`가 붙지 않아야 합니다. */
-  it("clears the user id with null", () => {
+  /**
+   * `gtag('set', { user_id: null })`을 부르면 gtag가 그 자리를 빈 문자열로 직렬화해 이후 모든
+   * 이벤트에 `uid=`를 실어 보냅니다(2026-09-15 수집 요청 가로채기로 확인). 로그인 전에는 붙지
+   * 않아야 하므로 아예 세우지 않습니다.
+   */
+  it("does not call gtag when there has never been a user id", async () => {
+    // "한 번도 세운 적 없음"은 모듈 상태이므로 이 스위트의 다른 테스트와 섞이지 않게 새로 불러옵니다.
+    vi.resetModules();
+    const fresh = await import("./events");
+    setGaParams.mockClear();
+    fresh.setAnalyticsUser(null);
+    expect(setGaParams).not.toHaveBeenCalled();
+  });
+
+  /** 로그아웃은 새로고침 없이 서버 컴포넌트만 다시 그립니다. 지우지 않으면 앞 사용자의 값이 남습니다. */
+  it("clears the user id once one has been set", () => {
+    setAnalyticsUser("hashed-user");
+    setGaParams.mockClear();
     setAnalyticsUser(null);
     expect(setGaParams).toHaveBeenCalledWith({ user_id: null });
   });
