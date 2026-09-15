@@ -590,13 +590,13 @@ export function useExperienceInterview({
    * 반영까지 밀린 턴(`unreflectedRef`)은 여기서 보내지 않습니다. 그 턴은 블록 갱신을 다시 걸 때 그
    * 요청이 저장까지 함께 하므로, 여기서도 보내면 같은 질문과 답변이 저장된 대화에 두 번 들어갑니다.
    */
-  const runRetrySave = useCallback(async () => {
+  const runRetrySave = useCallback(async ({ includeUnreflected = false } = {}) => {
     const current = optionsRef.current;
     const interviewId = current.interviewId;
     if (interviewId === null || interviewId === undefined) return;
     const known = new Set(turnsRef.current.map((turn) => turn.turnId));
     const ids = [...pendingTurnIdsRef.current].filter(
-      (turnId) => known.has(turnId) && !unreflectedRef.current.has(turnId)
+      (turnId) => known.has(turnId) && (includeUnreflected || !unreflectedRef.current.has(turnId))
     );
     if (ids.length === 0) return;
     const savedVersion = blockStateRef.current.version;
@@ -636,7 +636,18 @@ export function useExperienceInterview({
    */
   const flushPendingSaves = useCallback(async () => {
     await retryAllUnreflected().catch(() => undefined);
-    await runRetrySave().catch(() => undefined);
+    /**
+     * 끝나는 중이라 반영이 다시 걸릴 일이 없습니다. 그래서 아직 반영되지 않은 턴도 함께 보냅니다
+     * (이슈 #116, backlog 7번).
+     *
+     * 인터뷰 중에는 반영이 밀린 턴을 여기서 보내지 않습니다. 블록 갱신을 다시 걸 때 그 요청이 저장까지
+     * 함께 하므로 같은 질문과 답변이 저장된 대화에 두 번 들어갑니다. 끝내는 시점에는 그 다시 걸기가
+     * 방금 끝났고 더 일어나지 않으므로 중복될 자리가 없습니다.
+     *
+     * 블록에 반영하지 못한 답변이라도 대화는 남겨야 합니다. 모델이 계속 실패하면 그 대화가 통째로
+     * 사라지는 것이 2026-09-15에 실제로 겪은 사고입니다.
+     */
+    await runRetrySave({ includeUnreflected: true }).catch(() => undefined);
   }, [retryAllUnreflected, runRetrySave]);
 
   const onBeforeQuestion = useCallback(

@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { DatabaseError, getSql } from "./client";
 import type {
+  AppendHistory,
+  AppendHistoryResult,
   AppendTurn,
   AppendTurnResult,
   InterviewListItem,
@@ -291,6 +293,45 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
 
       // 한 줄도 바뀌지 않은 이유가 둘입니다. 인터뷰가 없거나 남의 것이면 `not_found`이고, 있는데 버전이
       // 어긋났으면 `version_conflict`입니다. 실패한 경로에서만 한 번 더 묻습니다.
+      const existing = await run(
+        `select 1
+           from interview_session s
+           join repository_analysis ra on ra.id = s.analysis_id
+          where s.id = $1 and ra.github_user_id = $2`,
+        [interviewId, githubUserId]
+      );
+      return existing.length > 0 ? "version_conflict" : "not_found";
+    },
+
+    /**
+     * 이력만 이어 붙입니다. 블록 버전 조건이 없습니다(이슈 #116, backlog 7번).
+     *
+     * 조건이 필요한 이유는 두 탭이 같은 블록을 서로 덮어쓰는 것을 막기 위해서인데, 이 문장은
+     * `block_state`와 `block_version`과 `progress`를 건드리지 않고 이력 뒤에만 붙이므로 덮어쓸 것이
+     * 없습니다. 소유자 판정은 다른 연산과 같이 `where`에 둡니다.
+     */
+    async appendHistory({
+      githubUserId,
+      interviewId,
+      turn,
+      expectedBlockVersion,
+    }: AppendHistory): Promise<AppendHistoryResult> {
+      if (!isUuid(interviewId)) return "not_found";
+      const updated = await run(
+        `update interview_session s
+            set history = s.history || $3::jsonb,
+                updated_at = now()
+           from repository_analysis ra
+          where s.id = $1
+            and s.analysis_id = ra.id
+            and ra.github_user_id = $2
+            and s.block_version = $4
+         returning s.id`,
+        [interviewId, githubUserId, toJsonb(turn, "history"), expectedBlockVersion]
+      );
+      if (updated.length > 0) return "saved";
+
+      // 한 줄도 바뀌지 않은 이유가 둘입니다. `appendTurn`과 같은 순서로 갈라 둡니다.
       const existing = await run(
         `select 1
            from interview_session s

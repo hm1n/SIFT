@@ -180,11 +180,26 @@ async function main(): Promise<void> {
   check("블록 버전을 새 값으로 옮긴다", appended?.blockVersion, 3);
   check("이어 붙인 뒤 updatedAt이 createdAt보다 늦다", (appended!.updatedAt > appended!.createdAt), true);
 
-  const beforeOpen = appended!.openedAt;
+  check("이력만 이어 붙이면 블록 버전은 그대로다", await store.appendHistory({
+    githubUserId: USER_ID, interviewId, turn: [{ role: "question", text: "이력만 남긴 질문" }], expectedBlockVersion: 3,
+  }), "saved");
+  const historyOnly = await store.getInterview(interviewId, USER_ID);
+  check("이력만 붙인 뒤에도 블록 버전이 그대로다", historyOnly?.blockVersion, 3);
+  check("붙인 대화가 이력 끝에 있다", historyOnly?.history.at(-1)?.text, "이력만 남긴 질문");
+  check("버전이 다르면 이력을 붙이지 않는다", await store.appendHistory({
+    githubUserId: USER_ID, interviewId, turn: [{ role: "question", text: "붙지 않아야 하는 질문" }], expectedBlockVersion: 99,
+  }), "version_conflict");
+  check("남의 인터뷰에는 이력을 붙이지 못한다", await store.appendHistory({
+    githubUserId: OTHER_USER_ID, interviewId, turn: [], expectedBlockVersion: 3,
+  }), "not_found");
+  check("이력만 붙여도 updatedAt은 갱신한다", (historyOnly!.updatedAt >= appended!.updatedAt), true);
+
+  // 비교 기준을 마지막 쓰기 뒤의 값으로 잡습니다. 이력만 붙이는 것도 `updatedAt`을 옮깁니다.
+  const beforeOpen = historyOnly!.openedAt;
   await new Promise((resolve) => setTimeout(resolve, 1_100));
   const reopened = await store.getInterview(interviewId, USER_ID);
   check("인터뷰를 열면 openedAt을 갱신한다", (reopened!.openedAt > beforeOpen), true);
-  check("여는 것이 updatedAt을 건드리지 않는다", reopened!.updatedAt.getTime(), appended!.updatedAt.getTime());
+  check("여는 것이 updatedAt을 건드리지 않는다", reopened!.updatedAt.getTime(), historyOnly!.updatedAt.getTime());
 
   /**
    * 목록 행의 `PAAR n/4`입니다. 이 수는 코드가 아니라 질의가 셉니다. `jsonb_each`와 `jsonb_typeof`를

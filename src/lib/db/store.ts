@@ -73,6 +73,22 @@ export interface SiftStore {
    * 이어 붙이지 않는 이유는 누적된 값 자체가 최신 상태이기 때문입니다.
    */
   appendTurn(input: AppendTurn): Promise<AppendTurnResult>;
+  /**
+   * 이력만 뒤에 이어 붙입니다. 블록 상태와 버전과 진행 상태는 건드리지 않습니다(이슈 #116, backlog 7번).
+   *
+   * `appendTurn`은 블록 버전이 올라야만 씁니다. 그래서 모델 호출이 실패해 블록이 그대로인 턴은 저장할
+   * 길이 자체가 없었고, 모델이 계속 실패하면 그 대화가 영영 저장되지 않았습니다. 2026-09-15에 실제로
+   * 겪은 사고입니다(`.env` 키 이름이 어긋나 인터뷰 두 개의 대화가 한 줄도 저장되지 않았습니다).
+   *
+   * **버전 조건은 그대로 둡니다.** 블록을 덮어쓰지 않으니 조건이 필요 없어 보이지만, 조건이 막는 것이
+   * 하나 더 있습니다. 다른 탭이 이미 저장한 뒤라면 그 턴들이 저장된 대화에 이미 들어 있고, 이쪽은 그
+   * 사실을 모른 채 같은 턴을 한 번 더 붙입니다. 저장된 버전이 기대 버전과 같을 때만 쓰면 그 경우가
+   * 걸러집니다. 모델이 실패한 턴은 블록이 그대로라 두 값이 같으므로 이 조건에 걸리지 않습니다.
+   *
+   * 인터뷰가 없거나 그 사용자의 것이 아니면 `not_found`이고, 저장된 버전이 다르면 `version_conflict`입니다.
+   * `updatedAt`은 갱신합니다.
+   */
+  appendHistory(input: AppendHistory): Promise<AppendHistoryResult>;
   /** 마지막으로 이어간 시각이 최근인 순서입니다. */
   listInterviews(githubUserId: number): Promise<InterviewListItem[]>;
   /**
@@ -158,6 +174,16 @@ export interface AppendTurn {
 }
 
 export type AppendTurnResult = "saved" | "version_conflict" | "not_found";
+
+export interface AppendHistory {
+  readonly githubUserId: number;
+  readonly interviewId: string;
+  readonly turn: readonly InterviewHistoryMessage[];
+  /** 마지막으로 저장에 성공한 블록 버전입니다. 저장된 값이 이와 다르면 쓰지 않습니다. */
+  readonly expectedBlockVersion: number;
+}
+
+export type AppendHistoryResult = AppendTurnResult;
 
 export type InterviewStatus = "in_progress" | "completed";
 

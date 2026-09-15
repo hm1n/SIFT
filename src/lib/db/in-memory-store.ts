@@ -169,6 +169,17 @@ export function createInMemoryStore(): SiftStore {
       return "saved";
     },
 
+    async appendHistory({ githubUserId, interviewId, turn, expectedBlockVersion }) {
+      const interview = interviews.get(interviewId);
+      if (!interview || !ownedBy(interview, githubUserId)) return "not_found";
+      // 다른 곳이 먼저 저장했으면 그 턴들이 이미 들어 있을 수 있습니다. 이유는 `store.ts`에 있습니다.
+      if (interview.blockVersion !== expectedBlockVersion) return "version_conflict";
+      // 블록 상태와 버전과 진행 상태를 건드리지 않습니다. 붙이는 것은 대화뿐입니다.
+      interview.history = [...interview.history, ...asJsonb(turn)];
+      interview.updatedAt = new Date();
+      return "saved";
+    },
+
     async listInterviews(githubUserId) {
       return [...interviews.values()]
         .flatMap((interview) => {

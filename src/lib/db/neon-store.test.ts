@@ -71,6 +71,16 @@ describe("Neon 저장 계층", () => {
             expectedBlockVersion: 0,
           }),
       ],
+      [
+        "appendHistory",
+        (store) =>
+          store.appendHistory({
+            githubUserId: OWNER_ID,
+            interviewId: INTERVIEW_ID,
+            turn: [],
+            expectedBlockVersion: 0,
+          }),
+      ],
       ["listInterviews", (store) => store.listInterviews(OWNER_ID)],
       ["completeInterview", (store) => store.completeInterview(INTERVIEW_ID, OWNER_ID)],
       ["getInterview", (store) => store.getInterview(INTERVIEW_ID, OWNER_ID)],
@@ -157,6 +167,63 @@ describe("Neon 저장 계층", () => {
       const { execute, calls } = fakeExecute();
 
       expect(await neonStore(execute).getAnalysis("분석", OWNER_ID)).toBeNull();
+      expect(calls).toHaveLength(0);
+    });
+  });
+
+  describe("이력만 이어 붙이기", () => {
+    /** 블록을 건드리지 않는 저장입니다. 쓰는 칸이 둘(이력과 갱신 시각)뿐인지 봅니다. */
+    it("이력과 갱신 시각만 쓰고 블록 버전을 조건에 넣는다", async () => {
+      const { execute, calls } = fakeExecute([[{ id: INTERVIEW_ID }]]);
+
+      const result = await neonStore(execute).appendHistory({
+        githubUserId: OWNER_ID,
+        interviewId: INTERVIEW_ID,
+        turn: [{ role: "answer", text: "답변" }],
+        expectedBlockVersion: 3,
+      });
+
+      expect(result).toBe("saved");
+      expect(calls).toHaveLength(1);
+      expect(calls[0].text).toContain("history = s.history || $3::jsonb");
+      expect(calls[0].text).not.toContain("block_state =");
+      expect(calls[0].text).not.toContain("progress =");
+      expect(calls[0].text).toContain("s.block_version = $4");
+    });
+
+    it("한 줄도 바뀌지 않으면 존재를 한 번 더 물어 갈라 답한다", async () => {
+      const conflict = fakeExecute([[], [{ "?column?": 1 }]]);
+      expect(
+        await neonStore(conflict.execute).appendHistory({
+          githubUserId: OWNER_ID,
+          interviewId: INTERVIEW_ID,
+          turn: [],
+          expectedBlockVersion: 3,
+        })
+      ).toBe("version_conflict");
+
+      const missing = fakeExecute([[], []]);
+      expect(
+        await neonStore(missing.execute).appendHistory({
+          githubUserId: OWNER_ID,
+          interviewId: INTERVIEW_ID,
+          turn: [],
+          expectedBlockVersion: 3,
+        })
+      ).toBe("not_found");
+    });
+
+    it("uuid가 아니면 질의하지 않는다", async () => {
+      const { execute, calls } = fakeExecute();
+
+      expect(
+        await neonStore(execute).appendHistory({
+          githubUserId: OWNER_ID,
+          interviewId: "없는-값",
+          turn: [],
+          expectedBlockVersion: 0,
+        })
+      ).toBe("not_found");
       expect(calls).toHaveLength(0);
     });
   });
