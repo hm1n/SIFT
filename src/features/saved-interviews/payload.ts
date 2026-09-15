@@ -1,4 +1,4 @@
-import { BLOCK_KINDS, type ExperienceBlockState } from "@/features/experience-block/types";
+import { BLOCK_KINDS, type BlockKind, type ExperienceBlockState } from "@/features/experience-block/types";
 import type { InterviewListItem, StoredInterview } from "@/lib/db/store";
 
 /**
@@ -70,17 +70,81 @@ export function toStoredInterviewPayload(interview: StoredInterview): StoredInte
  * `display[block].map`과 `evaluation[block]`을 그대로 읽으므로 렌더 도중 TypeError로 멈춥니다.
  * 안내 한 줄을 보이는 것과 화면 전체가 깨지는 것은 다릅니다.
  *
+ * **중첩된 원소까지 봅니다.** 바깥 모양만 보면 `claims: [null]`이 그대로 통과하고, `markDisplay`가
+ * `claim.id`를 읽는 자리에서 결국 같은 곳이 깨집니다. 가드가 지키지 못하는 것을 지킨다고 적어 두면
+ * 없느니만 못합니다(재검증 라운드 지적). 평가는 특히 조심해서 봅니다. `{}`가 통과하면
+ * `isBlockClosed`가 `askable`을 `undefined`로 읽어 그 블록을 닫힌 것으로 처리하고, 이어간 인터뷰가
+ * 물어야 할 것을 건너뜁니다. 렌더가 멈추지 않고 조용히 어긋나는 쪽이라 더 나쁩니다.
+ *
  * 근거 스냅샷은 `isExperienceEvidenceSnapshot`이 같은 일을 이미 합니다. 이 함수는 블록 상태 쪽의
- * 같은 자리를 메웁니다.
+ * 같은 자리를 메웁니다. 요청 본문을 보는 `isExperienceBlockState`를 그대로 쓰지 않는 이유는 그쪽이
+ * 근거 스냅샷에서 만든 커밋 색인을 함께 받아 주장의 출처까지 대조하기 때문입니다. 여기서 막으려는
+ * 것은 그 대조가 아니라 화면이 읽는 모양입니다.
  */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** 주장의 출처입니다. 저장소 출처는 화면이 커밋과 파일을 그대로 그립니다. */
+function isClaimSource(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (value.source === "user") return true;
+  return (
+    value.source === "repository" &&
+    typeof value.commitSha === "string" &&
+    (value.filePath === null || typeof value.filePath === "string")
+  );
+}
+
+function isStoredClaim(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.text === "string" &&
+    typeof value.turnId === "string" &&
+    typeof value.status === "string" &&
+    BLOCK_KINDS.includes(value.block as BlockKind) &&
+    Array.isArray(value.sources) &&
+    value.sources.every(isClaimSource)
+  );
+}
+
+function isStoredConflict(value: unknown): boolean {
+  return isRecord(value) && typeof value.claimId === "string" && typeof value.observation === "string";
+}
+
+function isStoredSentence(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.text === "string" &&
+    Array.isArray(value.claimIds) &&
+    value.claimIds.every((id) => typeof id === "string")
+  );
+}
+
+function isStoredEvaluation(value: unknown): boolean {
+  if (value === null) return true;
+  return (
+    isRecord(value) &&
+    typeof value.sufficient === "boolean" &&
+    typeof value.askable === "boolean" &&
+    typeof value.reason === "string"
+  );
+}
+
 export function isRestorableBlockState(value: unknown): value is ExperienceBlockState {
-  if (typeof value !== "object" || value === null) return false;
-  const state = value as Partial<ExperienceBlockState>;
-  if (typeof state.version !== "number" || typeof state.nextClaimSeq !== "number") return false;
-  if (!Array.isArray(state.claims) || !Array.isArray(state.conflicts)) return false;
-  if (typeof state.display !== "object" || state.display === null) return false;
-  if (typeof state.evaluation !== "object" || state.evaluation === null) return false;
-  const display = state.display as Record<string, unknown>;
-  const evaluation = state.evaluation as Record<string, unknown>;
-  return BLOCK_KINDS.every((block) => Array.isArray(display[block]) && block in evaluation);
+  if (!isRecord(value)) return false;
+  if (typeof value.version !== "number" || typeof value.nextClaimSeq !== "number") return false;
+  if (!Array.isArray(value.claims) || !value.claims.every(isStoredClaim)) return false;
+  if (!Array.isArray(value.conflicts) || !value.conflicts.every(isStoredConflict)) return false;
+  if (!isRecord(value.display) || !isRecord(value.evaluation)) return false;
+  const display = value.display;
+  const evaluation = value.evaluation;
+  return BLOCK_KINDS.every(
+    (block) =>
+      Array.isArray(display[block]) &&
+      (display[block] as unknown[]).every(isStoredSentence) &&
+      block in evaluation &&
+      isStoredEvaluation(evaluation[block])
+  );
 }
