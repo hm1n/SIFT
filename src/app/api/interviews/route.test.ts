@@ -78,7 +78,7 @@ function brokenStore(kind: "query_failed" | "config_missing"): SiftStore {
   };
   return {
     saveAnalysis: fail, createInterview: fail, appendTurn: fail, listInterviews: fail,
-    getInterview: fail, deleteInterview: fail, purgeInterviewsOpenedBefore: fail,
+    getInterview: fail, completeInterview: fail, deleteInterview: fail, purgeInterviewsOpenedBefore: fail,
   } as unknown as SiftStore;
 }
 

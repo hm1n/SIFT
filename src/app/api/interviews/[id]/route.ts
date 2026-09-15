@@ -67,10 +67,49 @@ export async function handleDeleteInterview(
   }
 }
 
+/**
+ * 인터뷰를 끝난 것으로 표시합니다(이슈 #115). 지금 바꿀 수 있는 것은 상태뿐이라 본문도 그것만 받습니다.
+ *
+ * 턴 저장에 얹지 않고 따로 둡니다. 끝내는 조작은 답변 제출과 함께 오지 않아서 얹을 요청이 없습니다.
+ * 되돌리는 값(`in_progress`)은 받지 않습니다. 끝낸 인터뷰를 다시 여는 조작이 화면에 없고, 받아 두면
+ * 쓰지 않는 경로가 남습니다.
+ */
+export async function handlePatchInterview(
+  request: NextRequest,
+  id: string,
+  store: SiftStore = neonStore()
+): Promise<Response> {
+  const session = requireUserId(request);
+  if ("response" in session) return session.response;
+
+  let json: unknown;
+  try {
+    json = await request.json();
+  } catch {
+    return savedInterviewErrorResponse("invalid_json", "요청 본문은 JSON이어야 합니다.");
+  }
+  if (typeof json !== "object" || json === null || (json as { status?: unknown }).status !== "completed") {
+    return savedInterviewErrorResponse("invalid_request", 'status는 "completed"여야 합니다.');
+  }
+
+  try {
+    const completed = await store.completeInterview(id, session.userId);
+    if (!completed) return savedInterviewErrorResponse("not_found", NOT_FOUND_MESSAGE);
+    return new Response(null, { status: 204 });
+  } catch (error) {
+    const mapped = toSavedInterviewError(error);
+    return savedInterviewErrorResponse(mapped.kind, mapped.message);
+  }
+}
+
 export async function GET(request: NextRequest, context: RouteContext<"/api/interviews/[id]">): Promise<Response> {
   return handleGetInterview(request, (await context.params).id);
 }
 
 export async function DELETE(request: NextRequest, context: RouteContext<"/api/interviews/[id]">): Promise<Response> {
   return handleDeleteInterview(request, (await context.params).id);
+}
+
+export async function PATCH(request: NextRequest, context: RouteContext<"/api/interviews/[id]">): Promise<Response> {
+  return handlePatchInterview(request, (await context.params).id);
 }

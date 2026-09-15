@@ -287,6 +287,25 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
       };
     },
 
+    /**
+     * 끝난 것으로 표시합니다. 이미 끝난 인터뷰를 다시 표시해도 결과는 같습니다.
+     *
+     * `updated_at`을 건드리지 않습니다. 그 값은 "마지막으로 이어간 때"이고 목록의 정렬 기준이라,
+     * 끝내는 조작이 대화를 이어간 것처럼 순서를 바꾸면 안 됩니다.
+     */
+    async completeInterview(id: string, githubUserId: number): Promise<boolean> {
+      if (!isUuid(id)) return false;
+      const rows = await run(
+        `update interview_session s
+            set status = 'completed'
+           from repository_analysis ra
+          where s.id = $1 and s.analysis_id = ra.id and ra.github_user_id = $2
+         returning s.id`,
+        [id, githubUserId]
+      );
+      return rows.length > 0;
+    },
+
     async deleteInterview(id: string, githubUserId: number): Promise<boolean> {
       if (!isUuid(id)) return false;
       const rows = await run(

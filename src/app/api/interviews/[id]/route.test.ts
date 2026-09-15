@@ -10,7 +10,7 @@ import {
   GITHUB_SESSION_COOKIE,
   GITHUB_SESSION_KEY_ENV,
 } from "@/lib/github/auth-session";
-import { handleDeleteInterview, handleGetInterview } from "./route";
+import { handleDeleteInterview, handleGetInterview, handlePatchInterview } from "./route";
 
 const OWNER_ID = 44727850;
 const OTHER_ID = 13579246;
@@ -28,10 +28,11 @@ afterEach(() => {
 });
 
 function request(
-  { userId = OWNER_ID, authenticated = true, method = "GET" }: {
+  { userId = OWNER_ID, authenticated = true, method = "GET", body }: {
     userId?: number;
     authenticated?: boolean;
     method?: string;
+    body?: unknown;
   } = {}
 ): NextRequest {
   return new NextRequest("https://example.com/api/interviews/x", {
@@ -39,6 +40,7 @@ function request(
     headers: authenticated
       ? { cookie: `${GITHUB_SESSION_COOKIE}=${encryptGitHubSession({ token: "token", githubUserId: userId })}` }
       : {},
+    ...(body === undefined ? {} : { body: typeof body === "string" ? body : JSON.stringify(body) }),
   });
 }
 
@@ -68,7 +70,7 @@ function brokenStore(): SiftStore {
   };
   return {
     saveAnalysis: fail, createInterview: fail, appendTurn: fail, listInterviews: fail,
-    getInterview: fail, deleteInterview: fail, purgeInterviewsOpenedBefore: fail,
+    getInterview: fail, completeInterview: fail, deleteInterview: fail, purgeInterviewsOpenedBefore: fail,
   } as unknown as SiftStore;
 }
 
@@ -183,5 +185,68 @@ describe("DELETE /api/interviews/[id]", () => {
 
     expect(response.status).toBe(401);
     expect(await store.listInterviews(OWNER_ID)).toHaveLength(1);
+  });
+});
+
+/**
+ * 인터뷰를 끝난 것으로 표시합니다(이슈 #115). 목록의 기호와 세션 화면의 버튼 문구가 이 값을 읽습니다.
+ */
+describe("PATCH /api/interviews/[id]", () => {
+  function patch(overrides: Parameters<typeof request>[0] = {}) {
+    return request({ method: "PATCH", body: { status: "completed" }, ...overrides });
+  }
+
+  it("끝난 것으로 표시하면 204이고 목록의 상태가 바뀐다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seed(store);
+
+    const response = await handlePatchInterview(patch(), interviewId, store);
+
+    expect(response.status).toBe(204);
+    expect((await store.listInterviews(OWNER_ID))[0].status).toBe("completed");
+  });
+
+  // 진행 중으로 되돌리는 조작은 화면에 없습니다. 받아 두면 쓰지 않는 경로가 남습니다.
+  it.each([
+    ["되돌리는 값", { status: "in_progress" }],
+    ["모르는 값", { status: "archived" }],
+    ["status가 없으면", {}],
+  ])("%s은 400이다", async (_label, body) => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seed(store);
+
+    const response = await handlePatchInterview(patch({ body }), interviewId, store);
+
+    expect(response.status).toBe(400);
+    expect((await store.listInterviews(OWNER_ID))[0].status).toBe("in_progress");
+  });
+
+  it("JSON이 아니면 400이다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seed(store);
+    const response = await handlePatchInterview(patch({ body: "{" }), interviewId, store);
+    expect(response.status).toBe(400);
+  });
+
+  it("다른 사용자의 인터뷰는 404이고 그대로 남는다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seed(store);
+
+    const response = await handlePatchInterview(patch({ userId: OTHER_ID }), interviewId, store);
+
+    expect(response.status).toBe(404);
+    expect((await store.listInterviews(OWNER_ID))[0].status).toBe("in_progress");
+  });
+
+  it("세션이 없으면 401이다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seed(store);
+    const response = await handlePatchInterview(patch({ authenticated: false }), interviewId, store);
+    expect(response.status).toBe(401);
+  });
+
+  it("저장 계층이 끊기면 503이다", async () => {
+    const response = await handlePatchInterview(patch(), "11111111-1111-4111-8111-111111111111", brokenStore());
+    expect(response.status).toBe(503);
   });
 });

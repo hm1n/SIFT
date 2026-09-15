@@ -70,6 +70,7 @@ describe("Neon 저장 계층", () => {
           }),
       ],
       ["listInterviews", (store) => store.listInterviews(OWNER_ID)],
+      ["completeInterview", (store) => store.completeInterview(INTERVIEW_ID, OWNER_ID)],
       ["getInterview", (store) => store.getInterview(INTERVIEW_ID, OWNER_ID)],
       ["deleteInterview", (store) => store.deleteInterview(INTERVIEW_ID, OWNER_ID)],
     ];
@@ -327,6 +328,29 @@ describe("Neon 저장 계층", () => {
       expect(calls[0].text).toContain("'sufficient' = 'true'");
       // 블록 이름은 `BLOCK_KINDS`에서 만듭니다. 넷 중 하나라도 빠지면 진행도가 4분의 1씩 어긋납니다.
       for (const kind of BLOCK_KINDS) expect(calls[0].text).toContain(`'${kind}'`);
+    });
+
+    /**
+     * 끝내는 조작이 "마지막으로 이어간 때"를 바꾸면 목록의 정렬이 대화를 이어간 것처럼 뒤바뀝니다.
+     */
+    it("끝난 것으로 표시할 때 이어간 시각을 건드리지 않는다", async () => {
+      const { execute, calls } = fakeExecute([[{ id: INTERVIEW_ID }]]);
+      const done = await neonStore(execute).completeInterview(INTERVIEW_ID, OWNER_ID);
+
+      expect(done).toBe(true);
+      expect(calls[0].text).toContain("set status = 'completed'");
+      expect(calls[0].text).not.toContain("updated_at");
+    });
+
+    it("바꾼 줄이 없으면 false다", async () => {
+      const { execute } = fakeExecute([[]]);
+      expect(await neonStore(execute).completeInterview(INTERVIEW_ID, OWNER_ID)).toBe(false);
+    });
+
+    it("uuid가 아닌 식별자는 질의하지 않고 false다", async () => {
+      const { execute, calls } = fakeExecute([[]]);
+      expect(await neonStore(execute).completeInterview("없는-값", OWNER_ID)).toBe(false);
+      expect(calls).toHaveLength(0);
     });
 
     it("셈이 비어 있는 인터뷰는 진행도가 0이다", async () => {

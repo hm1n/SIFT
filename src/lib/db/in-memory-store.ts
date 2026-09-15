@@ -152,6 +152,13 @@ export function createInMemoryStore(): SiftStore {
       };
     },
 
+    async completeInterview(id, githubUserId) {
+      const interview = interviews.get(id);
+      if (!interview || !ownedBy(interview, githubUserId)) return false;
+      interview.status = "completed";
+      return true;
+    },
+
     async deleteInterview(id, githubUserId) {
       const interview = interviews.get(id);
       if (!interview || !ownedBy(interview, githubUserId)) return false;

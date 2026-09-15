@@ -176,6 +176,10 @@ async function main(): Promise<void> {
   check("목록에 그 인터뷰가 있다", list.map((item) => item.id), [interviewId]);
   check("남의 목록에는 없다", (await store.listInterviews(OTHER_USER_ID)).length, 0);
 
+  check("남의 인터뷰는 끝난 것으로 표시하지 못한다", await store.completeInterview(interviewId, OTHER_USER_ID), false);
+  check("주인은 끝난 것으로 표시한다", await store.completeInterview(interviewId, USER_ID), true);
+  check("표시한 상태가 목록에 보인다", (await store.listInterviews(USER_ID))[0].status, "completed");
+
   check("남의 인터뷰는 지우지 못한다", await store.deleteInterview(interviewId, OTHER_USER_ID), false);
   check("주인은 지울 수 있다", await store.deleteInterview(interviewId, USER_ID), true);
   check("두 번 지우면 false다", await store.deleteInterview(interviewId, USER_ID), false);

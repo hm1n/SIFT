@@ -16,8 +16,10 @@ import {
 import { createBlockUpdateModel } from "@/features/experience-block/llm-provider";
 import { recordResponse } from "@/features/experience-block/progress";
 import {
+  isSaveOnlyRequest,
   MAX_EXPERIENCE_BLOCK_BODY_BYTES,
   parseExperienceBlockRequestBody,
+  parseSaveOnlyRequestBody,
   type ExperienceBlockSaveTarget,
 } from "@/features/experience-block/request";
 import { LLM_MAX_RETRIES } from "@/features/experience-candidates/llm-provider";
@@ -105,7 +107,7 @@ async function saveTurn(
     return await store.appendTurn({
       githubUserId,
       interviewId: save.interviewId,
-      turn: turnsToSave(history, answerTurnId, save.pendingTurnIds),
+      turn: turnsToSave(history, [...(save.pendingTurnIds ?? []), answerTurnId]),
       blockState,
       // 이번 답변의 반응을 여기서 반영합니다. 반응은 모델 출력에서 방금 계산한 값이라 클라이언트가
       // 요청을 보내는 시점에는 알 수 없습니다. 그래서 반영 전 값을 받아 서버가 반영합니다.
@@ -162,6 +164,35 @@ export async function handleExperienceBlockUpdate(
     return errorResponse("invalid_json", "요청 본문은 JSON이어야 합니다.");
   }
 
+  const store = options.store ?? neonStore();
+
+  /**
+   * 저장만 다시 보내는 길입니다(이슈 #115). 모델을 부르지 않고 밀린 턴만 이어 붙입니다.
+   *
+   * 블록 갱신은 성공했는데 저장만 실패한 턴을 다시 저장하려고 같은 답변으로 블록 갱신을 다시 부르면,
+   * 모델을 한 번 더 호출하는 데다 같은 답변의 주장이 블록에 두 번 들어갑니다.
+   */
+  if (isSaveOnlyRequest(json)) {
+    const parsedSave = parseSaveOnlyRequestBody(json);
+    if (!parsedSave.ok) return errorResponse(parsedSave.kind, parsedSave.message);
+    const { history, state, save } = parsedSave.body;
+    let saved: BlockUpdateSaveStatus;
+    try {
+      saved = await store.appendTurn({
+        githubUserId,
+        interviewId: save.interviewId,
+        turn: turnsToSave(history, save.pendingTurnIds),
+        blockState: state,
+        // 반영이 이미 끝난 값입니다. 여기서 다시 반영하면 같은 답변의 반응이 두 번 기록됩니다.
+        progress: save.progress,
+        expectedBlockVersion: save.expectedBlockVersion,
+      });
+    } catch {
+      saved = "failed";
+    }
+    return Response.json({ save: saved });
+  }
+
   const parsed = parseExperienceBlockRequestBody(json);
   if (!parsed.ok) {
     return errorResponse(parsed.kind, parsed.message);
@@ -194,7 +225,7 @@ export async function handleExperienceBlockUpdate(
 
   // 블록 갱신을 적용한 직후에 저장합니다. 저장이 먼저 오면 검증을 통과하지 못한 상태를 쓰게 됩니다.
   const saveStatus = await saveTurn(
-    options.store ?? neonStore(),
+    store,
     githubUserId,
     save,
     history,

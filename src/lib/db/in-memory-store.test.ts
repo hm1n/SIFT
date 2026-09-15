@@ -250,6 +250,24 @@ describe("메모리 저장 계층", () => {
     expect(interview?.blockVersion).toBe(0);
   });
 
+  it("끝난 것으로 표시하면 목록과 조회에 함께 반영된다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seed(store);
+
+    expect(await store.completeInterview(interviewId, OWNER_ID)).toBe(true);
+
+    expect((await store.listInterviews(OWNER_ID))[0].status).toBe("completed");
+    expect((await store.getInterview(interviewId, OWNER_ID))?.status).toBe("completed");
+  });
+
+  it("남의 인터뷰는 끝난 것으로 표시하지 못한다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seed(store);
+
+    expect(await store.completeInterview(interviewId, OTHER_ID)).toBe(false);
+    expect((await store.listInterviews(OWNER_ID))[0].status).toBe("in_progress");
+  });
+
   it("주인이 지우면 목록과 조회에서 함께 사라진다", async () => {
     const store = createInMemoryStore();
     const { interviewId } = await seed(store);

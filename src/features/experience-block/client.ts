@@ -2,7 +2,7 @@ import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidate
 import type { BlockUpdateTurn } from "@/features/interview/block-prompt";
 import type { BlockUpdateSaveStatus } from "@/features/saved-interviews/save-status";
 import type { ExperienceBlockErrorKind } from "./errors";
-import type { ExperienceBlockSaveTarget } from "./request";
+import type { ExperienceBlockSaveOnlyTarget, ExperienceBlockSaveTarget } from "./request";
 import type { BlockElement, BlockKind, ExperienceBlockState, TargetResponse } from "./types";
 
 /**
@@ -110,4 +110,61 @@ export async function fetchBlockUpdate(input: FetchBlockUpdateInput): Promise<Fe
     // 저장을 얹기 전에 배포된 서버는 이 값을 내지 않습니다. 없으면 저장하지 않은 것으로 봅니다.
     save: body.save ?? "skipped",
   };
+}
+
+export interface FetchSaveOnlyInput {
+  readonly url: string;
+  readonly snapshot: ExperienceEvidenceSnapshot;
+  readonly history: readonly BlockUpdateTurn[];
+  readonly state: ExperienceBlockState;
+  readonly save: ExperienceBlockSaveOnlyTarget;
+  readonly fetchImpl?: typeof fetch;
+  readonly signal?: AbortSignal;
+}
+
+/**
+ * 밀린 턴을 다시 저장합니다(이슈 #115). 블록 갱신 route의 저장 전용 길을 부르므로 모델을 호출하지
+ * 않고 블록 상태도 그대로 둡니다. "다시 저장" 안내의 버튼이 쓰는 경로입니다.
+ */
+export async function fetchSaveOnly(input: FetchSaveOnlyInput): Promise<BlockUpdateSaveStatus> {
+  const request = input.fetchImpl ?? fetch;
+  let response: Response;
+  try {
+    response = await request(input.url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode: "save_only",
+        snapshot: input.snapshot,
+        history: input.history,
+        state: input.state,
+        save: input.save,
+      }),
+      signal: input.signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
+    throw new BlockUpdateFetchError(
+      "network",
+      error instanceof Error ? error.message : "네트워크 요청에 실패했습니다."
+    );
+  }
+
+  let json: unknown;
+  try {
+    json = await response.json();
+  } catch {
+    throw new BlockUpdateFetchError("network", "응답을 읽지 못했습니다.");
+  }
+
+  if (!response.ok) {
+    const kind = isErrorBody(json) && typeof json.error.kind === "string" ? json.error.kind : "server_error";
+    const message = isErrorBody(json) && typeof json.error.message === "string"
+      ? json.error.message
+      : "다시 저장하지 못했습니다.";
+    throw new BlockUpdateFetchError(kind as BlockUpdateFetchErrorKind, message);
+  }
+
+  const body = json as { save?: BlockUpdateSaveStatus };
+  return body.save ?? "failed";
 }

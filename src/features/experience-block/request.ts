@@ -317,6 +317,37 @@ export function parseExperienceBlockRequestBody(value: unknown): ExperienceBlock
     return { ok: false, kind: "invalid_request", message: "처리할 답변의 턴 ID가 이력에 없습니다." };
   }
 
+  const size = checkRequestSize(history, value.state);
+  if (size !== undefined) return size;
+
+  const save = parseSaveTarget(value.save, history);
+  if (save !== undefined && !save.ok) {
+    return { ok: false, kind: "invalid_request", message: save.message };
+  }
+
+  return {
+    ok: true,
+    body: {
+      snapshot: value.snapshot,
+      history,
+      state: value.state,
+      targetBlock: value.targetBlock,
+      targetElement: value.targetElement,
+      answerTurnId: value.answerTurnId,
+      ...(save === undefined ? {} : { save: save.target }),
+    },
+  };
+}
+
+
+/**
+ * 이력과 주장 상태의 크기를 봅니다. 블록 갱신과 저장 전용이 같은 상한을 씁니다. 저장 전용만 상한을
+ * 느슨하게 두면 블록 갱신이 거절한 크기가 저장으로 들어갑니다.
+ */
+function checkRequestSize(
+  history: readonly BlockUpdateTurn[],
+  state: ExperienceBlockState
+): { readonly ok: false; readonly kind: "history_too_large" | "claims_too_large"; readonly message: string } | undefined {
   if (history.length > EXPERIENCE_BLOCK_HISTORY_MAX_TURNS) {
     return {
       ok: false,
@@ -337,29 +368,108 @@ export function parseExperienceBlockRequestBody(value: unknown): ExperienceBlock
       message: `질문과 답변은 하나에 ${INTERVIEW_HISTORY_ITEM_MAX_BYTES}바이트 이하여야 합니다.`,
     };
   }
-  if (byteLength(JSON.stringify(value.state.claims)) > CLAIMS_STATE_MAX_BYTES) {
+  if (byteLength(JSON.stringify(state.claims)) > CLAIMS_STATE_MAX_BYTES) {
     return {
       ok: false,
       kind: "claims_too_large",
       message: `주장 상태는 ${CLAIMS_STATE_MAX_BYTES}바이트 이하여야 합니다.`,
     };
   }
+  return undefined;
+}
 
-  const save = parseSaveTarget(value.save, history);
-  if (save !== undefined && !save.ok) {
-    return { ok: false, kind: "invalid_request", message: save.message };
+/**
+ * 저장만 다시 보내는 요청입니다(이슈 #115). "다시 저장" 안내의 버튼이 보냅니다.
+ *
+ * 블록 갱신은 이미 성공했는데 저장만 실패한 턴을 다시 저장할 때 씁니다. 같은 답변으로 블록 갱신을 다시
+ * 부르면 모델을 한 번 더 호출하는 데다 같은 답변의 주장이 블록에 두 번 들어갑니다. 그래서 모델을 부르지
+ * 않고 밀린 턴만 이어 붙이는 길을 같은 route 안에 둡니다. 저장 전용 경로를 새로 만들지 않는다는 이슈의
+ * Constraint를 지키면서 화면의 버튼이 실제로 할 일을 갖게 하는 방법입니다.
+ *
+ * `progress`는 이미 반영이 끝난 값입니다. 반영은 그 턴의 블록 갱신이 성공할 때 서버가 이미 했고, 여기서
+ * 한 번 더 반영하면 같은 답변의 반응이 두 번 기록됩니다.
+ */
+export interface ExperienceBlockSaveOnlyBody {
+  readonly mode: "save_only";
+  readonly snapshot: ExperienceEvidenceSnapshot;
+  readonly history: readonly BlockUpdateTurn[];
+  readonly state: ExperienceBlockState;
+  readonly save: ExperienceBlockSaveOnlyTarget;
+}
+
+export interface ExperienceBlockSaveOnlyTarget {
+  readonly interviewId: string;
+  readonly expectedBlockVersion: number;
+  /** 다시 저장할 턴입니다. 비어 있으면 저장할 것이 없으므로 거절합니다. */
+  readonly pendingTurnIds: readonly string[];
+  readonly progress: InterviewProgress;
+}
+
+export type ExperienceBlockSaveOnlyParseResult =
+  | { readonly ok: true; readonly body: ExperienceBlockSaveOnlyBody }
+  | {
+      readonly ok: false;
+      readonly kind: "invalid_request" | "history_too_large" | "claims_too_large";
+      readonly message: string;
+    };
+
+/** 본문이 저장 전용 요청인지 봅니다. 이 판정이 참일 때만 모델을 부르지 않는 길로 갑니다. */
+export function isSaveOnlyRequest(value: unknown): boolean {
+  return isRecord(value) && value.mode === "save_only";
+}
+
+export function parseSaveOnlyRequestBody(value: unknown): ExperienceBlockSaveOnlyParseResult {
+  if (!isRecord(value) || !isExperienceEvidenceSnapshot(value.snapshot)) {
+    return { ok: false, kind: "invalid_request", message: "근거 스냅샷 형식이 올바르지 않습니다." };
+  }
+  const commits = evidenceIndex(value.snapshot);
+  if (!Array.isArray(value.history) || !value.history.every(isBlockUpdateTurn)) {
+    return { ok: false, kind: "invalid_request", message: "대화 이력 형식이 올바르지 않습니다." };
+  }
+  const history = value.history as readonly BlockUpdateTurn[];
+  if (!isExperienceBlockState(value.state, commits)) {
+    return { ok: false, kind: "invalid_request", message: "주장 상태 형식이 올바르지 않습니다." };
+  }
+  const size = checkRequestSize(history, value.state);
+  if (size !== undefined) return size;
+
+  if (!isRecord(value.save)) {
+    return { ok: false, kind: "invalid_request", message: "save 형식이 올바르지 않습니다." };
+  }
+  const save = value.save;
+  if (!isNonEmptyString(save.interviewId)) {
+    return { ok: false, kind: "invalid_request", message: "save.interviewId가 필요합니다." };
+  }
+  if (!isNonNegativeInt(save.expectedBlockVersion)) {
+    return { ok: false, kind: "invalid_request", message: "save.expectedBlockVersion은 0 이상의 정수여야 합니다." };
+  }
+  if (!isInterviewProgress(save.progress)) {
+    return { ok: false, kind: "invalid_request", message: "save.progress 형식이 올바르지 않습니다." };
+  }
+  if (!Array.isArray(save.pendingTurnIds) || !save.pendingTurnIds.every(isNonEmptyString)) {
+    return { ok: false, kind: "invalid_request", message: "save.pendingTurnIds는 문자열 배열이어야 합니다." };
+  }
+  if (save.pendingTurnIds.length === 0) {
+    return { ok: false, kind: "invalid_request", message: "다시 저장할 턴이 없습니다." };
+  }
+  const known = new Set(history.map((turn) => turn.turnId));
+  if (save.pendingTurnIds.some((turnId: string) => !known.has(turnId))) {
+    return { ok: false, kind: "invalid_request", message: "save.pendingTurnIds에 이력에 없는 턴이 있습니다." };
   }
 
   return {
     ok: true,
     body: {
+      mode: "save_only",
       snapshot: value.snapshot,
       history,
       state: value.state,
-      targetBlock: value.targetBlock,
-      targetElement: value.targetElement,
-      answerTurnId: value.answerTurnId,
-      ...(save === undefined ? {} : { save: save.target }),
+      save: {
+        interviewId: save.interviewId,
+        expectedBlockVersion: save.expectedBlockVersion as number,
+        pendingTurnIds: save.pendingTurnIds as readonly string[],
+        progress: save.progress,
+      },
     },
   };
 }

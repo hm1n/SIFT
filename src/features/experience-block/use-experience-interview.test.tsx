@@ -635,18 +635,71 @@ describe("useExperienceInterview 저장 얹기", () => {
     });
   }
 
-  function renderWithSave(fetchImpl: ReturnType<typeof makeFetchImpl>, interviewId: string | null = INTERVIEW_ID) {
+  function renderWithSave(
+    fetchImpl: ReturnType<typeof makeFetchImpl>,
+    interviewId: string | null = INTERVIEW_ID,
+    completeInterview: (id: string) => Promise<void> = async () => undefined
+  ) {
     return renderHook(() =>
       useExperienceInterview({
         questionUrl: QUESTION_URL,
         blockUpdateUrl: BLOCK_UPDATE_URL,
         snapshot,
         interviewId,
+        completeInterview,
         fetchImpl,
         ...immediate,
       })
     );
   }
+
+  /**
+   * 목록의 기호와 세션 화면의 버튼 문구가 이 상태를 읽습니다. 끝내는 조작은 답변 제출과 함께 오지
+   * 않아서 턴 저장에 얹을 수 없고, 별도 요청으로 알립니다.
+   */
+  it("인터뷰를 끝내면 끝난 것으로 표시한다", async () => {
+    const q1 = controllableResponse();
+    const fetchImpl = makeFetchImpl({ questionSources: [q1], blockUpdateResponses: [] });
+    const completeInterview = vi.fn<(id: string) => Promise<void>>().mockResolvedValue(undefined);
+    const { result } = renderWithSave(fetchImpl, INTERVIEW_ID, completeInterview);
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      result.current.endInterview();
+    });
+
+    await waitFor(() => expect(completeInterview).toHaveBeenCalledWith(INTERVIEW_ID));
+  });
+
+  it("같은 인터뷰를 두 번 끝내도 표시는 한 번만 보낸다", async () => {
+    const q1 = controllableResponse();
+    const fetchImpl = makeFetchImpl({ questionSources: [q1], blockUpdateResponses: [] });
+    const completeInterview = vi.fn<(id: string) => Promise<void>>().mockResolvedValue(undefined);
+    const { result } = renderWithSave(fetchImpl, INTERVIEW_ID, completeInterview);
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      result.current.endInterview();
+      result.current.endInterview();
+    });
+
+    await waitFor(() => expect(completeInterview).toHaveBeenCalledTimes(1));
+  });
+
+  // 저장하지 않는 인터뷰에는 표시할 줄이 없습니다.
+  it("인터뷰 줄이 없으면 끝내도 아무것도 보내지 않는다", async () => {
+    const q1 = controllableResponse();
+    const fetchImpl = makeFetchImpl({ questionSources: [q1], blockUpdateResponses: [] });
+    const completeInterview = vi.fn<(id: string) => Promise<void>>().mockResolvedValue(undefined);
+    const { result } = renderWithSave(fetchImpl, null, completeInterview);
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      result.current.endInterview();
+    });
+
+    expect(completeInterview).not.toHaveBeenCalled();
+  });
 
   it("인터뷰 줄이 있으면 저장 대상을 블록 갱신 요청에 싣는다", async () => {
     const q1 = controllableResponse();
@@ -771,6 +824,66 @@ describe("useExperienceInterview 저장 얹기", () => {
 
     expect(result.current.unsavedTurnCount).toBe(1);
     expect(result.current.saveStatus).toBe("failed");
+  });
+
+  /**
+   * "다시 저장" 버튼입니다. 반영은 끝났는데 저장만 밀린 턴을 모델을 부르지 않고 다시 저장합니다.
+   * 같은 답변으로 블록 갱신을 다시 부르면 같은 주장이 블록에 두 번 들어갑니다.
+   */
+  it("저장만 밀린 턴을 모델 없이 다시 저장한다", async () => {
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    const fetchImpl = makeFetchImpl({
+      questionSources: [q1, q2],
+      blockUpdateResponses: [
+        jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE }, save: "failed" })),
+        jsonResponse(200, { save: "saved" }),
+      ],
+    });
+    const { result } = renderWithSave(fetchImpl);
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    await answerOnce(result, q1, "첫 답변");
+    await waitFor(() => expect(result.current.unsavedTurnCount).toBe(1));
+
+    act(() => {
+      result.current.retrySave();
+    });
+
+    await waitFor(() => expect(result.current.unsavedTurnCount).toBe(0));
+    const retry = callBody(fetchImpl.mock.calls[3]) as { mode: string; save: Record<string, unknown> };
+    expect(retry.mode).toBe("save_only");
+    expect(retry.save).toMatchObject({ pendingTurnIds: ["t1"], expectedBlockVersion: 0 });
+    expect(result.current.saveStatus).toBe("saved");
+  });
+
+  /**
+   * 반영까지 밀린 턴은 블록 갱신을 다시 걸 때 그 요청이 저장까지 함께 합니다. 저장 전용 요청이 같은
+   * 턴을 또 보내면 같은 질문과 답변이 저장된 대화에 두 번 들어갑니다.
+   */
+  it("반영이 밀린 턴은 저장 전용 요청으로 보내지 않는다", async () => {
+    const q1 = controllableResponse();
+    const q2 = controllableResponse();
+    const fetchImpl = makeFetchImpl({
+      questionSources: [q1, q2],
+      blockUpdateResponses: [
+        jsonResponse(502, { error: { kind: "block_update_rejected", message: "검증 실패" } }),
+        jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE }, save: "saved" })),
+      ],
+    });
+    const { result } = renderWithSave(fetchImpl);
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    await answerOnce(result, q1, "첫 답변");
+    await waitFor(() => expect(result.current.unreflectedTurnId).toBe("t1"));
+
+    act(() => {
+      result.current.retrySave();
+    });
+
+    // 블록 갱신 재시도 하나만 나가고 저장 전용 요청은 나가지 않습니다.
+    await waitFor(() => expect(result.current.unreflectedTurnId).toBeNull());
+    const bodies = fetchImpl.mock.calls.map((call) => callBody(call) as { mode?: string });
+    expect(bodies.filter((body) => body.mode === "save_only")).toHaveLength(0);
+    await waitFor(() => expect(result.current.unsavedTurnCount).toBe(0));
   });
 
   // 다른 탭이 먼저 저장한 경우입니다. 화면이 최신 내용을 다시 불러올지 물어야 하므로 갈라 둡니다.

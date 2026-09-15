@@ -131,6 +131,28 @@ export async function fetchSavedInterview(
   return result.interview as StoredInterviewPayload;
 }
 
+/**
+ * 인터뷰를 끝난 것으로 표시합니다. 목록의 기호와 세션 화면의 버튼 문구가 이 값을 읽습니다.
+ *
+ * 실패해도 대화 자체에는 영향이 없습니다. 상태만 진행 중으로 남습니다.
+ */
+export async function completeSavedInterview(
+  interviewId: string,
+  fetchImpl?: typeof fetch,
+  signal?: AbortSignal
+): Promise<void> {
+  await request<null>(
+    `${INTERVIEWS_PATH}/${encodeURIComponent(interviewId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "completed" }),
+      signal,
+    },
+    fetchImpl
+  );
+}
+
 /** 인터뷰 하나를 지웁니다. 이미 지워졌거나 남의 인터뷰면 `not_found`로 올라옵니다. */
 export async function deleteSavedInterview(
   interviewId: string,

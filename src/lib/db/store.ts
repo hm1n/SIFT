@@ -64,6 +64,16 @@ export interface SiftStore {
    * 90일이면 지워집니다.
    */
   getInterview(id: string, githubUserId: number): Promise<StoredInterview | null>;
+  /**
+   * 인터뷰를 끝난 것으로 표시합니다. 바꾼 것이 없으면 `false`입니다(이슈 #115).
+   *
+   * 턴 저장에 얹지 않고 따로 둡니다. 인터뷰를 끝내는 조작은 답변 제출과 함께 오지 않고, 마지막 답변
+   * 뒤에 사용자가 따로 누르거나 턴 상한에 닿아 저절로 일어납니다. 얹을 요청이 없는 시점입니다.
+   *
+   * 진행도로 대신 판정하지 않습니다. 블록 넷이 다 차지 않아도 사용자는 인터뷰를 끝낼 수 있고, 그
+   * 인터뷰를 목록이 계속 진행 중으로 보이면 화면의 기호와 버튼 문구가 사실과 어긋납니다.
+   */
+  completeInterview(id: string, githubUserId: number): Promise<boolean>;
   /** 지운 것이 없으면 `false`입니다. 없는 경우와 남의 것인 경우를 구분하지 않습니다. */
   deleteInterview(id: string, githubUserId: number): Promise<boolean>;
   /** 마지막으로 연 시각이 `before`보다 오래된 인터뷰를 지우고 지운 수를 돌려줍니다. */
