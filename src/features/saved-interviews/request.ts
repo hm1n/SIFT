@@ -8,24 +8,34 @@ import type { StoredAnalysis } from "@/features/repository-analysis/analysis-sna
 import type { SavedInterviewErrorKind } from "./errors";
 
 /**
- * `POST /api/interviews`의 요청 본문입니다. 경험을 확정하는 순간 분석 한 줄과 인터뷰 한 줄을 함께
- * 만듭니다.
+ * `POST /api/interviews`의 요청 본문입니다. 경험을 확정하는 순간 인터뷰 한 줄을 만듭니다.
  *
- * 정의서는 분석 저장을 Stage B 성공 직후로 적었고 이슈 #115는 그것을 후속으로 미뤘습니다. 그런데
- * `interview_session.analysis_id`가 `not null`이고 실재하는 분석을 가리켜야 해서, 인터뷰만 저장하는
- * 것이 성립하지 않습니다. 그래서 이 이슈는 확정 시점에 둘을 함께 만들고, 저장 시점을 앞당기는 일만
- * 이슈 #116에 남깁니다. 그때 이 경로가 둘로 갈립니다.
+ * **이슈 #116에서 분석 저장이 빠졌습니다.** 이슈 #115에서는 분석 한 줄과 인터뷰 한 줄을 이 요청이
+ * 함께 만들었습니다. 정의서가 정한 저장 시점(Stage B 성공 직후)으로 분석 저장을 옮기면서 "분석을
+ * 만드는 일"과 "인터뷰를 붙이는 일"이 갈라졌고, 이 요청에는 `analysisId`만 남습니다.
  *
- * `analysisId`는 같은 분석에서 두 번째 경험을 고를 때 옵니다. 없으면 분석을 새로 저장합니다. 이 값이
- * 없으면 한 분석에서 경험을 여러 개 고를 때마다 같은 분석이 여러 줄로 쌓이고, 목록에 같은 저장소가
- * 여러 번 나오며, 후보 화면을 복원할 때 어느 줄이 진짜인지 알 수 없게 됩니다.
+ * `analysisId`가 필수입니다. 예전에는 없으면 분석을 새로 저장했는데, 그 폴백이 두 가지를 낳았습니다.
+ * 확정 요청이 겹치면 같은 분석이 두 줄로 쌓였고(backlog 9번), 남의 분석 식별자나 지워진 식별자를
+ * 보내도 조용히 새 줄을 만들어 무엇이 저장됐는지가 요청만 보고는 정해지지 않았습니다. 지금은 가리킬
+ * 분석이 없으면 거절하고, 분석을 먼저 저장하는 일은 화면이 합니다.
  */
 export interface CreateInterviewRequestBody {
-  readonly analysis: StoredAnalysis;
-  readonly analysisId?: string;
+  readonly analysisId: string;
   readonly candidateKey: string;
   readonly title: string;
   readonly evidence: ExperienceEvidenceSnapshot;
+}
+
+/**
+ * `POST /api/analyses`의 요청 본문입니다(이슈 #116). Stage B가 성공해 분석이 끝나는 순간 축약본
+ * 한 줄을 만듭니다.
+ *
+ * 분석과 인터뷰의 요청 모양을 이 파일에 함께 둡니다. 분석 축약본의 모양 검사를 두 경로가 함께
+ * 쓰다가 한쪽만 고치는 일을 막기 위해서입니다. 파일 이름이 인터뷰를 가리키는 것과 어긋나지만, 이름을
+ * 바꾸면 오류 종류(`SavedInterviewErrorKind`)까지 함께 옮겨야 해서 이번 이슈에서는 두었습니다.
+ */
+export interface SaveAnalysisRequestBody {
+  readonly analysis: StoredAnalysis;
 }
 
 /**
@@ -43,8 +53,13 @@ export const STORED_ANALYSIS_MAX_BYTES = STAGE_B_MAX_TOTAL_PATCH_CHARS * 3 + SNA
 /** 저장소 이름과 후보 키와 제목처럼 짧은 값의 몫입니다. */
 const CREATE_INTERVIEW_META_BYTES = 4 * 1024;
 
-export const MAX_CREATE_INTERVIEW_BODY_BYTES =
-  STORED_ANALYSIS_MAX_BYTES + SNAPSHOT_BODY_BYTES + CREATE_INTERVIEW_META_BYTES;
+/**
+ * 인터뷰를 만드는 요청은 이제 분석 축약본을 싣지 않으므로(이슈 #116) 근거 스냅샷 몫만 남습니다.
+ * 상한을 그대로 두면 분석 한 줄만 한 본문을 읽고 나서야 거절하게 됩니다.
+ */
+export const MAX_CREATE_INTERVIEW_BODY_BYTES = SNAPSHOT_BODY_BYTES + CREATE_INTERVIEW_META_BYTES;
+
+export const MAX_SAVE_ANALYSIS_BODY_BYTES = STORED_ANALYSIS_MAX_BYTES + CREATE_INTERVIEW_META_BYTES;
 
 export type ParsedCreateInterview =
   | { readonly ok: true; readonly body: CreateInterviewRequestBody }
@@ -77,35 +92,54 @@ function fail(message: string): ParsedCreateInterview {
 export function parseCreateInterviewBody(value: unknown): ParsedCreateInterview {
   if (!isRecord(value)) return fail("요청 본문은 객체여야 합니다.");
 
-  const { analysis, analysisId, candidateKey, title, evidence } = value;
+  const { analysisId, candidateKey, title, evidence } = value;
 
-  if (!isRecord(analysis)) return fail("analysis가 없습니다.");
-  if (!isNonEmptyString(analysis.repoOwner) || !isNonEmptyString(analysis.repoName)) {
-    return fail("analysis.repoOwner와 analysis.repoName이 필요합니다.");
-  }
-  if (!Array.isArray(analysis.contributionItems) || analysis.contributionItems.some((item) => typeof item !== "string")) {
-    return fail("analysis.contributionItems는 문자열 배열이어야 합니다.");
-  }
-  if (!isRecord(analysis.candidates)) return fail("analysis.candidates가 없습니다.");
-  if (!isRecord(analysis.stageASummary)) return fail("analysis.stageASummary가 없습니다.");
-
-  if (analysisId !== undefined && !isNonEmptyString(analysisId)) {
-    return fail("analysisId는 비어 있지 않은 문자열이어야 합니다.");
-  }
+  if (!isNonEmptyString(analysisId)) return fail("analysisId가 필요합니다.");
   if (!isNonEmptyString(candidateKey)) return fail("candidateKey가 필요합니다.");
   if (!isNonEmptyString(title)) return fail("title이 필요합니다.");
   if (!isExperienceEvidenceSnapshot(evidence)) return fail("evidence가 근거 스냅샷 모양이 아닙니다.");
 
-  return {
-    ok: true,
-    body: {
-      analysis: analysis as unknown as StoredAnalysis,
-      ...(analysisId === undefined ? {} : { analysisId }),
-      candidateKey,
-      title,
-      evidence,
-    },
-  };
+  return { ok: true, body: { analysisId, candidateKey, title, evidence } };
+}
+
+/**
+ * 분석 축약본의 모양을 봅니다. 저장할 때는 요청 본문을, 읽을 때는 저장된 값을 이 함수로 봅니다.
+ *
+ * 읽을 때도 보는 이유는 저장된 값이 오래전에 쓴 것일 수 있기 때문입니다. 저장한 뒤에 `StoredAnalysis`의
+ * 모양이 바뀌면 옛 줄은 지금 화면이 기대하는 모양이 아니고, 그대로 화면에 넘기면 후보 목록을 그리다
+ * 깨집니다. 읽는 자리에서 걸러 Error 상태로 안내합니다.
+ */
+export function isStoredAnalysis(value: unknown): value is StoredAnalysis {
+  if (!isRecord(value)) return false;
+  if (!isNonEmptyString(value.repoOwner) || !isNonEmptyString(value.repoName)) return false;
+  if (!Array.isArray(value.contributionItems) || value.contributionItems.some((item) => typeof item !== "string")) {
+    return false;
+  }
+  if (!isRecord(value.candidates)) return false;
+  return isRecord(value.stageASummary);
+}
+
+export type ParsedSaveAnalysis =
+  | { readonly ok: true; readonly body: SaveAnalysisRequestBody }
+  | {
+      readonly ok: false;
+      readonly kind: Extract<SavedInterviewErrorKind, "invalid_request">;
+      readonly message: string;
+    };
+
+/**
+ * 모양만 봅니다. 값의 진위를 서버가 다시 따지지 않는 이유는 `parseCreateInterviewBody`와 같습니다.
+ * 여기 담기는 분석 결과는 그 사용자의 브라우저가 만들어 보낸 그 사용자의 값이고, 저장한 뒤 그
+ * 사용자에게만 되돌려 줍니다.
+ */
+export function parseSaveAnalysisBody(value: unknown): ParsedSaveAnalysis {
+  if (!isRecord(value)) {
+    return { ok: false, kind: "invalid_request", message: "요청 본문은 객체여야 합니다." };
+  }
+  if (!isStoredAnalysis(value.analysis)) {
+    return { ok: false, kind: "invalid_request", message: "analysis가 분석 축약본 모양이 아닙니다." };
+  }
+  return { ok: true, body: { analysis: value.analysis } };
 }
 
 /**

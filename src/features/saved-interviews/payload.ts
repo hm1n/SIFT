@@ -1,5 +1,7 @@
 import { BLOCK_KINDS, type BlockKind, type ExperienceBlockState } from "@/features/experience-block/types";
-import type { InterviewListItem, StoredInterview } from "@/lib/db/store";
+import type { StoredAnalysis } from "@/features/repository-analysis/analysis-snapshot";
+import type { InterviewListItem, StoredAnalysisRecord, StoredInterview } from "@/lib/db/store";
+import { isStoredAnalysis } from "./request";
 
 /**
  * 저장 계층의 값을 응답 본문 모양으로 옮깁니다.
@@ -60,6 +62,37 @@ export function toStoredInterviewPayload(interview: StoredInterview): StoredInte
     progress: interview.progress,
     candidate: interview.candidate,
   };
+}
+
+/**
+ * 저장된 분석 한 줄의 응답 모양입니다(이슈 #116). 분석 축약본에 식별자와 저장 시각을 더한 것입니다.
+ *
+ * 식별자를 함께 싣는 이유는 이 분석에서 새 인터뷰를 시작할 때 그대로 되돌려 보내야 하기 때문입니다.
+ * 저장 시각은 화면이 "언제 분석한 결과인지"를 보이는 데 씁니다. 저장된 분석은 오래된 것일 수 있고,
+ * 그 사실을 감추면 사용자가 지금 저장소 상태로 오해합니다.
+ */
+export interface StoredAnalysisPayload extends StoredAnalysis {
+  readonly id: string;
+  readonly createdAt: string;
+}
+
+/**
+ * 저장된 값이 지금 화면이 기대하는 모양일 때만 응답에 싣습니다. 모양이 어긋나면 `null`입니다.
+ *
+ * 저장된 분석은 오래전에 쓴 값일 수 있습니다. 그대로 실어 보내면 후보 목록을 그리는 도중에 깨지므로,
+ * 읽는 자리에서 걸러 화면이 Error 상태로 안내하게 합니다. 블록 상태를 `isRestorableBlockState`로
+ * 거르는 것과 같은 자리입니다.
+ */
+export function toStoredAnalysisPayload(analysis: StoredAnalysisRecord): StoredAnalysisPayload | null {
+  const stored = {
+    repoOwner: analysis.repoOwner,
+    repoName: analysis.repoName,
+    contributionItems: analysis.contributionItems,
+    candidates: analysis.candidates,
+    stageASummary: analysis.stageASummary,
+  };
+  if (!isStoredAnalysis(stored)) return null;
+  return { ...stored, id: analysis.id, createdAt: analysis.createdAt.toISOString() };
 }
 
 /**

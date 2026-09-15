@@ -61,9 +61,17 @@ const ANALYSIS = {
   stageASummary: { excludedUnits: [], selectedUnitCount: 0, thresholdScore: 0, unjudgedShas: [] },
 };
 
+/**
+ * 인터뷰를 붙일 분석 한 줄을 먼저 만듭니다. 이슈 #116부터 분석 저장은 `POST /api/analyses`가
+ * 하고 이 경로는 저장된 분석에 붙이기만 합니다.
+ */
+function seedAnalysis(store: SiftStore, githubUserId = OWNER_ID): Promise<string> {
+  return store.saveAnalysis({ githubUserId, ...ANALYSIS });
+}
+
 function createBody(overrides: Record<string, unknown> = {}) {
   return {
-    analysis: ANALYSIS,
+    analysisId: "11111111-1111-4111-8111-111111111111",
     candidateKey: "c1",
     title: "스트리밍 렌더링 최적화",
     evidence: snapshot,
@@ -83,50 +91,66 @@ function brokenStore(kind: "query_failed" | "config_missing"): SiftStore {
 }
 
 describe("POST /api/interviews", () => {
-  it("분석 한 줄과 인터뷰 한 줄을 함께 만든다", async () => {
+  it("저장된 분석에 인터뷰 한 줄을 붙인다", async () => {
     const store = createInMemoryStore();
-    const response = await handleCreateInterview(request(createBody()), store);
+    const analysisId = await seedAnalysis(store);
+
+    const response = await handleCreateInterview(request(createBody({ analysisId })), store);
     const body = await response.json();
 
     expect(response.status).toBe(200);
     expect(typeof body.interviewId).toBe("string");
-    expect(typeof body.analysisId).toBe("string");
+    expect(body.analysisId).toBe(analysisId);
 
     const stored = await store.getInterview(body.interviewId, OWNER_ID);
     expect(stored).toMatchObject({ repoOwner: "hm1n", repoName: "SIFT", title: "스트리밍 렌더링 최적화" });
   });
 
   /**
-   * 확정할 때마다 분석을 새로 저장하면 같은 분석이 여러 줄로 쌓이고, 목록에 같은 저장소가 여러 번
-   * 나오며, 후보 화면을 복원할 때 어느 줄이 진짜인지 알 수 없게 됩니다.
+   * 한 분석에서 경험을 여러 개 고를 수 있습니다. 확정할 때마다 분석을 새로 저장하면 같은 분석이 여러
+   * 줄로 쌓이고 목록에 같은 저장소가 여러 번 나옵니다.
    */
-  it("분석 식별자를 보내면 같은 분석에 인터뷰를 하나 더 붙인다", async () => {
+  it("같은 분석에 인터뷰를 여러 개 붙인다", async () => {
     const store = createInMemoryStore();
-    const first = await (await handleCreateInterview(request(createBody()), store)).json();
+    const analysisId = await seedAnalysis(store);
+
+    const first = await (await handleCreateInterview(request(createBody({ analysisId })), store)).json();
     const second = await (
-      await handleCreateInterview(request(createBody({ analysisId: first.analysisId, candidateKey: "c2" })), store)
+      await handleCreateInterview(request(createBody({ analysisId, candidateKey: "c2" })), store)
     ).json();
 
-    expect(second.analysisId).toBe(first.analysisId);
+    expect(second.analysisId).toBe(analysisId);
     expect(second.interviewId).not.toBe(first.interviewId);
-    expect((await store.listInterviews(OWNER_ID))).toHaveLength(2);
+    expect(await store.listInterviews(OWNER_ID)).toHaveLength(2);
   });
 
   /**
-   * 지워졌거나 남의 분석을 가리키는 식별자입니다. 요청이 분석 결과를 함께 들고 왔으므로 새 줄을
-   * 만들면 되고, 만든 줄은 요청한 사람의 것이라 남의 데이터에 닿지 않습니다.
+   * 이슈 #115에서는 이 경우에 분석을 새로 저장하고 넘어갔습니다(이슈 #116에서 없앤 폴백). 폴백이
+   * 남아 있으면 확정 요청이 겹칠 때 같은 분석이 여러 줄로 쌓입니다(backlog 9번). 지금은 거절하고,
+   * 분석을 다시 저장하는 일은 화면이 합니다.
    */
-  it("남의 분석 식별자를 보내면 그 분석에 붙이지 않고 새로 저장한다", async () => {
+  it("남의 분석 식별자를 보내면 404이고 아무것도 만들지 않는다", async () => {
     const store = createInMemoryStore();
-    const mine = await (await handleCreateInterview(request(createBody()), store)).json();
+    const mine = await seedAnalysis(store);
 
-    const theirs = await (
-      await handleCreateInterview(request(createBody({ analysisId: mine.analysisId }), { userId: OTHER_ID }), store)
-    ).json();
+    const response = await handleCreateInterview(
+      request(createBody({ analysisId: mine }), { userId: OTHER_ID }),
+      store
+    );
 
-    expect(theirs.analysisId).not.toBe(mine.analysisId);
-    expect(await store.listInterviews(OWNER_ID)).toHaveLength(1);
-    expect(await store.listInterviews(OTHER_ID)).toHaveLength(1);
+    expect(response.status).toBe(404);
+    expect((await response.json()).error.kind).toBe("not_found");
+    expect(await store.listInterviews(OTHER_ID)).toEqual([]);
+    expect(await store.listInterviews(OWNER_ID)).toEqual([]);
+  });
+
+  it("없는 분석 식별자를 보내면 404이다", async () => {
+    const store = createInMemoryStore();
+
+    const response = await handleCreateInterview(request(createBody()), store);
+
+    expect(response.status).toBe(404);
+    expect(await store.listInterviews(OWNER_ID)).toEqual([]);
   });
 
   it("세션이 없으면 401이다", async () => {
@@ -142,9 +166,8 @@ describe("POST /api/interviews", () => {
   });
 
   it.each([
-    ["analysis가 없으면", { analysis: undefined }],
-    ["저장소 이름이 비었으면", { analysis: { ...ANALYSIS, repoOwner: " " } }],
-    ["기여 항목이 문자열 배열이 아니면", { analysis: { ...ANALYSIS, contributionItems: [1] } }],
+    ["analysisId가 없으면", { analysisId: undefined }],
+    ["analysisId가 빈 문자열이면", { analysisId: "  " }],
     ["candidateKey가 없으면", { candidateKey: "" }],
     ["title이 없으면", { title: "  " }],
     ["근거 스냅샷 모양이 아니면", { evidence: { 이상한: "값" } }],
@@ -174,10 +197,25 @@ describe("POST /api/interviews", () => {
 });
 
 describe("GET /api/interviews", () => {
+  /** 분석 한 줄을 만들고 거기에 인터뷰를 붙입니다. 목록을 보려면 붙일 분석이 먼저 있어야 합니다. */
+  async function seedInterview(
+    store: SiftStore,
+    overrides: Record<string, unknown> = {},
+    userId = OWNER_ID
+  ): Promise<{ interviewId: string; analysisId: string }> {
+    const analysisId = (overrides.analysisId as string | undefined) ?? (await seedAnalysis(store, userId));
+    const response = await handleCreateInterview(
+      request(createBody({ ...overrides, analysisId }), { userId }),
+      store
+    );
+    return response.json();
+  }
+
   it("마지막으로 이어간 시각이 최근인 순서로 돌려준다", async () => {
     const store = createInMemoryStore();
-    const first = await (await handleCreateInterview(request(createBody({ title: "먼저" })), store)).json();
-    const second = await (await handleCreateInterview(request(createBody({ title: "나중" })), store)).json();
+    const analysisId = await seedAnalysis(store);
+    const first = await seedInterview(store, { title: "먼저", analysisId });
+    const second = await seedInterview(store, { title: "나중", analysisId, candidateKey: "c2" });
     await store.appendTurn({
       githubUserId: OWNER_ID,
       interviewId: second.interviewId,
@@ -196,7 +234,7 @@ describe("GET /api/interviews", () => {
   // JSON에는 날짜 타입이 없습니다. 타입만 `Date`로 남으면 받는 쪽이 `getTime()`을 부르다 깨집니다.
   it("시각을 ISO 문자열로 내보내고 openedAt은 싣지 않는다", async () => {
     const store = createInMemoryStore();
-    await handleCreateInterview(request(createBody()), store);
+    await seedInterview(store);
 
     const [item] = (await (await handleListInterviews(request(null, { method: "GET" }), store)).json()).interviews;
 
@@ -208,7 +246,7 @@ describe("GET /api/interviews", () => {
   // 목록 행의 `PAAR n/4`입니다. 응답에 싣지 않으면 화면이 진행도를 그릴 방법이 없습니다.
   it("충분한 블록 수를 목록 응답에 싣는다", async () => {
     const store = createInMemoryStore();
-    const { interviewId } = await (await handleCreateInterview(request(createBody()), store)).json();
+    const { interviewId } = await seedInterview(store);
     await store.appendTurn({
       githubUserId: OWNER_ID,
       interviewId,
@@ -231,7 +269,7 @@ describe("GET /api/interviews", () => {
 
   it("다른 사용자의 인터뷰는 목록에 없다", async () => {
     const store = createInMemoryStore();
-    await handleCreateInterview(request(createBody()), store);
+    await seedInterview(store);
 
     const body = await (await handleListInterviews(request(null, { method: "GET", userId: OTHER_ID }), store)).json();
     expect(body.interviews).toEqual([]);

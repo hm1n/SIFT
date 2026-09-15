@@ -15,7 +15,8 @@ import {
   type CandidateRetryPoint,
   type StageASelectionState,
 } from "./repository-analysis";
-import type { createSavedInterview } from "@/features/saved-interviews/client";
+import { SavedInterviewFetchError } from "@/features/saved-interviews/client";
+import type { createSavedInterview, saveRepositoryAnalysis } from "@/features/saved-interviews/client";
 import { RepositoryAnalysisView } from "./repository-analysis-view";
 
 
@@ -503,7 +504,18 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
       };
     }
 
-    async function confirmExperience(createInterview: Mock<typeof createSavedInterview>) {
+    function createdInterview() {
+      return vi.fn<typeof createSavedInterview>().mockResolvedValue({ interviewId: "i1", analysisId: "a1" });
+    }
+
+    function savedAnalysis() {
+      return vi.fn<typeof saveRepositoryAnalysis>().mockResolvedValue("a1");
+    }
+
+    async function renderAnalyzed(
+      createInterview: Mock<typeof createSavedInterview>,
+      saveAnalysis: Mock<typeof saveRepositoryAnalysis> = savedAnalysis()
+    ) {
       mockState(successStateWithEvidence());
       render(
         <RepositoryAnalysisView
@@ -511,37 +523,65 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
           contributionItems={["성능 개선"]}
           onSelectRepository={onSelectRepository}
           createInterview={createInterview}
+          saveAnalysis={saveAnalysis}
         />
       );
       await waitFor(() => expect(analyzeMock).toHaveBeenCalled());
-      fireEvent.click(screen.getByRole("button", { name: /Start interview/ }));
-      await waitFor(() => expect(createInterview).toHaveBeenCalled());
+      return saveAnalysis;
     }
 
-    it("확정하면 분석 축약본과 후보와 근거를 함께 보낸다", async () => {
-      const createInterview = vi.fn<typeof createSavedInterview>().mockResolvedValue({ interviewId: "i1", analysisId: "a1" });
+    async function confirmExperience(
+      createInterview: Mock<typeof createSavedInterview>,
+      saveAnalysis: Mock<typeof saveRepositoryAnalysis> = savedAnalysis()
+    ) {
+      await renderAnalyzed(createInterview, saveAnalysis);
+      fireEvent.click(screen.getByRole("button", { name: /Start interview/ }));
+      await waitFor(() => expect(createInterview).toHaveBeenCalled());
+      return saveAnalysis;
+    }
+
+    /**
+     * 정의서가 정한 저장 시점입니다(이슈 #116). 확정까지 미루면 경험을 하나도 고르지 않고 나간
+     * 사용자가 다시 들어왔을 때 후보 목록이 없습니다.
+     */
+    it("분석이 끝나면 경험을 고르기 전에 축약본을 저장한다", async () => {
+      const createInterview = createdInterview();
+
+      const saveAnalysis = await renderAnalyzed(createInterview);
+
+      await waitFor(() => expect(saveAnalysis).toHaveBeenCalledTimes(1));
+      expect(saveAnalysis.mock.calls[0][0]).toMatchObject({
+        repoOwner: "octocat",
+        repoName: "hello-world",
+        contributionItems: ["성능 개선"],
+      });
+      expect(createInterview).not.toHaveBeenCalled();
+    });
+
+    it("확정하면 저장한 분석에 후보와 근거를 붙인다", async () => {
+      const createInterview = createdInterview();
 
       await confirmExperience(createInterview);
 
       const body = createInterview.mock.calls[0][0];
       expect(body).toMatchObject({
+        analysisId: "a1",
         candidateKey: SHA,
         // 목록 화면이 그 후보에 붙인 제목 그대로입니다. 저장된 목록과 후보 목록이 같은 이름을 씁니다.
         title: "경험 요약입니다.",
-        analysis: { repoOwner: "octocat", repoName: "hello-world", contributionItems: ["성능 개선"] },
       });
       expect(body.evidence.candidateSha).toBe(SHA);
-      // 첫 확정에는 다시 쓸 분석 줄이 없습니다.
-      expect(body).not.toHaveProperty("analysisId");
+      // 분석 축약본은 이제 이 요청에 실리지 않습니다. 저장은 앞선 요청이 이미 끝냈습니다.
+      expect(body).not.toHaveProperty("analysis");
     });
 
     /**
      * 확정할 때마다 분석을 새로 저장하면 같은 분석이 여러 줄로 쌓이고 목록에 같은 저장소가 여러 번
-     * 나옵니다. 앞선 확정이 돌려준 식별자를 다시 씁니다.
+     * 나옵니다. 한 분석에서 경험을 여러 개 골라도 저장은 한 번입니다.
      */
-    it("두 번째 확정은 앞서 저장한 분석 줄을 다시 쓴다", async () => {
-      const createInterview = vi.fn<typeof createSavedInterview>().mockResolvedValue({ interviewId: "i1", analysisId: "a1" });
-      await confirmExperience(createInterview);
+    it("두 번째 확정은 같은 분석 줄을 다시 쓴다", async () => {
+      const createInterview = createdInterview();
+      const saveAnalysis = await confirmExperience(createInterview);
 
       fireEvent.click(screen.getByRole("button", { name: "← Candidates" }));
       fireEvent.click(screen.getByRole("button", { name: "Back to candidates" }));
@@ -549,6 +589,54 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
 
       await waitFor(() => expect(createInterview).toHaveBeenCalledTimes(2));
       expect(createInterview.mock.calls[1][0].analysisId).toBe("a1");
+      expect(saveAnalysis).toHaveBeenCalledTimes(1);
+    });
+
+    /**
+     * 분석 저장이 실패하면 인터뷰를 붙일 자리가 없습니다. 확정 시점에 한 번 더 시도하지 않으면 그
+     * 대화는 저장 대상이 없는 채로 진행되고 사용자는 나중에 아무것도 찾지 못합니다.
+     */
+    it("분석 저장이 실패했으면 확정 시점에 다시 저장한다", async () => {
+      const createInterview = createdInterview();
+      const saveAnalysis = vi
+        .fn<typeof saveRepositoryAnalysis>()
+        .mockRejectedValueOnce(new Error("저장 실패"))
+        .mockResolvedValue("a2");
+
+      await confirmExperience(createInterview, saveAnalysis);
+
+      expect(saveAnalysis).toHaveBeenCalledTimes(2);
+      expect(createInterview.mock.calls[0][0].analysisId).toBe("a2");
+    });
+
+    /** 가리킨 분석이 지워졌거나 남의 것이면 route가 `not_found`로 답합니다. */
+    it("분석이 사라졌으면 다시 저장해 한 번만 더 붙인다", async () => {
+      const createInterview = vi
+        .fn<typeof createSavedInterview>()
+        .mockRejectedValueOnce(new SavedInterviewFetchError("not_found", "없습니다"))
+        .mockResolvedValue({ interviewId: "i2", analysisId: "a2" });
+      const saveAnalysis = vi
+        .fn<typeof saveRepositoryAnalysis>()
+        .mockResolvedValueOnce("a1")
+        .mockResolvedValue("a2");
+
+      await confirmExperience(createInterview, saveAnalysis);
+
+      await waitFor(() => expect(createInterview).toHaveBeenCalledTimes(2));
+      expect(createInterview.mock.calls[1][0].analysisId).toBe("a2");
+      expect(saveAnalysis).toHaveBeenCalledTimes(2);
+    });
+
+    /** 두 번째도 실패하면 저장 계층이 응답하지 않는 것이므로 같은 요청을 계속 보내지 않습니다. */
+    it("다시 붙이기도 실패하면 더 시도하지 않는다", async () => {
+      const createInterview = vi
+        .fn<typeof createSavedInterview>()
+        .mockRejectedValue(new SavedInterviewFetchError("not_found", "없습니다"));
+
+      await confirmExperience(createInterview);
+
+      await waitFor(() => expect(createInterview).toHaveBeenCalledTimes(2));
+      expect(createInterview).toHaveBeenCalledTimes(2);
     });
 
     // 저장 실패가 진행 중인 인터뷰를 중단시키지 않아야 합니다(이슈 Constraint).
@@ -558,6 +646,18 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
       await confirmExperience(createInterview);
 
       expect(await screen.findByRole("heading", { level: 2, name: "스트리밍 렌더링 최적화" })).toBeInTheDocument();
+    });
+
+    /** 분석 저장까지 실패한 경우입니다. 저장할 자리가 없어도 대화는 시작돼야 합니다. */
+    it("분석 저장이 계속 실패해도 인터뷰 화면은 열린다", async () => {
+      const createInterview = createdInterview();
+      const saveAnalysis = vi.fn<typeof saveRepositoryAnalysis>().mockRejectedValue(new Error("저장 실패"));
+
+      await renderAnalyzed(createInterview, saveAnalysis);
+      fireEvent.click(screen.getByRole("button", { name: /Start interview/ }));
+
+      expect(await screen.findByRole("heading", { level: 2, name: "스트리밍 렌더링 최적화" })).toBeInTheDocument();
+      expect(createInterview).not.toHaveBeenCalled();
     });
   });
 

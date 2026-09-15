@@ -7,7 +7,11 @@ import { SESSION_PATH } from "@/lib/github/auth-paths";
 import type { RepositorySummary } from "@/lib/github/types";
 import { ExperienceCandidateList, StageAExclusions } from "@/features/experience-candidates/experience-candidate-list";
 import type { ConfirmedExperience } from "@/features/experience-candidates/experience-selection";
-import { createSavedInterview } from "@/features/saved-interviews/client";
+import {
+  createSavedInterview,
+  saveRepositoryAnalysis,
+  SavedInterviewFetchError,
+} from "@/features/saved-interviews/client";
 import { buildStoredAnalysis } from "./analysis-snapshot";
 import {
   analyzeRepository,
@@ -67,6 +71,8 @@ export interface RepositoryAnalysisViewProps {
   contributionItems: readonly string[];
   /** 테스트에서 인터뷰 줄 생성 요청을 대체하는 통로입니다. */
   createInterview?: typeof createSavedInterview;
+  /** 테스트에서 분석 저장 요청을 대체하는 통로입니다(이슈 #116). */
+  saveAnalysis?: typeof saveRepositoryAnalysis;
   /** 인터뷰 줄을 새로 만들었을 때 알립니다. 사이드바 목록이 그 줄을 바로 보이게 다시 조회합니다. */
   onInterviewCreated?: () => void;
   /** 다른 탭이 먼저 저장했을 때 그 인터뷰를 최신 내용으로 다시 엽니다. */
@@ -97,6 +103,7 @@ export function RepositoryAnalysisView({
   onSelectRepository,
   onInterviewActiveChange,
   createInterview = createSavedInterview,
+  saveAnalysis = saveRepositoryAnalysis,
   onInterviewCreated,
   onLoadLatestInterview,
   onUnsavedInterviewChange,
@@ -111,6 +118,8 @@ export function RepositoryAnalysisView({
    * 저장하면 같은 분석이 여러 줄로 쌓이고 목록에 같은 저장소가 여러 번 나옵니다.
    */
   const analysisIdRef = useRef<string | null>(null);
+  /** 진행 중인 분석 저장입니다. 겹친 요청이 같은 줄을 쓰도록 이 약속을 함께 기다립니다(이슈 #116). */
+  const savingAnalysisRef = useRef<Promise<string | null> | null>(null);
   /** 확정 번호입니다. 다른 경험으로 넘어간 뒤 늦게 도착한 응답을 걸러냅니다. */
   const confirmRef = useRef(0);
   // 진행 중인 분석의 실행 번호입니다. 초기화 뒤 늦게 도착한 결과가 화면에 다시 나타나지 않게 걸러냅니다.
@@ -122,32 +131,48 @@ export function RepositoryAnalysisView({
     if (startedRef.current) return;
     startedRef.current = true;
     const run = ++runRef.current;
-    void analyzeRepository({ owner: repository.owner, repo: repository.name }, contributionItems, (next) => {
-      if (runRef.current === run) setState(next);
-    });
+    void analyzeRepository(
+      { owner: repository.owner, repo: repository.name },
+      contributionItems,
+      stateSinkFor(run)
+    );
+    // `stateSinkFor`는 렌더마다 새로 만들어지지만 붙드는 값이 모두 ref와 setState라 실행 결과가
+    // 달라지지 않습니다. 의존성에 넣으면 이 effect가 매 렌더 다시 돌아 같은 분석을 다시 시작합니다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repository, contributionItems]);
 
-  /** 이 실행이 아직 최신일 때만 상태를 반영합니다. */
+  /**
+   * 이 실행이 아직 최신일 때만 상태를 반영하고, 분석이 끝나면 그 결과를 저장합니다(이슈 #116).
+   *
+   * 저장 시점이 정의서가 정한 자리입니다. 확정 시점까지 미루면 경험을 하나도 고르지 않고 나간
+   * 사용자가 다시 들어왔을 때 후보 목록이 없고, Stage B가 쓰는 모델은 하루 요청 수가 프로젝트 전체
+   * 20회라 다시 분석하는 것이 사실상 막혀 있습니다.
+   */
   function stateSinkFor(run: number) {
     return (next: AnalysisState) => {
-      if (runRef.current === run) setState(next);
+      if (runRef.current !== run) return;
+      setState(next);
+      if (next.status === "success") void storedAnalysisId(next, run);
     };
   }
 
   /**
-   * 경험을 확정할 때 인터뷰 한 줄과 그 시점의 분석 결과를 함께 저장합니다(이슈 #115).
+   * 이 분석을 저장한 줄의 식별자입니다. 아직 저장하지 않았으면 지금 저장합니다.
    *
-   * 인터뷰는 이 요청을 기다리지 않고 곧바로 시작합니다. 저장은 대화를 이어가기 위한 장치이지 대화의
-   * 전제가 아니므로, 기다리게 하면 저장 계층이 느릴 때 첫 질문도 함께 늦어집니다. 줄이 생기기 전에
-   * 오간 턴은 줄이 생긴 뒤 밀린 턴으로 함께 저장됩니다.
+   * 저장이 진행 중이면 그 약속을 그대로 돌려줍니다. 분석이 끝나자마자 저장이 시작되고 사용자가 곧바로
+   * 경험을 확정하면 두 요청이 겹치는데, 겹칠 때마다 저장하면 같은 분석이 여러 줄로 쌓이고 목록에 같은
+   * 저장소가 여러 번 나옵니다(backlog 9번). 요청을 직렬화해 둘이 같은 줄을 씁니다.
    *
-   * 실패하면 저장 없이 진행합니다(이슈 Constraint: "저장 실패가 진행 중인 인터뷰를 중단시키지
-   * 않아야 합니다"). 실패를 알리는 화면 안내는 디자인이 정해진 뒤에 붙입니다.
+   * 실패하면 `null`입니다. 화면을 막지 않습니다. 저장은 대화를 이어가기 위한 장치이지 대화의 전제가
+   * 아니므로, 저장이 실패해도 후보 화면과 인터뷰는 그대로 됩니다. 확정 시점에 한 번 더 시도합니다.
    */
-  function confirmExperience(confirmed: ConfirmedExperience | null) {
-    const seq = ++confirmRef.current;
-    setInterviewId(null);
-    if (confirmed === null || state.status !== "success") return;
+  function storedAnalysisId(
+    state: Extract<AnalysisState, { status: "success" }>,
+    run: number
+  ): Promise<string | null> {
+    if (analysisIdRef.current !== null) return Promise.resolve(analysisIdRef.current);
+    if (savingAnalysisRef.current !== null) return savingAnalysisRef.current;
+
     const analysis = buildStoredAnalysis({
       repoOwner: repository.owner,
       repoName: repository.name,
@@ -156,22 +181,63 @@ export function RepositoryAnalysisView({
       candidates: state.candidates,
       stageASelection: state.stageASelection,
     });
-    const analysisId = analysisIdRef.current;
-    void createInterview({
-      analysis,
-      ...(analysisId === null ? {} : { analysisId }),
-      candidateKey: confirmed.candidateKey,
-      title: confirmed.title,
-      evidence: confirmed.snapshot,
-    }).then(
-      (created) => {
-        if (confirmRef.current !== seq) return;
-        analysisIdRef.current = created.analysisId;
-        setInterviewId(created.interviewId);
-        onInterviewCreated?.();
+    const pending = saveAnalysis(analysis).then(
+      (analysisId) => {
+        savingAnalysisRef.current = null;
+        // 다시 분석을 시작했으면 이 식별자는 더 이상 이 화면의 결과가 아닙니다. 붙들면 새 분석의
+        // 후보로 만든 인터뷰가 앞 분석의 줄에 붙습니다.
+        if (runRef.current !== run) return null;
+        analysisIdRef.current = analysisId;
+        return analysisId;
       },
-      () => undefined
+      () => {
+        savingAnalysisRef.current = null;
+        return null;
+      }
     );
+    savingAnalysisRef.current = pending;
+    return pending;
+  }
+
+  /**
+   * 경험을 확정할 때 인터뷰 한 줄을 만듭니다(이슈 #115).
+   *
+   * 인터뷰는 이 요청을 기다리지 않고 곧바로 시작합니다. 저장은 대화를 이어가기 위한 장치이지 대화의
+   * 전제가 아니므로, 기다리게 하면 저장 계층이 느릴 때 첫 질문도 함께 늦어집니다. 줄이 생기기 전에
+   * 오간 턴은 줄이 생긴 뒤 밀린 턴으로 함께 저장됩니다.
+   */
+  function confirmExperience(confirmed: ConfirmedExperience | null) {
+    const seq = ++confirmRef.current;
+    setInterviewId(null);
+    if (confirmed === null || state.status !== "success") return;
+    const success = state;
+    const run = runRef.current;
+
+    void (async () => {
+      // 가리킨 분석이 지워졌으면 다시 저장해 한 번만 더 붙입니다. 두 번째도 실패하면 그때는 저장
+      // 계층이 응답하지 않는 것이므로 더 시도하지 않고 저장 없이 대화를 진행합니다.
+      for (const attempt of [0, 1]) {
+        const analysisId = await storedAnalysisId(success, run);
+        if (analysisId === null || confirmRef.current !== seq) return;
+        try {
+          const created = await createInterview({
+            analysisId,
+            candidateKey: confirmed.candidateKey,
+            title: confirmed.title,
+            evidence: confirmed.snapshot,
+          });
+          if (confirmRef.current !== seq) return;
+          analysisIdRef.current = created.analysisId;
+          setInterviewId(created.interviewId);
+          onInterviewCreated?.();
+          return;
+        } catch (error) {
+          const missing = error instanceof SavedInterviewFetchError && error.kind === "not_found";
+          if (attempt === 1 || !missing) return;
+          analysisIdRef.current = null;
+        }
+      }
+    })();
   }
 
   function restart() {
