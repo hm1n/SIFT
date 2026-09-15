@@ -10,7 +10,8 @@ import { SavedInterviewList } from "@/features/saved-interviews/saved-interview-
 import { SavedInterviewScreen } from "@/features/saved-interviews/saved-interview-screen";
 import { useSavedInterview } from "@/features/saved-interviews/use-saved-interview";
 import { useSavedInterviews } from "@/features/saved-interviews/use-saved-interviews";
-import type { StoredInterviewPayload } from "@/features/saved-interviews/payload";
+import { isRestorableBlockState, type StoredInterviewPayload } from "@/features/saved-interviews/payload";
+import { isExperienceEvidenceSnapshot } from "@/features/interview/question-request";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
 import type { RepositorySummary } from "@/lib/github/types";
 import { RepositorySelectScreen } from "./repository-select-screen";
@@ -90,11 +91,17 @@ export function RepositoryFlow() {
    * 모든 이동이 이 함수를 지납니다. 사이드바의 목록과 새 경험 찾기는 인터뷰 화면 밖에 있어서, 각
    * 화면이 스스로 확인을 걸면 이 두 경로가 그대로 빠져나갑니다(PR #105 Codex 리뷰 P1과 같은 자리).
    */
-  function navigate(next: Mode, options: { readonly confirm?: boolean } = {}) {
+  function navigate(
+    next: Mode,
+    options: { readonly confirm?: boolean; readonly onRun?: () => void } = {}
+  ) {
     const wasInterviewOpen = interviewActiveRef.current;
     const run = () => {
       interviewActiveRef.current = false;
       hasUnsavedRef.current = false;
+      // 이동이 확정된 뒤에만 실행합니다. 다시 읽기처럼 이동에 딸린 조작을 호출부에서 먼저 하면,
+      // 사용자가 확인 대화에서 "인터뷰 계속하기"를 눌러도 이미 벌어진 일이 됩니다(PR #127 리뷰).
+      options.onRun?.();
       setMode(next);
       // 인터뷰를 떠날 때마다 목록을 다시 읽습니다. 진행도와 끝난 표시가 그 사이에 바뀝니다.
       if (wasInterviewOpen) interviews.reload();
@@ -117,17 +124,27 @@ export function RepositoryFlow() {
    * 이어가기로 들어올 때 읽은 것이라 이번 대화에서 채운 블록이 빠져 있습니다.
    */
   function showEndedInterview(interviewId: string) {
-    setResumeAttempt((count) => count + 1);
     // 이탈을 한 번 더 묻지 않습니다. 끝내기는 사용자가 이미 그만하겠다고 말한 조작이고, 그 시점에
     // 훅이 밀린 턴의 저장을 한 번 더 시도합니다. 여기서 확인을 또 띄우면 "인터뷰 계속하기"가 이미
     // 끝난 인터뷰를 가리키게 됩니다.
-    navigate({ kind: "resume", interviewId, stage: "review" }, { confirm: false });
+    navigate(
+      { kind: "resume", interviewId, stage: "review" },
+      { confirm: false, onRun: () => setResumeAttempt((count) => count + 1) }
+    );
   }
 
-  /** 다른 탭이 먼저 저장했을 때입니다. 저장된 값을 다시 읽어 그 상태로 화면을 다시 세웁니다. */
+  /**
+   * 다른 탭이 먼저 저장했을 때입니다. 저장된 값을 다시 읽어 그 상태로 화면을 다시 세웁니다.
+   *
+   * 다시 읽기를 이동보다 먼저 걸지 않습니다. `resumeAttempt`가 오르면 `useSavedInterview`의 키가
+   * 바뀌어 읽는 중이 되고 인터뷰 화면이 내려갑니다. 사용자가 확인 대화에서 이동을 취소해도 쓰던
+   * 답변은 이미 사라진 뒤입니다(PR #127 리뷰).
+   */
   function loadLatest(interviewId: string) {
-    setResumeAttempt((count) => count + 1);
-    navigate({ kind: "resume", interviewId, stage: "review" });
+    navigate(
+      { kind: "resume", interviewId, stage: "review" },
+      { onRun: () => setResumeAttempt((count) => count + 1) }
+    );
   }
 
   const sidebarInterviews = (
@@ -282,9 +299,30 @@ function ResumedInterview({
   }
 
   const { interview } = state;
-  const snapshot = interview.evidence as ExperienceEvidenceSnapshot | null;
-  if (mode.stage === "review" || snapshot === null || typeof snapshot !== "object") {
+  /*
+   * 저장된 값을 인터뷰 화면이 쓰기 전에 모양을 확인합니다(PR #127 리뷰).
+   *
+   * 예전에는 `null`과 객체 여부만 봤습니다. 그런데 근거 스냅샷의 칸이 빠진 값이면 인터뷰 화면이
+   * `snapshot.representativeCommit.title`을 읽다 렌더 도중 멈춥니다. 블록 상태도 같습니다. 질문
+   * 경로가 쓰는 검사와 저장된 블록 상태 검사를 그대로 씁니다. 모양이 어긋나면 요약 화면에 남습니다.
+   * 그 화면은 읽을 수 없는 값을 안내로 바꿔 그립니다.
+   */
+  const snapshot = isExperienceEvidenceSnapshot(interview.evidence) ? interview.evidence : null;
+  if (mode.stage === "review") {
     return <SavedInterviewScreen interview={interview} onResume={onResume} onLoadLatest={onLoadLatest} />;
+  }
+  if (snapshot === null || !isRestorableBlockState(interview.blockState)) {
+    // 이어갈 수 없다고 알립니다. 요약 화면에 그냥 남기면 사용자가 버튼을 눌러도 아무 일도 일어나지
+    // 않는 것처럼 보입니다.
+    return (
+      <StatusScreen
+        kind="error"
+        code="ERROR / STORAGE"
+        label="Couldn't open this interview."
+        sub="The saved evidence or blocks can no longer be read. You can still review what was saved."
+        action={{ label: "Back to the summary", onClick: onBackToReview }}
+      />
+    );
   }
 
   return (

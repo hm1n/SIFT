@@ -327,4 +327,81 @@ describe("RepositoryFlow 이어가기", () => {
 
     expect(await screen.findByRole("heading", { name: "Choose a repository to analyze." })).toBeInTheDocument();
   });
+
+  /**
+   * "최신 내용 불러오기"는 이동입니다. 저장되지 않은 답변이 있으면 먼저 확인을 받고, 사용자가
+   * 이동을 취소하면 아무것도 다시 읽지 않아야 합니다. 예전에는 확인 대화를 띄우기 전에 다시 읽기를
+   * 걸어, 취소해도 인터뷰 화면이 내려가고 쓰던 답변이 사라졌습니다(PR #127 리뷰).
+   */
+  it("최신 내용 불러오기를 취소하면 다시 읽지 않고 인터뷰에 남는다", async () => {
+    const { calls } = stubFetch({
+      [`/api/interviews/${INTERVIEW_ID}`]: () => Response.json({ interview: STORED }),
+      "/api/interviews": () => Response.json({ interviews: [LIST_ITEM] }),
+      "/api/interview/stream": () =>
+        new Response(
+          encodeSseEvent({ type: "chunk", seq: 1, text: "무엇을 해결하려고 했나요?" }) +
+            encodeSseEvent({ type: "done", seq: 1 }),
+          { status: 200 }
+        ),
+      // 다른 곳이 먼저 저장한 경우입니다. 저장되지 않은 턴이 남고 "Load latest"가 뜹니다.
+      "/api/interview/experience-block": () =>
+        Response.json({
+          state: { ...emptyExperienceBlockState(), version: 1 },
+          affectedBlocks: [],
+          targetResponse: "provided",
+          save: "version_conflict",
+        }),
+    });
+    render(<RepositoryFlow />);
+    fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Continue interview/ }));
+    await screen.findByRole("region", { name: "Code / Evidence" });
+    const detailCallsBefore = calls.filter((url) => url.includes(`/api/interviews/${INTERVIEW_ID}`)).length;
+
+    const answer = await screen.findByRole("textbox", { name: /Answer/ });
+    fireEvent.change(answer, { target: { value: "재시도 큐를 붙였습니다." } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Load latest" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue the interview" }));
+
+    expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
+    expect(calls.filter((url) => url.includes(`/api/interviews/${INTERVIEW_ID}`))).toHaveLength(detailCallsBefore);
+  });
+
+  /**
+   * 저장된 근거의 모양이 어긋나면 인터뷰 화면을 열지 않습니다(PR #127 리뷰). 예전에는 `null`과 객체
+   * 여부만 봐서, 칸이 빠진 값이면 인터뷰 화면이 대표 커밋을 읽다 렌더 도중 멈췄습니다.
+   */
+  it("근거의 칸이 빠져 있으면 인터뷰를 열지 않고 그 사실을 알린다", async () => {
+    const snapshot = evidenceSnapshotFixture();
+    stubWithSavedInterview(() =>
+      Response.json({
+        interview: {
+          ...STORED,
+          // 대표 커밋에서 화면이 읽는 `files`를 지웁니다. 겉보기에는 스냅샷 모양입니다.
+          evidence: { ...snapshot, representativeCommit: { ...snapshot.representativeCommit, files: undefined } },
+        },
+      })
+    );
+    render(<RepositoryFlow />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Continue interview/ }));
+
+    expect(await screen.findByText("Couldn't open this interview.")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Code / Evidence" })).not.toBeInTheDocument();
+  });
+
+  it("저장된 블록 상태를 읽을 수 없으면 인터뷰를 열지 않는다", async () => {
+    stubWithSavedInterview(() =>
+      Response.json({ interview: { ...STORED, blockState: { version: 1 } } })
+    );
+    render(<RepositoryFlow />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Continue interview/ }));
+
+    expect(await screen.findByText("Couldn't open this interview.")).toBeInTheDocument();
+  });
 });
