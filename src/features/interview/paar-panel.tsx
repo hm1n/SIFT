@@ -16,20 +16,6 @@ import styles from "./paar-panel.module.css";
 /** PAAR 블록은 PROBLEM·ANALYZE·ACTION·RESULT 넷입니다. */
 export const PAAR_BLOCK_COUNT = BLOCK_KINDS.length;
 
-/**
- * 답변이 블록에 반영되지 않은 이유입니다. 분류를 문장으로 옮기는 자리이고, 목적은 사용자가 다시
- * 시도하면 풀릴 일인지 아닌지를 가리는 것입니다.
- *
- * 문구를 넣은 계기는 2026-09-15의 사고입니다. `.env`의 키 이름이 어긋나 블록 갱신이 매번 인증 실패로
- * 끝났는데 화면에는 "반영되지 않았습니다"만 떠서, 설정 문제라는 것이 드러나기까지 인터뷰 두 개의
- * 대화가 통째로 사라졌습니다. 저장이 이 요청에 얹혀 가므로 반영 실패는 곧 저장 실패입니다.
- *
- * 분류를 다 적지 않습니다. 없는 분류에는 아래의 일반 문구가 나갑니다. 틀린 원인을 단정하는 것보다
- * 원인을 말하지 않는 편이 낫습니다. 문장은 `interview-stream-view.tsx`의 생성 실패 문구와 같은
- * 방식으로 씁니다.
- */
-export { BLOCK_UPDATE_ERROR_CAUSE } from "@/copy/interview";
-
 /** 카드가 그리는 네 가지 상태입니다. 이슈 #91 Approach 2의 표와 같습니다. */
 type CardState = "pending" | "collecting" | "filled" | "unfilled";
 
