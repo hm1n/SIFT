@@ -8,6 +8,7 @@ import type {
   NewAnalysis,
   NewInterview,
   SiftStore,
+  StoredAnalysisRecord,
   StoredInterview,
 } from "./store";
 import type { InterviewProgress } from "@/features/experience-block/progress";
@@ -114,6 +115,18 @@ const STORED_CANDIDATE_SQL = `(select candidate
            where candidate ->> 'sha' = s.candidate_key
            limit 1) as candidate`;
 
+function toAnalysisRecord(row: Record<string, unknown>): StoredAnalysisRecord {
+  return {
+    id: row.id as string,
+    repoOwner: row.repo_owner as string,
+    repoName: row.repo_name as string,
+    contributionItems: row.contribution_items,
+    candidates: row.candidates,
+    stageASummary: row.stage_a_summary,
+    createdAt: row.created_at as Date,
+  };
+}
+
 function toListItem(row: Record<string, unknown>): InterviewListItem {
   return {
     id: row.id as string,
@@ -164,6 +177,41 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
         ]
       );
       return id;
+    },
+
+    async getAnalysis(id: string, githubUserId: number): Promise<StoredAnalysisRecord | null> {
+      // uuid가 아닌 값을 `uuid` 칸에 넘기면 Postgres가 `22P02`를 던집니다. 이유는 `isUuid` 주석과 같습니다.
+      if (!isUuid(id)) return null;
+      const rows = await run(
+        `select id, repo_owner, repo_name, contribution_items, candidates, stage_a_summary, created_at
+           from repository_analysis
+          where id = $1::uuid and github_user_id = $2::bigint`,
+        [id, githubUserId]
+      );
+      return rows.length > 0 ? toAnalysisRecord(rows[0]) : null;
+    },
+
+    /**
+     * 저장소 이름으로 찾습니다. 같은 저장소를 여러 번 분석했으면 마지막 것입니다.
+     *
+     * 이름 비교를 대소문자까지 그대로 봅니다. GitHub의 저장소 이름은 대소문자를 가리지 않고 같은 곳을
+     * 가리키지만, 여기 들어오는 이름은 사용자가 손으로 친 것이 아니라 저장소 목록 조회가 준 정식
+     * 표기를 그대로 다시 보낸 값입니다. 가리지 않게 만들면 인덱스를 타지 못하면서 얻는 것이 없습니다.
+     */
+    async getLatestAnalysisByRepo(
+      githubUserId: number,
+      repoOwner: string,
+      repoName: string
+    ): Promise<StoredAnalysisRecord | null> {
+      const rows = await run(
+        `select id, repo_owner, repo_name, contribution_items, candidates, stage_a_summary, created_at
+           from repository_analysis
+          where github_user_id = $1::bigint and repo_owner = $2::text and repo_name = $3::text
+          order by created_at desc, id desc
+          limit 1`,
+        [githubUserId, repoOwner, repoName]
+      );
+      return rows.length > 0 ? toAnalysisRecord(rows[0]) : null;
     },
 
     /**

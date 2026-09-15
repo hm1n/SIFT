@@ -429,4 +429,56 @@ describe("메모리 저장 계층", () => {
     expect(await store.purgeInterviewsOpenedBefore(new Date(Date.now() + 1000))).toBe(1);
     expect(await store.listInterviews(OWNER_ID)).toEqual([]);
   });
+
+  describe("저장된 분석 읽기", () => {
+    it("저장한 값을 그대로 돌려주고 사용자 번호는 싣지 않는다", async () => {
+      const store = createInMemoryStore();
+      const { analysisId } = await seed(store);
+
+      const analysis = await store.getAnalysis(analysisId, OWNER_ID);
+
+      expect(analysis).toMatchObject({ id: analysisId, repoOwner: "hm1n", repoName: "SIFT" });
+      expect(analysis?.createdAt).toBeInstanceOf(Date);
+      expect(analysis).not.toHaveProperty("githubUserId");
+    });
+
+    it("남의 분석은 없는 것으로 본다", async () => {
+      const store = createInMemoryStore();
+      const { analysisId } = await seed(store);
+
+      expect(await store.getAnalysis(analysisId, OTHER_ID)).toBeNull();
+    });
+
+    it("없는 분석은 null이다", async () => {
+      const store = createInMemoryStore();
+
+      expect(await store.getAnalysis("11111111-1111-4111-8111-111111111111", OWNER_ID)).toBeNull();
+    });
+
+    /**
+     * 같은 저장소를 다시 분석하면 줄이 하나 더 생깁니다. 앞선 분석은 그때의 커밋만 담고 있어 다시
+     * 그릴 화면으로는 낡은 값입니다. 실제 구현과 같은 값을 고르는지 봅니다.
+     */
+    it("저장소로 찾으면 마지막에 저장한 분석을 돌려준다", async () => {
+      const store = createInMemoryStore();
+      await seed(store);
+      const { analysisId: latest } = await seed(store);
+
+      expect(await store.getLatestAnalysisByRepo(OWNER_ID, "hm1n", "SIFT")).toMatchObject({ id: latest });
+    });
+
+    it("저장소로 찾을 때 남의 분석은 세지 않는다", async () => {
+      const store = createInMemoryStore();
+      await seed(store, OTHER_ID);
+
+      expect(await store.getLatestAnalysisByRepo(OWNER_ID, "hm1n", "SIFT")).toBeNull();
+    });
+
+    it("분석한 적 없는 저장소는 null이다", async () => {
+      const store = createInMemoryStore();
+      await seed(store);
+
+      expect(await store.getLatestAnalysisByRepo(OWNER_ID, "hm1n", "other-repo")).toBeNull();
+    });
+  });
 });

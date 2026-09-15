@@ -25,6 +25,25 @@ import type { InterviewHistoryMessage } from "@/features/interview/history";
  */
 export interface SiftStore {
   saveAnalysis(input: NewAnalysis): Promise<string>;
+  /**
+   * 저장된 분석 하나입니다. 없거나 그 사용자의 것이 아니면 `null`입니다(이슈 #116).
+   *
+   * 저장된 인터뷰의 요약 화면에서 그 분석의 후보 목록으로 갈 때 씁니다. 화면이 들고 있는 것이
+   * `analysisId`이므로 식별자로 찾습니다.
+   */
+  getAnalysis(id: string, githubUserId: number): Promise<StoredAnalysisRecord | null>;
+  /**
+   * 그 저장소에서 가장 최근에 저장한 분석입니다. 없으면 `null`입니다(이슈 #116).
+   *
+   * Repository를 고르는 화면에서 들어올 때 씁니다. 그 경로에는 `analysisId`가 없고 사용자가 고른
+   * 것은 저장소이므로, 저장소 이름으로 찾습니다. 같은 저장소를 여러 번 분석했으면 마지막 것을
+   * 돌려줍니다. 앞선 분석은 그때의 커밋만 담고 있어 다시 그릴 화면으로는 낡은 값입니다.
+   */
+  getLatestAnalysisByRepo(
+    githubUserId: number,
+    repoOwner: string,
+    repoName: string
+  ): Promise<StoredAnalysisRecord | null>;
   /** 분석이 없거나 그 사용자의 것이 아니면 `null`입니다. 남의 분석에 인터뷰를 붙일 수 없습니다. */
   createInterview(input: NewInterview): Promise<string | null>;
   /**
@@ -78,6 +97,24 @@ export interface SiftStore {
   deleteInterview(id: string, githubUserId: number): Promise<boolean>;
   /** 마지막으로 연 시각이 `before`보다 오래된 인터뷰를 지우고 지운 수를 돌려줍니다. */
   purgeInterviewsOpenedBefore(before: Date): Promise<number>;
+}
+
+/**
+ * 저장된 분석 한 줄입니다(이슈 #116). `NewAnalysis`에서 사용자 번호를 빼고 식별자와 저장 시각을
+ * 더한 것입니다. 사용자 번호를 돌려주지 않는 이유는 조회 조건에 이미 들어가 있어서, 되돌려 주면
+ * 화면이 그 값으로 다시 판정하고 싶어지기 때문입니다. 소유자 판정은 질의 안에서만 합니다.
+ *
+ * jsonb 칸 셋을 `unknown`으로 두는 것은 `NewAnalysis`와 같은 이유입니다. 모양을 아는 것은 이 값을
+ * 쓰는 화면이고, 저장 계층은 저장하고 돌려줄 뿐입니다.
+ */
+export interface StoredAnalysisRecord {
+  readonly id: string;
+  readonly repoOwner: string;
+  readonly repoName: string;
+  readonly contributionItems: unknown;
+  readonly candidates: unknown;
+  readonly stageASummary: unknown;
+  readonly createdAt: Date;
 }
 
 export interface NewAnalysis {

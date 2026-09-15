@@ -56,6 +56,8 @@ describe("Neon 저장 계층", () => {
      */
     const operations: Array<[string, (store: SiftStore) => Promise<unknown>]> = [
       ["saveAnalysis", (store) => store.saveAnalysis(NEW_ANALYSIS)],
+      ["getAnalysis", (store) => store.getAnalysis(ANALYSIS_ID, OWNER_ID)],
+      ["getLatestAnalysisByRepo", (store) => store.getLatestAnalysisByRepo(OWNER_ID, "hm1n", "SIFT")],
       ["createInterview", (store) => store.createInterview(NEW_INTERVIEW)],
       [
         "appendTurn",
@@ -131,6 +133,69 @@ describe("Neon 저장 계층", () => {
       expect(await store.getInterview("x", OWNER_ID)).toBeNull();
       expect(await store.deleteInterview("x", OWNER_ID)).toBe(false);
       expect(calls).toHaveLength(0);
+    });
+
+    // 분석 식별자도 요청 경로에서 그대로 옵니다(이슈 #116).
+    it("분석 조회도 없는 것으로 보고 질의하지 않는다", async () => {
+      const { execute, calls } = fakeExecute();
+
+      expect(await neonStore(execute).getAnalysis("분석", OWNER_ID)).toBeNull();
+      expect(calls).toHaveLength(0);
+    });
+  });
+
+  describe("저장된 분석 읽기", () => {
+    const ROW = {
+      id: ANALYSIS_ID,
+      repo_owner: "hm1n",
+      repo_name: "SIFT",
+      contribution_items: ["스트리밍"],
+      candidates: { candidates: { candidates: [] } },
+      stage_a_summary: { selectedUnitCount: 3 },
+      created_at: new Date("2026-09-15T00:00:00Z"),
+    };
+
+    it("칸 이름을 화면이 쓰는 이름으로 옮기고 사용자 번호는 돌려주지 않는다", async () => {
+      const { execute } = fakeExecute([[ROW]]);
+
+      const analysis = await neonStore(execute).getAnalysis(ANALYSIS_ID, OWNER_ID);
+
+      expect(analysis).toEqual({
+        id: ANALYSIS_ID,
+        repoOwner: "hm1n",
+        repoName: "SIFT",
+        contributionItems: ["스트리밍"],
+        candidates: { candidates: { candidates: [] } },
+        stageASummary: { selectedUnitCount: 3 },
+        createdAt: ROW.created_at,
+      });
+      expect(analysis).not.toHaveProperty("githubUserId");
+    });
+
+    it("없으면 null이다", async () => {
+      const { execute } = fakeExecute([[]]);
+
+      expect(await neonStore(execute).getAnalysis(ANALYSIS_ID, OWNER_ID)).toBeNull();
+    });
+
+    /**
+     * 같은 저장소를 여러 번 분석하면 줄이 여럿입니다. 앞선 분석은 그때의 커밋만 담고 있어 다시 그릴
+     * 화면으로는 낡은 값이므로, 고르는 일을 코드가 아니라 질의에 맡깁니다.
+     */
+    it("저장소로 찾을 때는 최근 것 한 줄만 질의한다", async () => {
+      const { execute, calls } = fakeExecute([[ROW]]);
+
+      await neonStore(execute).getLatestAnalysisByRepo(OWNER_ID, "hm1n", "SIFT");
+
+      expect(calls[0].text).toContain("order by created_at desc");
+      expect(calls[0].text).toContain("limit 1");
+      expect(calls[0].params).toEqual([OWNER_ID, "hm1n", "SIFT"]);
+    });
+
+    it("저장소로 찾을 때 없으면 null이다", async () => {
+      const { execute } = fakeExecute([[]]);
+
+      expect(await neonStore(execute).getLatestAnalysisByRepo(OWNER_ID, "hm1n", "SIFT")).toBeNull();
     });
   });
 

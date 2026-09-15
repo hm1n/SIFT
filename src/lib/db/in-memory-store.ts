@@ -6,6 +6,7 @@ import type {
   NewAnalysis,
   NewInterview,
   SiftStore,
+  StoredAnalysisRecord,
   StoredInterview,
 } from "./store";
 import { emptyInterviewProgress } from "@/features/experience-block/progress";
@@ -14,6 +15,7 @@ import type { InterviewHistoryMessage } from "@/features/interview/history";
 
 interface AnalysisRow extends NewAnalysis {
   readonly id: string;
+  readonly createdAt: Date;
 }
 
 interface InterviewRow extends NewInterview {
@@ -48,6 +50,19 @@ function storedCandidate(analysis: AnalysisRow, candidateKey: string): unknown {
   const candidates = (analysis.candidates as { candidates?: { candidates?: unknown } } | null)?.candidates?.candidates;
   if (!Array.isArray(candidates)) return null;
   return candidates.find((candidate) => (candidate as { sha?: unknown }).sha === candidateKey) ?? null;
+}
+
+/** 사용자 번호를 뺀 모양으로 돌려줍니다. 소유자 판정은 조회 조건에서 이미 끝났습니다. */
+function toAnalysisRecord(analysis: AnalysisRow): StoredAnalysisRecord {
+  return {
+    id: analysis.id,
+    repoOwner: analysis.repoOwner,
+    repoName: analysis.repoName,
+    contributionItems: analysis.contributionItems,
+    candidates: analysis.candidates,
+    stageASummary: analysis.stageASummary,
+    createdAt: analysis.createdAt,
+  };
 }
 
 /**
@@ -93,8 +108,28 @@ export function createInMemoryStore(): SiftStore {
         contributionItems: asJsonb(input.contributionItems),
         candidates: asJsonb(input.candidates),
         stageASummary: asJsonb(input.stageASummary),
+        createdAt: new Date(),
       });
       return id;
+    },
+
+    async getAnalysis(id, githubUserId) {
+      const analysis = analyses.get(id);
+      if (!analysis || analysis.githubUserId !== githubUserId) return null;
+      return toAnalysisRecord(analysis);
+    },
+
+    async getLatestAnalysisByRepo(githubUserId, repoOwner, repoName) {
+      // 같은 저장소를 여러 번 분석했으면 마지막 것입니다. 실제 구현은 `order by created_at desc`로
+      // 같은 값을 고릅니다. 저장 시각이 같은 줄이 둘이면 나중에 넣은 것을 고르는 것도 같습니다.
+      const matched = [...analyses.values()].filter(
+        (analysis) =>
+          analysis.githubUserId === githubUserId &&
+          analysis.repoOwner === repoOwner &&
+          analysis.repoName === repoName
+      );
+      const latest = matched.at(-1);
+      return latest ? toAnalysisRecord(latest) : null;
     },
 
     async createInterview(input) {
