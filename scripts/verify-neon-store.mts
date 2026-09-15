@@ -199,9 +199,17 @@ async function main(): Promise<void> {
   const leftover = await store.listInterviews(USER_ID);
   check("지운 뒤 목록이 비어 있다", leftover.length, 0);
 
+  /*
+   * 이 실행이 만든 분석 줄만 식별자로 지웁니다(PR #127 리뷰).
+   *
+   * `USER_ID`는 유한한 범위에서 무작위로 고른 값이라 데이터베이스가 예약해 주지 않습니다. 사용자
+   * 번호로 지우면 같은 번호를 쓰는 기존 줄까지 함께 지워지고, `repository_analysis`를 지우면 거기
+   * 딸린 인터뷰가 cascade로 사라집니다. 이 스크립트는 실제 Neon을 상대로 돌고 접속 대상을 스스로
+   * 확인하지 않으므로, 대상이 어긋난 실행에서는 남의 저장된 인터뷰를 지우게 됩니다.
+   */
   const sql = getSql();
-  await sql.query("delete from repository_analysis where github_user_id = $1", [USER_ID]);
-  const rest = await sql.query("select count(*)::int as n from repository_analysis where github_user_id = $1", [USER_ID]);
+  await sql.query("delete from repository_analysis where id = $1::uuid", [analysisId]);
+  const rest = await sql.query("select count(*)::int as n from repository_analysis where id = $1::uuid", [analysisId]);
   check("만든 분석 줄을 지웠다", rest[0].n, 0);
 
   console.log(failures === 0 ? "\n모두 통과했습니다." : `\n${failures}건 실패했습니다.`);
