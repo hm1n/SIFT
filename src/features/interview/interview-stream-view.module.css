@@ -14,7 +14,13 @@
  * 높이 규칙은 그대로입니다. 로그가 자기 안에서 스크롤하고, 자동 스크롤(`use-auto-scroll.ts`)과
  * 낭독 경계와 `InterviewMessage`의 memo 경계는 건드리지 않았습니다.
  */
-.stream { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+/*
+ * `position: relative`는 스크린리더 전용 문구(`.visuallyHidden` 계열) 때문입니다. 그 요소들은
+ * `position: absolute`인데 위치 잡을 조상이 없으면 초기 컨테이닝 블록을 기준으로 놓입니다. 그러면
+ * 스크롤 영역 안에 있어도 잘리지 않고, 정적 위치가 아래로 갈수록 문서 자체가 길어져 화면 아래에
+ * 빈 스크롤 영역이 생깁니다(2026-09-15 실측: body.scrollHeight 422, html.scrollHeight 1036).
+ */
+.stream { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
 
 /*
  * 로그는 열 전체를 씁니다. 테두리와 라운드와 패딩을 두지 않습니다. 여백은 각 메시지 행이 갖고,
