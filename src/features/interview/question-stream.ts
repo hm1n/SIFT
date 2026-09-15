@@ -1,4 +1,5 @@
 import { QUESTION_REQUEST_COPY } from "@/copy/interview";
+import { ExperienceCandidateOutputError } from "@/features/experience-candidates/errors";
 import { isServerErrorKind } from "./errors";
 import type { InterviewStreamErrorKind } from "./errors";
 import type { InterviewQuestionStream } from "./question-generation";
@@ -69,7 +70,12 @@ export function createQuestionSseStream(
           send({
             type: "error",
             kind: resolveGenerationErrorKind(error),
-            message: error instanceof Error ? error.message : QUESTION_REQUEST_COPY.generationFailed,
+            // 생성 실패는 `mapInterviewLlmError`를 거쳐 한국어 message를 답니다. 그 밖의 예외는
+            // 원문이 영어일 수 있고 화면이 이 값을 그대로 그리므로 싣지 않습니다.
+            message:
+              error instanceof ExperienceCandidateOutputError
+                ? error.message
+                : QUESTION_REQUEST_COPY.generationFailed,
           });
           finish();
         } catch {

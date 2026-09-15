@@ -241,7 +241,12 @@ export function RepositoryAnalysisView({
     } catch (error) {
       if (runRef.current !== run) return;
       if (!(error instanceof SavedInterviewFetchError) || error.kind !== "not_found") {
-        setLookup({ status: "failed", message: error instanceof Error ? error.message : "" });
+        // `SavedInterviewFetchError`의 message만 씁니다. 그 밖의 예외는 원문이 영어일 수 있고
+        // 이 값은 아래 조회 실패 안내가 그대로 그립니다.
+        setLookup({
+          status: "failed",
+          message: error instanceof SavedInterviewFetchError ? error.message : "",
+        });
         return;
       }
       // 사용자가 가리킨 분석이 사라졌습니다. 저장소 이름으로 대신 찾지 않고 알립니다. 다른 분석을

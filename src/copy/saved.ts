@@ -1,4 +1,13 @@
 import { BLOCK_EMPTY_ENDED, BLOCK_EMPTY_PENDING, LOAD_LATEST, NO_INTERVIEWS } from "./shared";
+/**
+ * 저장 계층 요청이 화면에 닿기 전에 끊긴 경우입니다. `fetch`가 던지는 영어 원문을 쓰지 않습니다.
+ * `repository-analysis-view.tsx`의 조회 실패 안내가 이 message를 그대로 그립니다.
+ */
+export const SAVED_INTERVIEW_REQUEST_COPY = {
+  network: "저장 서버에 연결하지 못했습니다.",
+  unreadableResponse: "저장 서버 응답을 읽지 못했습니다.",
+} as const;
+
 export const SAVED_INTERVIEW_LIST_COPY = {
   loading: "인터뷰를 불러오는 중…",
   error: "인터뷰를 불러오지 못했습니다.",
