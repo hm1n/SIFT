@@ -194,6 +194,57 @@ describe("PaarPanel 출처와 충돌 표시", () => {
     // 문장 안이 아니라 밖입니다(설계 8절).
     expect(sentence.parentElement?.contains(conflict)).toBe(false);
   });
+
+  it("고친 블록에는 예전 충돌을 남기지 않는다", () => {
+    // 충돌은 모델이 낸 주장에 매여 있습니다. 사용자가 블록을 자기 문장으로 바꾸면 그 주장은 화면에
+    // 없는데, 예전에는 충돌 안내만 남아 쓴 적 없는 문장에 대한 경고가 됐습니다(PR #121 리뷰 1라운드).
+    const conflicted: Claim = { ...citedClaim, id: "c2", status: "conflicted" };
+    render(
+      <PanelHarness
+        stream={baseStream({
+          isEnded: true,
+          endReason: "user",
+          blockState: stateWith({
+            claims: [citedClaim, conflicted],
+            conflicts: [{ claimId: "c2", observation: "커밋에는 그 변경이 없습니다", turnId: "t2" }],
+            display: displayOf("problem", [{ text: "모델이 쓴 문장", claimIds: ["c1"] }]),
+          }),
+        })}
+      />
+    );
+    expect(screen.getByText("Conflicts with the evidence · needs checking")).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "사용자가 고친 문장" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.getByText("사용자가 고친 문장")).toBeInTheDocument();
+    expect(screen.queryByText("Conflicts with the evidence · needs checking")).not.toBeInTheDocument();
+    expect(screen.queryByText("커밋에는 그 변경이 없습니다")).not.toBeInTheDocument();
+  });
+
+  it("블록을 모두 지워도 예전 충돌을 남기지 않는다", () => {
+    const conflicted: Claim = { ...citedClaim, id: "c2", status: "conflicted" };
+    render(
+      <PanelHarness
+        stream={baseStream({
+          isEnded: true,
+          endReason: "user",
+          blockState: stateWith({
+            claims: [citedClaim, conflicted],
+            conflicts: [{ claimId: "c2", observation: "커밋에는 그 변경이 없습니다", turnId: "t2" }],
+            display: displayOf("problem", [{ text: "모델이 쓴 문장", claimIds: ["c1"] }]),
+          }),
+        })}
+      />
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "   " } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(screen.queryByText("Conflicts with the evidence · needs checking")).not.toBeInTheDocument();
+  });
 });
 
 describe("PaarPanel 미반영 상태", () => {

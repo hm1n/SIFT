@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   blockEditByteLength,
   blockMarks,
+  effectiveConflicts,
   effectiveDisplay,
   filledBlockCount,
   formatBlockEdit,
@@ -132,6 +133,41 @@ describe("blockMarks", () => {
     expect(mark.text).toBe("사용자가 고친 문장");
     expect(mark.userStatement).toBe(true);
     expect(mark.repositorySources).toEqual([]);
+  });
+});
+
+describe("effectiveConflicts", () => {
+  const conflictedClaim: Claim = { ...repositoryClaim, id: "c9", block: "problem", status: "conflicted" };
+  const conflict = { claimId: "c9", observation: "커밋에는 그 변경이 없습니다", turnId: "t2" };
+
+  function conflictedState(): ExperienceBlockState {
+    return stateWith({
+      claims: [conflictedClaim],
+      conflicts: [conflict],
+      display: { ...emptyExperienceBlockState().display, problem: [{ text: "모델이 쓴 문장", claimIds: ["c9"] }] },
+    });
+  }
+
+  it("고치지 않은 블록은 미해소 충돌을 그대로 돌려준다", () => {
+    expect(effectiveConflicts(conflictedState(), {}, "problem")).toEqual([conflict]);
+  });
+
+  it("고친 블록은 예전 충돌을 승계하지 않는다", () => {
+    // 설계 8절 "종료 후 사용자가 문장을 수정하면 기존 출처와 검증 상태를 자동으로 승계하지
+    // 않습니다". 충돌은 모델이 낸 주장에 매여 있어 사용자가 문장을 바꾸면 근거가 사라집니다
+    // (PR #121 리뷰 1라운드).
+    const edits: BlockEdits = { problem: parseBlockEdit("사용자가 고친 문장") };
+    expect(effectiveConflicts(conflictedState(), edits, "problem")).toEqual([]);
+  });
+
+  it("내용을 모두 지운 블록도 예전 충돌을 남기지 않는다", () => {
+    const edits: BlockEdits = { problem: [] };
+    expect(effectiveConflicts(conflictedState(), edits, "problem")).toEqual([]);
+  });
+
+  it("다른 블록을 고쳐도 이 블록의 충돌은 그대로다", () => {
+    const edits: BlockEdits = { result: parseBlockEdit("다른 블록 편집") };
+    expect(effectiveConflicts(conflictedState(), edits, "problem")).toEqual([conflict]);
   });
 });
 

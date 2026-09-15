@@ -1,6 +1,7 @@
 import {
   BLOCK_MAX_BYTES,
   BLOCK_MAX_STATEMENTS,
+  blockConflicts,
   byteLength,
   markDisplay,
   type DisplayMark,
@@ -61,6 +62,24 @@ export function validateBlockEdit(sentences: readonly DisplaySentence[]): BlockE
   if (sentences.length > BLOCK_MAX_STATEMENTS) return "too_many_statements";
   if (blockEditByteLength(sentences) > BLOCK_MAX_BYTES) return "block_too_large";
   return null;
+}
+
+/**
+ * 화면에 그릴 블록의 미해소 충돌입니다. 고친 블록은 언제나 비어 있습니다.
+ *
+ * 충돌은 모델이 낸 문장과 저장소 관찰이 어긋난 지점이라 특정 주장에 매여 있습니다. 사용자가 그
+ * 블록을 자기 문장으로 바꾸면 그 주장은 화면에서 사라지는데, `blockConflicts`는 편집을 모르므로
+ * 예전 충돌을 계속 돌려줍니다. 그대로 그리면 사용자가 쓴 적 없는 문장에 대한 경고가 남아, 편집이
+ * 기존 검증 상태를 승계하지 않는다는 계약(설계 8절)이 깨집니다(PR #121 리뷰 1라운드).
+ *
+ * `effectiveDisplay`·`blockMarks`와 같은 규칙입니다. 고친 블록에서는 `blockState`를 읽지 않습니다.
+ */
+export function effectiveConflicts(
+  state: ExperienceBlockState,
+  edits: BlockEdits,
+  block: BlockKind
+): ReturnType<typeof blockConflicts> {
+  return edits[block] === undefined ? blockConflicts(state, block) : [];
 }
 
 /** 화면에 그릴 블록 문장입니다. 고친 블록은 편집본을, 그 밖에는 모델이 낸 표시 문장을 씁니다. */

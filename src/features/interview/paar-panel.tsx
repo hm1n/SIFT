@@ -2,6 +2,7 @@ import { useId, useState } from "react";
 import {
   blockEditByteLength,
   blockMarks,
+  effectiveConflicts,
   effectiveDisplay,
   filledBlockCount,
   formatBlockEdit,
@@ -10,7 +11,7 @@ import {
   type BlockEdits,
 } from "@/features/experience-block/block-edits";
 import { BLOCK_LABELS } from "@/features/experience-block/block-labels";
-import { BLOCK_MAX_BYTES, BLOCK_MAX_STATEMENTS, blockConflicts } from "@/features/experience-block/reducer";
+import { BLOCK_MAX_BYTES, BLOCK_MAX_STATEMENTS } from "@/features/experience-block/reducer";
 import { BLOCK_KINDS, type BlockKind, type DisplaySentence } from "@/features/experience-block/types";
 import type { UseExperienceInterviewState } from "@/features/experience-block/use-experience-interview";
 import styles from "./paar-panel.module.css";
@@ -75,7 +76,7 @@ function BlockCard({ block, stream, edits, onEditBlock }: BlockCardProps) {
   const { blockState, currentTarget, isBlockUpdating, isEnded, unreflectedBlocks } = stream;
   const sentences = effectiveDisplay(blockState, edits, block);
   const marks = blockMarks(blockState, edits, block);
-  const conflicts = blockConflicts(blockState, block);
+  const conflicts = effectiveConflicts(blockState, edits, block);
   const state = cardState({
     hasSentences: sentences.length > 0,
     isCurrentTarget: currentTarget.targetBlock === block,
