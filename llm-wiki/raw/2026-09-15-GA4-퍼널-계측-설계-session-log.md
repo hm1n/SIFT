@@ -119,8 +119,24 @@ mock을 고치면 끝나는 문제였지만 **실제 결함이 드러난 것으�
 프로덕션 빌드로 두 경우를 확인했습니다.
 
 **측정 ID 없이 빌드하고 실행** — 서버가 보낸 HTML(17,000바이트)에 `googletagmanager`도 `dataLayer`도
-`ga-bootstrap`도 0건이었습니다. 이슈 #125의 Definition of Done인 "측정 ID 없이 빌드하고 실행했을 때
-네트워크 요청이 발생하지 않는 것"을 충족합니다.
+`ga-bootstrap`도 0건이었습니다.
+
+HTML에 문자열이 없다는 것은 스크립트가 실리지 않았다는 뜻이지 요청이 나가지 않았다는 증거는
+아닙니다. Definition of Done이 말하는 것은 네트워크 요청이므로 2026-09-15에 브라우저로 다시
+쟀습니다(PR #129 리뷰).
+
+```
+측정 ID를 비우고 npm run build · npx next start -p 3126
+npx tsx scripts/measure-ga-events.mts --url http://127.0.0.1:3126
+
+가로채기 켬(204로 대신 응답) · 수집 요청 0건
+  gtag 라이브러리를 내려받지 않았습니다.
+  수집 요청이 한 건도 나가지 않았습니다.
+```
+
+`GA_LIBRARY`(googletagmanager.com/gtag/js) 0건, `GA_COLLECT`(google-analytics.com/collect) 0건,
+`dataLayer`에 쌓인 이벤트 0건입니다. 스크립트가 이 스크립트의 기대(이벤트 3종)를 못 채워 실패로
+끝나는 것이 이 경우의 정상입니다. 이로써 Definition of Done을 충족합니다.
 
 **`NEXT_PUBLIC_GA_MEASUREMENT_ID=G-TEST12345`로 빌드하고 실행** — 인라인 부트스트랩이 HTML에 그대로
 들어갔고(`window.dataLayer = window.dataLayer || [];...gtag('config', 'G-TEST12345');`) 라이브러리
