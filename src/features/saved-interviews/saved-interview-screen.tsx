@@ -18,9 +18,9 @@ import {
   EVIDENCE_VERIFIABILITY_NOTICE,
   REPOSITORY_VERIFIED_NOTICE,
 } from "@/features/experience-candidates/evidence-verifiability";
-import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
+import { isExperienceEvidenceSnapshot } from "@/features/interview/question-request";
 import { SavedInterviewFetchError, saveSavedInterviewBlock } from "./client";
-import type { StoredInterviewPayload } from "./payload";
+import { isRestorableBlockState, type StoredInterviewPayload } from "./payload";
 import styles from "./saved-interview-screen.module.css";
 
 /**
@@ -63,15 +63,6 @@ export function parseStoredCandidate(value: unknown): StoredCandidate | null {
     evidence: typeof candidate.evidence === "string" && candidate.evidence.length > 0 ? candidate.evidence : null,
     technicalTopics: topics,
   };
-}
-
-/** 저장된 값이라 모양을 한 번 봅니다. 근거 패널은 스냅샷의 모든 칸을 읽습니다. */
-function asSnapshot(value: unknown): ExperienceEvidenceSnapshot | null {
-  if (typeof value !== "object" || value === null) return null;
-  const snapshot = value as Partial<ExperienceEvidenceSnapshot>;
-  return typeof snapshot.candidateSha === "string" && snapshot.representativeCommit !== undefined
-    ? (value as ExperienceEvidenceSnapshot)
-    : null;
 }
 
 /**
@@ -127,7 +118,13 @@ export function SavedInterviewScreen({
   fetchImpl,
 }: SavedInterviewScreenProps) {
   const candidate = parseStoredCandidate(interview.candidate);
-  const snapshot = asSnapshot(interview.evidence);
+  /*
+   * 저장된 값이라 화면이 읽는 칸을 모두 확인한 뒤에 그립니다(PR #127 리뷰). 예전에는 후보 sha와
+   * 대표 커밋이 있는지만 봤는데, 커밋의 `files`나 `pullRequests`가 없으면 `.length`에서 렌더가
+   * 멈췄습니다. 안내 한 줄 대신 화면 전체가 깨지는 것이라 질문 경로와 같은 검사를 씁니다.
+   */
+  const snapshot = isExperienceEvidenceSnapshot(interview.evidence) ? interview.evidence : null;
+  const blockState = isRestorableBlockState(interview.blockState) ? interview.blockState : null;
   const date = formatDate(interview.updatedAt);
   const progress = `PAAR ${interview.completedBlockCount}/${BLOCK_KINDS.length}`;
 
@@ -152,9 +149,10 @@ export function SavedInterviewScreen({
   const remainingBytes = parsed === null ? 0 : BLOCK_MAX_BYTES - blockEditByteLength(parsed);
 
   function openEditor(block: BlockKind) {
+    if (blockState === null) return;
     setHeld({
       ...state,
-      editor: { block, draft: formatBlockEdit(effectiveDisplay(interview.blockState, state.edits, block)) },
+      editor: { block, draft: formatBlockEdit(effectiveDisplay(blockState, state.edits, block)) },
       save: "idle",
     });
   }
@@ -259,6 +257,9 @@ export function SavedInterviewScreen({
               <p id="saved-paar-heading" className={styles.sectionEyebrow}>PAAR experience</p>
               <span className={styles.progress}>{progress}</span>
             </div>
+            {blockState === null ? (
+              <p className={styles.notice}>The saved PAAR blocks can no longer be read.</p>
+            ) : (
             <ul className={styles.blocks}>
               {BLOCK_KINDS.map((block) => {
                 const isEditing = state.editor?.block === block;
@@ -266,7 +267,7 @@ export function SavedInterviewScreen({
                   <li key={block} className={styles.block}>
                     <div className={styles.blockHeader}>
                       <span className={styles.blockSymbol} aria-hidden="true">
-                        {blockSymbol(interview.blockState, block)}
+                        {blockSymbol(blockState, block)}
                       </span>
                       <span className={styles.blockLabel}>{BLOCK_LABEL[block]}</span>
                       {/*
@@ -286,8 +287,8 @@ export function SavedInterviewScreen({
                     </div>
 
                     <BlockSentences
-                      marks={blockMarks(interview.blockState, state.edits, block)}
-                      conflicts={effectiveConflicts(interview.blockState, state.edits, block)}
+                      marks={blockMarks(blockState, state.edits, block)}
+                      conflicts={effectiveConflicts(blockState, state.edits, block)}
                       emptyText={emptyText}
                     />
 
@@ -367,6 +368,7 @@ export function SavedInterviewScreen({
                 );
               })}
             </ul>
+            )}
           </section>
         </div>
       </div>

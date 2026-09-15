@@ -1,3 +1,4 @@
+import { BLOCK_KINDS, type ExperienceBlockState } from "@/features/experience-block/types";
 import type { InterviewListItem, StoredInterview } from "@/lib/db/store";
 
 /**
@@ -59,4 +60,27 @@ export function toStoredInterviewPayload(interview: StoredInterview): StoredInte
     progress: interview.progress,
     candidate: interview.candidate,
   };
+}
+
+/**
+ * 저장된 블록 상태를 화면이 그대로 쓸 수 있는지 봅니다(PR #127 리뷰).
+ *
+ * 저장 계층은 이 칸을 `jsonb`로 돌려주므로 타입만 믿을 수 없습니다. 지금 저장된 값은 우리가 쓴
+ * 것이라 온전하지만, 블록 상태의 모양이 바뀌면 그 전에 저장한 줄이 남습니다. 그때 화면은
+ * `display[block].map`과 `evaluation[block]`을 그대로 읽으므로 렌더 도중 TypeError로 멈춥니다.
+ * 안내 한 줄을 보이는 것과 화면 전체가 깨지는 것은 다릅니다.
+ *
+ * 근거 스냅샷은 `isExperienceEvidenceSnapshot`이 같은 일을 이미 합니다. 이 함수는 블록 상태 쪽의
+ * 같은 자리를 메웁니다.
+ */
+export function isRestorableBlockState(value: unknown): value is ExperienceBlockState {
+  if (typeof value !== "object" || value === null) return false;
+  const state = value as Partial<ExperienceBlockState>;
+  if (typeof state.version !== "number" || typeof state.nextClaimSeq !== "number") return false;
+  if (!Array.isArray(state.claims) || !Array.isArray(state.conflicts)) return false;
+  if (typeof state.display !== "object" || state.display === null) return false;
+  if (typeof state.evaluation !== "object" || state.evaluation === null) return false;
+  const display = state.display as Record<string, unknown>;
+  const evaluation = state.evaluation as Record<string, unknown>;
+  return BLOCK_KINDS.every((block) => Array.isArray(display[block]) && block in evaluation);
 }

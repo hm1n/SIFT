@@ -102,6 +102,32 @@ describe("SavedInterviewScreen", () => {
     expect(screen.getByText("The saved evidence can no longer be read.")).toBeInTheDocument();
   });
 
+  /**
+   * 겉보기에는 스냅샷인데 화면이 읽는 칸이 빠진 경우입니다. 예전 검사는 후보 sha와 대표 커밋이
+   * 있는지만 봐서 이런 값을 통과시켰고, 커밋의 `files.length`에서 화면 전체가 멈췄습니다
+   * (PR #127 리뷰).
+   */
+  it("근거의 칸이 빠져 있어도 화면이 깨지지 않고 안내로 바뀐다", () => {
+    const snapshot = evidenceSnapshotFixture();
+    render(
+      <SavedInterviewScreen
+        interview={payload({
+          evidence: { ...snapshot, representativeCommit: { ...snapshot.representativeCommit, files: undefined } },
+        })}
+        onResume={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("The saved evidence can no longer be read.")).toBeInTheDocument();
+  });
+
+  it("저장된 블록 상태를 읽지 못하면 그 사실을 알린다", () => {
+    render(<SavedInterviewScreen interview={payload({ blockState: { version: 1 } as never })} onResume={vi.fn()} />);
+
+    expect(screen.getByText("The saved PAAR blocks can no longer be read.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Edit / })).not.toBeInTheDocument();
+  });
+
   it("블록마다 어디까지 왔는지를 기호로 보인다", () => {
     render(<SavedInterviewScreen interview={payload()} onResume={vi.fn()} />);
 
