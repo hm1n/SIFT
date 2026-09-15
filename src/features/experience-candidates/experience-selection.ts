@@ -31,6 +31,19 @@ export type ExperienceSelectionState =
   | { readonly status: "error"; readonly reason: EvidenceSnapshotFailureReason };
 
 /**
+ * 확정한 경험을 저장할 때 필요한 값입니다(이슈 #115). 후보 화면이 상위로 올려 보내고, 인터뷰 줄을
+ * 만드는 일은 분석 결과를 들고 있는 상위 화면이 합니다.
+ *
+ * `candidateKey`는 대표 커밋 sha입니다. 저장된 인터뷰가 어느 후보의 것인지 가리키는 값이고, 한
+ * 분석 안에서 후보를 구분할 수 있으면 충분합니다.
+ */
+export interface ConfirmedExperience {
+  readonly candidateKey: string;
+  readonly title: string;
+  readonly snapshot: ExperienceEvidenceSnapshot;
+}
+
+/**
  * 근거 스냅샷을 만들지 못한 이유별 안내입니다. 무엇이 부족한지 알리고 다른 후보 선택으로
  * 유도합니다. master-detail에서는 목록이 항상 상세와 함께 보이므로 "뒤로가기"가 화면 이동이
  * 아니라 이 안내를 닫는 것뿐입니다. 문구도 그에 맞춥니다.

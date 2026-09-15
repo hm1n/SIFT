@@ -3,6 +3,7 @@ import { serializedByteLength } from "@/features/experience-candidates/evidence-
 import type { BlockUpdateTurn } from "@/features/interview/block-prompt";
 import { INTERVIEW_HISTORY_ITEM_MAX_BYTES, INTERVIEW_MAX_TURNS } from "@/features/interview/history";
 import { isExperienceEvidenceSnapshot, SNAPSHOT_BODY_BYTES } from "@/features/interview/question-request";
+import { isInterviewProgress, type InterviewProgress } from "./progress";
 import { byteLength, CLAIMS_STATE_MAX_BYTES, evidenceIndex } from "./reducer";
 import {
   BLOCK_KINDS,
@@ -39,6 +40,46 @@ export interface ExperienceBlockRequestBody {
    */
   readonly targetElement: BlockElement;
   readonly answerTurnId: string;
+  /**
+   * 이 턴을 저장할 인터뷰입니다(이슈 #115). 없으면 저장하지 않고 블록만 갱신합니다.
+   *
+   * 저장 전용 API를 새로 만들지 않고 이미 있는 이 요청에 얹습니다. 무상태 서버라 클라이언트가 이미 매
+   * 턴 근거와 이력과 블록 상태를 전부 보내고 있어, 저장에 필요한 값이 이 요청에 다 들어 있습니다.
+   *
+   * 없어도 되는 값으로 둡니다. 저장 계층이 막혀 인터뷰를 만들지 못한 사용자도 인터뷰는 그대로 할 수
+   * 있어야 하고, 그 경우 이 값이 없는 채로 옵니다.
+   */
+  readonly save?: ExperienceBlockSaveTarget;
+}
+
+export interface ExperienceBlockSaveTarget {
+  readonly interviewId: string;
+  /**
+   * 저장된 블록 버전으로 클라이언트가 알고 있는 값입니다. 이 값이 저장된 값과 다르면 다른 탭이 먼저
+   * 저장한 것이므로 아무것도 쓰지 않습니다.
+   *
+   * 요청의 `state.version`으로 대신하지 않습니다. 앞선 턴에서 저장이 실패했으면 화면의 버전만 오르고
+   * 저장된 버전은 그대로여서 둘이 어긋납니다. 저장된 값과 맞춰야 하는 것은 화면의 버전이 아니라
+   * 마지막으로 저장에 성공한 버전입니다.
+   */
+  readonly expectedBlockVersion: number;
+  /** 앞선 턴에서 저장이 실패해 아직 저장되지 않은 턴입니다. 이번 턴과 함께 이어 붙입니다. */
+  readonly pendingTurnIds?: readonly string[];
+  /**
+   * 이번 답변을 반영하기 **전**의 질문 진행 상태입니다. 질문을 보낸 기록(`recordAsked`)까지는 들어
+   * 있고 이번 답변의 반응은 아직 들어 있지 않습니다.
+   *
+   * 반영한 뒤의 값을 받지 않는 이유는, 반영에 필요한 `targetResponse`를 모델 출력에서 서버가 계산하기
+   * 때문입니다. 클라이언트는 요청을 보내는 시점에 그 값을 알 수 없습니다. 그래서 반영 전 값을 받아
+   * 서버가 `recordResponse`를 적용해 저장합니다. 이렇게 해야 저장된 진행 상태와 블록 상태가 같은
+   * 응답에서 나온 값이 됩니다.
+   */
+  readonly progress: InterviewProgress;
+  /**
+   * 이번에 답한 질문을 보낸 시점의 그 요소 `askedCount`입니다. `recordResponse`가 처음 `unknown`을
+   * 받은 시점을 기록할 때 쓰고, "지금" 값을 대신 쓰면 재질문 예산 판정이 어긋납니다.
+   */
+  readonly askedCountAtQuestion: number;
 }
 
 /**
@@ -276,6 +317,37 @@ export function parseExperienceBlockRequestBody(value: unknown): ExperienceBlock
     return { ok: false, kind: "invalid_request", message: "처리할 답변의 턴 ID가 이력에 없습니다." };
   }
 
+  const size = checkRequestSize(history, value.state);
+  if (size !== undefined) return size;
+
+  const save = parseSaveTarget(value.save, history);
+  if (save !== undefined && !save.ok) {
+    return { ok: false, kind: "invalid_request", message: save.message };
+  }
+
+  return {
+    ok: true,
+    body: {
+      snapshot: value.snapshot,
+      history,
+      state: value.state,
+      targetBlock: value.targetBlock,
+      targetElement: value.targetElement,
+      answerTurnId: value.answerTurnId,
+      ...(save === undefined ? {} : { save: save.target }),
+    },
+  };
+}
+
+
+/**
+ * 이력과 주장 상태의 크기를 봅니다. 블록 갱신과 저장 전용이 같은 상한을 씁니다. 저장 전용만 상한을
+ * 느슨하게 두면 블록 갱신이 거절한 크기가 저장으로 들어갑니다.
+ */
+function checkRequestSize(
+  history: readonly BlockUpdateTurn[],
+  state: ExperienceBlockState
+): { readonly ok: false; readonly kind: "history_too_large" | "claims_too_large"; readonly message: string } | undefined {
   if (history.length > EXPERIENCE_BLOCK_HISTORY_MAX_TURNS) {
     return {
       ok: false,
@@ -296,23 +368,155 @@ export function parseExperienceBlockRequestBody(value: unknown): ExperienceBlock
       message: `질문과 답변은 하나에 ${INTERVIEW_HISTORY_ITEM_MAX_BYTES}바이트 이하여야 합니다.`,
     };
   }
-  if (byteLength(JSON.stringify(value.state.claims)) > CLAIMS_STATE_MAX_BYTES) {
+  if (byteLength(JSON.stringify(state.claims)) > CLAIMS_STATE_MAX_BYTES) {
     return {
       ok: false,
       kind: "claims_too_large",
       message: `주장 상태는 ${CLAIMS_STATE_MAX_BYTES}바이트 이하여야 합니다.`,
     };
   }
+  return undefined;
+}
+
+/**
+ * 저장만 다시 보내는 요청입니다(이슈 #115). "다시 저장" 안내의 버튼이 보냅니다.
+ *
+ * 블록 갱신은 이미 성공했는데 저장만 실패한 턴을 다시 저장할 때 씁니다. 같은 답변으로 블록 갱신을 다시
+ * 부르면 모델을 한 번 더 호출하는 데다 같은 답변의 주장이 블록에 두 번 들어갑니다. 그래서 모델을 부르지
+ * 않고 밀린 턴만 이어 붙이는 길을 같은 route 안에 둡니다. 저장 전용 경로를 새로 만들지 않는다는 이슈의
+ * Constraint를 지키면서 화면의 버튼이 실제로 할 일을 갖게 하는 방법입니다.
+ *
+ * `progress`는 이미 반영이 끝난 값입니다. 반영은 그 턴의 블록 갱신이 성공할 때 서버가 이미 했고, 여기서
+ * 한 번 더 반영하면 같은 답변의 반응이 두 번 기록됩니다.
+ */
+export interface ExperienceBlockSaveOnlyBody {
+  readonly mode: "save_only";
+  readonly snapshot: ExperienceEvidenceSnapshot;
+  readonly history: readonly BlockUpdateTurn[];
+  readonly state: ExperienceBlockState;
+  readonly save: ExperienceBlockSaveOnlyTarget;
+}
+
+export interface ExperienceBlockSaveOnlyTarget {
+  readonly interviewId: string;
+  readonly expectedBlockVersion: number;
+  /** 다시 저장할 턴입니다. 비어 있으면 저장할 것이 없으므로 거절합니다. */
+  readonly pendingTurnIds: readonly string[];
+  readonly progress: InterviewProgress;
+}
+
+export type ExperienceBlockSaveOnlyParseResult =
+  | { readonly ok: true; readonly body: ExperienceBlockSaveOnlyBody }
+  | {
+      readonly ok: false;
+      readonly kind: "invalid_request" | "history_too_large" | "claims_too_large";
+      readonly message: string;
+    };
+
+/** 본문이 저장 전용 요청인지 봅니다. 이 판정이 참일 때만 모델을 부르지 않는 길로 갑니다. */
+export function isSaveOnlyRequest(value: unknown): boolean {
+  return isRecord(value) && value.mode === "save_only";
+}
+
+export function parseSaveOnlyRequestBody(value: unknown): ExperienceBlockSaveOnlyParseResult {
+  if (!isRecord(value) || !isExperienceEvidenceSnapshot(value.snapshot)) {
+    return { ok: false, kind: "invalid_request", message: "근거 스냅샷 형식이 올바르지 않습니다." };
+  }
+  const commits = evidenceIndex(value.snapshot);
+  if (!Array.isArray(value.history) || !value.history.every(isBlockUpdateTurn)) {
+    return { ok: false, kind: "invalid_request", message: "대화 이력 형식이 올바르지 않습니다." };
+  }
+  const history = value.history as readonly BlockUpdateTurn[];
+  if (!isExperienceBlockState(value.state, commits)) {
+    return { ok: false, kind: "invalid_request", message: "주장 상태 형식이 올바르지 않습니다." };
+  }
+  const size = checkRequestSize(history, value.state);
+  if (size !== undefined) return size;
+
+  if (!isRecord(value.save)) {
+    return { ok: false, kind: "invalid_request", message: "save 형식이 올바르지 않습니다." };
+  }
+  const save = value.save;
+  if (!isNonEmptyString(save.interviewId)) {
+    return { ok: false, kind: "invalid_request", message: "save.interviewId가 필요합니다." };
+  }
+  if (!isNonNegativeInt(save.expectedBlockVersion)) {
+    return { ok: false, kind: "invalid_request", message: "save.expectedBlockVersion은 0 이상의 정수여야 합니다." };
+  }
+  if (!isInterviewProgress(save.progress)) {
+    return { ok: false, kind: "invalid_request", message: "save.progress 형식이 올바르지 않습니다." };
+  }
+  if (!Array.isArray(save.pendingTurnIds) || !save.pendingTurnIds.every(isNonEmptyString)) {
+    return { ok: false, kind: "invalid_request", message: "save.pendingTurnIds는 문자열 배열이어야 합니다." };
+  }
+  if (save.pendingTurnIds.length === 0) {
+    return { ok: false, kind: "invalid_request", message: "다시 저장할 턴이 없습니다." };
+  }
+  const known = new Set(history.map((turn) => turn.turnId));
+  if (save.pendingTurnIds.some((turnId: string) => !known.has(turnId))) {
+    return { ok: false, kind: "invalid_request", message: "save.pendingTurnIds에 이력에 없는 턴이 있습니다." };
+  }
 
   return {
     ok: true,
     body: {
+      mode: "save_only",
       snapshot: value.snapshot,
       history,
       state: value.state,
-      targetBlock: value.targetBlock,
-      targetElement: value.targetElement,
-      answerTurnId: value.answerTurnId,
+      save: {
+        interviewId: save.interviewId,
+        expectedBlockVersion: save.expectedBlockVersion as number,
+        pendingTurnIds: save.pendingTurnIds as readonly string[],
+        progress: save.progress,
+      },
+    },
+  };
+}
+
+/**
+ * 저장 대상을 확인합니다. 값이 없으면 저장하지 않는다는 뜻이므로 `undefined`를 돌려줍니다.
+ *
+ * `pendingTurnIds`가 이력에 없는 턴을 가리키면 거절합니다. 조용히 넘기면 밀렸다고 보고한 턴이
+ * 저장되지 않은 채로 요청만 성공하고, 사용자는 밀린 대화가 저장된 줄 압니다.
+ */
+function parseSaveTarget(
+  value: unknown,
+  history: readonly BlockUpdateTurn[]
+): { ok: true; target: ExperienceBlockSaveTarget } | { ok: false; message: string } | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!isRecord(value)) return { ok: false, message: "save 형식이 올바르지 않습니다." };
+  if (!isNonEmptyString(value.interviewId)) {
+    return { ok: false, message: "save.interviewId가 필요합니다." };
+  }
+  if (!isNonNegativeInt(value.expectedBlockVersion)) {
+    return { ok: false, message: "save.expectedBlockVersion은 0 이상의 정수여야 합니다." };
+  }
+  if (!isInterviewProgress(value.progress)) {
+    return { ok: false, message: "save.progress 형식이 올바르지 않습니다." };
+  }
+  if (!isNonNegativeInt(value.askedCountAtQuestion)) {
+    return { ok: false, message: "save.askedCountAtQuestion은 0 이상의 정수여야 합니다." };
+  }
+  const pendingTurnIds = value.pendingTurnIds;
+  if (pendingTurnIds !== undefined) {
+    if (!Array.isArray(pendingTurnIds) || !pendingTurnIds.every(isNonEmptyString)) {
+      return { ok: false, message: "save.pendingTurnIds는 문자열 배열이어야 합니다." };
+    }
+    const known = new Set(history.map((turn) => turn.turnId));
+    if (pendingTurnIds.some((turnId) => !known.has(turnId))) {
+      return { ok: false, message: "save.pendingTurnIds에 이력에 없는 턴이 있습니다." };
+    }
+  }
+
+  return {
+    ok: true,
+    target: {
+      interviewId: value.interviewId,
+      expectedBlockVersion: value.expectedBlockVersion as number,
+      progress: value.progress,
+      askedCountAtQuestion: value.askedCountAtQuestion as number,
+      ...(pendingTurnIds === undefined ? {} : { pendingTurnIds: pendingTurnIds as readonly string[] }),
     },
   };
 }

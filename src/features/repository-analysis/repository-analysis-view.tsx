@@ -8,6 +8,9 @@ import type { RepositorySummary } from "@/lib/github/types";
 import { ExperienceCandidateList, StageAExclusions } from "@/features/experience-candidates/experience-candidate-list";
 import { advanceAnalysisTracker, createAnalysisTracker, type AnalysisTracker } from "@/features/analytics/analysis-events";
 import { trackEvent } from "@/features/analytics/events";
+import type { ConfirmedExperience } from "@/features/experience-candidates/experience-selection";
+import { createSavedInterview } from "@/features/saved-interviews/client";
+import { buildStoredAnalysis } from "./analysis-snapshot";
 import {
   ANALYSIS_STAGES,
   analysisStageOf,
@@ -66,6 +69,16 @@ function analysisMeta(repository: RepositorySummary): string {
 export interface RepositoryAnalysisViewProps {
   repository: RepositorySummary;
   contributionItems: readonly string[];
+  /** 테스트에서 인터뷰 줄 생성 요청을 대체하는 통로입니다. */
+  createInterview?: typeof createSavedInterview;
+  /** 인터뷰 줄을 새로 만들었을 때 알립니다. 사이드바 목록이 그 줄을 바로 보이게 다시 조회합니다. */
+  onInterviewCreated?: () => void;
+  /** 다른 탭이 먼저 저장했을 때 그 인터뷰를 최신 내용으로 다시 엽니다. */
+  onLoadLatestInterview?: (interviewId: string) => void;
+  /** 저장되지 않은 턴이 있는지 알립니다. 이탈 확인을 받을지 흐름이 판단합니다. */
+  onUnsavedInterviewChange?: (hasUnsaved: boolean) => void;
+  /** 인터뷰를 끝냈을 때 그 인터뷰의 요약 화면으로 옮깁니다. */
+  onInterviewEnded?: (interviewId: string) => void;
   /** 다른 Repository 선택입니다. 선택 화면으로 되돌아가는 일은 `RepositoryFlow`가 합니다. */
   onSelectRepository: () => void;
   /** `ExperienceCandidateList`로 그대로 전달합니다. `RepositoryFlow`가 사이드바 이탈 확인에 씁니다. */
@@ -82,9 +95,28 @@ export interface RepositoryAnalysisViewProps {
  * 로그아웃 진입점은 둘입니다. 상단 헤더의 Sign out과 이 화면 오류 안내의 다시 로그인입니다. 둘 다 세션 삭제 뒤 라우터를 갱신해
  * 서버가 헤더와 화면을 함께 다시 그립니다. 내려간 뒤 늦게 도착하는 결과는 실행 번호로 걸러냅니다.
  */
-export function RepositoryAnalysisView({ repository, contributionItems, onSelectRepository, onInterviewActiveChange }: RepositoryAnalysisViewProps) {
+export function RepositoryAnalysisView({
+  repository,
+  contributionItems,
+  onSelectRepository,
+  onInterviewActiveChange,
+  createInterview = createSavedInterview,
+  onInterviewCreated,
+  onLoadLatestInterview,
+  onUnsavedInterviewChange,
+  onInterviewEnded,
+}: RepositoryAnalysisViewProps) {
   const router = useRouter();
   const [state, setState] = useState<AnalysisState>(INITIAL_STATE);
+  // 확정한 경험을 저장할 인터뷰 줄입니다. 요청 하나를 기다려야 생기므로 확정 직후에는 비어 있습니다.
+  const [interviewId, setInterviewId] = useState<string | null>(null);
+  /**
+   * 이 분석을 저장한 줄입니다. 한 분석에서 경험을 여러 개 고를 때 다시 씁니다. 확정할 때마다 새로
+   * 저장하면 같은 분석이 여러 줄로 쌓이고 목록에 같은 저장소가 여러 번 나옵니다.
+   */
+  const analysisIdRef = useRef<string | null>(null);
+  /** 확정 번호입니다. 다른 경험으로 넘어간 뒤 늦게 도착한 응답을 걸러냅니다. */
+  const confirmRef = useRef(0);
   // 진행 중인 분석의 실행 번호입니다. 초기화 뒤 늦게 도착한 결과가 화면에 다시 나타나지 않게 걸러냅니다.
   const runRef = useRef(0);
   // 개발 모드의 StrictMode는 effect를 두 번 실행합니다. 같은 분석을 두 번 시작하지 않게 한 번만 시작합니다.
@@ -138,9 +170,51 @@ export function RepositoryAnalysisView({ repository, contributionItems, onSelect
     };
   }
 
+  /**
+   * 경험을 확정할 때 인터뷰 한 줄과 그 시점의 분석 결과를 함께 저장합니다(이슈 #115).
+   *
+   * 인터뷰는 이 요청을 기다리지 않고 곧바로 시작합니다. 저장은 대화를 이어가기 위한 장치이지 대화의
+   * 전제가 아니므로, 기다리게 하면 저장 계층이 느릴 때 첫 질문도 함께 늦어집니다. 줄이 생기기 전에
+   * 오간 턴은 줄이 생긴 뒤 밀린 턴으로 함께 저장됩니다.
+   *
+   * 실패하면 저장 없이 진행합니다(이슈 Constraint: "저장 실패가 진행 중인 인터뷰를 중단시키지
+   * 않아야 합니다"). 실패를 알리는 화면 안내는 디자인이 정해진 뒤에 붙입니다.
+   */
+  function confirmExperience(confirmed: ConfirmedExperience | null) {
+    const seq = ++confirmRef.current;
+    setInterviewId(null);
+    if (confirmed === null || state.status !== "success") return;
+    const analysis = buildStoredAnalysis({
+      repoOwner: repository.owner,
+      repoName: repository.name,
+      contributionItems,
+      data: state.data,
+      candidates: state.candidates,
+      stageASelection: state.stageASelection,
+    });
+    const analysisId = analysisIdRef.current;
+    void createInterview({
+      analysis,
+      ...(analysisId === null ? {} : { analysisId }),
+      candidateKey: confirmed.candidateKey,
+      title: confirmed.title,
+      evidence: confirmed.snapshot,
+    }).then(
+      (created) => {
+        if (confirmRef.current !== seq) return;
+        analysisIdRef.current = created.analysisId;
+        setInterviewId(created.interviewId);
+        onInterviewCreated?.();
+      },
+      () => undefined
+    );
+  }
+
   function restart() {
     runRef.current += 1;
     trackerRef.current = createAnalysisTracker(Date.now());
+    // 다시 분석하면 앞 분석의 줄을 가리키는 식별자는 더 이상 이 화면의 결과가 아닙니다.
+    analysisIdRef.current = null;
     return analyzeRepository({ owner: repository.owner, repo: repository.name }, contributionItems, stateSinkFor(runRef.current));
   }
 
@@ -208,6 +282,11 @@ export function RepositoryAnalysisView({ repository, contributionItems, onSelect
             stageASelection={state.stageASelection}
             onSelectRepository={onSelectRepository}
             onInterviewActiveChange={onInterviewActiveChange}
+            onExperienceConfirmed={confirmExperience}
+            interviewId={interviewId}
+            onLoadLatestInterview={interviewId === null ? undefined : () => onLoadLatestInterview?.(interviewId)}
+            onUnsavedInterviewChange={onUnsavedInterviewChange}
+            onInterviewEnded={interviewId === null ? undefined : () => onInterviewEnded?.(interviewId)}
           />
         </div>
       ) : null}

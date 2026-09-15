@@ -220,3 +220,32 @@ export function selectNextTarget(input: SelectNextTargetInput): NextQuestionTarg
   );
   return { kind: "ask", block: target, element: openElement };
 }
+
+/**
+ * 요청 본문으로 들어온 값이 진행 상태인지 봅니다(이슈 #115).
+ *
+ * 진행 상태는 저장했다가 복원할 때 다시 재질문 예산 판정에 쓰입니다. 모양이 어긋난 값을 그대로
+ * 저장하면 저장은 성공하고 복원한 뒤 `askedCount`를 더하는 자리에서 깨집니다. 블록 넷과 요소 둘이
+ * 모두 있고 수치가 음수가 아닌지까지 봅니다.
+ */
+export function isInterviewProgress(value: unknown): value is InterviewProgress {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return BLOCK_KINDS.every((block) => {
+    const blockValue = record[block];
+    if (typeof blockValue !== "object" || blockValue === null) return false;
+    const { visited, refused, elements } = blockValue as Record<string, unknown>;
+    if (typeof visited !== "boolean" || typeof refused !== "boolean") return false;
+    if (typeof elements !== "object" || elements === null) return false;
+    return BLOCK_ELEMENTS.every((element) => {
+      const elementValue = (elements as Record<string, unknown>)[element];
+      if (typeof elementValue !== "object" || elementValue === null) return false;
+      const { askedCount, firstUnknownAskedCount } = elementValue as Record<string, unknown>;
+      if (!Number.isInteger(askedCount) || (askedCount as number) < 0) return false;
+      return (
+        firstUnknownAskedCount === null ||
+        (Number.isInteger(firstUnknownAskedCount) && (firstUnknownAskedCount as number) >= 0)
+      );
+    });
+  });
+}

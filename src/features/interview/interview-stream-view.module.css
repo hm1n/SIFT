@@ -163,3 +163,16 @@
 .submitButton:focus-visible { outline: 2px solid var(--color-foreground); outline-offset: 2px; }
 /* 로그는 스크롤 영역이라 바깥 여백이 없습니다. 안쪽에 그려야 잘리지 않습니다. */
 .log:focus-visible { outline-offset: -2px; }
+
+/*
+ * 저장 상태 안내입니다(이슈 #115). 대화 위에 쌓이고 대화를 막지 않습니다. 오류 안내(`.error`)와 같은
+ * 자리 규칙을 쓰되 의미색은 쓰지 않습니다. 저장이 밀린 것은 사용자가 지금 고쳐야 하는 오류가 아니라
+ * 알고만 있으면 되는 상태입니다.
+ */
+.saveNotices { flex-shrink: 0; display: grid; gap: 8px; margin: 12px 16px 0; }
+.saveNotice { display: flex; align-items: center; gap: 8px; border: 1px solid var(--color-border); border-radius: var(--radius); background: var(--color-muted); padding: 8px 12px; }
+.saveNoticeMark { flex-shrink: 0; font-family: var(--font-mono); font-size: var(--label-size-sm); color: var(--color-muted-foreground); }
+.saveNoticeText { flex: 1; min-width: 0; color: var(--color-foreground); font-size: 12px; }
+.saveNoticeAction { flex-shrink: 0; border: 0; background: transparent; color: var(--color-muted-foreground); cursor: pointer; font-family: var(--font-mono); font-size: var(--label-size-sm); padding: 0; text-decoration: underline; text-underline-offset: 2px; }
+.saveNoticeAction:hover,
+.saveNoticeAction:focus-visible { color: var(--color-foreground); }

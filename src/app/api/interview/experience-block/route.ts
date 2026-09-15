@@ -1,15 +1,26 @@
 import { generateObject } from "ai";
 import type { NextRequest } from "next/server";
 import { applyBlockUpdate, blockConflicts, markDisplay } from "@/features/experience-block/reducer";
-import { BLOCK_KINDS, type BlockUpdateOutput } from "@/features/experience-block/types";
+import {
+  BLOCK_KINDS,
+  type BlockElement,
+  type BlockKind,
+  type BlockUpdateOutput,
+  type ExperienceBlockState,
+  type TargetResponse,
+} from "@/features/experience-block/types";
 import {
   experienceBlockErrorStatus,
   type ExperienceBlockErrorKind,
 } from "@/features/experience-block/errors";
 import { createBlockUpdateModel } from "@/features/experience-block/llm-provider";
+import { recordResponse } from "@/features/experience-block/progress";
 import {
+  isSaveOnlyRequest,
   MAX_EXPERIENCE_BLOCK_BODY_BYTES,
   parseExperienceBlockRequestBody,
+  parseSaveOnlyRequestBody,
+  type ExperienceBlockSaveTarget,
 } from "@/features/experience-block/request";
 import { LLM_MAX_RETRIES } from "@/features/experience-candidates/llm-provider";
 import {
@@ -18,11 +29,16 @@ import {
   BLOCK_MAX_OUTPUT_TOKENS,
   BLOCK_UPDATE_MODEL,
   BLOCK_UPDATE_REASONING_EFFORT,
+  type BlockUpdateTurn,
 } from "@/features/interview/block-prompt";
 import { INTERVIEW_QUESTION_TOTAL_TIMEOUT_MS } from "@/features/interview/question-generation";
 import { mapInterviewLlmError } from "@/features/interview/llm-error";
-import { getGitHubTokenFromRequest } from "@/lib/github/auth-session";
+import type { BlockUpdateSaveStatus } from "@/features/saved-interviews/save-status";
+import { turnsToSave } from "@/features/saved-interviews/turn";
+import { getGitHubSessionFromRequest } from "@/lib/github/auth-session";
 import { GitHubFetchError } from "@/lib/github/errors";
+import { neonStore } from "@/lib/db/neon-store";
+import type { SiftStore } from "@/lib/db/store";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -72,12 +88,50 @@ async function defaultGenerate(
   return object;
 }
 
+/**
+ * 저장 실패를 요청 전체의 실패로 돌리지 않습니다. 블록 갱신은 이미 성공했으므로, 여기서 실패를 올리면
+ * 사용자는 방금 화면에 그려진 답변과 블록을 잃습니다. 결과만 응답에 실어 화면이 안내하게 합니다.
+ */
+async function saveTurn(
+  store: SiftStore,
+  githubUserId: number,
+  save: ExperienceBlockSaveTarget | undefined,
+  history: readonly BlockUpdateTurn[],
+  answerTurnId: string,
+  blockState: ExperienceBlockState,
+  target: { readonly targetBlock: BlockKind; readonly targetElement: BlockElement },
+  targetResponse: TargetResponse
+): Promise<BlockUpdateSaveStatus> {
+  if (save === undefined) return "skipped";
+  try {
+    return await store.appendTurn({
+      githubUserId,
+      interviewId: save.interviewId,
+      turn: turnsToSave(history, [...(save.pendingTurnIds ?? []), answerTurnId]),
+      blockState,
+      // 이번 답변의 반응을 여기서 반영합니다. 반응은 모델 출력에서 방금 계산한 값이라 클라이언트가
+      // 요청을 보내는 시점에는 알 수 없습니다. 그래서 반영 전 값을 받아 서버가 반영합니다.
+      progress: recordResponse(
+        save.progress,
+        target.targetBlock,
+        target.targetElement,
+        targetResponse,
+        save.askedCountAtQuestion
+      ),
+      expectedBlockVersion: save.expectedBlockVersion,
+    });
+  } catch {
+    return "failed";
+  }
+}
+
 export async function handleExperienceBlockUpdate(
   request: NextRequest,
-  options: { generate?: GenerateBlockUpdate } = {}
+  options: { generate?: GenerateBlockUpdate; store?: SiftStore } = {}
 ): Promise<Response> {
+  let githubUserId: number;
   try {
-    getGitHubTokenFromRequest(request);
+    githubUserId = getGitHubSessionFromRequest(request).githubUserId;
   } catch (error) {
     if (error instanceof GitHubFetchError && error.kind === "auth_revoked") {
       return errorResponse("unauthorized", "A GitHub sign-in session is required.");
@@ -110,11 +164,40 @@ export async function handleExperienceBlockUpdate(
     return errorResponse("invalid_json", "The request body must be JSON.");
   }
 
+  const store = options.store ?? neonStore();
+
+  /**
+   * 저장만 다시 보내는 길입니다(이슈 #115). 모델을 부르지 않고 밀린 턴만 이어 붙입니다.
+   *
+   * 블록 갱신은 성공했는데 저장만 실패한 턴을 다시 저장하려고 같은 답변으로 블록 갱신을 다시 부르면,
+   * 모델을 한 번 더 호출하는 데다 같은 답변의 주장이 블록에 두 번 들어갑니다.
+   */
+  if (isSaveOnlyRequest(json)) {
+    const parsedSave = parseSaveOnlyRequestBody(json);
+    if (!parsedSave.ok) return errorResponse(parsedSave.kind, parsedSave.message);
+    const { history, state, save } = parsedSave.body;
+    let saved: BlockUpdateSaveStatus;
+    try {
+      saved = await store.appendTurn({
+        githubUserId,
+        interviewId: save.interviewId,
+        turn: turnsToSave(history, save.pendingTurnIds),
+        blockState: state,
+        // 반영이 이미 끝난 값입니다. 여기서 다시 반영하면 같은 답변의 반응이 두 번 기록됩니다.
+        progress: save.progress,
+        expectedBlockVersion: save.expectedBlockVersion,
+      });
+    } catch {
+      saved = "failed";
+    }
+    return Response.json({ save: saved });
+  }
+
   const parsed = parseExperienceBlockRequestBody(json);
   if (!parsed.ok) {
     return errorResponse(parsed.kind, parsed.message);
   }
-  const { snapshot, history, state, targetBlock, targetElement, answerTurnId } = parsed.body;
+  const { snapshot, history, state, targetBlock, targetElement, answerTurnId, save } = parsed.body;
 
   const prompt = buildBlockUpdatePrompt({ snapshot, state, history, targetBlock, targetElement, answerTurnId });
   const generate = options.generate ?? defaultGenerate;
@@ -140,6 +223,18 @@ export async function handleExperienceBlockUpdate(
     );
   }
 
+  // 블록 갱신을 적용한 직후에 저장합니다. 저장이 먼저 오면 검증을 통과하지 못한 상태를 쓰게 됩니다.
+  const saveStatus = await saveTurn(
+    store,
+    githubUserId,
+    save,
+    history,
+    answerTurnId,
+    result.state,
+    { targetBlock, targetElement },
+    result.targetResponse
+  );
+
   return Response.json({
     state: result.state,
     affectedBlocks: result.affectedBlocks,
@@ -147,6 +242,7 @@ export async function handleExperienceBlockUpdate(
     conflicts: Object.fromEntries(BLOCK_KINDS.map((block) => [block, blockConflicts(result.state, block)])),
     warnings: result.warnings,
     targetResponse: result.targetResponse,
+    save: saveStatus,
   });
 }
 

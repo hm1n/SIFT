@@ -64,15 +64,55 @@ export async function classifyErrorResponse(response: Response): Promise<GitHubF
   return "server_error";
 }
 
+/**
+ * 전송 실패 한정 시도 횟수입니다. 실패 한 건이 undici의 연결 제한 10초를 쓰므로, commit-details의
+ * maxDuration 60초 예산(정상 배치 약 17초) 안에 들도록 총 2회까지만 시도합니다.
+ */
+const GITHUB_FETCH_ATTEMPTS = 2;
+
+/**
+ * 재시도가 복구한 실패는 오류로도 사용자에게도 남지 않습니다. 개발 서버에서만 한 줄 남겨 조용히
+ * 덮이지 않게 합니다. 토큰과 예외 원문은 남기지 않고 연결 오류 코드만 씁니다.
+ */
+function logRetry(url: string, error: unknown, elapsedMs: number, attempt: number): void {
+  if (process.env.NODE_ENV !== "development") return;
+  const cause = error instanceof Error ? error.cause : undefined;
+  console.error("[githubFetch] retrying after transport failure", {
+    url,
+    attempt,
+    elapsedMs,
+    causeCode:
+      typeof cause === "object" && cause !== null && "code" in cause && typeof cause.code === "string"
+        ? cause.code
+        : undefined,
+  });
+}
+
+/**
+ * fetch가 reject한 전송 실패만 한 번 더 시도합니다. HTTP 오류 응답은 fetch가 정상 반환하므로
+ * 재시도 없이 그대로 classifyErrorResponse로 넘어갑니다. 정체 원인이 서버 혼잡이 아니라 로컬
+ * 이름 해석이고 실패 직후 재요청이 245ms에 성공했으므로(2026-09-15 측정) 대기를 두지 않습니다.
+ */
 export async function githubFetch(url: string, token: string): Promise<Response> {
-  try {
-    return await fetch(url, { headers: githubHeaders(token) });
-  } catch (error) {
-    // 잡은 예외를 `cause`로 넘깁니다. 연결 실패의 원인(`UND_ERR_CONNECT_TIMEOUT`, `ECONNRESET` 등)이
-    // 여기서 사라지면 호출부에는 network라는 분류만 남아, 같은 증상을 다시 조사할 때 원인을 처음부터
-    // 다시 재현해야 합니다(2026-09-15 GitHub 수집 실패 조사).
-    throw new GitHubFetchError("network", `The GitHub API request failed: ${url}`, undefined, { cause: error });
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= GITHUB_FETCH_ATTEMPTS; attempt += 1) {
+    const startedAt = Date.now();
+    try {
+      return await fetch(url, { headers: githubHeaders(token) });
+    } catch (error) {
+      lastError = error;
+      if (attempt < GITHUB_FETCH_ATTEMPTS) logRetry(url, error, Date.now() - startedAt, attempt);
+    }
   }
+  // 잡은 예외를 `cause`로 넘깁니다. 연결 실패의 원인(`UND_ERR_CONNECT_TIMEOUT`, `ECONNRESET` 등)이
+  // 여기서 사라지면 호출부에는 network라는 분류만 남아, 같은 증상을 다시 조사할 때 원인을 처음부터
+  // 다시 재현해야 합니다(2026-09-15 GitHub 수집 실패 조사).
+  throw new GitHubFetchError(
+    "network",
+    `The GitHub API request failed after ${GITHUB_FETCH_ATTEMPTS} attempts: ${url}`,
+    undefined,
+    { cause: lastError }
+  );
 }
 
 /** 성공 응답의 body 파싱이 실패하면(끊긴 연결, 깨진 JSON) network 오류로 통일해서 던진다. */
