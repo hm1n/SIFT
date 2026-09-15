@@ -85,6 +85,17 @@ export function setAnalyticsUser(userId: string | null): void {
   safelySetGaParams({ user_id: userId });
 }
 
+/** 분석 공통 파라미터를 실제로 세운 적이 있는지입니다. `userIdApplied`와 같은 이유로 필요합니다. */
+let flowApplied = false;
+
+function newFlowId(): string | null {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 분석 한 번을 묶는 공통 파라미터입니다. 분석을 시작할 때 세우고 저장소를 바꾸면 비웁니다.
  *
@@ -98,22 +109,35 @@ export function setAnalyticsUser(userId: string | null): void {
  * `flow_id`를 부르는 쪽에서 받지 않고 여기서 만듭니다. `crypto.randomUUID`는 보안 컨텍스트
  * (HTTPS와 localhost)에만 있어서, LAN 주소로 띄운 개발 서버처럼 없는 곳에서는 부르는 순간
  * 던집니다. 화면 쪽에서 만들면 그 예외가 이 모듈의 try/catch 바깥이라 분석 시작 자체를 막습니다.
- * 계측이 만드는 값은 계측 안에서 만들고, 못 만들면 이 분석에는 `flow_id`가 붙지 않습니다.
+ *
+ * 만들지 못한 경우에 저장소 문맥까지 함께 잃지 않습니다. 둘을 한 try 안에 두면 `flow_id` 생성 실패가
+ * `repo_visibility`·`repo_language` 설정을 건너뛰게 만들고, 곧바로 나가는 `analysis_requested`가
+ * 저장소 문맥 없이 전송됩니다(PR #129 리뷰). 묶는 값이 없을 뿐 나머지는 그대로 붙어야 합니다.
  */
 export function startAnalysisFlow(flow: { repoVisibility: string; repoLanguage: string | null }): void {
-  try {
-    setGaParams({
-      flow_id: crypto.randomUUID(),
-      repo_visibility: flow.repoVisibility,
-      // 언어가 없는 저장소가 있습니다. 빈 문자열 대신 파라미터를 지워 값 없음과 값 있음을 가릅니다.
-      repo_language: flow.repoLanguage,
-    });
-  } catch {
-    // 계측이 죽는 것이 화면이 죽는 것보다 낫습니다.
-  }
+  const flowId = newFlowId();
+  // `flow_id`를 못 만들어도 저장소 문맥은 세우므로 지울 것이 생긴 것은 마찬가지입니다.
+  flowApplied = true;
+  safelySetGaParams({
+    // 만들지 못했으면 아예 싣지 않습니다. 빈 값을 세우면 서로 다른 분석이 같은 값으로 묶입니다.
+    ...(flowId === null ? {} : { flow_id: flowId }),
+    repo_visibility: flow.repoVisibility,
+    // 언어가 없는 저장소가 있습니다. 빈 문자열 대신 파라미터를 지워 값 없음과 값 있음을 가릅니다.
+    repo_language: flow.repoLanguage,
+  });
 }
 
+/**
+ * 분석 묶음을 지웁니다. 저장소를 바꿀 때와 로그아웃할 때 부릅니다.
+ *
+ * 한 번도 세운 적이 없으면 아무 일도 하지 않습니다. `gtag('set', { flow_id: null })`을 부르면 gtag가
+ * 그 자리를 빈 문자열로 직렬화해 이후 모든 이벤트에 실어 보냅니다. `user_id`에서 실측한 것과 같은
+ * 동작이고(2026-09-15), 이 가드가 없으면 로그인 화면처럼 분석을 한 적 없는 자리에서 지우기를 부를 수
+ * 없습니다.
+ */
 export function clearAnalysisFlow(): void {
+  if (!flowApplied) return;
+  flowApplied = false;
   safelySetGaParams({ flow_id: null, repo_visibility: null, repo_language: null });
 }
 

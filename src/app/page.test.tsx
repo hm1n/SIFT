@@ -29,11 +29,12 @@ vi.mock("next/navigation", () => ({ useRouter: () => routerMock }));
 /** 계측 전송부를 대체합니다. 무엇을 보내는지만 보고 실제 gtag는 부르지 않습니다. */
 const trackEvent = vi.fn();
 const setAnalyticsUser = vi.fn();
+const clearAnalysisFlow = vi.fn();
 vi.mock("@/features/analytics/events", () => ({
   trackEvent: (...args: unknown[]) => trackEvent(...args),
   setAnalyticsUser: (...args: unknown[]) => setAnalyticsUser(...args),
   startAnalysisFlow: vi.fn(),
-  clearAnalysisFlow: vi.fn(),
+  clearAnalysisFlow: (...args: unknown[]) => clearAnalysisFlow(...args),
 }));
 
 /** layout이 감싸는 provider를 함께 둡니다. 로그인 화면은 provider 밖에서 그릴 수 없습니다. */
@@ -52,6 +53,7 @@ beforeEach(() => {
   sessionCookieValue = "not-a-real-session";
   trackEvent.mockClear();
   setAnalyticsUser.mockClear();
+  clearAnalysisFlow.mockClear();
   routerMock.replace.mockClear();
   vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
 });
@@ -169,6 +171,22 @@ describe("Home 계측", () => {
   it("세션이 없으면 user_id를 붙이지 않는다", async () => {
     render(await renderHome());
     expect(setAnalyticsUser).toHaveBeenCalledWith(null);
+  });
+
+  /**
+   * 로그아웃은 새로고침 없이 서버 컴포넌트만 다시 그려 `RepositoryFlow`가 통째로 내려갑니다. 그때
+   * 화면의 이동 함수를 지나지 않으므로, 여기서 지우지 않으면 뒤이어 그려지는 로그인 화면의
+   * `login_view`와 `login_start`가 지난 분석의 묶음에 붙습니다(PR #129 리뷰).
+   */
+  it("세션이 없으면 분석 묶음도 함께 비운다", async () => {
+    render(await renderHome());
+    expect(clearAnalysisFlow).toHaveBeenCalled();
+  });
+
+  it("세션이 있으면 분석 묶음을 비우지 않는다", async () => {
+    cookieNames.add(GITHUB_SESSION_COOKIE);
+    render(await renderHome());
+    expect(clearAnalysisFlow).not.toHaveBeenCalled();
   });
 
   it("세션 쿠키를 HMAC으로 바꿔 user_id로 내려보낸다", async () => {

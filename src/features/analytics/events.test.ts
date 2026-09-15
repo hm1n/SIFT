@@ -107,14 +107,42 @@ describe("공통 파라미터", () => {
       throw new TypeError("crypto.randomUUID is not a function");
     });
     expect(() => startAnalysisFlow({ repoVisibility: "public", repoLanguage: null })).not.toThrow();
-    expect(setGaParams).not.toHaveBeenCalled();
+    randomUUID.mockRestore();
+  });
+
+  /**
+   * `flow_id` 생성 실패가 저장소 문맥까지 함께 날리면, 곧바로 나가는 `analysis_requested`가 저장소
+   * 문맥 없이 전송됩니다. 묶는 값이 없을 뿐 나머지는 그대로 붙어야 합니다(PR #129 리뷰).
+   */
+  it("keeps the repository context when the flow id cannot be generated", () => {
+    const randomUUID = vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(() => {
+      throw new TypeError("crypto.randomUUID is not a function");
+    });
+    startAnalysisFlow({ repoVisibility: "private", repoLanguage: "TypeScript" });
+    expect(setGaParams).toHaveBeenCalledWith({ repo_visibility: "private", repo_language: "TypeScript" });
     randomUUID.mockRestore();
   });
 
   /** 비우지 않으면 다음 분석을 시작하기 전의 이벤트가 지난 분석의 `flow_id`를 달고 나갑니다. */
   it("clears the whole flow context when the repository changes", () => {
+    startAnalysisFlow({ repoVisibility: "public", repoLanguage: null });
+    setGaParams.mockClear();
     clearAnalysisFlow();
     expect(setGaParams).toHaveBeenCalledWith({ flow_id: null, repo_visibility: null, repo_language: null });
+  });
+
+  /**
+   * 세운 적 없는 파라미터를 null로 지우면 gtag가 빈 문자열로 직렬화해 이후 모든 이벤트에 실어
+   * 보냅니다(`user_id`에서 실측). 이 가드가 없으면 로그인 화면처럼 분석을 한 적 없는 자리에서
+   * 지우기를 부를 수 없습니다(PR #129 리뷰).
+   */
+  it("does not clear a flow context that was never set", async () => {
+    // "한 번도 세운 적 없음"은 모듈 상태이므로 이 스위트의 다른 테스트와 섞이지 않게 새로 불러옵니다.
+    vi.resetModules();
+    const fresh = await import("./events");
+    setGaParams.mockClear();
+    fresh.clearAnalysisFlow();
+    expect(setGaParams).not.toHaveBeenCalled();
   });
 
   it("does not throw when the transport throws", () => {

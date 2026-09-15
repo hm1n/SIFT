@@ -97,7 +97,6 @@ export function RepositoryFlow() {
     options: { readonly confirm?: boolean; readonly onRun?: () => void } = {}
   ) {
     const wasInterviewOpen = interviewActiveRef.current;
-    const wasAnalysis = mode.kind === "analysis";
     const run = () => {
       interviewActiveRef.current = false;
       hasUnsavedRef.current = false;
@@ -110,11 +109,10 @@ export function RepositoryFlow() {
        * 일어나는 이벤트(`repo_list_loaded`)가 지난 분석의 `flow_id`를 달고 나갑니다.
        *
        * 이동이 전부 이 함수를 지나므로 여기 한 곳에서만 비웁니다. 되돌아가기마다 비우면 이어가기로
-       * 빠지는 경로가 그대로 빠져나갑니다. 분석을 하던 중일 때만 부르는 것은, 한 번도 세운 적 없는
-       * 공통 파라미터를 지우면 gtag가 빈 문자열로 직렬화해 이후 모든 이벤트에 실어 보내기
-       * 때문입니다(2026-09-15 `user_id`에서 실측).
+       * 빠지는 경로가 그대로 빠져나갑니다. 세운 적이 없을 때 지우기를 걸러내는 일은
+       * `clearAnalysisFlow`가 자기 안에서 합니다.
        */
-      if (wasAnalysis && next.kind !== "analysis") clearAnalysisFlow();
+      if (next.kind !== "analysis") clearAnalysisFlow();
       // 인터뷰를 떠날 때마다 목록을 다시 읽습니다. 진행도와 끝난 표시가 그 사이에 바뀝니다.
       if (wasInterviewOpen) interviews.reload();
     };

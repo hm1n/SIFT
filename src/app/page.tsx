@@ -66,6 +66,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Hom
       <>
         <AnalyticsSession
           userId={null}
+          signedIn={false}
           loginResult={loginResult}
           urlAfterReport={urlWithoutLoginMarker(authError)}
         />
@@ -78,6 +79,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Hom
     <>
       <AnalyticsSession
         userId={analyticsUserIdFrom(sessionCookie.value)}
+        signedIn
         loginResult={loginMarker === "success" ? { success: true } : undefined}
         urlAfterReport={urlWithoutLoginMarker(authError)}
       />
