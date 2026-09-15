@@ -43,12 +43,14 @@ function request(query: string, stateCookie = "state") {
 }
 
 describe("GitHub OAuth callback", () => {
-  it("sets the session, deletes state, and redirects home", async () => {
+  // 성공 표시 `?login=success`는 계측이 로그인 성공을 세는 유일한 근거입니다. 이 표시가 빠지면
+  // `login_result`가 나가지 않고, 세션 유무로 대신 판정하면 새로고침까지 로그인 성공으로 세어집니다(이슈 #125).
+  it("sets the session, deletes state, and redirects home with the login success marker", async () => {
     stubGitHub();
     const response = await GET(request("code=code&state=state"));
     const cookies = response.headers.getSetCookie();
     expect(response.status).toBe(302);
-    expect(response.headers.get("location")).toBe("https://app.test/");
+    expect(response.headers.get("location")).toBe("https://app.test/?login=success");
     expect(cookies).toHaveLength(2);
     expect(cookies[0]).toContain("github_session=");
     expect(cookies[0]).toContain("Max-Age=28800");

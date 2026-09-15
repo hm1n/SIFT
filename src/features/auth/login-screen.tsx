@@ -1,6 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { useEffect, useRef } from "react";
+import { trackEvent } from "@/features/analytics/events";
 import { LoginLink, useAuthTransition } from "@/components/shell/auth-transition";
 import { SiftMark } from "@/components/shell/sift-mark";
 import { StatusScreen } from "@/components/shell/status-screen";
@@ -16,6 +18,17 @@ export const AUTH_ERROR_COPY: Record<string, string> = {
   exchange_failed: "GitHub authentication didn't complete. Try again in a moment.",
   config_missing: "The server has no GitHub login configuration. A server administrator needs to complete the setup.",
 };
+
+/**
+ * 계측에 실을 `auth_error` 값입니다. 표에 없는 값은 `unknown`으로 묶습니다.
+ *
+ * 주소창의 쿼리는 아무 값이나 들어올 수 있습니다. 그대로 보내면 GA4 디멘션에 임의 문자열이 쌓여
+ * 분류로 쓸 수 없게 되고 파라미터 값 100자 제한도 보장되지 않습니다. 판정 근거를 화면 안내표와 같은
+ * `AUTH_ERROR_COPY`에 두어 분류가 늘 때 둘이 함께 늘어나게 합니다.
+ */
+export function toAuthErrorParam(value: string): string {
+  return Object.hasOwn(AUTH_ERROR_COPY, value) ? value : "unknown";
+}
 
 export interface LoginScreenProps {
   /** `page.tsx`가 `searchParams.auth_error`에서 읽어 넘기는 오류 종류입니다. 표에 없는 값은 안내로 취급하지 않습니다. */
@@ -35,6 +48,19 @@ export interface LoginScreenProps {
 export function LoginScreen({ authError }: LoginScreenProps) {
   const router = useRouter();
   const { isAuthenticating } = useAuthTransition();
+  // 개발 모드의 StrictMode는 effect를 두 번 실행합니다. 한 번 들어온 화면을 두 번 세지 않습니다.
+  const viewReportedRef = useRef(false);
+
+  // 퍼널의 첫 마디입니다. 세 상태(기본·인증 중·오류) 가운데 무엇을 그리든 화면에 들어온 것은 한 번이므로
+  // 마운트에 한 번만 보냅니다. `Try again`으로 오류 쿼리를 지우는 전환은 같은 진입 안에서 일어납니다.
+  useEffect(() => {
+    if (viewReportedRef.current) return;
+    viewReportedRef.current = true;
+    trackEvent({
+      name: "login_view",
+      ...(authError === undefined ? {} : { auth_error: toAuthErrorParam(authError) }),
+    });
+  }, [authError]);
 
   if (isAuthenticating) {
     return (

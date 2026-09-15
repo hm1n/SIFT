@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, type MouseEvent, type ReactNode, useContext, useEffect, useState } from "react";
+import { trackEvent } from "@/features/analytics/events";
 import { LOGIN_PATH } from "@/lib/github/auth-paths";
 import { ButtonLink, type ButtonVariant } from "./button";
 import { GitHubIcon } from "./sift-mark";
@@ -65,7 +66,11 @@ export function LoginLink({ variant, className, iconSize, children }: LoginLinkP
   const { isAuthenticating, startAuthentication } = useAuthTransition();
 
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
-    if (opensInCurrentTab(event)) startAuthentication();
+    if (!opensInCurrentTab(event)) return;
+    startAuthentication();
+    // 로그인 진입점이 헤더와 로그인 화면 둘인데 둘 다 이 컴포넌트를 씁니다. 진입점이 늘어도 여기
+    // 하나만 세면 됩니다. 새 탭으로 여는 클릭은 현재 화면을 떠나지 않으므로 세지 않습니다.
+    trackEvent({ name: "login_start" });
   }
 
   return (

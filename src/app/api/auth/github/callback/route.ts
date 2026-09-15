@@ -48,7 +48,14 @@ export async function GET(request: NextRequest): Promise<Response> {
     return redirect(request, "exchange_failed");
   }
   try {
-    const headers = new Headers({ Location: new URL("/", request.url).toString() });
+    /**
+     * 성공도 실패처럼 쿼리로 표시합니다. 실패는 이미 `?auth_error=`로 돌아가는데 성공만 표시가
+     * 없어서, 계측이 "세션이 있는 첫 렌더"를 로그인 성공으로 볼 수밖에 없었습니다. 세션 쿠키는
+     * 8시간을 살고 새로고침마다 그 조건이 성립하므로 그 판정으로는 로그인 성공 수가 아니라 페이지
+     * 로드 수가 세어집니다. 이 표시를 읽고 지우는 일은 `features/analytics/analytics-session.tsx`가
+     * 합니다(이슈 #125).
+     */
+    const headers = new Headers({ Location: new URL("/?login=success", request.url).toString() });
     headers.append("Set-Cookie", createGitHubSessionCookie(encryptGitHubSession(session)));
     headers.append("Set-Cookie", deleteOAuthStateCookie());
     return new Response(null, { status: 302, headers });
