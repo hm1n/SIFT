@@ -92,14 +92,14 @@ describe("SavedInterviewScreen", () => {
   it("후보를 찾지 못한 인터뷰는 그 사실을 알린다", () => {
     render(<SavedInterviewScreen interview={payload({ candidate: null })} onResume={vi.fn()} />);
 
-    expect(screen.getByText("이 인터뷰는 해당 후보의 분석 없이 저장되었습니다.")).toBeInTheDocument();
-    expect(screen.getByText("이 인터뷰에는 기술 토픽이 함께 저장되지 않았습니다.")).toBeInTheDocument();
+    expect(screen.getByText("이 인터뷰에는 후보 분석이 함께 저장되지 않았습니다.")).toBeInTheDocument();
+    expect(screen.getByText("이 인터뷰에는 기술 토픽이 없습니다.")).toBeInTheDocument();
   });
 
   it("저장된 근거를 읽지 못하면 그 사실을 알린다", () => {
     render(<SavedInterviewScreen interview={payload({ evidence: { 이상한: "값" } })} onResume={vi.fn()} />);
 
-    expect(screen.getByText("저장된 근거를 더 이상 읽을 수 없습니다.")).toBeInTheDocument();
+    expect(screen.getByText("저장된 근거를 읽을 수 없습니다.")).toBeInTheDocument();
   });
 
   /**
@@ -118,20 +118,20 @@ describe("SavedInterviewScreen", () => {
       />
     );
 
-    expect(screen.getByText("저장된 근거를 더 이상 읽을 수 없습니다.")).toBeInTheDocument();
+    expect(screen.getByText("저장된 근거를 읽을 수 없습니다.")).toBeInTheDocument();
   });
 
   it("저장된 블록 상태를 읽지 못하면 그 사실을 알린다", () => {
     render(<SavedInterviewScreen interview={payload({ blockState: { version: 1 } as never })} onResume={vi.fn()} />);
 
-    expect(screen.getByText("저장된 PAAR 블록을 더 이상 읽을 수 없습니다.")).toBeInTheDocument();
+    expect(screen.getByText("저장된 PAAR 블록을 읽을 수 없습니다.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: / 편집$/ })).not.toBeInTheDocument();
   });
 
   it("블록마다 어디까지 왔는지를 기호로 보인다", () => {
     render(<SavedInterviewScreen interview={payload()} onResume={vi.fn()} />);
 
-    const paar = screen.getByRole("region", { name: "PAAR experience" });
+    const paar = screen.getByRole("region", { name: "PAAR 경험" });
     const symbols = within(paar).getAllByText(/[✓●○]/);
     // problem 충분, alternatives 진행 중, action·result 미확인입니다.
     expect(symbols.map((node) => node.textContent)).toEqual(["✓", "●", "○", "○"]);
@@ -165,7 +165,7 @@ describe("SavedInterviewScreen 블록 편집", () => {
   it("저장된 블록 문장과 그 문장이 인용한 커밋을 그린다", () => {
     render(<SavedInterviewScreen interview={completed} onResume={vi.fn()} />);
 
-    const paar = screen.getByRole("region", { name: "PAAR experience" });
+    const paar = screen.getByRole("region", { name: "PAAR 경험" });
     expect(within(paar).getByText("모델이 쓴 문장")).toBeInTheDocument();
     expect(within(paar).getByText("abc1234")).toBeInTheDocument();
     expect(within(paar).getByText("src/log.tsx")).toBeInTheDocument();

@@ -141,7 +141,7 @@ describe("RepositorySelectScreen 목록", () => {
     await renderReady();
     fireEvent.change(screen.getByRole("searchbox", { name: "Repository 검색" }), { target: { value: "nothing-here" } });
 
-    expect(screen.getByText("검색 결과가 없습니다. 다른 키워드로 다시 검색해 보세요.")).toBeInTheDocument();
+    expect(screen.getByText("검색 결과가 없습니다. 다른 키워드로 다시 검색해보세요.")).toBeInTheDocument();
     expect(screen.queryByRole("radio")).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "분석할 Repository를 선택하세요." })).toBeInTheDocument();
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
@@ -196,8 +196,8 @@ describe("RepositorySelectScreen 선택과 Analyze", () => {
   it("기여 항목 섹션은 라벨, OPTIONAL, 안내와 placeholder를 갖고 목록 카드 밖에 있다", async () => {
     await renderReady();
     const textarea = screen.getByRole("textbox", { name: "Your Contribution" });
-    expect(textarea).toHaveAttribute("placeholder", "예: 실시간 채팅, 푸시 알림, TypeScript 전환 작업을 주로 담당했습니다.");
-    expect(textarea).toHaveAccessibleDescription("이 프로젝트에서 주로 기여한 내용을 알려주세요.");
+    expect(textarea).toHaveAttribute("placeholder", "실시간 채팅, 푸시 알림, TypeScript 전환 작업을 주로 담당했습니다.");
+    expect(textarea).toHaveAccessibleDescription("프로젝트에서 주로 기여한 내용을 알려주세요.");
     expect(screen.getByText("Optional")).toBeInTheDocument();
     expect(screen.getByRole("radiogroup").contains(textarea)).toBe(false);
   });

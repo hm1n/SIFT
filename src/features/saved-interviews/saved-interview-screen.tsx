@@ -140,8 +140,8 @@ export function SavedInterviewScreen({
    */
   const canEdit = interview.status === "completed";
   const emptyText = canEdit
-    ? "여기에 넣을 내용 없이 인터뷰가 끝났습니다."
-    : "인터뷰가 아직 이 블록까지 오지 않았습니다.";
+    ? "이 블록은 채우지 못한 채 인터뷰가 끝났습니다."
+    : "대화를 진행하면 AI가 이 블록을 채웁니다.";
 
   const draft = state.editor?.draft ?? null;
   const parsed = draft === null ? null : parseBlockEdit(draft);
@@ -208,7 +208,7 @@ export function SavedInterviewScreen({
                 <p className={styles.notice}>{EVIDENCE_VERIFIABILITY_NOTICE}</p>
               </>
             ) : (
-              <p className={styles.notice}>이 인터뷰는 해당 후보의 분석 없이 저장되었습니다.</p>
+              <p className={styles.notice}>이 인터뷰에는 후보 분석이 함께 저장되지 않았습니다.</p>
             )}
           </section>
 
@@ -222,7 +222,7 @@ export function SavedInterviewScreen({
                 <p className={styles.notice}>{EVIDENCE_VERIFIABILITY_NOTICE}</p>
               </>
             ) : (
-              <p className={styles.notice}>이 인터뷰에는 기술 토픽이 함께 저장되지 않았습니다.</p>
+              <p className={styles.notice}>이 인터뷰에는 기술 토픽이 없습니다.</p>
             )}
           </section>
 
@@ -248,17 +248,17 @@ export function SavedInterviewScreen({
                 ))}
               </ul>
             ) : (
-              <p className={styles.notice}>저장된 근거를 더 이상 읽을 수 없습니다.</p>
+              <p className={styles.notice}>저장된 근거를 읽을 수 없습니다.</p>
             )}
           </section>
 
           <section className={styles.section} aria-labelledby="saved-paar-heading">
             <div className={styles.sectionHeader}>
-              <p id="saved-paar-heading" className={styles.sectionEyebrow}>PAAR experience</p>
+              <p id="saved-paar-heading" className={styles.sectionEyebrow}>PAAR 경험</p>
               <span className={styles.progress}>{progress}</span>
             </div>
             {blockState === null ? (
-              <p className={styles.notice}>저장된 PAAR 블록을 더 이상 읽을 수 없습니다.</p>
+              <p className={styles.notice}>저장된 PAAR 블록을 읽을 수 없습니다.</p>
             ) : (
             <ul className={styles.blocks}>
               {BLOCK_KINDS.map((block) => {

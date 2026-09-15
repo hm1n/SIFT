@@ -214,7 +214,7 @@ export function InterviewScreen({
             type="button"
             onClick={() => setIsConfirmingBack(true)}
           >
-            ← 후보 목록
+            ← 뒤로
           </button>
           <span className={styles.headerDivider} aria-hidden="true" />
           <p className={styles.eyebrow}>Experience</p>

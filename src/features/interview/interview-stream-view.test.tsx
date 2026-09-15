@@ -843,7 +843,7 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       const { fetchImpl, input } = await renderAfterFirstQuestion([first]);
       fireEvent.change(input, { target: { value: "쓰다 만 답변" } });
 
-      fireEvent.click(screen.getByRole("button", { name: "인터뷰 끝내기" }));
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 완료" }));
 
       // 확인 단계에서는 아직 아무것도 닫히지 않습니다. 사라지는 것을 모두 알립니다.
       const confirm = screen.getByRole("group");
@@ -856,14 +856,14 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       expect(screen.queryByRole("group")).not.toBeInTheDocument();
       expect(input).toHaveValue("쓰다 만 답변");
 
-      fireEvent.click(screen.getByRole("button", { name: "인터뷰 끝내기" }));
-      fireEvent.click(screen.getByRole("button", { name: "인터뷰 끝내기" }));
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 완료" }));
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 완료" }));
 
       // 대화는 남고 답변을 보낼 자리만 사라집니다. 다시 시작하는 조작도 두지 않습니다.
       expect(screen.getByText("첫 질문")).toBeInTheDocument();
       expect(screen.queryByLabelText("답변")).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "전송" })).not.toBeInTheDocument();
-      expect(screen.queryByRole("button", { name: "인터뷰 끝내기" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "인터뷰 완료" })).not.toBeInTheDocument();
       expect(screen.getByText("인터뷰가 끝났습니다. 대화는 읽기 전용입니다.")).toBeInTheDocument();
       expect(screen.getByText(/후보 목록으로 돌아가면 이 대화는 완전히 사라집니다/)).toBeInTheDocument();
       expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -881,8 +881,8 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       second.close();
       await screen.findByRole("button", { name: "다시 시도" });
 
-      fireEvent.click(screen.getByRole("button", { name: "인터뷰 끝내기" }));
-      fireEvent.click(screen.getByRole("button", { name: "인터뷰 끝내기" }));
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 완료" }));
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 완료" }));
 
       // 다시 시도는 요청을 보내는 조작입니다. 종료한 뒤에 눌릴 자리를 남기지 않습니다.
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -900,8 +900,8 @@ describe("InterviewStreamView 실제 생성 경로", () => {
       // 연결 중이라 준비 안내가 떠 있습니다. 이 상태에서 종료합니다.
       expect(screen.getByText("다음 질문을 준비하고 있습니다.")).toBeInTheDocument();
 
-      fireEvent.click(screen.getByRole("button", { name: "인터뷰 끝내기" }));
-      fireEvent.click(screen.getByRole("button", { name: "인터뷰 끝내기" }));
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 완료" }));
+      fireEvent.click(screen.getByRole("button", { name: "인터뷰 완료" }));
 
       expect(screen.queryByText("다음 질문을 준비하고 있습니다.")).not.toBeInTheDocument();
       expect(screen.getByRole("log")).toHaveAttribute("aria-busy", "false");

@@ -266,7 +266,7 @@ describe("RepositoryFlow 이어가기", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
 
-    expect(await screen.findByText("이 인터뷰를 더 이상 찾을 수 없습니다.")).toBeInTheDocument();
+    expect(await screen.findByText("이 인터뷰를 찾을 수 없습니다.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "다시 시도" })).toBeInTheDocument();
   });
 
@@ -291,8 +291,8 @@ describe("RepositoryFlow 이어가기", () => {
     await screen.findByRole("region", { name: "Code / Evidence" });
 
     completed = true;
-    fireEvent.click(screen.getByRole("button", { name: "인터뷰 끝내기" }));
-    fireEvent.click(screen.getByRole("button", { name: "인터뷰 끝내기" }));
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 완료" }));
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 완료" }));
 
     // 끝난 인터뷰라 버튼 문구가 이어가기가 아니라 다시 보기입니다.
     expect(await screen.findByRole("button", { name: /인터뷰 다시 보기/ })).toBeInTheDocument();

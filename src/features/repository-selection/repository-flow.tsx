@@ -38,7 +38,7 @@ type Mode =
 const RESUME_ERROR: Record<string, { code: string; label: string; sub: string }> = {
   not_found: {
     code: "ERROR / NOT FOUND",
-    label: "이 인터뷰를 더 이상 찾을 수 없습니다.",
+    label: "이 인터뷰를 찾을 수 없습니다.",
     sub: "삭제되었을 수 있습니다. 왼쪽 Interviews에서 다른 인터뷰를 선택해 주세요.",
   },
   unauthorized: {
@@ -319,7 +319,7 @@ function ResumedInterview({
         kind="error"
         code="ERROR / STORAGE"
         label="이 인터뷰를 열지 못했습니다."
-        sub="저장된 근거나 블록을 더 이상 읽을 수 없습니다. 저장된 내용은 계속 확인할 수 있습니다."
+        sub="저장된 근거나 블록을 읽을 수 없습니다. 저장된 내용은 계속 확인할 수 있습니다."
         action={{ label: "요약으로 돌아가기", onClick: onBackToReview }}
       />
     );

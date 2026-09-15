@@ -195,7 +195,7 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
               />
             </div>
             {filtered.length === 0 ? (
-              <p className={styles.noMatch}>검색 결과가 없습니다. 다른 키워드로 다시 검색해 보세요.</p>
+              <p className={styles.noMatch}>검색 결과가 없습니다. 다른 키워드로 다시 검색해보세요.</p>
             ) : (
               <div role="radiogroup" aria-label="Repositories">
                 {filtered.map((repository, index) => {
@@ -239,14 +239,14 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
               <span className={styles.label} id={labelId}>Your Contribution</span>
               <span className={styles.optional}>Optional</span>
             </div>
-            <p className={styles.contributionCopy} id={copyId}>이 프로젝트에서 주로 기여한 내용을 알려주세요.</p>
+            <p className={styles.contributionCopy} id={copyId}>프로젝트에서 주로 기여한 내용을 알려주세요.</p>
             <div className={styles.textareaFrame}>
               <textarea
                 ref={textareaRef}
                 className={styles.textarea}
                 value={contribution}
                 onChange={(event) => setContribution(event.target.value)}
-                placeholder="예: 실시간 채팅, 푸시 알림, TypeScript 전환 작업을 주로 담당했습니다."
+                placeholder="실시간 채팅, 푸시 알림, TypeScript 전환 작업을 주로 담당했습니다."
                 rows={3}
                 aria-labelledby={labelId}
                 aria-describedby={copyId}

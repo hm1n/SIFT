@@ -32,7 +32,7 @@ const CHECKLIST_STEPS = [
   { key: "commit_details", label: "커밋 상세 불러오는 중" },
   { key: "repository_metadata", label: "Repository 메타데이터 불러오는 중" },
   { key: "deriving", label: "파생 지표 계산 중" },
-  { key: "stage_a", label: "경험 후보 선별 중" },
+  { key: "stage_a", label: "경험 후보 찾는 중" },
   { key: "stage_b", label: "후보 확정 중" },
 ] as const;
 

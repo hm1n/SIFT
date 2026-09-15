@@ -500,9 +500,9 @@ describe("toCandidateGenerationError", () => {
       new CandidateRequestError("stage_a", "llm_timeout", "시간 초과"),
       "stage_a"
     );
-    expect(stageB.title).toContain("시간 예산을 넘겼습니다");
-    expect(stageB.message).toContain("GitHub diff·PR 조회를 포함한 라우트 전체가");
-    expect(stageA.title).toContain("LLM 분석이 시간 안에 끝나지 않았습니다");
+    expect(stageB.title).toContain("제한 시간을 넘겼습니다");
+    expect(stageB.message).toContain("GitHub diff·PR 조회를 포함한 처리 전체가");
+    expect(stageA.title).toContain("AI 분석이 제한 시간 안에 끝나지 않았습니다");
     expect(stageA.title).not.toContain("budget");
   });
 

@@ -58,10 +58,10 @@ const CARD_STATE_LABELS: Readonly<Record<CardState, string>> = {
 };
 
 const CARD_EMPTY_TEXT: Readonly<Record<CardState, string>> = {
-  pending: "인터뷰가 아직 이 블록까지 오지 않았습니다.",
-  collecting: "마지막 답변을 이 블록에 반영하고 있습니다.",
+  pending: "대화를 진행하면 AI가 이 블록을 채웁니다.",
+  collecting: "AI가 마지막 답변을 이 블록에 반영하고 있습니다.",
   filled: "",
-  unfilled: "여기에 넣을 내용 없이 인터뷰가 끝났습니다.",
+  unfilled: "이 블록은 채우지 못한 채 인터뷰가 끝났습니다.",
 };
 
 /**
@@ -224,7 +224,7 @@ export function PaarPanel({ stream, isSaved = false }: PaarPanelProps) {
       */}
       {isReadyToFinish && !isEnded ? (
         <p className={styles.readyNotice}>
-          더 물을 질문이 없습니다. 원하는 때에 인터뷰를 끝낼 수 있습니다.
+          더 물을 질문이 없습니다. 원하는 때에 인터뷰를 완료할 수 있습니다.
         </p>
       ) : null}
 
@@ -252,7 +252,7 @@ export function PaarPanel({ stream, isSaved = false }: PaarPanelProps) {
               <div className={styles.endActions}>
                 {/* 확인 문구를 읽지 않고 누르는 일을 줄이려고 초점을 확인 버튼으로 옮깁니다. */}
                 <button type="button" className={styles.endButton} onClick={endInterview} autoFocus>
-                  인터뷰 끝내기
+                  인터뷰 완료
                 </button>
                 <button
                   type="button"
@@ -269,7 +269,7 @@ export function PaarPanel({ stream, isSaved = false }: PaarPanelProps) {
               className={styles.endButton}
               onClick={() => setIsConfirmingEnd(true)}
             >
-              인터뷰 끝내기
+              인터뷰 완료
             </button>
           )}
         </div>

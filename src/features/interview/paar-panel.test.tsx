@@ -132,7 +132,7 @@ describe("PaarPanel 블록 상태", () => {
     render(<PanelHarness stream={baseStream({ isEnded: true, endReason: "user" })} />);
 
     expect(screen.getAllByText("비어 있음")).toHaveLength(4);
-    expect(screen.getAllByText(/여기에 넣을 내용 없이 인터뷰가 끝났습니다/)).toHaveLength(4);
+    expect(screen.getAllByText(/이 블록은 채우지 못한 채 인터뷰가 끝났습니다/)).toHaveLength(4);
   });
 
   it("평가가 비어 있어도 문장이 있으면 채워짐으로 그린다", () => {
@@ -280,8 +280,8 @@ describe("PaarPanel 종료 조작", () => {
     render(<PanelHarness stream={baseStream({ endInterview })} />);
 
     expect(screen.getByText("/ 00 OF 04")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "인터뷰 끝내기" }));
-    fireEvent.click(screen.getByRole("button", { name: "인터뷰 끝내기" }));
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 완료" }));
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 완료" }));
     expect(endInterview).toHaveBeenCalledTimes(1);
   });
 
@@ -291,7 +291,7 @@ describe("PaarPanel 종료 조작", () => {
 
     expect(screen.getByText(/더 물을 질문이 없습니다/)).toBeInTheDocument();
     expect(endInterview).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "인터뷰 끝내기" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "인터뷰 완료" })).toBeInTheDocument();
   });
 
   it("저장되지 않는 인터뷰의 종료 확인 문구는 블록을 고칠 수 없다고 알린다", () => {
@@ -299,14 +299,14 @@ describe("PaarPanel 종료 조작", () => {
     // "나중에 고칠 수 있다"고 적으면 있지도 않은 조작을 약속하게 됩니다.
     render(<PanelHarness stream={baseStream()} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "인터뷰 끝내기" }));
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 완료" }));
     expect(screen.getByRole("group")).toHaveTextContent("나중에 고칠 수 없습니다");
   });
 
   it("저장되는 인터뷰의 종료 확인 문구는 목록에서 다시 열어 고칠 수 있다고 알린다", () => {
     render(<PaarPanel stream={baseStream()} isSaved />);
 
-    fireEvent.click(screen.getByRole("button", { name: "인터뷰 끝내기" }));
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 완료" }));
     expect(screen.getByRole("group")).toHaveTextContent("거기서 다시 열어 PAAR 블록을 고칠 수 있습니다");
   });
 });

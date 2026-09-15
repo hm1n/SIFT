@@ -12,7 +12,7 @@ import {
 } from "./evidence-snapshot";
 
 const CONFIRM_LABEL = "인터뷰 시작";
-const BACK_LABEL = "← 후보 목록";
+const BACK_LABEL = "← 뒤로";
 /** 확정 실패 안내에서 돌아가는 버튼입니다. InterviewScreen 자체의 뒤로가기(BACK_LABEL)와는 다른 버튼입니다. */
 const CANDIDATE_BACK_LABEL = "← 후보 목록으로";
 

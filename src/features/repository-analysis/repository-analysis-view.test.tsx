@@ -543,7 +543,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
       const createInterview = vi.fn<typeof createSavedInterview>().mockResolvedValue({ interviewId: "i1", analysisId: "a1" });
       await confirmExperience(createInterview);
 
-      fireEvent.click(screen.getByRole("button", { name: "← 후보 목록" }));
+      fireEvent.click(screen.getByRole("button", { name: "← 뒤로" }));
       fireEvent.click(screen.getByRole("button", { name: "후보 목록으로" }));
       fireEvent.click(screen.getByRole("button", { name: /인터뷰 시작/ }));
 
@@ -605,7 +605,7 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
   });
 
   it.each([
-    [{ kind: "llm_call_failure", title: "LLM 호출에 실패했습니다", message: "잠시 후", recovery: "retry" }],
+    [{ kind: "llm_call_failure", title: "AI 호출에 실패했습니다", message: "잠시 후", recovery: "retry" }],
     [{ kind: "llm_schema_violation", title: "LLM 응답이 출력 계약을 지키지 않았습니다", message: "버림", recovery: "retry" }],
     [{ kind: "llm_hallucination_rejected", title: "실제 Repository 근거와 맞지 않는 판단을 거부했습니다", message: "버림", recovery: "retry" }],
   ] as AnalysisError[][])("후보 생성 오류 %s에 후보 생성 재시도 버튼을 표시한다", async (error) => {

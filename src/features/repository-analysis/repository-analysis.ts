@@ -389,8 +389,8 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
     case "json_parse":
       return {
         kind: "llm_schema_violation",
-        title: "LLM 응답이 출력 계약을 따르지 않았습니다",
-        message: `${error.message} 계약을 어긴 결과는 쓰지 않습니다. 후보 생성을 다시 시도해 주세요.`,
+        title: "AI 응답이 정해진 형식을 따르지 않았습니다",
+        message: `${error.message} 형식이 맞지 않는 결과는 쓰지 않습니다. 후보 생성을 다시 시도해 주세요.`,
         recovery: "retry",
       };
     case "unknown_sha":
@@ -398,7 +398,7 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
     case "unknown_file_path":
       return {
         kind: "llm_hallucination_rejected",
-        title: "실제 Repository 근거와 맞지 않는 판단을 버렸습니다",
+        title: "Repository 근거에 없는 내용을 인용해 결과를 쓰지 않았습니다",
         message: `${error.message} 입력에 없는 커밋이나 파일을 인용한 결과는 쓰지 않습니다. 후보 생성을 다시 시도해 주세요.`,
         recovery: "retry",
       };
@@ -407,21 +407,21 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
       return stage === "stage_b"
         ? {
             kind: "llm_call_failure",
-            title: "Stage B가 시간 예산을 넘겼습니다",
+            title: "Stage B가 제한 시간을 넘겼습니다",
             message:
-              "GitHub diff·PR 조회를 포함한 라우트 전체가 시간 예산을 넘겼습니다. LLM 자체의 실패가 아닐 수 있습니다. 잠시 후 후보 생성을 다시 시도해 주세요.",
+              "GitHub diff·PR 조회를 포함한 처리 전체가 제한 시간을 넘겼습니다. AI 자체의 실패가 아닐 수 있습니다. 잠시 후 후보 생성을 다시 시도해 주세요.",
             recovery: "retry",
           }
         : {
             kind: "llm_call_failure",
-            title: "LLM 분석이 시간 안에 끝나지 않았습니다",
+            title: "AI 분석이 제한 시간 안에 끝나지 않았습니다",
             message: "제한 시간 안에 분석이 끝나지 않았습니다. 잠시 후 후보 생성을 다시 시도해 주세요.",
             recovery: "retry",
           };
     case "llm_rate_limit":
       return {
         kind: "llm_call_failure",
-        title: "LLM 호출 한도에 걸렸습니다",
+        title: "AI 호출 한도에 걸렸습니다",
         message: "호출 한도가 풀린 뒤 후보 생성을 다시 시도해 주세요.",
         recovery: "retry",
       };
@@ -429,8 +429,8 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
     case "llm_configuration":
       return {
         kind: "llm_call_failure",
-        title: "LLM 연결 설정에 문제가 있습니다",
-        message: "서비스 쪽 LLM 인증이나 설정 문제입니다. 잠시 후 후보 생성을 다시 시도해 주세요.",
+        title: "AI 연결 설정에 문제가 있습니다",
+        message: "서비스 쪽 인증이나 설정 문제입니다. 잠시 후 후보 생성을 다시 시도해 주세요.",
         recovery: "retry",
       };
     case "llm_network":
@@ -438,7 +438,7 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
     case "llm_failure":
       return {
         kind: "llm_call_failure",
-        title: "LLM 호출에 실패했습니다",
+        title: "AI 호출에 실패했습니다",
         message: `${error.message} 잠시 후 후보 생성을 다시 시도해 주세요.`,
         recovery: "retry",
       };

@@ -12,7 +12,7 @@ import type { InterviewStreamPhase, InterviewStreamState } from "./use-interview
 import styles from "./interview-stream-view.module.css";
 
 const STATUS_TEXT: Record<InterviewStreamPhase, string> = {
-  idle: "질문 스트리밍이 아직 시작되지 않았습니다.",
+  idle: "아직 질문을 요청하지 않았습니다.",
   connecting: "질문 스트림에 연결하는 중입니다.",
   streaming: "질문이 도착하고 있습니다.",
   reconnecting: "연결이 끊어졌습니다. 이미 받은 내용은 그대로 두고 다시 연결하는 중입니다.",
@@ -104,17 +104,17 @@ function retryHint(kind: InterviewStreamErrorKind, resumable: boolean): string {
  */
 function errorGuidance(kind: InterviewStreamErrorKind, resumable: boolean): string {
   if (kind === "stream_connect_failed") {
-    return "연결을 열지 못했습니다. 아직 도착한 내용이 없습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.";
+    return "연결하지 못했습니다. 아직 도착한 내용이 없습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.";
   }
   if (kind === "stream_interrupted") {
     return resumable
       ? "자동 재연결을 두 번 모두 실패했습니다. 이미 받은 내용은 그대로 두었고, 다시 시도하면 끊긴 지점부터 이어받습니다."
-      : "질문이 도착하는 중에 연결이 끊어졌습니다. 이 스트림은 끊긴 지점부터 이어받을 수 없어 다시 시도하면 같은 근거로 질문을 처음부터 새로 만듭니다. 지금까지 받은 내용은 사라집니다.";
+      : "질문이 도착하는 중에 연결이 끊어졌습니다. 끊긴 지점부터 이어받을 수 없어 다시 시도하면 같은 근거로 질문을 처음부터 새로 만듭니다. 지금까지 받은 내용은 사라집니다.";
   }
   if (kind === "generation_empty") {
     // 청크가 0개라 사라질 내용이 없습니다. 여기에 재시도 문구를 붙이면 잃을 내용이 있다고
     // 오해하게 만듭니다.
-    return "질문이 한 조각도 도착하지 않았습니다. 아직 도착한 내용이 없습니다. 다시 시도하면 같은 근거로 질문을 다시 만듭니다.";
+    return "질문이 한 조각도 도착하지 않았습니다. 다시 시도하면 같은 근거로 질문을 다시 만듭니다.";
   }
   const requestGuidance = REQUEST_ERROR_GUIDANCE[kind as InterviewStreamRequestErrorKind];
   if (requestGuidance) return requestGuidance;
@@ -306,7 +306,7 @@ export function InterviewStreamView({ stream, currentBlockLabel, save }: Intervi
           {showStaleNotice && save?.onLoadLatest ? (
             <div className={styles.saveNotice}>
               <span className={styles.saveNoticeMark} aria-hidden="true">●</span>
-              <p className={styles.saveNoticeText}>다른 탭에서 이 인터뷰가 바뀌었습니다.</p>
+              <p className={styles.saveNoticeText}>다른 탭에서 이 인터뷰가 변경됐습니다.</p>
               <button type="button" className={styles.saveNoticeAction} onClick={save.onLoadLatest}>최신 내용 불러오기</button>
             </div>
           ) : null}
@@ -453,7 +453,7 @@ export function InterviewStreamView({ stream, currentBlockLabel, save }: Intervi
               onKeyDown={handleAnswerKeyDown}
               disabled={!canSubmitAnswer}
               rows={1}
-              placeholder="질문에 답해 주세요. 코드 블록을 함께 써도 좋습니다."
+              placeholder="질문에 답하세요. 코드 블록을 써도 좋습니다."
               aria-describedby={answerHintId}
               aria-invalid={isDraftTooLong || undefined}
             />
