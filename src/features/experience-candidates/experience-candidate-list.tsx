@@ -78,6 +78,10 @@ interface ExperienceCandidateListProps {
   onExperienceConfirmed?: (confirmed: ConfirmedExperience | null) => void;
   /** 상위가 만든 인터뷰 줄입니다. 없으면 저장하지 않고 대화는 그대로 진행합니다. */
   interviewId?: string | null;
+  /** 다른 탭이 먼저 저장했을 때 최신 내용을 다시 불러옵니다. 인터뷰 화면으로 그대로 내려보냅니다. */
+  onLoadLatestInterview?: () => void;
+  /** 저장되지 않은 턴이 있는지 상위에 알립니다. 이탈 확인을 받을지 흐름이 판단합니다. */
+  onUnsavedInterviewChange?: (hasUnsaved: boolean) => void;
 }
 
 export function ExperienceCandidateList({
@@ -89,6 +93,8 @@ export function ExperienceCandidateList({
   onInterviewActiveChange,
   onExperienceConfirmed,
   interviewId,
+  onLoadLatestInterview,
+  onUnsavedInterviewChange,
 }: ExperienceCandidateListProps) {
   const items = useMemo(() => createExperienceCandidateListItems(data, candidates), [data, candidates]);
   // 목록 행과 상세 양쪽이 관련 커밋의 date를 봐야 해서 여기서 한 번만 모읍니다.
@@ -122,7 +128,15 @@ export function ExperienceCandidateList({
   }
 
   if (selection.status === "confirmed") {
-    return <InterviewScreen snapshot={selection.snapshot} interviewId={interviewId} onBack={returnToCandidates} />;
+    return (
+      <InterviewScreen
+        snapshot={selection.snapshot}
+        interviewId={interviewId}
+        onLoadLatest={onLoadLatestInterview}
+        onUnsavedChange={onUnsavedInterviewChange}
+        onBack={returnToCandidates}
+      />
+    );
   }
 
   return (

@@ -264,6 +264,7 @@ describe("Neon 저장 계층", () => {
       status: "in_progress",
       progress: emptyInterviewProgress(),
       completed_block_count: 2,
+      candidate: { sha: "sha-b", technicalTopics: ["React"] },
       created_at: new Date("2026-09-01T00:00:00Z"),
       updated_at: new Date("2026-09-10T00:00:00Z"),
       opened_at: new Date("2026-09-14T00:00:00Z"),
@@ -289,6 +290,7 @@ describe("Neon 저장 계층", () => {
         blockVersion: 2,
         progress: emptyInterviewProgress(),
         completedBlockCount: 2,
+        candidate: { sha: "sha-b", technicalTopics: ["React"] },
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         openedAt: row.opened_at,
@@ -369,6 +371,26 @@ describe("Neon 저장 계층", () => {
       const interview = await neonStore(execute).getInterview(INTERVIEW_ID, OWNER_ID);
 
       expect(interview?.progress).toEqual(emptyInterviewProgress());
+    });
+
+    /**
+     * 분석 전체를 실어 오면 화면이 쓰지 않는 다른 후보와 커밋이 모두 따라옵니다. 질의가 후보 하나만
+     * 골라야 합니다.
+     */
+    it("복원 질의가 저장된 분석에서 그 후보 하나만 골라 온다", async () => {
+      const { execute, calls } = fakeExecute([[row]]);
+      await neonStore(execute).getInterview(INTERVIEW_ID, OWNER_ID);
+
+      expect(calls[0].text).toContain("as candidate");
+      expect(calls[0].text).toContain("candidate ->> 'sha' = s.candidate_key");
+      expect(calls[0].text).toContain("limit 1");
+    });
+
+    it("후보를 찾지 못한 줄은 null로 돌려준다", async () => {
+      const { execute } = fakeExecute([[{ ...row, candidate: undefined }]]);
+      const interview = await neonStore(execute).getInterview(INTERVIEW_ID, OWNER_ID);
+
+      expect(interview?.candidate).toBeNull();
     });
 
     it("모르는 status 값은 임의로 접지 않고 오류로 올린다", async () => {

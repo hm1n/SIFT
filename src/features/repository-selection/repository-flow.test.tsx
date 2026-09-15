@@ -1,9 +1,13 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { analyzeRepository } from "@/features/repository-analysis/repository-analysis";
+import { emptyInterviewProgress } from "@/features/experience-block/progress";
+import { emptyExperienceBlockState } from "@/features/experience-block/types";
+import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
+import { encodeSseEvent } from "@/features/interview/sse";
 import { RepositoryFlow } from "./repository-flow";
 
 vi.mock("@/features/repository-analysis/repository-analysis", async (importOriginal) => {
@@ -22,9 +26,29 @@ const LIST = {
   ],
 };
 
+/** 요청을 URL로 갈라 응답합니다. 사이드바 목록 조회가 마운트마다 함께 나갑니다(이슈 #115). */
+function stubFetch(handlers: Record<string, () => Promise<Response> | Response> = {}) {
+  const calls: string[] = [];
+  const fetchImpl = vi.fn((input: RequestInfo | URL) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    calls.push(url);
+    for (const [prefix, handler] of Object.entries(handlers)) {
+      if (url.includes(prefix)) return Promise.resolve(handler());
+    }
+    if (url.includes("/api/interviews")) return Promise.resolve(Response.json({ interviews: [] }));
+    return Promise.resolve(Response.json(LIST));
+  });
+  vi.stubGlobal("fetch", fetchImpl);
+  return { calls, fetchImpl };
+}
+
+function repositoryListCalls(calls: readonly string[]): number {
+  return calls.filter((url) => url.includes("/api/github/repositories")).length;
+}
+
 beforeEach(() => {
   analyzeMock.mockReset();
-  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(Response.json(LIST))));
+  stubFetch();
 });
 
 afterEach(() => {
@@ -47,20 +71,28 @@ describe("RepositoryFlow", () => {
 
   it("다른 Repository 선택은 목록을 다시 조회해 선택 화면으로 돌아간다", async () => {
     analyzeMock.mockImplementation(async (_repo, _items, onStateChange) => onStateChange({ status: "empty", kind: "no_commits" }));
+    const { calls } = stubFetch();
     render(<RepositoryFlow />);
     fireEvent.click(await screen.findByRole("radio", { name: /hello-world/ }));
     fireEvent.click(screen.getByRole("button", { name: /Analyze/ }));
     fireEvent.click(await screen.findByRole("button", { name: "Choose a different repository" }));
 
     await screen.findByRole("heading", { name: "Choose a repository to analyze." });
-    expect(fetch).toHaveBeenCalledTimes(2);
-    expect(screen.getByText("No repository selected")).toBeInTheDocument();
+    expect(repositoryListCalls(calls)).toBe(2);
+    // 고른 Repository가 없어도 사이드바는 그대로 있습니다(이슈 #115).
+    expect(within(screen.getByRole("region", { name: "Repository" })).getByText("No repository selected")).toBeInTheDocument();
   });
 });
 
-// PR #105 Codex 리뷰 P1: AppShell 사이드바의 Change repository는 RepositoryAnalysisView 밖에 있어
-// InterviewScreen의 이탈 확인을 그대로 건너뛰고 대화를 잃었습니다. 사이드바도 같은 확인을 거쳐야 합니다.
-describe("RepositoryFlow 인터뷰 중 이탈 확인", () => {
+/**
+ * 이슈 #115로 계약이 바뀌었습니다. 저장이 붙기 전에는 인터뷰 화면을 떠나는 것이 곧 대화를 잃는
+ * 것이라 언제나 확인했지만, 이제 저장된 대화는 사이드바에서 다시 이어갈 수 있습니다. 그래서 잃을
+ * 것이 있을 때, 즉 저장되지 않은 턴이 남아 있을 때만 확인합니다.
+ *
+ * 확인을 거는 자리는 그대로 흐름 컴포넌트입니다. 사이드바의 Change repository와 새 경험 찾기는
+ * 인터뷰 화면 밖에 있어서, 화면이 스스로 확인을 걸면 그 두 경로가 빠져나갑니다(PR #105 Codex 리뷰 P1).
+ */
+describe("RepositoryFlow 인터뷰 중 이탈", () => {
   const COMMIT = {
     sha: "aaa",
     title: "재시도 큐 도입",
@@ -84,8 +116,16 @@ describe("RepositoryFlow 인터뷰 중 이탈 확인", () => {
     source: "automatic_recommendation",
   } as const;
 
-  /** 목록 선택부터 인터뷰 확정까지 실제 UI로 진행합니다. 인터뷰 스트림 fetch는 응답하지 않습니다. */
-  async function renderWithConfirmedInterview() {
+  /** 질문 하나를 끝까지 보내는 스트림 응답입니다. */
+  function questionResponse(text: string): Response {
+    return new Response(
+      encodeSseEvent({ type: "chunk", seq: 1, text }) + encodeSseEvent({ type: "done", seq: 1 }),
+      { status: 200 }
+    );
+  }
+
+  /** 목록 선택부터 인터뷰 확정까지 실제 UI로 진행합니다. */
+  async function renderWithConfirmedInterview(handlers: Record<string, () => Promise<Response> | Response> = {}) {
     analyzeMock.mockImplementation(async (_repo, _items, onStateChange) => {
       onStateChange({
         status: "success",
@@ -94,14 +134,10 @@ describe("RepositoryFlow 인터뷰 중 이탈 확인", () => {
         stageASelection: { excludedUnits: [], thresholdScore: 0, selectedUnitCount: 1, unjudgedShas: [] },
       });
     });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((input: RequestInfo | URL) => {
-        const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-        if (url.includes("/api/interview/stream")) return new Promise<Response>(() => {});
-        return Promise.resolve(Response.json(LIST));
-      })
-    );
+    const stub = stubFetch({
+      "/api/interview/stream": () => questionResponse("문제 상황을 알려주세요"),
+      ...handlers,
+    });
 
     render(<RepositoryFlow />);
     fireEvent.click(await screen.findByRole("radio", { name: /hello-world/ }));
@@ -109,12 +145,35 @@ describe("RepositoryFlow 인터뷰 중 이탈 확인", () => {
     fireEvent.click(await screen.findByRole("button", { name: /재시도 큐 도입/ }));
     fireEvent.click(screen.getByRole("button", { name: /Start interview/ }));
     await screen.findByText("AI 인터뷰");
+    return stub;
   }
 
-  it("사이드바 Change repository는 바로 나가지 않고 확인을 먼저 받는다", async () => {
+  // 저장된 대화는 다시 이어갈 수 있으므로 잃을 것이 없습니다. 묻지 않고 나갑니다.
+  it("저장되지 않은 답변이 없으면 확인 없이 나간다", async () => {
     await renderWithConfirmedInterview();
 
     fireEvent.click(screen.getByRole("button", { name: "← Change repository" }));
+
+    await screen.findByRole("heading", { name: "Choose a repository to analyze." });
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  /**
+   * 블록 갱신이 실패하면 그 턴은 반영도 저장도 되지 않은 채 화면에만 남습니다. 그대로 나가면 그
+   * 답변을 잃습니다.
+   */
+  it("저장되지 않은 답변이 있으면 확인을 먼저 받는다", async () => {
+    await renderWithConfirmedInterview({
+      "/api/interview/experience-block": () =>
+        Response.json({ error: { kind: "storage_failed", message: "끊김" } }, { status: 503 }),
+    });
+    const answer = await screen.findByRole("textbox", { name: /답변/ });
+    fireEvent.change(answer, { target: { value: "화면이 비어 있었습니다." } });
+    fireEvent.click(screen.getByRole("button", { name: "답변 보내기" }));
+    await screen.findByText("마지막 답변이 저장되지 않았습니다.");
+
+    fireEvent.click(screen.getByRole("button", { name: "← Change repository" }));
+
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
     expect(screen.getByText("AI 인터뷰")).toBeInTheDocument();
 
@@ -123,13 +182,102 @@ describe("RepositoryFlow 인터뷰 중 이탈 확인", () => {
     expect(screen.getByText("AI 인터뷰")).toBeInTheDocument();
   });
 
-  it("확인 뒤 Repository 바꾸기를 누르면 선택 화면으로 돌아간다", async () => {
-    await renderWithConfirmedInterview();
+  it("확인 뒤 나가기를 누르면 선택 화면으로 돌아간다", async () => {
+    await renderWithConfirmedInterview({
+      "/api/interview/experience-block": () =>
+        Response.json({ error: { kind: "storage_failed", message: "끊김" } }, { status: 503 }),
+    });
+    const answer = await screen.findByRole("textbox", { name: /답변/ });
+    fireEvent.change(answer, { target: { value: "화면이 비어 있었습니다." } });
+    fireEvent.click(screen.getByRole("button", { name: "답변 보내기" }));
+    await screen.findByText("마지막 답변이 저장되지 않았습니다.");
 
     fireEvent.click(screen.getByRole("button", { name: "← Change repository" }));
-    fireEvent.click(screen.getByRole("button", { name: "Repository 바꾸기" }));
+    fireEvent.click(screen.getByRole("button", { name: "나가기" }));
 
     await screen.findByRole("heading", { name: "Choose a repository to analyze." });
     expect(screen.queryByText("AI 인터뷰")).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * 사이드바에서 저장된 인터뷰를 골라 이어가는 경로입니다(이슈 #115). 분석을 다시 돌리지 않고 곧바로
+ * 그 인터뷰로 들어갑니다.
+ */
+describe("RepositoryFlow 이어가기", () => {
+  const INTERVIEW_ID = "11111111-1111-4111-8111-111111111111";
+  const LIST_ITEM = {
+    id: INTERVIEW_ID,
+    repoOwner: "octocat",
+    repoName: "hello-world",
+    title: "재시도 큐 도입",
+    status: "in_progress",
+    completedBlockCount: 1,
+    createdAt: "2026-09-10T00:00:00.000Z",
+    updatedAt: "2026-09-12T09:00:00.000Z",
+  };
+  const STORED = {
+    ...LIST_ITEM,
+    analysisId: "22222222-2222-4222-8222-222222222222",
+    candidateKey: "aaa",
+    evidence: evidenceSnapshotFixture(),
+    history: [
+      { role: "question", text: "문제 상황을 알려주세요" },
+      { role: "answer", text: "화면이 비어 있었습니다." },
+    ],
+    blockState: emptyExperienceBlockState(),
+    blockVersion: 0,
+    progress: emptyInterviewProgress(),
+    candidate: { sha: "aaa", evidence: "재시도 큐를 도입했습니다.", technicalTopics: ["Redis"] },
+  };
+
+  function stubWithSavedInterview(detail: () => Response) {
+    return stubFetch({
+      [`/api/interviews/${INTERVIEW_ID}`]: detail,
+      "/api/interviews": () => Response.json({ interviews: [LIST_ITEM] }),
+      "/api/interview/stream": () => new Response(new ReadableStream(), { status: 200 }),
+    });
+  }
+
+  it("사이드바에서 고르면 저장된 내용을 먼저 보이고, 이어가기를 누르면 대화를 연다", async () => {
+    stubWithSavedInterview(() => Response.json({ interview: STORED }));
+    render(<RepositoryFlow />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
+
+    // 대화로 곧바로 들어가지 않고 무엇을 이야기하던 중이었는지를 먼저 보입니다.
+    expect(await screen.findByRole("heading", { level: 1, name: "재시도 큐 도입" })).toBeInTheDocument();
+    expect(screen.getByText("재시도 큐를 도입했습니다.")).toBeInTheDocument();
+    // 이어가기 화면에서도 사이드바는 그 인터뷰의 저장소를 보입니다.
+    expect(within(screen.getByRole("region", { name: "Repository" })).getByText("hello-world")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Continue interview/ }));
+
+    expect(await screen.findByText("AI 인터뷰")).toBeInTheDocument();
+    // 저장된 대화를 들고 시작합니다.
+    expect(screen.getByText("화면이 비어 있었습니다.")).toBeInTheDocument();
+  });
+
+  it("지워진 인터뷰를 고르면 그 사실을 알리고 다시 시도할 수 있다", async () => {
+    stubWithSavedInterview(() =>
+      Response.json({ error: { kind: "not_found", message: "없음" } }, { status: 404 })
+    );
+    render(<RepositoryFlow />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
+
+    expect(await screen.findByText("This interview is no longer available.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+  });
+
+  it("새 경험 찾기는 Repository 선택으로 돌아간다", async () => {
+    stubWithSavedInterview(() => Response.json({ interview: STORED }));
+    render(<RepositoryFlow />);
+    fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
+    await screen.findByRole("heading", { level: 1, name: "재시도 큐 도입" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Find new experience" }));
+
+    expect(await screen.findByRole("heading", { name: "Choose a repository to analyze." })).toBeInTheDocument();
   });
 });

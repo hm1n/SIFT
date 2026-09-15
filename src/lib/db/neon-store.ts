@@ -102,6 +102,18 @@ const COMPLETED_BLOCK_COUNT_SQL = `(select count(*)
            where e.key in (${BLOCK_KINDS.map((kind) => `'${kind}'`).join(", ")})
              and e.value ->> 'sufficient' = 'true')::int as completed_block_count`;
 
+/**
+ * 저장된 분석에서 이 인터뷰가 가리키는 후보 하나만 골라냅니다. 분석 전체를 실어 오면 화면이 쓰지 않는
+ * 다른 후보와 커밋이 모두 따라옵니다. `jsonb_array_elements`는 배열이 아닌 값을 받으면 오류를 내므로
+ * 모양을 먼저 봅니다.
+ */
+const STORED_CANDIDATE_SQL = `(select candidate
+            from jsonb_array_elements(
+                   case when jsonb_typeof(ra.candidates -> 'candidates' -> 'candidates') = 'array'
+                        then ra.candidates -> 'candidates' -> 'candidates' else '[]'::jsonb end) candidate
+           where candidate ->> 'sha' = s.candidate_key
+           limit 1) as candidate`;
+
 function toListItem(row: Record<string, unknown>): InterviewListItem {
   return {
     id: row.id as string,
@@ -269,6 +281,7 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
          returning s.id, s.analysis_id, s.candidate_key, s.title, s.evidence, s.history,
                    s.block_state, s.block_version, s.status, s.progress,
                    ${COMPLETED_BLOCK_COUNT_SQL},
+                   ${STORED_CANDIDATE_SQL},
                    s.created_at, s.updated_at, s.opened_at,
                    ra.repo_owner, ra.repo_name`,
         [id, githubUserId]
@@ -281,6 +294,7 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
         candidateKey: row.candidate_key as string,
         evidence: row.evidence,
         history: row.history as readonly InterviewHistoryMessage[],
+        candidate: row.candidate ?? null,
         blockState: row.block_state as ExperienceBlockState,
         blockVersion: row.block_version as number,
         progress: toProgress(row.progress),

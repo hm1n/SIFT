@@ -154,4 +154,12 @@ export interface StoredInterview extends InterviewListItem {
    * 몇 번 물었는지는 말하지 않으므로 대신 쓸 수 없습니다.
    */
   readonly progress: InterviewProgress;
+  /**
+   * 저장된 분석에서 이 인터뷰가 가리키는 후보 하나입니다. 찾지 못하면 `null`입니다(이슈 #115).
+   *
+   * 이어가기 화면이 기술 토픽과 선정 이유를 그리는 데 씁니다. 근거 스냅샷에는 커밋과 파일만 있고 그
+   * 값들이 없습니다. 분석 전체를 실어 보내지 않고 이 후보 하나만 고르는 이유는, 저장된 분석에 다른
+   * 후보와 그들이 가리키는 커밋이 모두 들어 있어 화면이 쓰지 않는 값이 응답의 대부분이 되기 때문입니다.
+   */
+  readonly candidate: unknown;
 }

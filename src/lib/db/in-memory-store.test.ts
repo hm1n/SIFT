@@ -250,6 +250,48 @@ describe("메모리 저장 계층", () => {
     expect(interview?.blockVersion).toBe(0);
   });
 
+  /**
+   * 이어가기 화면이 기술 토픽과 선정 이유를 그리는 데 씁니다. 근거 스냅샷에는 커밋과 파일만 있어
+   * 그 값들이 없습니다.
+   */
+  it("복원할 때 저장된 분석에서 그 후보 하나를 골라 함께 돌려준다", async () => {
+    const store = createInMemoryStore();
+    const analysisId = await store.saveAnalysis({
+      githubUserId: OWNER_ID,
+      repoOwner: "hm1n",
+      repoName: "SIFT",
+      contributionItems: [],
+      candidates: {
+        candidates: {
+          candidates: [
+            { sha: "sha-a", summary: "다른 후보", technicalTopics: ["Redis"] },
+            { sha: "sha-b", summary: "고른 후보", technicalTopics: ["React", "SSE"] },
+          ],
+        },
+      },
+      stageASummary: {},
+    });
+    const interviewId = await store.createInterview({
+      githubUserId: OWNER_ID,
+      analysisId,
+      candidateKey: "sha-b",
+      title: "고른 후보",
+      evidence: {},
+    });
+
+    const interview = await store.getInterview(interviewId!, OWNER_ID);
+
+    expect(interview?.candidate).toMatchObject({ sha: "sha-b", technicalTopics: ["React", "SSE"] });
+  });
+
+  // 저장된 분석은 오래전에 쓴 값이라 지금 기대하는 모양이 아닐 수 있습니다.
+  it("분석에서 후보를 찾지 못하면 null이다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seed(store);
+
+    expect((await store.getInterview(interviewId, OWNER_ID))?.candidate).toBeNull();
+  });
+
   it("끝난 것으로 표시하면 목록과 조회에 함께 반영된다", async () => {
     const store = createInMemoryStore();
     const { interviewId } = await seed(store);

@@ -1,10 +1,11 @@
 "use client";
 
-import { Fragment, useId, useState } from "react";
+import { Fragment, useEffect, useId, useState } from "react";
 import {
   useExperienceInterview,
   type RestoredInterview,
 } from "@/features/experience-block/use-experience-interview";
+import type { SavedTurnStatus } from "@/features/saved-interviews/save-status";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
 import { clearsOnRetry } from "./errors";
 import type { InterviewStreamErrorKind, InterviewStreamRequestErrorKind } from "./errors";
@@ -150,6 +151,13 @@ export interface InterviewStreamViewProps extends Partial<UseInterviewStreamOpti
   interviewId?: string | null;
   /** 저장된 인터뷰를 이어갈 때 그 대화와 블록 상태와 진행 상태입니다. */
   restore?: RestoredInterview;
+  /**
+   * 다른 탭이 먼저 저장했을 때 최신 내용을 다시 불러옵니다. 여기서 직접 다시 불러오지 않는 이유는
+   * 복원이 화면 전체를 저장된 상태로 다시 세우는 일이라 이 화면 바깥이 해야 하기 때문입니다.
+   */
+  onLoadLatest?: () => void;
+  /** 저장되지 않은 턴이 있는지 알립니다. 이 화면을 떠날 때 확인을 받을지 흐름이 판단합니다. */
+  onUnsavedChange?: (hasUnsaved: boolean) => void;
 }
 
 /**
@@ -186,6 +194,8 @@ function ExperienceInterviewStreamView({
   snapshot,
   interviewId,
   restore,
+  onLoadLatest,
+  onUnsavedChange,
   fetchImpl,
   retryDelaysMs,
   sleep,
@@ -204,12 +214,46 @@ function ExperienceInterviewStreamView({
     scheduleFrame,
     cancelFrame,
   });
-  return <InterviewStreamBody {...inner} hasSnapshot={true} />;
+  // 저장이 밀린 턴이 있는지를 위로 알립니다. 흐름 컴포넌트가 이 화면을 떠날 때 확인을 받을지
+  // 판단하는 데 씁니다. 저장된 대화는 사이드바에서 다시 이어갈 수 있으므로 확인할 이유가 없고,
+  // 저장되지 않은 턴이 남아 있을 때만 잃을 것이 있습니다.
+  const hasUnsaved = inner.unsavedTurnCount > 0;
+  useEffect(() => {
+    onUnsavedChange?.(hasUnsaved);
+  }, [hasUnsaved, onUnsavedChange]);
+
+  return (
+    <InterviewStreamBody
+      {...inner}
+      hasSnapshot={true}
+      save={{
+        status: inner.saveStatus,
+        unsavedTurnCount: inner.unsavedTurnCount,
+        onRetry: inner.retrySave,
+        onLoadLatest,
+      }}
+    />
+  );
+}
+
+/**
+ * 저장 상태 안내에 필요한 값입니다(이슈 #115). 저장하지 않는 경로(테스트용 스트림)에는 없습니다.
+ *
+ * 안내는 대화를 막지 않습니다. 저장이 밀려도 질문과 답변은 그대로 이어지고, 사용자는 안내를 무시한
+ * 채 계속할 수 있습니다. 저장은 나중에 이어가기 위한 장치이지 지금 대화의 전제가 아닙니다.
+ */
+interface InterviewSaveNotice {
+  readonly status: SavedTurnStatus | null;
+  readonly unsavedTurnCount: number;
+  readonly onRetry: () => void;
+  /** 다른 탭이 먼저 저장한 경우에 최신 내용을 다시 불러옵니다. 없으면 그 버튼을 그리지 않습니다. */
+  readonly onLoadLatest?: () => void;
 }
 
 interface InterviewStreamBodyProps extends InterviewStreamState {
   /** 답변 입력을 그릴지입니다. 근거 스냅샷이 있는 실제 생성 경로에서만 답변을 받습니다. */
   hasSnapshot: boolean;
+  save?: InterviewSaveNotice;
 }
 
 function InterviewStreamBody({
@@ -225,6 +269,7 @@ function InterviewStreamBody({
   submitAnswer,
   endInterview,
   hasSnapshot,
+  save,
 }: InterviewStreamBodyProps) {
   // 청크 도착만이 아니라 답변 제출도 내용을 바꿉니다. 답변은 청크가 아니라 `receivedSeq`가 움직이지
   // 않으므로 메시지 수를 함께 묶습니다.
@@ -291,8 +336,34 @@ function InterviewStreamBody({
     setDraft("");
   };
 
+  /**
+   * 저장이 밀렸다는 안내입니다. 마지막 저장이 실패했고 아직 저장되지 않은 턴이 남아 있을 때만 보입니다.
+   * 저장에 성공하면 밀린 턴이 없어지므로 안내도 함께 사라집니다.
+   */
+  const showUnsavedNotice = save !== undefined && save.unsavedTurnCount > 0 && save.status !== null && save.status !== "saved";
+  /** 다른 탭이 먼저 저장한 경우입니다. 여기서 자동으로 다시 불러오지 않습니다. 쓰던 답변이 사라집니다. */
+  const showStaleNotice = save?.status === "version_conflict";
+
   return (
     <section className={styles.stream} aria-label="AI 질문 스트리밍">
+      {showUnsavedNotice || showStaleNotice ? (
+        <div className={styles.saveNotices}>
+          {showUnsavedNotice ? (
+            <div className={styles.saveNotice}>
+              <span className={styles.saveNoticeMark} aria-hidden="true">●</span>
+              <p className={styles.saveNoticeText}>마지막 답변이 저장되지 않았습니다.</p>
+              <button type="button" className={styles.saveNoticeAction} onClick={save.onRetry}>다시 저장</button>
+            </div>
+          ) : null}
+          {showStaleNotice && save?.onLoadLatest ? (
+            <div className={styles.saveNotice}>
+              <span className={styles.saveNoticeMark} aria-hidden="true">●</span>
+              <p className={styles.saveNoticeText}>다른 탭에서 이 인터뷰가 변경됐습니다.</p>
+              <button type="button" className={styles.saveNoticeAction} onClick={save.onLoadLatest}>최신 내용 불러오기</button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <div
         ref={containerRef}
         className={styles.log}

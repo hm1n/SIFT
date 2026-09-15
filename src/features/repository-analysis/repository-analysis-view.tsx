@@ -67,6 +67,12 @@ export interface RepositoryAnalysisViewProps {
   contributionItems: readonly string[];
   /** 테스트에서 인터뷰 줄 생성 요청을 대체하는 통로입니다. */
   createInterview?: typeof createSavedInterview;
+  /** 인터뷰 줄을 새로 만들었을 때 알립니다. 사이드바 목록이 그 줄을 바로 보이게 다시 조회합니다. */
+  onInterviewCreated?: () => void;
+  /** 다른 탭이 먼저 저장했을 때 그 인터뷰를 최신 내용으로 다시 엽니다. */
+  onLoadLatestInterview?: (interviewId: string) => void;
+  /** 저장되지 않은 턴이 있는지 알립니다. 이탈 확인을 받을지 흐름이 판단합니다. */
+  onUnsavedInterviewChange?: (hasUnsaved: boolean) => void;
   /** 다른 Repository 선택입니다. 선택 화면으로 되돌아가는 일은 `RepositoryFlow`가 합니다. */
   onSelectRepository: () => void;
   /** `ExperienceCandidateList`로 그대로 전달합니다. `RepositoryFlow`가 사이드바 이탈 확인에 씁니다. */
@@ -89,6 +95,9 @@ export function RepositoryAnalysisView({
   onSelectRepository,
   onInterviewActiveChange,
   createInterview = createSavedInterview,
+  onInterviewCreated,
+  onLoadLatestInterview,
+  onUnsavedInterviewChange,
 }: RepositoryAnalysisViewProps) {
   const router = useRouter();
   const [state, setState] = useState<AnalysisState>(INITIAL_STATE);
@@ -156,6 +165,7 @@ export function RepositoryAnalysisView({
         if (confirmRef.current !== seq) return;
         analysisIdRef.current = created.analysisId;
         setInterviewId(created.interviewId);
+        onInterviewCreated?.();
       },
       () => undefined
     );
@@ -220,6 +230,8 @@ export function RepositoryAnalysisView({
             onInterviewActiveChange={onInterviewActiveChange}
             onExperienceConfirmed={confirmExperience}
             interviewId={interviewId}
+            onLoadLatestInterview={interviewId === null ? undefined : () => onLoadLatestInterview?.(interviewId)}
+            onUnsavedInterviewChange={onUnsavedInterviewChange}
           />
         </div>
       ) : null}

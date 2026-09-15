@@ -41,6 +41,16 @@ function asJsonb<T>(value: T): T {
 }
 
 /**
+ * 저장된 분석에서 후보 하나를 고릅니다. 실제 구현은 같은 일을 질의에서 합니다. 모양이 어긋난 값을
+ * 만나면 `null`입니다. 저장된 분석은 오래전에 쓴 값이라 지금 기대하는 모양이 아닐 수 있습니다.
+ */
+function storedCandidate(analysis: AnalysisRow, candidateKey: string): unknown {
+  const candidates = (analysis.candidates as { candidates?: { candidates?: unknown } } | null)?.candidates?.candidates;
+  if (!Array.isArray(candidates)) return null;
+  return candidates.find((candidate) => (candidate as { sha?: unknown }).sha === candidateKey) ?? null;
+}
+
+/**
  * 테스트가 쓰는 저장 계층입니다. 프로세스 메모리에만 있고 파일도 연결도 만들지 않습니다.
  *
  * 실제 구현과 같은 판정을 하도록 두 가지를 흉내 냅니다. 사용자 번호가 맞지 않으면 없는 것으로 보고,
@@ -149,6 +159,7 @@ export function createInMemoryStore(): SiftStore {
         blockState: interview.blockState,
         blockVersion: interview.blockVersion,
         progress: interview.progress,
+        candidate: storedCandidate(analysis, interview.candidateKey),
       };
     },
 

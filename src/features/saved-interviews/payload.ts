@@ -30,6 +30,8 @@ export interface StoredInterviewPayload extends InterviewListItemPayload {
   readonly blockVersion: number;
   /** 재질문 예산을 정하는 값입니다. 이것이 없으면 복원한 인터뷰가 이미 답하지 못한 요소를 다시 묻습니다. */
   readonly progress: StoredInterview["progress"];
+  /** 저장된 분석에서 고른 후보 하나입니다. 이어가기 화면이 기술 토픽과 선정 이유를 여기서 읽습니다. */
+  readonly candidate: unknown;
 }
 
 export function toInterviewListItemPayload(item: InterviewListItem): InterviewListItemPayload {
@@ -55,5 +57,6 @@ export function toStoredInterviewPayload(interview: StoredInterview): StoredInte
     blockState: interview.blockState,
     blockVersion: interview.blockVersion,
     progress: interview.progress,
+    candidate: interview.candidate,
   };
 }

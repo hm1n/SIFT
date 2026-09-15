@@ -65,7 +65,17 @@ async function main(): Promise<void> {
     repoOwner: "hm1n",
     repoName: "SIFT",
     contributionItems: ["성능 개선"],
-    candidates: { candidates: { candidates: [], insufficientCandidatesReason: null, diffs: [] }, includedCommits: [] },
+    candidates: {
+      candidates: {
+        candidates: [
+          { sha: "sha-other", summary: "다른 후보", technicalTopics: ["Redis"] },
+          { sha: "c1", summary: "고른 후보", technicalTopics: ["React", "SSE"] },
+        ],
+        insufficientCandidatesReason: null,
+        diffs: [],
+      },
+      includedCommits: [],
+    },
     stageASummary: { excludedUnits: [], selectedUnitCount: 0, thresholdScore: 0, unjudgedShas: [] },
   });
   console.log(`분석 줄을 만들었습니다: ${analysisId}`);
@@ -96,6 +106,7 @@ async function main(): Promise<void> {
   check("빈 진행 상태로 시작한다", created?.progress, emptyInterviewProgress());
   check("빈 이력과 0번 블록 버전으로 시작한다", [created?.history, created?.blockVersion], [[], 0]);
   check("근거를 그대로 돌려준다", created?.evidence, { commits: ["sha-1"] });
+  check("저장된 분석에서 그 후보 하나를 골라 온다", created?.candidate, { sha: "c1", summary: "고른 후보", technicalTopics: ["React", "SSE"] });
   check("분석의 저장소 이름을 함께 돌려준다", [created?.repoOwner, created?.repoName], ["hm1n", "SIFT"]);
 
   check("남의 인터뷰는 없는 것으로 본다", await store.getInterview(interviewId, OTHER_USER_ID), null);

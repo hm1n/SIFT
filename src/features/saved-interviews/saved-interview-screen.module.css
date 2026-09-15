@@ -1,0 +1,185 @@
+/* 저장된 인터뷰를 이어가기 전에 보는 화면입니다. 디자인 파일 `App.tsx`의 `SessionReviewScreen`입니다. */
+.screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--color-card);
+}
+
+.header {
+  flex-shrink: 0;
+  display: grid;
+  gap: 8px;
+  padding: 24px 32px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.eyebrow,
+.sectionEyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--color-foreground);
+}
+
+.meta,
+.progress,
+.footerMeta {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  color: var(--color-muted-foreground);
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dot {
+  color: var(--color-scrollbar);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 24px 32px;
+}
+
+.column {
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  display: grid;
+  gap: 32px;
+}
+
+.section {
+  display: grid;
+  gap: 10px;
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.text {
+  font-family: var(--font-pretendard);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--color-foreground);
+}
+
+.notice {
+  font-family: var(--font-pretendard);
+  font-size: var(--label-size-md);
+  line-height: 1.6;
+  color: var(--color-muted-foreground);
+}
+
+.topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+}
+
+.topics li {
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  color: var(--color-muted-foreground);
+}
+
+.blocks {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+}
+
+.block {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.blockSymbol {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  color: var(--color-foreground);
+}
+
+.blockLabel {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-md);
+  letter-spacing: var(--label-tracking-wide);
+  text-transform: uppercase;
+  color: var(--color-foreground);
+}
+
+.footer {
+  position: sticky;
+  bottom: 0;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 32px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-card);
+}
+
+.resume {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--color-primary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-primary-foreground);
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.resume:hover,
+.resume:focus-visible {
+  background: #404040;
+  outline: none;
+}
+
+.arrow {
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 560px) {
+  .header,
+  .body,
+  .footer {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
