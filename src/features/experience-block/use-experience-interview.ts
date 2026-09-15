@@ -84,6 +84,15 @@ export interface UseExperienceInterviewState extends InterviewStreamState {
    * 블록 패널의 "수집 중" 표시와 재처리 버튼의 중복 호출 방지에 함께 씁니다.
    */
   isBlockUpdating: boolean;
+  /**
+   * 지금 갱신 중인 블록입니다. 호출 중이 아니면 `null`입니다.
+   *
+   * `isBlockUpdating`만으로는 어느 블록인지 알 수 없어 화면이 `currentTarget`이라고 짐작해야 했고,
+   * 미반영 재처리에서는 그 짐작이 틀립니다. 재처리는 예전 턴의 대상을 갱신하는데 `currentTarget`은
+   * 이미 다음 블록으로 넘어가 있어, 관계없는 카드가 "수집 중"으로 보였습니다(PR #121 리뷰 1라운드).
+   * 대상을 실제로 정하는 이 훅이 그대로 내보냅니다.
+   */
+  updatingBlock: BlockKind | null;
   /** 블록 갱신이 실패해 반영되지 않은 턴의 ID입니다. 없으면 `null`입니다. */
   unreflectedTurnId: string | null;
   /**
@@ -134,6 +143,7 @@ export function useExperienceInterview({
   const [currentTarget, setCurrentTarget] = useState<NonNullable<InterviewQuestionTarget>>(FIRST_TARGET);
   /** 블록 갱신 호출이 진행 중인지입니다. `activeRef`와 같은 사실을 화면 쪽으로 옮긴 것입니다. */
   const [isBlockUpdating, setIsBlockUpdating] = useState(false);
+  const [updatingBlock, setUpdatingBlock] = useState<BlockKind | null>(null);
   /**
    * 방금 답한 질문을 보낸 시점의, 그 대상 요소 `askedCount`입니다(CodeRabbit PR #117). 첫 질문은
    * `progressRef`의 초깃값이 이미 `recordAsked`를 한 번 거친 값이라 1입니다. `recordResponse`가
@@ -231,6 +241,7 @@ export function useExperienceInterview({
       activeAbortRef.current = controller;
       activeRef.current = { turn, target, askedCountAtQuestion };
       setIsBlockUpdating(true);
+      setUpdatingBlock(target.targetBlock);
       try {
         const result = await fetchBlockUpdate({
           url: current.blockUpdateUrl,
@@ -266,6 +277,7 @@ export function useExperienceInterview({
         activeRef.current = null;
         activeAbortRef.current = null;
         setIsBlockUpdating(false);
+        setUpdatingBlock(null);
       }
     },
     [setBlockStateBoth, syncUnreflectedTurnId]
@@ -445,6 +457,7 @@ export function useExperienceInterview({
     endReason,
     currentTarget,
     isBlockUpdating,
+    updatingBlock,
     unreflectedTurnId,
     unreflectedBlocks,
     retryUnreflectedBlockUpdate,

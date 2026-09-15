@@ -46,14 +46,17 @@ const CARD_EMPTY_TEXT: Readonly<Record<CardState, string>> = {
  * 블록의 평가 누락을 거절하지 않아, 질문을 이미 주고받은 블록도 평가가 비어 있을 수 있습니다
  * (`llm-wiki/wiki/2026-09-11-PAAR-경험블록-후속-backlog.md` 1번). 문장이 있는지와 인터뷰가
  * 끝났는지만 보면 그 결함에 기대지 않습니다.
+ *
+ * "수집 중"은 훅이 알려 주는 갱신 대상(`updatingBlock`)으로만 정합니다. 예전에는 `isBlockUpdating`과
+ * `currentTarget`을 함께 봤는데, 미반영 재처리는 예전 턴의 대상을 갱신하므로 `currentTarget`과
+ * 어긋나 관계없는 카드가 "수집 중"으로 보였습니다(PR #121 리뷰 1라운드).
  */
 export function cardState(input: {
   readonly hasSentences: boolean;
-  readonly isCurrentTarget: boolean;
-  readonly isBlockUpdating: boolean;
+  readonly isUpdatingThisBlock: boolean;
   readonly isEnded: boolean;
 }): CardState {
-  if (input.isBlockUpdating && input.isCurrentTarget) return "collecting";
+  if (input.isUpdatingThisBlock) return "collecting";
   if (input.hasSentences) return "filled";
   return input.isEnded ? "unfilled" : "pending";
 }
@@ -73,14 +76,13 @@ interface BlockCardProps {
 }
 
 function BlockCard({ block, stream, edits, onEditBlock }: BlockCardProps) {
-  const { blockState, currentTarget, isBlockUpdating, isEnded, unreflectedBlocks } = stream;
+  const { blockState, updatingBlock, isEnded, unreflectedBlocks } = stream;
   const sentences = effectiveDisplay(blockState, edits, block);
   const marks = blockMarks(blockState, edits, block);
   const conflicts = effectiveConflicts(blockState, edits, block);
   const state = cardState({
     hasSentences: sentences.length > 0,
-    isCurrentTarget: currentTarget.targetBlock === block,
-    isBlockUpdating,
+    isUpdatingThisBlock: updatingBlock === block,
     isEnded,
   });
 

@@ -40,6 +40,7 @@ function baseStream(overrides: Partial<UseExperienceInterviewState> = {}): UseEx
     endReason: null,
     currentTarget: { targetBlock: "problem", targetElement: "a" },
     isBlockUpdating: false,
+    updatingBlock: null,
     unreflectedTurnId: null,
     unreflectedBlocks: [],
     retryUnreflectedBlockUpdate: vi.fn(),
@@ -84,18 +85,37 @@ describe("PaarPanel 블록 상태", () => {
     expect(screen.getByText("/ 00 OF 04")).toBeInTheDocument();
   });
 
-  it("현재 타깃 블록의 갱신이 도는 동안 그 카드만 수집 중이다", () => {
+  it("갱신 중인 블록의 카드만 수집 중이다", () => {
     render(
       <PanelHarness
-        stream={baseStream({
-          isBlockUpdating: true,
-          currentTarget: { targetBlock: "action", targetElement: "b" },
-        })}
+        stream={baseStream({ isBlockUpdating: true, updatingBlock: "action" })}
       />
     );
 
     expect(screen.getByText("Collecting")).toBeInTheDocument();
     expect(screen.getAllByText("Not started")).toHaveLength(3);
+  });
+
+  it("재처리로 다른 블록을 갱신하는 동안 현재 타깃 카드를 수집 중으로 그리지 않는다", () => {
+    // 미반영 재처리는 예전 턴의 대상을 갱신하므로 `currentTarget`과 어긋납니다. 예전에는 화면이
+    // `isBlockUpdating`과 `currentTarget`을 함께 보고 관계없는 카드를 수집 중으로 그렸습니다
+    // (PR #121 리뷰 1라운드).
+    render(
+      <PanelHarness
+        stream={baseStream({
+          isBlockUpdating: true,
+          updatingBlock: "problem",
+          currentTarget: { targetBlock: "action", targetElement: "b" },
+          unreflectedTurnId: "t1",
+          unreflectedBlocks: ["problem"],
+        })}
+      />
+    );
+
+    const collecting = screen.getAllByText("Collecting");
+    expect(collecting).toHaveLength(1);
+    // PROBLEM 카드 하나만 수집 중이고 ACTION 카드는 아직 시작 전입니다.
+    expect(collecting[0].closest("div")?.textContent).toContain("Problem");
   });
 
   it("갱신이 도는 동안에도 이미 있던 문장을 지우지 않는다", () => {
@@ -105,7 +125,7 @@ describe("PaarPanel 블록 상태", () => {
       <PanelHarness
         stream={baseStream({
           isBlockUpdating: true,
-          currentTarget: { targetBlock: "problem", targetElement: "a" },
+          updatingBlock: "problem",
           blockState: stateWith({ display: displayOf("problem", [{ text: "이미 쌓인 문장", claimIds: [] }]) }),
         })}
       />

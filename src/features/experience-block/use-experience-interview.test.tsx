@@ -234,6 +234,63 @@ describe("useExperienceInterview", () => {
     expect(result.current.blockState.evaluation.problem).toEqual(ASKABLE);
   });
 
+  it("재처리 중 updatingBlock이 currentTarget이 아니라 그 턴의 블록을 가리킨다", async () => {
+    // 블록 패널은 "수집 중" 카드를 이 값으로 정합니다. `isBlockUpdating` 불리언만 있으면 화면이
+    // `currentTarget`이라고 짐작해야 하는데, 재처리는 예전 턴의 대상을 갱신하므로 그 짐작이 틀려
+    // 관계없는 카드가 수집 중으로 보였습니다(PR #121 리뷰 1라운드).
+    const questions = [controllableResponse(), controllableResponse(), controllableResponse()];
+    // 재처리 응답을 우리가 풀어 줄 때까지 붙잡아 호출 중인 구간을 만듭니다.
+    let release: (response: Response) => void = () => {};
+    const heldRetry = new Promise<Response>((resolve) => {
+      release = resolve;
+    });
+    let questionIndex = 0;
+    let blockUpdateCalls = 0;
+    const fetchImpl = vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+      if (String(input) === QUESTION_URL) return questions[questionIndex++].response;
+      blockUpdateCalls += 1;
+      // 1번 턴은 실패해 미반영으로 남고, 2번 턴은 성공해 대상을 다음 블록으로 넘깁니다.
+      if (blockUpdateCalls === 1) return jsonResponse(502, { error: { kind: "block_update_rejected", message: "검증 실패" } });
+      if (blockUpdateCalls === 2) return jsonResponse(200, blockUpdateBody({ evaluation: { problem: SUFFICIENT } }));
+      return heldRetry;
+    });
+    const { result } = renderHook(() =>
+      useExperienceInterview({ questionUrl: QUESTION_URL, blockUpdateUrl: BLOCK_UPDATE_URL, snapshot, fetchImpl, ...immediate })
+    );
+
+    await waitFor(() => expect(questionIndex).toBe(1));
+    completeQuestion(questions[0], "문제 상황을 알려주세요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+    act(() => {
+      result.current.submitAnswer("화면이 비어 있었습니다.");
+    });
+    await waitFor(() => expect(result.current.unreflectedBlocks).toEqual(["problem"]));
+
+    await waitFor(() => expect(questionIndex).toBe(2));
+    completeQuestion(questions[1], "조금 더 자세히 알려주세요");
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+    act(() => {
+      result.current.submitAnswer("로그가 비어 있었습니다.");
+    });
+
+    // 2번 턴이 problem을 충분으로 만들어 다음 질문은 다른 블록을 겨냥합니다. 여기서 두 값이 갈립니다.
+    await waitFor(() => expect(result.current.currentTarget.targetBlock).not.toBe("problem"));
+    expect(result.current.unreflectedBlocks).toEqual(["problem"]);
+
+    act(() => {
+      result.current.retryUnreflectedBlockUpdate();
+    });
+
+    await waitFor(() => expect(result.current.isBlockUpdating).toBe(true));
+    expect(result.current.updatingBlock).toBe("problem");
+    expect(result.current.updatingBlock).not.toBe(result.current.currentTarget.targetBlock);
+
+    await act(async () => {
+      release(jsonResponse(200, blockUpdateBody({ evaluation: { problem: ASKABLE } })));
+    });
+    await waitFor(() => expect(result.current.updatingBlock).toBeNull());
+  });
+
   it("블록 갱신 실패를 다음 질문 요청의 lastOutcome에 실어 보낸다 (구현검토 P1-5)", async () => {
     const q1 = controllableResponse();
     const q2 = controllableResponse();
