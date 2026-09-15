@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
 import type { WorkUnit } from "@/features/experience-candidates/work-unit";
 import type { ExcludedWorkUnit } from "@/features/experience-candidates/work-unit-selection";
 import type { ReadonlyCommitDetail } from "@/lib/github/types";
@@ -15,6 +15,7 @@ import {
   type CandidateRetryPoint,
   type StageASelectionState,
 } from "./repository-analysis";
+import type { createSavedInterview } from "@/features/saved-interviews/client";
 import { RepositoryAnalysisView } from "./repository-analysis-view";
 
 
@@ -470,6 +471,94 @@ describe("RepositoryAnalysisView 후보 생성 상태", () => {
     expect(screen.getByText(/The bar is not lowered and candidates are not padded/)).toBeInTheDocument();
     // master-detail(#97)부터 기본 선택된 첫 후보의 evidence는 "Why worth discussing"에 나옵니다.
     expect(screen.getByText("상태 머신을 구현했습니다.")).toBeInTheDocument();
+  });
+
+  /**
+   * 이슈 #115입니다. 경험을 확정할 때 인터뷰 한 줄과 그 시점의 분석 결과를 함께 저장합니다. 저장
+   * 전용 요청을 만들지 않는 대신 이 시점에 줄을 만들어 두고, 이후 턴은 블록 갱신 요청에 얹습니다.
+   */
+  describe("경험 확정 시점의 저장", () => {
+    const PATCH = ["@@ -1 +1 @@", "-old", "+new"].join(String.fromCharCode(10));
+    const SHA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    /** 근거 스냅샷을 만들려면 대표 커밋이 색인에 있고 변경 파일이 있어야 합니다. */
+    function successStateWithEvidence(): AnalysisState {
+      const detail: ReadonlyCommitDetail = {
+        ...commit(SHA, "스트리밍 렌더링 최적화"),
+        files: [
+          { path: "src/app.ts", status: "modified", additions: 3, deletions: 1, changes: 4, patch: PATCH },
+        ],
+      };
+      return {
+        status: "success",
+        data: { allCommits: [], includedCommits: [detail], repository: { fileTree: [], treeTruncated: false, languages: {} } },
+        candidates: {
+          candidates: [
+            { sha: SHA, relatedShas: [], summary: "경험 요약입니다.", evidence: "근거입니다.", technicalTopics: [], citedFilePaths: [], source: "automatic_recommendation" },
+          ],
+          insufficientCandidatesReason: null,
+          diffs: [],
+        },
+        stageASelection: EMPTY_STAGE_A_SELECTION,
+      };
+    }
+
+    async function confirmExperience(createInterview: Mock<typeof createSavedInterview>) {
+      mockState(successStateWithEvidence());
+      render(
+        <RepositoryAnalysisView
+          repository={REPOSITORY}
+          contributionItems={["성능 개선"]}
+          onSelectRepository={onSelectRepository}
+          createInterview={createInterview}
+        />
+      );
+      await waitFor(() => expect(analyzeMock).toHaveBeenCalled());
+      fireEvent.click(screen.getByRole("button", { name: /Start interview/ }));
+      await waitFor(() => expect(createInterview).toHaveBeenCalled());
+    }
+
+    it("확정하면 분석 축약본과 후보와 근거를 함께 보낸다", async () => {
+      const createInterview = vi.fn<typeof createSavedInterview>().mockResolvedValue({ interviewId: "i1", analysisId: "a1" });
+
+      await confirmExperience(createInterview);
+
+      const body = createInterview.mock.calls[0][0];
+      expect(body).toMatchObject({
+        candidateKey: SHA,
+        // 목록 화면이 그 후보에 붙인 제목 그대로입니다. 저장된 목록과 후보 목록이 같은 이름을 씁니다.
+        title: "경험 요약입니다.",
+        analysis: { repoOwner: "octocat", repoName: "hello-world", contributionItems: ["성능 개선"] },
+      });
+      expect(body.evidence.candidateSha).toBe(SHA);
+      // 첫 확정에는 다시 쓸 분석 줄이 없습니다.
+      expect(body).not.toHaveProperty("analysisId");
+    });
+
+    /**
+     * 확정할 때마다 분석을 새로 저장하면 같은 분석이 여러 줄로 쌓이고 목록에 같은 저장소가 여러 번
+     * 나옵니다. 앞선 확정이 돌려준 식별자를 다시 씁니다.
+     */
+    it("두 번째 확정은 앞서 저장한 분석 줄을 다시 쓴다", async () => {
+      const createInterview = vi.fn<typeof createSavedInterview>().mockResolvedValue({ interviewId: "i1", analysisId: "a1" });
+      await confirmExperience(createInterview);
+
+      fireEvent.click(screen.getByRole("button", { name: "← Candidates" }));
+      fireEvent.click(screen.getByRole("button", { name: "Back to candidates" }));
+      fireEvent.click(screen.getByRole("button", { name: /Start interview/ }));
+
+      await waitFor(() => expect(createInterview).toHaveBeenCalledTimes(2));
+      expect(createInterview.mock.calls[1][0].analysisId).toBe("a1");
+    });
+
+    // 저장 실패가 진행 중인 인터뷰를 중단시키지 않아야 합니다(이슈 Constraint).
+    it("저장에 실패해도 인터뷰 화면은 그대로 열린다", async () => {
+      const createInterview = vi.fn<typeof createSavedInterview>().mockRejectedValue(new Error("저장 실패"));
+
+      await confirmExperience(createInterview);
+
+      expect(await screen.findByRole("heading", { level: 2, name: "스트리밍 렌더링 최적화" })).toBeInTheDocument();
+    });
   });
 
   it("상세 링크는 분석한 Repository를 가리킨다", async () => {

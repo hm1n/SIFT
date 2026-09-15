@@ -6,15 +6,35 @@ import { CodePanel } from "./code-panel";
 import { InterviewStreamView } from "./interview-stream-view";
 import { PAAR_BLOCK_COUNT, PaarPanel } from "./paar-panel";
 import { ResizeHandle } from "./resize-handle";
-import { filledBlockCount, type BlockEdits } from "@/features/experience-block/block-edits";
+import { filledBlockCount } from "@/features/experience-block/block-edits";
 import { BLOCK_LABELS } from "@/features/experience-block/block-labels";
-import type { BlockKind, DisplaySentence } from "@/features/experience-block/types";
-import { useExperienceInterview } from "@/features/experience-block/use-experience-interview";
+import {
+  useExperienceInterview,
+  type RestoredInterview,
+} from "@/features/experience-block/use-experience-interview";
 import styles from "./interview-screen.module.css";
 
 export interface InterviewScreenProps {
   snapshot: ExperienceEvidenceSnapshot;
   onBack: () => void;
+  /**
+   * 이 대화를 저장할 인터뷰 줄입니다(이슈 #115). 확정한 뒤 요청 하나를 기다려야 생기므로 처음에는
+   * 비어 있다가 나중에 채워질 수 있습니다. 없는 동안의 턴은 줄이 생긴 뒤 함께 저장됩니다.
+   */
+  interviewId?: string | null;
+  /** 저장된 인터뷰를 이어갈 때 그 대화와 블록 상태와 진행 상태입니다. */
+  restore?: RestoredInterview;
+  /** 다른 탭이 먼저 저장했을 때 최신 내용을 다시 불러옵니다. */
+  onLoadLatest?: () => void;
+  /** 저장되지 않은 턴이 있는지 알립니다. 이 화면을 떠날 때 확인을 받을지 흐름이 판단합니다. */
+  onUnsavedChange?: (hasUnsaved: boolean) => void;
+  /**
+   * 사용자가 인터뷰를 끝냈을 때 불립니다. 끝난 인터뷰의 요약 화면으로 돌아가는 데 씁니다.
+   *
+   * 저장하지 않는 인터뷰에서는 불리지 않습니다. 돌아갈 요약이 없기 때문입니다. 그때는 끝낸 대화가
+   * 읽기 전용으로 이 화면에 그대로 남습니다.
+   */
+  onEnded?: () => void;
   /** 테스트에서 스트림 응답을 대체하는 통로입니다. */
   fetchImpl?: typeof fetch;
 }
@@ -111,27 +131,39 @@ function useWorkspaceWidth(ref: React.RefObject<HTMLDivElement | null>): number 
  * Loading과 Error를 이 화면이 새로 만들지 않습니다. 첫 내용이 오기 전 안내와 오류별 안내·다시
  * 시도는 `InterviewStreamView`가 이미 담당합니다. 같은 상태를 두 곳에서 그리면 어긋납니다.
  */
-export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreenProps) {
+export function InterviewScreen({
+  snapshot,
+  onBack,
+  interviewId,
+  restore,
+  onLoadLatest,
+  onUnsavedChange,
+  onEnded,
+  fetchImpl,
+}: InterviewScreenProps) {
   /*
    * 스트림 훅은 이 화면이 듭니다.
    *
    * 종료 조작이 오른쪽 PAAR 패널 아래에 있고 종료 상태를 읽는 것은 가운데 대화 열입니다. 두 열은
    * 형제라 한쪽이 훅을 들면 다른 쪽이 볼 수 없습니다. 공통 부모인 여기서 들고 양쪽에 나눠 줍니다.
    */
-  const stream = useExperienceInterview({ snapshot, fetchImpl });
+  const stream = useExperienceInterview({ snapshot, interviewId, restore, onCompleted: onEnded, fetchImpl });
 
   /*
-   * 종료 뒤 사용자가 고친 블록 문장입니다. 패널 안이 아니라 여기 두는 이유는 헤더 토글과 좁은 폭
-   * 탭이 같은 `n/4` 개수를 그리기 때문입니다. 편집 상태가 패널 안에만 있으면 사용자가 블록을 지웠을
-   * 때 패널 머리글과 헤더 토글의 숫자가 갈립니다.
-   *
-   * 저장 계층이 없어 이 값은 이 화면을 떠나면 사라집니다. 사라진다는 사실은 뒤로가기 확인 문구가
-   * 알립니다.
+   * 저장이 밀린 턴이 있는지를 위로 알립니다(이슈 #115). 흐름 컴포넌트가 이 화면을 떠날 때 확인을
+   * 받을지 판단하는 데 씁니다. 저장된 대화는 사이드바에서 다시 이어갈 수 있어 확인할 이유가 없고,
+   * 저장되지 않은 턴이 남아 있을 때만 잃을 것이 있습니다.
    */
-  const [blockEdits, setBlockEdits] = useState<BlockEdits>({});
-  const editBlock = (block: BlockKind, sentences: readonly DisplaySentence[]) =>
-    setBlockEdits((edits) => ({ ...edits, [block]: sentences }));
-  const filledBlocks = filledBlockCount(stream.blockState, blockEdits);
+  const hasUnsaved = stream.unsavedTurnCount > 0;
+  useEffect(() => {
+    onUnsavedChange?.(hasUnsaved);
+  }, [hasUnsaved, onUnsavedChange]);
+
+  /*
+   * 헤더 토글과 좁은 폭 탭이 그리는 `n/4`입니다. 이 화면은 블록을 고치지 않으므로 저장된 문장만
+   * 셉니다. 편집은 저장된 인터뷰의 요약 화면에 있습니다(이슈 #115).
+   */
+  const filledBlocks = filledBlockCount(stream.blockState);
 
   const title =
     snapshot.representativeCommit.title ??
@@ -220,9 +252,26 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
       {isConfirmingBack ? (
         <div className={styles.backConfirm} role="group" aria-labelledby={backConfirmId}>
           <p id={backConfirmId} className={styles.backConfirmText}>
-            Going back to the candidate list clears this conversation for good, along with any answer
-            you&apos;re still writing, the PAAR blocks, and any edits you made to them. Reloading the
-            page clears them too. Nothing here is saved.
+            {/*
+              저장된 인터뷰는 다시 이어갈 수 있으므로 "아무것도 저장되지 않는다"고 말하면 안 됩니다
+              (이슈 #115). 다만 쓰던 답변과 블록 편집은 여전히 저장되지 않으므로 그 둘은 그대로
+              알립니다.
+            */}
+            {interviewId
+              ? "Going back to the candidate list closes this conversation here. What has been saved stays in Interviews on the left, so you can pick it up later. Any answer you're still writing is lost."
+              : "Going back to the candidate list clears this conversation for good, along with any answer you're still writing and the PAAR blocks. Reloading the page clears them too. Nothing here is saved."}
+            {/*
+              제출했는데 아직 저장되지 않은 답변이 있으면 그것도 함께 사라집니다(PR #127 리뷰). 위
+              문구는 "쓰던 답변"만 말하므로, 사용자는 보낸 답변은 모두 저장됐다고 읽습니다.
+            */}
+            {interviewId && hasUnsaved ? (
+              <>
+                {" "}
+                {stream.unsavedTurnCount === 1
+                  ? "One answer you already sent hasn't been saved yet, and it is lost too."
+                  : `${stream.unsavedTurnCount} answers you already sent haven't been saved yet, and they are lost too.`}
+              </>
+            ) : null}
           </p>
           <div className={styles.backActions}>
             <button className={styles.backConfirmButton} type="button" onClick={onBack} autoFocus>
@@ -304,6 +353,12 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
             currentBlockLabel={
               stream.isReadyToFinish ? undefined : BLOCK_LABELS[stream.currentTarget.targetBlock]
             }
+            save={{
+              status: stream.saveStatus,
+              unsavedTurnCount: stream.unsavedTurnCount,
+              onRetry: stream.retrySave,
+              onLoadLatest,
+            }}
           />
         </div>
 
@@ -323,7 +378,7 @@ export function InterviewScreen({ snapshot, onBack, fetchImpl }: InterviewScreen
               className={`${styles.paarColumn} ${columnClass("paar")}`}
               style={{ width: `${fitted.paar}px` }}
             >
-              <PaarPanel stream={stream} edits={blockEdits} onEditBlock={editBlock} />
+              <PaarPanel stream={stream} isSaved={Boolean(interviewId)} />
             </div>
           </>
         ) : null}

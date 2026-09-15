@@ -8,7 +8,8 @@ import type {
   SiftStore,
   StoredInterview,
 } from "./store";
-import { emptyExperienceBlockState } from "@/features/experience-block/types";
+import { emptyInterviewProgress } from "@/features/experience-block/progress";
+import { countSufficientBlocks, emptyExperienceBlockState } from "@/features/experience-block/types";
 import type { InterviewHistoryMessage } from "@/features/interview/history";
 
 interface AnalysisRow extends NewAnalysis {
@@ -20,6 +21,7 @@ interface InterviewRow extends NewInterview {
   history: InterviewHistoryMessage[];
   blockState: StoredInterview["blockState"];
   blockVersion: number;
+  progress: StoredInterview["progress"];
   status: StoredInterview["status"];
   createdAt: Date;
   updatedAt: Date;
@@ -36,6 +38,16 @@ interface InterviewRow extends NewInterview {
  */
 function asJsonb<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+/**
+ * 저장된 분석에서 후보 하나를 고릅니다. 실제 구현은 같은 일을 질의에서 합니다. 모양이 어긋난 값을
+ * 만나면 `null`입니다. 저장된 분석은 오래전에 쓴 값이라 지금 기대하는 모양이 아닐 수 있습니다.
+ */
+function storedCandidate(analysis: AnalysisRow, candidateKey: string): unknown {
+  const candidates = (analysis.candidates as { candidates?: { candidates?: unknown } } | null)?.candidates?.candidates;
+  if (!Array.isArray(candidates)) return null;
+  return candidates.find((candidate) => (candidate as { sha?: unknown }).sha === candidateKey) ?? null;
 }
 
 /**
@@ -60,6 +72,7 @@ export function createInMemoryStore(): SiftStore {
       repoName: analysis.repoName,
       title: interview.title,
       status: interview.status,
+      completedBlockCount: countSufficientBlocks(interview.blockState),
       createdAt: interview.createdAt,
       updatedAt: interview.updatedAt,
       openedAt: interview.openedAt,
@@ -96,6 +109,7 @@ export function createInMemoryStore(): SiftStore {
         history: [],
         blockState: emptyExperienceBlockState(),
         blockVersion: 0,
+        progress: emptyInterviewProgress(),
         status: "in_progress",
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -104,16 +118,18 @@ export function createInMemoryStore(): SiftStore {
       return id;
     },
 
-    async appendTurn({ githubUserId, interviewId, turn, blockState, expectedBlockVersion }: AppendTurn): Promise<AppendTurnResult> {
+    async appendTurn({ githubUserId, interviewId, turn, blockState, progress, expectedBlockVersion }: AppendTurn): Promise<AppendTurnResult> {
       const interview = interviews.get(interviewId);
       if (!interview || !ownedBy(interview, githubUserId)) return "not_found";
       if (interview.blockVersion !== expectedBlockVersion) return "version_conflict";
       // 기대 버전만 보면 세 값이 모두 같은 요청이 몇 번이고 성공하고 버전이 오르지 않습니다.
-      // 그러면 다른 탭이 먼저 저장해도 막지 못합니다.
-      if (blockState.version !== expectedBlockVersion + 1) return "version_conflict";
+      // 그러면 다른 탭이 먼저 저장해도 막지 못합니다. 정확히 1 큰 값을 요구하지 않는 이유는
+      // `store.ts`의 `appendTurn` 주석에 있습니다.
+      if (blockState.version <= expectedBlockVersion) return "version_conflict";
       interview.history = [...interview.history, ...asJsonb(turn)];
       interview.blockState = asJsonb(blockState);
       interview.blockVersion = blockState.version;
+      interview.progress = asJsonb(progress);
       interview.updatedAt = new Date();
       return "saved";
     },
@@ -142,7 +158,16 @@ export function createInMemoryStore(): SiftStore {
         history: interview.history,
         blockState: interview.blockState,
         blockVersion: interview.blockVersion,
+        progress: interview.progress,
+        candidate: storedCandidate(analysis, interview.candidateKey),
       };
+    },
+
+    async completeInterview(id, githubUserId) {
+      const interview = interviews.get(id);
+      if (!interview || !ownedBy(interview, githubUserId)) return false;
+      interview.status = "completed";
+      return true;
     },
 
     async deleteInterview(id, githubUserId) {

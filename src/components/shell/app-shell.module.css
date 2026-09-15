@@ -75,10 +75,55 @@
   outline: none;
 }
 
+.noRepository {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-scrollbar);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .interviews {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 12px;
+}
+
+.sidebarFooter {
+  flex-shrink: 0;
+  padding: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+/* 디자인의 `+ 새 경험 찾기`입니다. 사이드바 맨 아래에 붙습니다. */
+.findNew {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-foreground);
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+
+.findNew:hover,
+.findNew:focus-visible {
+  border-color: var(--color-scrollbar-hover);
+  outline: none;
+}
+
+.plus {
+  font-family: var(--font-mono);
 }
 
 .emptyInterviews {

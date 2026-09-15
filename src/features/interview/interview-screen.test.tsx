@@ -281,6 +281,36 @@ describe("InterviewScreen", () => {
     }
   });
 
+  /**
+   * 제출했는데 아직 저장되지 않은 답변도 이 버튼으로 사라집니다(PR #127 리뷰). 문구가 "쓰던 답변"만
+   * 말하면 사용자는 보낸 답변은 모두 저장됐다고 읽습니다.
+   */
+  it("저장되지 않은 제출 답변이 있으면 확인 문구가 그 사실을 함께 알린다", async () => {
+    const fetchImpl = vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+      if (String(input) === DEFAULT_EXPERIENCE_BLOCK_UPDATE_URL) {
+        return Response.json({ error: { kind: "storage_failed", message: "끊김" } }, { status: 503 });
+      }
+      return { ok: true, status: 200, body: createTestStream({ scenario: "normal", delayMs: 0 }) } as unknown as Response;
+    });
+    render(
+      <InterviewScreen
+        snapshot={evidenceSnapshotFixture()}
+        onBack={vi.fn()}
+        interviewId="11111111-1111-4111-8111-111111111111"
+        fetchImpl={fetchImpl}
+      />
+    );
+    const answer = await screen.findByRole("textbox", { name: /Answer/ });
+    fireEvent.change(answer, { target: { value: "화면이 비어 있었습니다." } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText("Your last answer wasn't saved.");
+
+    fireEvent.click(screen.getByRole("button", { name: "← Candidates" }));
+
+    const confirm = screen.getByRole("group", { name: /closes this conversation here/ });
+    expect(confirm).toHaveTextContent("One answer you already sent hasn't been saved yet");
+  });
+
   it("후보 목록으로 돌아갈 때 대화가 사라진다고 알리고 확인을 받는다", () => {
     const onBack = vi.fn();
     render(
@@ -295,9 +325,9 @@ describe("InterviewScreen", () => {
     const confirm = screen.getByRole("group", { name: /clears this conversation for good/ });
     expect(confirm).toHaveTextContent("clears this conversation for good");
     expect(confirm).toHaveTextContent("any answer you're still writing");
-    // 저장 계층이 없어 블록과 편집 내용도 함께 사라집니다. 확인 문구가 대화만 말하면 사용자는 고친
-    // 문장이 남는다고 읽습니다(이슈 #91 Tasks).
-    expect(confirm).toHaveTextContent("the PAAR blocks, and any edits you made to them");
+    // 저장 계층이 없어 블록도 함께 사라집니다. 확인 문구가 대화만 말하면 사용자는 블록이 남는다고
+    // 읽습니다(이슈 #91 Tasks). 편집은 더 이상 이 화면에 없으므로 문구에서도 뺐습니다(이슈 #115).
+    expect(confirm).toHaveTextContent("and the PAAR blocks");
     expect(confirm).toHaveTextContent("Nothing here is saved");
 
     fireEvent.click(screen.getByRole("button", { name: "Continue the interview" }));

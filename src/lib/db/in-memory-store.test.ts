@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { emptyInterviewProgress } from "@/features/experience-block/progress";
 import { emptyExperienceBlockState } from "@/features/experience-block/types";
 import { createInMemoryStore } from "./in-memory-store";
 import type { SiftStore } from "./store";
@@ -49,6 +50,7 @@ describe("메모리 저장 계층", () => {
       interviewId,
       turn: [{ role: "question", text: "첫 질문" }, { role: "answer", text: "첫 답변" }],
       blockState: blockStateAt(1),
+      progress: emptyInterviewProgress(),
       expectedBlockVersion: 0,
     });
     await store.appendTurn({
@@ -56,6 +58,7 @@ describe("메모리 저장 계층", () => {
       interviewId,
       turn: [{ role: "question", text: "둘째 질문" }, { role: "answer", text: "둘째 답변" }],
       blockState: blockStateAt(2),
+      progress: emptyInterviewProgress(),
       expectedBlockVersion: 1,
     });
 
@@ -67,13 +70,14 @@ describe("메모리 저장 계층", () => {
   it("블록 버전이 어긋나면 아무것도 쓰지 않고 version_conflict를 돌려준다", async () => {
     const store = createInMemoryStore();
     const { interviewId } = await seed(store);
-    await store.appendTurn({ githubUserId: OWNER_ID, interviewId, turn: [{ role: "question", text: "첫 질문" }], blockState: blockStateAt(1), expectedBlockVersion: 0 });
+    await store.appendTurn({ githubUserId: OWNER_ID, interviewId, turn: [{ role: "question", text: "첫 질문" }], blockState: blockStateAt(1), progress: emptyInterviewProgress(), expectedBlockVersion: 0 });
 
     const result = await store.appendTurn({
       githubUserId: OWNER_ID,
       interviewId,
       turn: [{ role: "question", text: "다른 탭의 질문" }],
       blockState: blockStateAt(2),
+      progress: emptyInterviewProgress(),
       expectedBlockVersion: 0,
     });
 
@@ -87,7 +91,7 @@ describe("메모리 저장 계층", () => {
    * 기대 버전만 보면 저장된 버전과 기대 버전과 새 버전이 모두 같은 요청이 몇 번이고 성공하고
    * 버전이 오르지 않습니다. 그러면 다른 탭이 먼저 저장해도 막지 못해 턴이 사라집니다.
    */
-  it("새 블록 버전이 기대 버전보다 1 크지 않으면 저장하지 않는다", async () => {
+  it("새 블록 버전이 기대 버전보다 크지 않으면 저장하지 않는다", async () => {
     const store = createInMemoryStore();
     const { interviewId } = await seed(store);
 
@@ -96,22 +100,43 @@ describe("메모리 저장 계층", () => {
       interviewId,
       turn: [{ role: "answer", text: "버전을 올리지 않는 답변" }],
       blockState: blockStateAt(0),
+      progress: emptyInterviewProgress(),
       expectedBlockVersion: 0,
     });
     expect(sameVersion).toBe("version_conflict");
 
-    const jumped = await store.appendTurn({
-      githubUserId: OWNER_ID,
-      interviewId,
-      turn: [{ role: "answer", text: "버전을 건너뛴 답변" }],
-      blockState: blockStateAt(2),
-      expectedBlockVersion: 0,
-    });
-    expect(jumped).toBe("version_conflict");
-
     const interview = await store.getInterview(interviewId, OWNER_ID);
     expect(interview?.history).toEqual([]);
     expect(interview?.blockVersion).toBe(0);
+  });
+
+  /**
+   * 저장이 한 번 실패하면 화면의 블록 버전만 오르고 저장된 버전은 그대로 있어, 다음 턴의 새 버전이
+   * 기대 버전보다 2 이상 커집니다. 이것을 거절하면 한 번 실패한 인터뷰는 그 뒤로 영원히 저장되지
+   * 않습니다. 정의서의 "다음 턴에서 저장이 성공하면 밀린 내용까지 함께 저장된다"가 이 자리입니다.
+   */
+  it("저장이 밀렸다가 다시 성공하면 밀린 턴까지 함께 저장한다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seed(store);
+
+    const caughtUp = await store.appendTurn({
+      githubUserId: OWNER_ID,
+      interviewId,
+      turn: [
+        { role: "question", text: "밀린 질문" },
+        { role: "answer", text: "밀린 답변" },
+        { role: "question", text: "이번 질문" },
+        { role: "answer", text: "이번 답변" },
+      ],
+      blockState: blockStateAt(2),
+      progress: emptyInterviewProgress(),
+      expectedBlockVersion: 0,
+    });
+
+    expect(caughtUp).toBe("saved");
+    const interview = await store.getInterview(interviewId, OWNER_ID);
+    expect(interview?.history).toHaveLength(4);
+    expect(interview?.blockVersion).toBe(2);
   });
 
   // 걸러내지 않으면 테스트는 통과하는데 Postgres의 jsonb에서만 실패합니다.
@@ -159,6 +184,7 @@ describe("메모리 저장 계층", () => {
       interviewId: "00000000-0000-0000-0000-000000000000",
       turn: [],
       blockState: blockStateAt(1),
+      progress: emptyInterviewProgress(),
       expectedBlockVersion: 0,
     });
     expect(result).toBe("not_found");
@@ -214,6 +240,7 @@ describe("메모리 저장 계층", () => {
       interviewId,
       turn: [{ role: "answer", text: "남의 인터뷰에 넣으려는 답변" }],
       blockState: blockStateAt(1),
+      progress: emptyInterviewProgress(),
       expectedBlockVersion: 0,
     });
 
@@ -221,6 +248,66 @@ describe("메모리 저장 계층", () => {
     const interview = await store.getInterview(interviewId, OWNER_ID);
     expect(interview?.history).toEqual([]);
     expect(interview?.blockVersion).toBe(0);
+  });
+
+  /**
+   * 이어가기 화면이 기술 토픽과 선정 이유를 그리는 데 씁니다. 근거 스냅샷에는 커밋과 파일만 있어
+   * 그 값들이 없습니다.
+   */
+  it("복원할 때 저장된 분석에서 그 후보 하나를 골라 함께 돌려준다", async () => {
+    const store = createInMemoryStore();
+    const analysisId = await store.saveAnalysis({
+      githubUserId: OWNER_ID,
+      repoOwner: "hm1n",
+      repoName: "SIFT",
+      contributionItems: [],
+      candidates: {
+        candidates: {
+          candidates: [
+            { sha: "sha-a", summary: "다른 후보", technicalTopics: ["Redis"] },
+            { sha: "sha-b", summary: "고른 후보", technicalTopics: ["React", "SSE"] },
+          ],
+        },
+      },
+      stageASummary: {},
+    });
+    const interviewId = await store.createInterview({
+      githubUserId: OWNER_ID,
+      analysisId,
+      candidateKey: "sha-b",
+      title: "고른 후보",
+      evidence: {},
+    });
+
+    const interview = await store.getInterview(interviewId!, OWNER_ID);
+
+    expect(interview?.candidate).toMatchObject({ sha: "sha-b", technicalTopics: ["React", "SSE"] });
+  });
+
+  // 저장된 분석은 오래전에 쓴 값이라 지금 기대하는 모양이 아닐 수 있습니다.
+  it("분석에서 후보를 찾지 못하면 null이다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seed(store);
+
+    expect((await store.getInterview(interviewId, OWNER_ID))?.candidate).toBeNull();
+  });
+
+  it("끝난 것으로 표시하면 목록과 조회에 함께 반영된다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seed(store);
+
+    expect(await store.completeInterview(interviewId, OWNER_ID)).toBe(true);
+
+    expect((await store.listInterviews(OWNER_ID))[0].status).toBe("completed");
+    expect((await store.getInterview(interviewId, OWNER_ID))?.status).toBe("completed");
+  });
+
+  it("남의 인터뷰는 끝난 것으로 표시하지 못한다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seed(store);
+
+    expect(await store.completeInterview(interviewId, OTHER_ID)).toBe(false);
+    expect((await store.listInterviews(OWNER_ID))[0].status).toBe("in_progress");
   });
 
   it("주인이 지우면 목록과 조회에서 함께 사라진다", async () => {
@@ -261,7 +348,7 @@ describe("메모리 저장 계층", () => {
       const { interviewId } = await seed(store);
 
       vi.setSystemTime(new Date("2026-09-05T00:00:00Z"));
-      await store.appendTurn({ githubUserId: OWNER_ID, interviewId, turn: [{ role: "answer", text: "답변" }], blockState: blockStateAt(1), expectedBlockVersion: 0 });
+      await store.appendTurn({ githubUserId: OWNER_ID, interviewId, turn: [{ role: "answer", text: "답변" }], blockState: blockStateAt(1), progress: emptyInterviewProgress(), expectedBlockVersion: 0 });
 
       const [item] = await store.listInterviews(OWNER_ID);
       expect(item.updatedAt).toEqual(new Date("2026-09-05T00:00:00Z"));
@@ -279,13 +366,44 @@ describe("메모리 저장 계층", () => {
       const { interviewId } = await seed(store);
 
       vi.setSystemTime(new Date("2026-09-05T00:00:00Z"));
-      expect(await store.appendTurn({ githubUserId: OWNER_ID, interviewId, turn: [], blockState: blockStateAt(9), expectedBlockVersion: 7 })).toBe("version_conflict");
+      expect(await store.appendTurn({ githubUserId: OWNER_ID, interviewId, turn: [], blockState: blockStateAt(9), progress: emptyInterviewProgress(), expectedBlockVersion: 7 })).toBe("version_conflict");
 
       const [item] = await store.listInterviews(OWNER_ID);
       expect(item.updatedAt).toEqual(new Date("2026-09-01T00:00:00Z"));
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  /**
+   * 목록 행의 `PAAR n/4`입니다. 아직 평가가 없는 블록은 `null`이라 세지 않습니다. Neon 구현은 같은
+   * 값을 질의에서 세므로 두 구현이 같은 수를 내야 합니다.
+   */
+  it("목록은 충분하다고 평가된 블록 수를 함께 돌려준다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seed(store);
+    const blockState = {
+      ...emptyExperienceBlockState(),
+      version: 1,
+      evaluation: {
+        ...emptyExperienceBlockState().evaluation,
+        problem: { sufficient: true, askable: false, reason: "sufficient" as const },
+        action: { sufficient: false, askable: true, reason: "askable" as const },
+      },
+    };
+
+    expect((await store.listInterviews(OWNER_ID))[0].completedBlockCount).toBe(0);
+
+    await store.appendTurn({
+      githubUserId: OWNER_ID,
+      interviewId,
+      turn: [{ role: "answer", text: "답변" }],
+      blockState,
+      progress: emptyInterviewProgress(),
+      expectedBlockVersion: 0,
+    });
+
+    expect((await store.listInterviews(OWNER_ID))[0].completedBlockCount).toBe(1);
   });
 
   it("목록은 마지막으로 이어간 시각이 최근인 순서로 돌려준다", async () => {

@@ -4,6 +4,7 @@ import { Fragment, useId, useLayoutEffect, useRef, useState } from "react";
 import { pluralCount } from "@/features/experience-candidates/candidate-period";
 import { clearsOnRetry } from "./errors";
 import type { InterviewStreamErrorKind, InterviewStreamRequestErrorKind } from "./errors";
+import type { SavedTurnStatus } from "@/features/saved-interviews/save-status";
 import { INTERVIEW_HISTORY_ITEM_MAX_BYTES, interviewHistoryItemBytes } from "./history";
 import { InterviewMessage } from "./interview-message";
 import { useAutoScroll } from "./use-auto-scroll";
@@ -153,6 +154,20 @@ function ThinkingRow({ label }: { label: string }) {
 /** 생성 중 표시의 라벨입니다. `interview-message.tsx`의 질문 라벨과 같은 글자를 씁니다. */
 const ROLE_LABEL_QUESTION = "Agent";
 
+/**
+ * 저장 상태 안내에 필요한 값입니다(이슈 #115). 저장하지 않는 경로(테스트용 스트림)에는 없습니다.
+ *
+ * 안내는 대화를 막지 않습니다. 저장이 밀려도 질문과 답변은 그대로 이어지고, 사용자는 안내를 무시한
+ * 채 계속할 수 있습니다. 저장은 나중에 이어가기 위한 장치이지 지금 대화의 전제가 아닙니다.
+ */
+export interface InterviewSaveNotice {
+  readonly status: SavedTurnStatus | null;
+  readonly unsavedTurnCount: number;
+  readonly onRetry: () => void;
+  /** 다른 탭이 먼저 저장한 경우에 최신 내용을 다시 불러옵니다. 없으면 그 버튼을 그리지 않습니다. */
+  readonly onLoadLatest?: () => void;
+}
+
 export interface InterviewStreamViewProps {
   /**
    * 스트림 상태입니다. 훅은 `InterviewScreen`이 들고 있습니다.
@@ -169,12 +184,13 @@ export interface InterviewStreamViewProps {
    * 경로에는 블록이 아예 없습니다.
    */
   currentBlockLabel?: string;
+  save?: InterviewSaveNotice;
 }
 
 /**
  * 질문 스트리밍의 표시 기반입니다. 상태는 받기만 하고 만들지 않습니다.
  */
-export function InterviewStreamView({ stream, currentBlockLabel }: InterviewStreamViewProps) {
+export function InterviewStreamView({ stream, currentBlockLabel, save }: InterviewStreamViewProps) {
   const {
     messages,
     status,
@@ -268,8 +284,34 @@ export function InterviewStreamView({ stream, currentBlockLabel }: InterviewStre
     event.currentTarget.form?.requestSubmit();
   };
 
+  /**
+   * 저장이 밀렸다는 안내입니다. 마지막 저장이 실패했고 아직 저장되지 않은 턴이 남아 있을 때만 보입니다.
+   * 저장에 성공하면 밀린 턴이 없어지므로 안내도 함께 사라집니다.
+   */
+  const showUnsavedNotice = save !== undefined && save.unsavedTurnCount > 0 && save.status !== null && save.status !== "saved";
+  /** 다른 탭이 먼저 저장한 경우입니다. 여기서 자동으로 다시 불러오지 않습니다. 쓰던 답변이 사라집니다. */
+  const showStaleNotice = save?.status === "version_conflict";
+
   return (
     <section className={styles.stream} aria-label="AI question stream">
+      {showUnsavedNotice || showStaleNotice ? (
+        <div className={styles.saveNotices}>
+          {showUnsavedNotice ? (
+            <div className={styles.saveNotice}>
+              <span className={styles.saveNoticeMark} aria-hidden="true">●</span>
+              <p className={styles.saveNoticeText}>Your last answer wasn&apos;t saved.</p>
+              <button type="button" className={styles.saveNoticeAction} onClick={save.onRetry}>Retry save</button>
+            </div>
+          ) : null}
+          {showStaleNotice && save?.onLoadLatest ? (
+            <div className={styles.saveNotice}>
+              <span className={styles.saveNoticeMark} aria-hidden="true">●</span>
+              <p className={styles.saveNoticeText}>This interview was changed in another tab.</p>
+              <button type="button" className={styles.saveNoticeAction} onClick={save.onLoadLatest}>Load latest</button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <div
         ref={containerRef}
         className={styles.log}

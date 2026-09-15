@@ -139,6 +139,17 @@ export function emptyExperienceBlockState(): ExperienceBlockState {
   };
 }
 
+/**
+ * 충분하다고 평가된 블록 수입니다. 저장된 인터뷰 목록 행의 `PAAR n/4`에서 n에 해당합니다.
+ * 분모는 `BLOCK_KINDS.length`입니다.
+ *
+ * 아직 평가가 없는 블록은 `null`이라 세지 않습니다. Neon 구현은 같은 값을 SQL로 셉니다. 목록에
+ * 블록 상태 전체를 실어 보내면 인터뷰 하나마다 주장과 문장이 전부 따라오므로 수만 세어 보냅니다.
+ */
+export function countSufficientBlocks(state: ExperienceBlockState): number {
+  return BLOCK_KINDS.filter((kind) => state.evaluation[kind]?.sufficient === true).length;
+}
+
 export function isBlockKind(value: unknown): value is BlockKind {
   return typeof value === "string" && (BLOCK_KINDS as readonly string[]).includes(value);
 }
