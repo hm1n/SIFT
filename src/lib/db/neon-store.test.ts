@@ -88,13 +88,30 @@ describe("Neon 저장 계층", () => {
       }
     });
 
-    it("정리 작업만 사용자 번호를 받지 않는다", async () => {
+    it.each([
+      ["purgeInterviewsOpenedBefore", (store: SiftStore, before: Date) => store.purgeInterviewsOpenedBefore(before)],
+      ["purgeAnalysesWithoutInterviews", (store: SiftStore, before: Date) => store.purgeAnalysesWithoutInterviews(before)],
+    ])("정리 작업인 %s만 사용자 번호를 받지 않는다", async (_name, run) => {
       const { execute, calls } = fakeExecute();
       const before = new Date("2026-06-16T00:00:00Z");
-      await neonStore(execute).purgeInterviewsOpenedBefore(before);
+      await run(neonStore(execute), before);
 
       expect(calls[0].text).not.toContain("github_user_id");
       expect(calls[0].params).toEqual([before]);
+    });
+
+    /**
+     * 고아 분석을 고르는 일과 지우는 일을 한 문장에 둡니다. 드라이버가 HTTP 한 번에 한 문장을 보내고
+     * 그 한 문장이 한 트랜잭션이라, 둘로 나누면 그 사이에 새 인터뷰가 붙은 분석까지 지우게 됩니다.
+     * 그 분석에 cascade로 딸린 인터뷰가 함께 사라집니다.
+     */
+    it("고아 분석 정리는 한 문장으로 지운다", async () => {
+      const { execute, calls } = fakeExecute();
+      await neonStore(execute).purgeAnalysesWithoutInterviews(new Date("2026-06-16T00:00:00Z"));
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0].text).toContain("not exists");
+      expect(calls[0].text).toContain("created_at <");
     });
   });
 

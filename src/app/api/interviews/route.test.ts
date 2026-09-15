@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
 import { MAX_CREATE_INTERVIEW_BODY_BYTES } from "@/features/saved-interviews/request";
 import { createInMemoryStore } from "@/lib/db/in-memory-store";
@@ -212,10 +212,14 @@ describe("GET /api/interviews", () => {
   }
 
   it("마지막으로 이어간 시각이 최근인 순서로 돌려준다", async () => {
+    // 시각을 고정합니다. 두 줄이 같은 밀리초에 만들어지면 정렬이 무엇을 먼저 둘지 정해지지 않습니다.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-15T00:00:00Z"));
     const store = createInMemoryStore();
     const analysisId = await seedAnalysis(store);
     const first = await seedInterview(store, { title: "먼저", analysisId });
     const second = await seedInterview(store, { title: "나중", analysisId, candidateKey: "c2" });
+    vi.setSystemTime(new Date("2026-09-15T00:01:00Z"));
     await store.appendTurn({
       githubUserId: OWNER_ID,
       interviewId: second.interviewId,
@@ -229,6 +233,7 @@ describe("GET /api/interviews", () => {
 
     expect(body.interviews.map((item: { title: string }) => item.title)).toEqual(["나중", "먼저"]);
     expect(body.interviews[1].id).toBe(first.interviewId);
+    vi.useRealTimers();
   });
 
   // JSON에는 날짜 타입이 없습니다. 타입만 `Date`로 남으면 받는 쪽이 `getTime()`을 부르다 깨집니다.

@@ -18,8 +18,8 @@ import type { InterviewHistoryMessage } from "@/features/interview/history";
  * 저장할 때 JSON을 한 번 거쳐 걸러냅니다. `JsonValue` 같은 재귀 타입을 쓰면 기존 인터페이스가 그
  * 타입에 대입되지 않아 호출하는 쪽마다 캐스팅이 붙고, 캐스팅이 붙는 순간 검사가 무력해집니다.
  *
- * 읽기와 쓰기를 가리지 않고 모든 연산이 `githubUserId`를 받습니다. 정리 작업인
- * `purgeInterviewsOpenedBefore`만 예외입니다. 소유자 판정을 호출하는 쪽에 맡기지 않고 조회와 갱신
+ * 읽기와 쓰기를 가리지 않고 모든 연산이 `githubUserId`를 받습니다. 정리 작업인 `purge`로 시작하는
+ * 둘만 예외입니다. 소유자 판정을 호출하는 쪽에 맡기지 않고 조회와 갱신
  * 조건에 함께 넣습니다. 읽고 나서 비교하는 방식이면 비교를 빠뜨린 경로가 하나만 있어도 남의 데이터를
  * 읽거나 쓰게 됩니다.
  */
@@ -97,6 +97,20 @@ export interface SiftStore {
   deleteInterview(id: string, githubUserId: number): Promise<boolean>;
   /** 마지막으로 연 시각이 `before`보다 오래된 인터뷰를 지우고 지운 수를 돌려줍니다. */
   purgeInterviewsOpenedBefore(before: Date): Promise<number>;
+  /**
+   * 딸린 인터뷰가 하나도 없는 분석을 지우고 지운 수를 돌려줍니다(이슈 #116).
+   *
+   * `repository_analysis` → `interview_session`은 `on delete cascade`이지만 반대 방향은 없습니다.
+   * 인터뷰를 지우는 두 경로(사용자 삭제와 90일 정리)는 인터뷰만 지우므로, 마지막 인터뷰가 사라진
+   * 분석은 근거 스냅샷을 든 채 남습니다. 비공개 저장소의 코드가 거기 들어 있습니다.
+   *
+   * 경험을 아직 고르지 않은 분석도 여기서 지워집니다. Stage B 직후에 저장한 분석은 인터뷰가 붙기
+   * 전까지 딸린 인터뷰가 없기 때문입니다. 그래서 `before`를 함께 받아 그보다 오래된 분석만 지웁니다.
+   * 방금 저장한 분석을 지우면 사용자가 후보를 고르는 사이에 그 분석이 사라집니다.
+   *
+   * 정리 작업이라 사용자 번호를 받지 않습니다.
+   */
+  purgeAnalysesWithoutInterviews(before: Date): Promise<number>;
 }
 
 /**

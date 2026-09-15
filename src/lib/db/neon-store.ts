@@ -380,10 +380,26 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
       return rows.length > 0;
     },
 
-    /** 정리 작업만 사용자 번호를 받지 않습니다. 실제로 부르는 자리는 이슈 #116에서 만듭니다. */
+    /** 정리 작업만 사용자 번호를 받지 않습니다. 부르는 자리는 `/api/cron/purge`입니다(이슈 #116). */
     async purgeInterviewsOpenedBefore(before: Date): Promise<number> {
       const rows = await run(
         `delete from interview_session where opened_at < $1 returning id`,
+        [before]
+      );
+      return rows.length;
+    },
+
+    /**
+     * 한 문장으로 짭니다. 드라이버가 HTTP 한 번에 한 문장을 보내고 그 한 문장이 한 트랜잭션입니다.
+     * 먼저 고아 분석을 고른 뒤 따로 지우면 그 사이에 새 인터뷰가 붙은 분석까지 지우게 되고, 그
+     * 분석에 `on delete cascade`로 딸린 인터뷰가 함께 사라집니다.
+     */
+    async purgeAnalysesWithoutInterviews(before: Date): Promise<number> {
+      const rows = await run(
+        `delete from repository_analysis ra
+          where ra.created_at < $1
+            and not exists (select 1 from interview_session s where s.analysis_id = ra.id)
+         returning ra.id`,
         [before]
       );
       return rows.length;

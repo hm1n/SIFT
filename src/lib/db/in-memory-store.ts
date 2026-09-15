@@ -221,5 +221,17 @@ export function createInMemoryStore(): SiftStore {
       }
       return purged;
     },
+
+    async purgeAnalysesWithoutInterviews(before) {
+      const used = new Set([...interviews.values()].map((interview) => interview.analysisId));
+      let purged = 0;
+      for (const [id, analysis] of analyses) {
+        if (!used.has(id) && analysis.createdAt < before) {
+          analyses.delete(id);
+          purged += 1;
+        }
+      }
+      return purged;
+    },
   };
 }

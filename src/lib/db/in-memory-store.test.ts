@@ -430,6 +430,41 @@ describe("메모리 저장 계층", () => {
     expect(await store.listInterviews(OWNER_ID)).toEqual([]);
   });
 
+  describe("고아 분석 정리", () => {
+    it("딸린 인터뷰가 모두 사라진 오래된 분석을 지운다", async () => {
+      const store = createInMemoryStore();
+      const { analysisId, interviewId } = await seed(store);
+      await store.deleteInterview(interviewId, OWNER_ID);
+
+      expect(await store.purgeAnalysesWithoutInterviews(new Date(Date.now() + 1000))).toBe(1);
+      expect(await store.getAnalysis(analysisId, OWNER_ID)).toBeNull();
+    });
+
+    it("인터뷰가 남아 있는 분석은 지우지 않는다", async () => {
+      const store = createInMemoryStore();
+      const { analysisId } = await seed(store);
+
+      expect(await store.purgeAnalysesWithoutInterviews(new Date(Date.now() + 1000))).toBe(0);
+      expect(await store.getAnalysis(analysisId, OWNER_ID)).not.toBeNull();
+    });
+
+    /** 경험을 아직 고르지 않은 분석입니다. 후보를 고르는 사이에 사라지면 안 됩니다. */
+    it("기준 시각보다 최근에 저장한 분석은 인터뷰가 없어도 남긴다", async () => {
+      const store = createInMemoryStore();
+      const analysisId = await store.saveAnalysis({
+        githubUserId: OWNER_ID,
+        repoOwner: "hm1n",
+        repoName: "SIFT",
+        contributionItems: [],
+        candidates: [],
+        stageASummary: {},
+      });
+
+      expect(await store.purgeAnalysesWithoutInterviews(new Date(Date.now() - 1000))).toBe(0);
+      expect(await store.getAnalysis(analysisId, OWNER_ID)).not.toBeNull();
+    });
+  });
+
   describe("저장된 분석 읽기", () => {
     it("저장한 값을 그대로 돌려주고 사용자 번호는 싣지 않는다", async () => {
       const store = createInMemoryStore();
