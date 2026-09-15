@@ -164,4 +164,49 @@ describe("훅과 route 사이의 저장 계약", () => {
     expect(result.current.unsavedTurnCount).toBe(1);
     expect((await store.getInterview(interviewId, OWNER_ID))?.history).toEqual([]);
   });
+
+  /**
+   * 끝내기는 밀린 저장이 끝난 뒤에 완료를 표시해야 합니다(PR #127 리뷰).
+   *
+   * 완료 표시가 먼저 닿으면 흐름이 요약 화면으로 옮기면서 인터뷰 화면을 내리고, 언마운트가 진행 중이던
+   * 저장을 끊습니다. 마지막 답변이 저장되지 않은 채 끝난 인터뷰가 되고 요약도 빠진 내용을 그립니다.
+   */
+  it("끝내면 밀린 턴을 저장한 뒤에 완료를 표시한다", async () => {
+    const store = createInMemoryStore();
+    const interviewId = await seedInterview(store);
+    // 첫 블록 갱신만 거절당합니다. 그 턴은 반영도 저장도 되지 않은 채 밀립니다.
+    let rejectOnce = true;
+    const fetchImpl = routedFetch(store, (targetBlock) => {
+      if (rejectOnce) {
+        rejectOnce = false;
+        return { ops: [], display: [], evaluation: [], targetResponse: "provided" };
+      }
+      return emptyOutput(targetBlock);
+    });
+    let historyWhenCompleted: readonly { role: string; text: string }[] | null = null;
+    const completeInterview = async () => {
+      historyWhenCompleted = (await store.getInterview(interviewId, OWNER_ID))?.history ?? [];
+    };
+    const { result } = renderHook(() =>
+      useExperienceInterview({ snapshot, interviewId, fetchImpl, completeInterview })
+    );
+
+    await act(async () => {
+      result.current.start();
+    });
+    await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+    await act(async () => {
+      result.current.submitAnswer("재시도 큐를 붙였습니다.");
+    });
+    await waitFor(() => expect(result.current.unsavedTurnCount).toBe(1));
+
+    await act(async () => {
+      result.current.endInterview();
+    });
+
+    await waitFor(() => expect(historyWhenCompleted).not.toBeNull());
+    // 완료를 표시하는 시점에 그 턴이 이미 저장돼 있어야 합니다.
+    expect(historyWhenCompleted).toHaveLength(2);
+    expect((await store.getInterview(interviewId, OWNER_ID))?.status).toBe("in_progress");
+  });
 });

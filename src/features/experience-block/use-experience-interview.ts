@@ -375,17 +375,25 @@ export function useExperienceInterview({
    * 인터뷰를 끝난 것으로 표시합니다. 저장하지 않는 인터뷰에는 표시할 줄이 없으므로 아무 일도 하지
    * 않습니다. 실패는 삼킵니다. 종료 자체는 이미 화면에서 일어났고 사용자가 다시 할 수 있는 일이
    * 없습니다. 목록에 진행 중으로 남는 것이 이 실패의 전부입니다.
+   *
+   * **밀린 저장이 끝나기를 먼저 기다립니다**(PR #127 리뷰). 기다리지 않으면 완료 표시가 먼저 닿고,
+   * 흐름이 그 응답을 받아 요약 화면으로 옮기면서 이 화면을 내립니다. 화면이 내려가면 언마운트가
+   * 진행 중이던 저장을 끊으므로 마지막 답변이 저장되지 않은 채 끝난 인터뷰가 됩니다. 요약 화면도
+   * 빠진 내용을 그립니다.
+   *
+   * 기다리는 것은 완료 표시와 화면 이동뿐입니다. 종료 자체(입력을 닫는 것)는 호출부가 이미 마쳤고,
+   * 그 순서는 열 턴 자동 종료가 멈추지 않도록 PR #117에서 정한 것입니다. 저장이 끝내 실패해도
+   * 완료로 표시하고 이동합니다. 사용자가 그만하겠다고 말한 조작을 저장 실패로 막지 않습니다.
    */
-  const markCompleted = useCallback(() => {
+  const markCompleted = useCallback((pendingSaves?: Promise<unknown>) => {
     const id = optionsRef.current.interviewId;
     if (id === null || id === undefined || completedRef.current) return;
     completedRef.current = true;
-    void optionsRef.current
-      .completeInterview(id)
-      .catch(() => undefined)
-      .finally(() => {
-        if (!unmountedRef.current) optionsRef.current.onCompleted?.();
-      });
+    void (async () => {
+      await pendingSaves?.catch(() => undefined);
+      await optionsRef.current.completeInterview(id).catch(() => undefined);
+      if (!unmountedRef.current) optionsRef.current.onCompleted?.();
+    })();
   }, []);
 
   /**
@@ -566,6 +574,61 @@ export function useExperienceInterview({
    * 알아서 처리합니다(질문·답변 교대 계약을 지키는 것은 호출부 책임입니다, 구현검토 2026-09-11
    * P1-4 재검증).
    */
+  /**
+   * 반영은 끝났는데 저장만 밀린 턴을 다시 저장합니다. 모델을 부르지 않고 블록 상태도 그대로 둡니다.
+   *
+   * 반영까지 밀린 턴(`unreflectedRef`)은 여기서 보내지 않습니다. 그 턴은 블록 갱신을 다시 걸 때 그
+   * 요청이 저장까지 함께 하므로, 여기서도 보내면 같은 질문과 답변이 저장된 대화에 두 번 들어갑니다.
+   */
+  const runRetrySave = useCallback(async () => {
+    const current = optionsRef.current;
+    const interviewId = current.interviewId;
+    if (interviewId === null || interviewId === undefined) return;
+    const known = new Set(turnsRef.current.map((turn) => turn.turnId));
+    const ids = [...pendingTurnIdsRef.current].filter(
+      (turnId) => known.has(turnId) && !unreflectedRef.current.has(turnId)
+    );
+    if (ids.length === 0) return;
+    const savedVersion = blockStateRef.current.version;
+    try {
+      const status = await fetchSaveOnly({
+        url: current.blockUpdateUrl,
+        snapshot: current.snapshot,
+        history: turnsRef.current,
+        state: blockStateRef.current,
+        save: {
+          interviewId,
+          expectedBlockVersion: savedBlockVersionRef.current,
+          pendingTurnIds: ids,
+          // 반영이 이미 끝난 값입니다. 서버는 이 값을 그대로 저장합니다.
+          progress: progressRef.current,
+        },
+        fetchImpl: current.fetchImpl,
+      });
+      if (unmountedRef.current) return;
+      if (status === "saved") {
+        savedBlockVersionRef.current = savedVersion;
+        for (const turnId of ids) pendingTurnIdsRef.current.delete(turnId);
+      }
+      if (status !== "skipped") setSaveStatus(status);
+      setUnsavedTurnCount(pendingTurnIdsRef.current.size);
+    } catch {
+      if (!unmountedRef.current) setSaveStatus("failed");
+    }
+  }, []);
+
+  /**
+   * 종료 전에 밀린 것을 모두 밀어 넣습니다. 반영이 밀린 턴을 먼저 다시 걸고(그 요청이 저장까지
+   * 합니다), 그다음에 저장만 밀린 턴을 모델 없이 이어 붙입니다.
+   *
+   * 어느 쪽이 실패해도 던지지 않습니다. 이 값을 기다리는 쪽은 완료 표시이고, 저장 실패가 종료를
+   * 막지 않아야 합니다(이슈 #115 Constraint).
+   */
+  const flushPendingSaves = useCallback(async () => {
+    await retryAllUnreflected().catch(() => undefined);
+    await runRetrySave().catch(() => undefined);
+  }, [retryAllUnreflected, runRetrySave]);
+
   const onBeforeQuestion = useCallback(
     async ({ history }: { history: readonly InterviewHistoryMessage[] }): Promise<InterviewQuestionOutcome> => {
       const question = history.length >= 2 ? history[history.length - 2].text : "";
@@ -661,57 +724,14 @@ export function useExperienceInterview({
   useEffect(() => {
     if (endReason !== "turn_limit" || inner.isEnded) return;
     inner.endInterview();
-    void retryAllUnreflected();
-    markCompleted();
+    // 정리는 곧바로 시작하고, 완료 표시만 그 결과를 기다립니다(PR #127 리뷰).
+    markCompleted(flushPendingSaves());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endReason, inner.isEnded, inner.endInterview, markCompleted, retryAllUnreflected]);
+  }, [endReason, inner.isEnded, inner.endInterview, markCompleted, flushPendingSaves]);
 
   const retryUnreflectedBlockUpdate = useCallback(() => {
     void retryAllUnreflected();
   }, [retryAllUnreflected]);
-
-  /**
-   * 반영은 끝났는데 저장만 밀린 턴을 다시 저장합니다. 모델을 부르지 않고 블록 상태도 그대로 둡니다.
-   *
-   * 반영까지 밀린 턴(`unreflectedRef`)은 여기서 보내지 않습니다. 그 턴은 블록 갱신을 다시 걸 때 그
-   * 요청이 저장까지 함께 하므로, 여기서도 보내면 같은 질문과 답변이 저장된 대화에 두 번 들어갑니다.
-   */
-  const runRetrySave = useCallback(async () => {
-    const current = optionsRef.current;
-    const interviewId = current.interviewId;
-    if (interviewId === null || interviewId === undefined) return;
-    const known = new Set(turnsRef.current.map((turn) => turn.turnId));
-    const ids = [...pendingTurnIdsRef.current].filter(
-      (turnId) => known.has(turnId) && !unreflectedRef.current.has(turnId)
-    );
-    if (ids.length === 0) return;
-    const savedVersion = blockStateRef.current.version;
-    try {
-      const status = await fetchSaveOnly({
-        url: current.blockUpdateUrl,
-        snapshot: current.snapshot,
-        history: turnsRef.current,
-        state: blockStateRef.current,
-        save: {
-          interviewId,
-          expectedBlockVersion: savedBlockVersionRef.current,
-          pendingTurnIds: ids,
-          // 반영이 이미 끝난 값입니다. 서버는 이 값을 그대로 저장합니다.
-          progress: progressRef.current,
-        },
-        fetchImpl: current.fetchImpl,
-      });
-      if (unmountedRef.current) return;
-      if (status === "saved") {
-        savedBlockVersionRef.current = savedVersion;
-        for (const turnId of ids) pendingTurnIdsRef.current.delete(turnId);
-      }
-      if (status !== "skipped") setSaveStatus(status);
-      setUnsavedTurnCount(pendingTurnIdsRef.current.size);
-    } catch {
-      if (!unmountedRef.current) setSaveStatus("failed");
-    }
-  }, []);
 
   /**
    * 두 갈래를 한 번에 처리합니다. 화면의 버튼은 하나이고, 사용자가 "저장되지 않았다"고 본 것에는 두
@@ -757,11 +777,12 @@ export function useExperienceInterview({
       queuedTurnsRef.current.delete(interrupted.turn.turnId);
       syncUnreflectedTurnId();
     }
-    void retryAllUnreflected();
-    markCompleted();
+    // 정리는 곧바로 시작합니다. 저장하지 않는 인터뷰에도 미반영 재처리는 그대로 일어나야 합니다
+    // (구현검토 2026-09-11 P1-2, R9). 완료 표시만 그 결과를 기다립니다(PR #127 리뷰).
+    markCompleted(flushPendingSaves());
     inner.endInterview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [endReason, inner.endInterview, markCompleted, retryAllUnreflected, syncUnreflectedTurnId]);
+  }, [endReason, inner.endInterview, markCompleted, flushPendingSaves, syncUnreflectedTurnId]);
 
   return {
     ...inner,
