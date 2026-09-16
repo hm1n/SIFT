@@ -41,6 +41,7 @@
 - `production-release` Skill을 실행해 최신 태그 이후 변경사항을 확인하고 릴리즈 노트를 작성합니다.
 - `[release] vX.Y.Z` 제목으로 `develop → main` 릴리즈 PR을 생성합니다.
 - 릴리즈 PR은 사람이 검토 후 `main`에 병합합니다.
+- 병합은 merge commit으로 합니다. squash나 rebase로 병합하면 태그 커밋이 `develop` 이력에서 벗어나 다음 릴리즈의 비교 범위에 이미 릴리즈한 변경사항이 다시 들어옵니다.
 
 ### 3. 스킬 실행 이후 (자동화)
 

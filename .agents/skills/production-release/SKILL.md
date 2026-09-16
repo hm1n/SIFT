@@ -67,6 +67,8 @@ description: SIFT의 프로덕션 릴리즈를 준비하고 develop에서 main�
 
 latest_tag..origin/develop
 
+이 범위는 릴리즈 PR을 merge commit으로 병합한다는 전제 위에서만 성립합니다. squash나 rebase로 병합하면 `main`에 새 커밋이 생겨 태그가 가리키는 커밋이 `origin/develop` 이력에서 벗어납니다. 그러면 다음 릴리즈의 `latest_tag..origin/develop`에 이미 릴리즈한 변경사항이 다시 들어와 릴리즈 노트와 포함 PR 목록이 중복됩니다.
+
 최신 태그가 없으면 다음 범위를 참고하되, 자동으로 릴리즈 PR을 생성하지 않습니다.
 
 origin/main..origin/develop
@@ -161,6 +163,7 @@ major > minor > patch
 - Head branch: `develop`
 - Title: `[release] vX.Y.Z`
 - Body: `references/release-pr-template.md` 사용
+- Merge method: merge commit만 사용하고 squash와 rebase는 쓰지 않습니다
 
 다음 조건 중 하나라도 만족하면 새 릴리즈 PR을 생성하지 않습니다.
 
