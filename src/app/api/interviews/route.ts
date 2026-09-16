@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import {
   savedInterviewErrorResponse,
-  toSavedInterviewError,
+  savedInterviewErrorResponseFor,
 } from "@/features/saved-interviews/errors";
 import {
   MAX_CREATE_INTERVIEW_BODY_BYTES,
@@ -32,8 +32,7 @@ export async function handleListInterviews(
     const interviews = await store.listInterviews(session.userId);
     return Response.json({ interviews: interviews.map(toInterviewListItemPayload) });
   } catch (error) {
-    const mapped = toSavedInterviewError(error);
-    return savedInterviewErrorResponse(mapped.kind, mapped.message);
+    return savedInterviewErrorResponseFor(error);
   }
 }
 
@@ -73,8 +72,7 @@ export async function handleCreateInterview(
     }
     return Response.json({ interviewId, analysisId });
   } catch (error) {
-    const mapped = toSavedInterviewError(error);
-    return savedInterviewErrorResponse(mapped.kind, mapped.message);
+    return savedInterviewErrorResponseFor(error);
   }
 }
 

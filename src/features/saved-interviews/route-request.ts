@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { savedInterviewErrorResponse } from "./errors";
 import { getGitHubSessionFromRequest } from "@/lib/github/auth-session";
 import { GitHubFetchError } from "@/lib/github/errors";
+import { reportServerError } from "@/lib/sentry/report";
 
 /**
  * 저장 계층을 쓰는 라우트가 공통으로 하는 두 가지입니다. 세션에서 사용자 번호를 꺼내는 일과 본문을
@@ -22,7 +23,10 @@ export function requireUserId(request: NextRequest): { userId: number } | { resp
     // 세션 쿠키가 있는데 암호화 키 설정이 없거나 32바이트가 아니면 여기로 옵니다. 사용자가 다시
     // 로그인해도 풀리지 않으므로 인증 실패와 갈라 둡니다. `experience-block` 라우트와 같습니다.
     return {
-      response: savedInterviewErrorResponse("server_error", "서버 설정 문제로 요청을 처리하지 못했습니다."),
+      response: reportServerError(
+        error,
+        savedInterviewErrorResponse("server_error", "서버 설정 문제로 요청을 처리하지 못했습니다.")
+      ),
     };
   }
 }

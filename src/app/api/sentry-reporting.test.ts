@@ -1,0 +1,237 @@
+import { NextRequest } from "next/server";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { DatabaseError } from "@/lib/db/client";
+import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
+import { createInMemoryStore } from "@/lib/db/in-memory-store";
+import type { SiftStore } from "@/lib/db/store";
+import {
+  encryptGitHubSession,
+  GITHUB_SESSION_COOKIE,
+  GITHUB_SESSION_KEY_ENV,
+} from "@/lib/github/auth-session";
+import { setServerErrorReporter } from "@/lib/sentry/report";
+import { handleFindAnalysis, handleSaveAnalysis } from "./analyses/route";
+import { handleGetAnalysis } from "./analyses/[id]/route";
+import { handleCreateInterview, handleListInterviews } from "./interviews/route";
+import { handleDeleteInterview, handlePatchInterview } from "./interviews/[id]/route";
+import { handleStageA } from "./candidates/stage-a/route";
+import { handlePurge } from "./cron/purge/route";
+import { handleInterviewQuestionStream } from "./interview/stream/route";
+
+/**
+ * 라우트가 실제로 오류를 Sentry로 넘기는지 봅니다(이슈 #136).
+ *
+ * `src/lib/sentry/report.test.ts`가 status 기준 자체를 고정하고, 이 파일은 그 기준이 라우트에 실제로
+ * 배선돼 있는지를 봅니다. 둘을 나누는 이유는 이슈 #136의 원인이 판정 로직이 틀린 것이 아니라 오류가
+ * SDK까지 가는 경로가 아예 없던 것이기 때문입니다. 배선이 빠지면 판정 테스트는 그대로 통과합니다.
+ *
+ * SDK는 부르지 않습니다. `setServerErrorReporter`에 mock을 등록해 전송 함수에 무엇이 넘어오는지만
+ * 봅니다. 라우트는 `@sentry/nextjs`를 import하지 않으므로 이 파일도 SDK를 로드하지 않습니다.
+ */
+const reported = vi.fn();
+
+const OWNER_ID = 44727850;
+
+let savedKey: string | undefined;
+let savedSecret: string | undefined;
+
+beforeEach(() => {
+  reported.mockReset();
+  setServerErrorReporter(reported);
+  savedKey = process.env[GITHUB_SESSION_KEY_ENV];
+  savedSecret = process.env.CRON_SECRET;
+  process.env[GITHUB_SESSION_KEY_ENV] = Buffer.alloc(32, 7).toString("base64");
+  process.env.CRON_SECRET = "cron-secret-value";
+});
+
+afterEach(() => {
+  setServerErrorReporter(null);
+  if (savedKey === undefined) delete process.env[GITHUB_SESSION_KEY_ENV];
+  else process.env[GITHUB_SESSION_KEY_ENV] = savedKey;
+  if (savedSecret === undefined) delete process.env.CRON_SECRET;
+  else process.env.CRON_SECRET = savedSecret;
+});
+
+function cookieFor(githubUserId: number = OWNER_ID): string {
+  return `${GITHUB_SESSION_COOKIE}=${encryptGitHubSession({ token: "token", githubUserId })}`;
+}
+
+function request(
+  url: string,
+  { body, method = "POST", authenticated = true, headers = {} }: {
+    body?: unknown;
+    method?: string;
+    authenticated?: boolean;
+    headers?: Record<string, string>;
+  } = {}
+): NextRequest {
+  return new NextRequest(`https://example.com${url}`, {
+    method,
+    headers: { ...(authenticated ? { cookie: cookieFor() } : {}), ...headers },
+    ...(body === undefined ? {} : { body: typeof body === "string" ? body : JSON.stringify(body) }),
+  });
+}
+
+/** 언제나 오류를 던지는 저장 계층입니다. 연결이 끊긴 상태를 흉내 냅니다. */
+function brokenStore(kind: "query_failed" | "config_missing" = "query_failed"): SiftStore {
+  const fail = async () => {
+    throw new DatabaseError(kind, "흉내 낸 오류");
+  };
+  return {
+    saveAnalysis: fail, getAnalysis: fail, getLatestAnalysisByRepo: fail, createInterview: fail,
+    appendTurn: fail, appendHistory: fail, listInterviews: fail, getInterview: fail,
+    completeInterview: fail, deleteInterview: fail, purgeInterviewsOpenedBefore: fail,
+    purgeAnalysesWithoutInterviews: fail,
+  } as unknown as SiftStore;
+}
+
+const ANALYSIS = {
+  repoOwner: "hm1n",
+  repoName: "SIFT",
+  contributionItems: ["성능 개선"],
+  candidates: { candidates: { candidates: [], insufficientCandidatesReason: null, diffs: [] }, includedCommits: [] },
+  stageASummary: { excludedUnits: [], selectedUnitCount: 0, thresholdScore: 0, unjudgedShas: [] },
+};
+
+describe("5xx 응답은 Sentry로 갑니다", () => {
+  /**
+   * 저장 계층이 답하지 않는 경우입니다. 이슈 #136의 Why가 적은 "Neon 질의 실패"가 이 갈래입니다.
+   * 라우트마다 따로 확인하는 이유는 catch가 라우트마다 따로 있기 때문입니다.
+   */
+  it.each([
+    [
+      "POST /api/analyses",
+      () => handleSaveAnalysis(request("/api/analyses", { body: { analysis: ANALYSIS } }), brokenStore()),
+    ],
+    [
+      "GET /api/analyses",
+      () => handleFindAnalysis(request("/api/analyses?owner=hm1n&repo=SIFT", { method: "GET" }), brokenStore()),
+    ],
+    [
+      "GET /api/analyses/[id]",
+      () => handleGetAnalysis(request("/api/analyses/x", { method: "GET" }), "x", brokenStore()),
+    ],
+    [
+      "GET /api/interviews",
+      () => handleListInterviews(request("/api/interviews", { method: "GET" }), brokenStore()),
+    ],
+    [
+      "POST /api/interviews",
+      () =>
+        handleCreateInterview(
+          request("/api/interviews", {
+            body: { analysisId: "a", candidateKey: "c1", title: "제목", evidence: evidenceSnapshotFixture() },
+          }),
+          brokenStore()
+        ),
+    ],
+    [
+      "DELETE /api/interviews/[id]",
+      () => handleDeleteInterview(request("/api/interviews/x", { method: "DELETE" }), "x", brokenStore()),
+    ],
+    [
+      "PATCH /api/interviews/[id]",
+      () =>
+        handlePatchInterview(
+          request("/api/interviews/x", { method: "PATCH", body: { status: "completed" } }),
+          "x",
+          brokenStore()
+        ),
+    ],
+    [
+      "GET /api/cron/purge",
+      () =>
+        handlePurge(
+          request("/api/cron/purge", {
+            method: "GET",
+            headers: { authorization: "Bearer cron-secret-value" },
+          }),
+          brokenStore()
+        ),
+    ],
+  ])("%s가 저장소 실패로 5xx를 내면 보고한다", async (_label, call) => {
+    const response = await call();
+    expect(response.status).toBeGreaterThanOrEqual(500);
+    expect(reported).toHaveBeenCalledTimes(1);
+    expect(reported.mock.calls[0]?.[0]).toBeInstanceOf(DatabaseError);
+  });
+
+  /**
+   * 세션 쿠키는 있는데 암호화 키 설정이 없는 경우입니다. 사용자가 다시 로그인해도 풀리지 않는 서버
+   * 설정 문제라 500으로 나가고, 배포에서 이것이 조용하면 로그인 전체가 막힌 것을 알 수 없습니다.
+   */
+  it.each([
+    [
+      "GET /api/analyses",
+      () => request("/api/analyses?owner=hm1n&repo=SIFT", { method: "GET" }),
+      (req: NextRequest) => handleFindAnalysis(req, createInMemoryStore()),
+    ],
+    [
+      "DELETE /api/interviews/[id]",
+      () => request("/api/interviews/x", { method: "DELETE" }),
+      (req: NextRequest) => handleDeleteInterview(req, "x", createInMemoryStore()),
+    ],
+    [
+      "POST /api/interview/stream",
+      () => request("/api/interview/stream", { body: {} }),
+      (req: NextRequest) => handleInterviewQuestionStream(req),
+    ],
+  ])("%s가 세션 설정 문제로 500을 내면 보고한다", async (_label, make, call) => {
+    // 쿠키를 만든 뒤에 키를 지웁니다. 세션은 있는데 서버가 그것을 풀 수 없는 상태입니다.
+    const req = make();
+    delete process.env[GITHUB_SESSION_KEY_ENV];
+    const response = await call(req);
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({ error: { kind: "server_error" } });
+    expect(reported).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("4xx 응답은 Sentry로 가지 않습니다", () => {
+  /**
+   * 이슈 #136의 Goal입니다. 사용자 입력 문제가 Issues에 섞이면 실제 장애가 묻힙니다. 각 항목은 이 앱이
+   * 실제로 내보내는 4xx 갈래입니다.
+   */
+  it.each([
+    [
+      "401 unauthorized",
+      401,
+      () => handleSaveAnalysis(request("/api/analyses", { body: { analysis: ANALYSIS }, authenticated: false }), createInMemoryStore()),
+    ],
+    [
+      "400 invalid_request",
+      400,
+      () => handleFindAnalysis(request("/api/analyses", { method: "GET" }), createInMemoryStore()),
+    ],
+    [
+      "400 invalid_json",
+      400,
+      () => handlePatchInterview(request("/api/interviews/x", { method: "PATCH", body: "{" }), "x", createInMemoryStore()),
+    ],
+    [
+      "404 not_found",
+      404,
+      () => handleGetAnalysis(request("/api/analyses/x", { method: "GET" }), "x", createInMemoryStore()),
+    ],
+    [
+      "422 invalid_request",
+      422,
+      () => handleStageA(request("/api/candidates/stage-a", { body: { units: [] } })),
+    ],
+    [
+      "413 body_too_large",
+      413,
+      () =>
+        handleStageA(
+          request("/api/candidates/stage-a", {
+            body: { units: [] },
+            headers: { "content-length": String(5 * 1024 * 1024) },
+          })
+        ),
+    ],
+  ])("%s는 보고하지 않는다", async (_label, status, call) => {
+    const response = await call();
+    expect(response.status).toBe(status);
+    expect(reported).not.toHaveBeenCalled();
+  });
+});

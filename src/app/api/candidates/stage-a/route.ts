@@ -21,6 +21,7 @@ import {
 } from "@/features/experience-candidates/stage-a";
 import { modelFacingUnitId } from "@/features/experience-candidates/work-unit";
 import { resolveLlmTimeoutMs } from "@/features/experience-candidates/llm-provider";
+import { reportServerError } from "@/lib/sentry/report";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -307,7 +308,7 @@ export async function handleStageA(
     };
     return Response.json(await selectWithRecovery(body));
   } catch (error) {
-    return errorResponse(error);
+    return reportServerError(error, errorResponse(error));
   }
 }
 

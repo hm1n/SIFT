@@ -3,6 +3,7 @@ import { retentionCutoff } from "@/features/saved-interviews/retention";
 import { neonStore } from "@/lib/db/neon-store";
 import type { SiftStore } from "@/lib/db/store";
 import { DatabaseError } from "@/lib/db/client";
+import { reportServerError } from "@/lib/sentry/report";
 
 export const runtime = "nodejs";
 
@@ -41,7 +42,10 @@ export async function handlePurge(request: NextRequest, store: SiftStore = neonS
     // 영영 남지는 않습니다. 로그로 남겨 어느 실행이 실패했는지 알 수 있게 합니다.
     const message = error instanceof DatabaseError ? `${error.kind}: ${error.message}` : String(error);
     console.error(`정리 작업 실패: ${message}`);
-    return Response.json({ error: { kind: "storage_failed", message: "정리 작업에 실패했습니다." } }, { status: 503 });
+    return reportServerError(
+      error,
+      Response.json({ error: { kind: "storage_failed", message: "정리 작업에 실패했습니다." } }, { status: 503 })
+    );
   }
 }
 

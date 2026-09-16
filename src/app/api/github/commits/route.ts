@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 import { errorResponse, GITHUB_BATCH_LIMITS, GitHubRouteRequestError } from "@/lib/github/api-contract";
+import { reportServerError } from "@/lib/sentry/report";
 import { fetchAuthoredCommitsBatch } from "@/lib/github/commits";
 import { decodeCommitCursor, encodeCommitCursor } from "@/lib/github/cursor";
 import { readGitHubRouteRequest } from "@/lib/github/route-request";
@@ -23,6 +24,6 @@ export async function POST(request: NextRequest): Promise<Response> {
       cursor: result.cursor === null ? null : encodeCommitCursor(result.cursor),
     });
   } catch (error) {
-    return errorResponse(error);
+    return reportServerError(error, errorResponse(error));
   }
 }

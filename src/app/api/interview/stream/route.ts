@@ -26,6 +26,7 @@ import {
 } from "@/features/interview/test-stream";
 import { getGitHubTokenFromRequest } from "@/lib/github/auth-session";
 import { GitHubFetchError } from "@/lib/github/errors";
+import { reportServerError } from "@/lib/sentry/report";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -37,8 +38,16 @@ export const maxDuration = 60;
  * `GET`은 이슈 #60이 만든 테스트용 스트림입니다. 실제 생성은 비결정적이라 전송 계약 회귀 테스트의
  * 기준으로 쓸 수 없어 남겨 둡니다. 하위 이슈 B의 화면 개발도 `?scenario=` 경로를 씁니다.
  */
-function errorResponse(kind: string, message: string, status: number): Response {
-  return Response.json({ error: { kind, message } }, { status });
+/**
+ * `cause`를 받아 5xx일 때만 Sentry로 보냅니다(이슈 #136). 이유는
+ * `interview/experience-block/route.ts`의 같은 함수와 같습니다. 이 라우트도 오류 응답을 여러 자리에서
+ * 만들고 그중 일부만 5xx이므로, 상태 코드를 정하는 자리에서 전송도 함께 정합니다.
+ */
+function errorResponse(kind: string, message: string, status: number, cause?: unknown): Response {
+  return reportServerError(
+    cause ?? new Error(`${kind}: ${message}`),
+    Response.json({ error: { kind, message } }, { status })
+  );
 }
 
 function invalidRequest(message: string): Response {
@@ -153,7 +162,7 @@ export async function handleInterviewQuestionStream(
      * `server_error`는 `interview/errors.ts`의 아는 분류에 등록해 두었습니다. 등록하지 않으면
      * 수신부가 전송 실패로 떨어뜨려 서버 설정 문제에 네트워크 확인 안내가 나갑니다.
      */
-    return errorResponse("server_error", QUESTION_REQUEST_COPY.serverMisconfigured, 500);
+    return errorResponse("server_error", QUESTION_REQUEST_COPY.serverMisconfigured, 500, error);
   }
 
   /**
@@ -216,9 +225,9 @@ export async function handleInterviewQuestionStream(
   } catch (error) {
     if (error instanceof ExperienceCandidateOutputError || error instanceof InterviewStreamError) {
       const status = GENERATION_ERROR_STATUS[error.kind as keyof typeof GENERATION_ERROR_STATUS];
-      if (status !== undefined) return errorResponse(error.kind, error.message, status);
+      if (status !== undefined) return errorResponse(error.kind, error.message, status, error);
     }
-    return errorResponse("llm_failure", QUESTION_REQUEST_COPY.generationFailed, 502);
+    return errorResponse("llm_failure", QUESTION_REQUEST_COPY.generationFailed, 502, error);
   }
 }
 
