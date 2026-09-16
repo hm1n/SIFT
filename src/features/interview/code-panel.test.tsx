@@ -71,7 +71,7 @@ describe("CodePanel", () => {
     );
 
     const row = screen.getByRole("button", { name: /a\.ts/ });
-    expect(row).toHaveAccessibleName(/Added/);
+    expect(row).toHaveAccessibleName(/추가됨/);
     expect(row).toHaveTextContent("+9");
     expect(row).toHaveTextContent("−7");
   });
@@ -137,12 +137,12 @@ describe("CodePanel", () => {
 
     expect(screen.getByText("Commits / 02")).toBeInTheDocument();
     expect(screen.getByText("first commit")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Previous commit" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "이전 커밋" })).toBeDisabled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Next commit" }));
+    fireEvent.click(screen.getByRole("button", { name: "다음 커밋" }));
 
     expect(screen.getByText("second commit")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Next commit" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "다음 커밋" })).toBeDisabled();
   });
 
   /*
@@ -169,7 +169,7 @@ describe("CodePanel", () => {
     const { rerender } = render(<CodePanel snapshot={twoCommits} />);
 
     fireEvent.click(screen.getByRole("button", { name: /b\.ts/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Next commit" }));
+    fireEvent.click(screen.getByRole("button", { name: "다음 커밋" }));
     expect(screen.getByText("second commit")).toBeInTheDocument();
 
     rerender(
@@ -183,13 +183,13 @@ describe("CodePanel", () => {
     );
 
     expect(screen.getByText("only commit")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Next commit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "다음 커밋" })).not.toBeInTheDocument();
   });
 
   it("커밋이 하나뿐인 파일에는 커밋 선택기를 두지 않는다", () => {
     render(<CodePanel snapshot={snapshot()} />);
 
-    expect(screen.queryByRole("button", { name: "Next commit" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "다음 커밋" })).not.toBeInTheDocument();
   });
 
   it("파일 목록을 접으면 트리를 감추고 선택한 파일명만 남긴다", () => {
@@ -204,11 +204,11 @@ describe("CodePanel", () => {
     const tree = screen.getByRole("button", { name: /a\.ts/ }).closest("[id='code-panel-file-tree']");
     expect(tree).not.toHaveAttribute("hidden");
 
-    fireEvent.click(screen.getByRole("button", { name: "Collapse file list" }));
+    fireEvent.click(screen.getByRole("button", { name: "파일 목록 접기" }));
 
     expect(tree).toHaveAttribute("hidden");
     expect(screen.getByText("· a.ts")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Expand file list" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "파일 목록 펼치기" })).toHaveAttribute(
       "aria-expanded",
       "false"
     );
@@ -220,7 +220,7 @@ describe("CodePanel", () => {
 
     const fileMode = screen.getByRole("button", { name: /^File/ });
     expect(fileMode).toBeDisabled();
-    expect(fileMode).toHaveAccessibleName(/only changed patches/);
+    expect(fileMode).toHaveAccessibleName(/GitHub에서 받은 변경 내용에는 파일 전체가 없습니다/);
     expect(screen.getByRole("button", { name: "Diff" })).toHaveAttribute("aria-pressed", "true");
   });
 
@@ -228,7 +228,7 @@ describe("CodePanel", () => {
     const base = snapshot();
     render(<CodePanel snapshot={{ ...base, patchBudget: truncatedBudget(base.patchBudget) }} />);
 
-    expect(screen.getByText(/trimmed to fit the estimated evidence input limit/)).toBeInTheDocument();
+    expect(screen.getByText(/코드 변경 일부를 뺐습니다/)).toBeInTheDocument();
   });
 
   it("파일 단위 절단 표시도 알린다", () => {
@@ -240,7 +240,7 @@ describe("CodePanel", () => {
       />
     );
 
-    expect(screen.getByText(/This diff was truncated/)).toBeInTheDocument();
+    expect(screen.getByText(/이 diff는 일부만 보여 줍니다/)).toBeInTheDocument();
   });
 
   // 보는 자리가 달라 하나가 있어도 나머지를 감추지 않습니다. 앞은 스냅샷 전체의 상한 절단이고
@@ -251,8 +251,8 @@ describe("CodePanel", () => {
     });
     render(<CodePanel snapshot={{ ...base, patchBudget: truncatedBudget(base.patchBudget) }} />);
 
-    expect(screen.getByText(/trimmed to fit the estimated evidence input limit/)).toBeInTheDocument();
-    expect(screen.getByText(/This diff was truncated/)).toBeInTheDocument();
+    expect(screen.getByText(/코드 변경 일부를 뺐습니다/)).toBeInTheDocument();
+    expect(screen.getByText(/이 diff는 일부만 보여 줍니다/)).toBeInTheDocument();
   });
 
   it("patch 본문이 없는 이유를 예산 소진과 GitHub 미제공으로 구분한다", () => {
@@ -269,11 +269,11 @@ describe("CodePanel", () => {
       />
     );
 
-    expect(screen.getByText(/evidence input limit was used up/)).toBeInTheDocument();
+    expect(screen.getByText(/근거가 너무 많아/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /b\.ts/ }));
 
-    expect(screen.getByText(/GitHub didn't provide a patch/)).toBeInTheDocument();
+    expect(screen.getByText(/GitHub이 이 파일의 patch를 제공하지 않았습니다/)).toBeInTheDocument();
   });
 
   it("patch 본문을 화면에서 자르지 않고 모든 줄을 그린다", () => {
@@ -303,7 +303,7 @@ describe("CodePanel", () => {
       />
     );
 
-    expect(screen.getByText(/Not found in the commit index/)).toBeInTheDocument();
+    expect(screen.getByText(/불러온 커밋 목록에서 찾지 못했습니다/)).toBeInTheDocument();
   });
 
   // 디자인에 이 문구들의 자리가 없어 시각적으로 숨기지만, DOM에서 지우면 스크린리더가 확인 가능·불가
@@ -313,14 +313,14 @@ describe("CodePanel", () => {
 
     const panel = screen.getByRole("region", { name: "Code / Evidence" });
     expect(panel).toHaveAccessibleDescription(/Verified/);
-    expect(panel).toHaveAccessibleDescription(/Unverifiable · AI-written interpretation/);
+    expect(panel).toHaveAccessibleDescription(/Unverifiable · AI가 해석한 내용입니다/);
   });
 
   it("관련 커밋이 있으면 관련성 판단이 확인 불가라는 안내를 남긴다", () => {
     render(<CodePanel snapshot={evidenceSnapshotFixture()} />);
 
     expect(
-      screen.getByText(/Confirmed only as belonging to the same PR as the representative commit/)
+      screen.getByText(/실제로 이 경험과 관련 있는지는 AI가 판단했습니다/)
     ).toBeInTheDocument();
   });
 
@@ -328,7 +328,7 @@ describe("CodePanel", () => {
     render(<CodePanel snapshot={snapshot()} />);
 
     expect(
-      screen.getByRole("heading", { name: "What can't be confirmed from the Repository" })
+      screen.getByRole("heading", { name: "Repository에서 확인할 수 없는 것" })
     ).toBeInTheDocument();
     expect(screen.getByText("실제 근무 기간")).toBeInTheDocument();
     expect(screen.getByText("팀 안에서의 역할")).toBeInTheDocument();

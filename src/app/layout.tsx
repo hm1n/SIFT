@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist_Mono, Inter } from "next/font/google";
 import { cookies } from "next/headers";
+import { DOCUMENT_COPY } from "@/copy/shell";
 import { AuthTransitionProvider } from "@/components/shell/auth-transition";
 import { TopHeader } from "@/components/shell/top-header";
 import { GoogleAnalyticsScript } from "@/features/analytics/ga-script";
@@ -25,10 +26,7 @@ const geistMono = Geist_Mono({
  */
 const PRETENDARD_CSS = "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.css";
 
-export const metadata: Metadata = {
-  title: "SIFT | Repository analysis",
-  description: "Discover development experience grounded in your actual GitHub repository.",
-};
+export const metadata: Metadata = DOCUMENT_COPY;
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
   const cookieStore = await cookies();

@@ -22,17 +22,17 @@ describe("StatusScreen", () => {
   it("Empty는 status 역할이고 액션이 있으면 secondary 버튼으로 그린다", async () => {
     const onClick = vi.fn();
     render(
-      <StatusScreen kind="empty" code="No candidates" label="Nothing to interview yet" sub="Try another repository." action={{ label: "Change repository", onClick }} />,
+      <StatusScreen kind="empty" code="No candidates" label="Nothing to interview yet" sub="Try another repository." action={{ label: "Repository 변경", onClick }} />,
     );
     const region = screen.getByRole("status");
     expect(region).toHaveAttribute("data-status-kind", "empty");
     expect(region).toHaveTextContent("○");
-    fireEvent.click(screen.getByRole("button", { name: "Change repository" }));
+    fireEvent.click(screen.getByRole("button", { name: "Repository 변경" }));
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
   it("Error는 alert 역할로 즉시 낭독하고 ✕ 기호를 붙인다", () => {
-    render(<StatusScreen kind="error" code="Error 401" label="Session expired" sub="Log in again to continue." />);
+    render(<StatusScreen kind="error" code="Error 401" label="Session expired" sub="다시 로그인해 주세요." />);
     const region = screen.getByRole("alert");
     expect(region).toHaveAttribute("data-status-kind", "error");
     expect(region).not.toHaveAttribute("aria-live");

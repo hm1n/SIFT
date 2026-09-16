@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { CANDIDATE_LIST_COPY } from "@/copy/candidates";
 import type { ExperienceCandidateListItem, StageBCandidateResult } from "./types";
 import type { CandidateCommitIndex } from "@/lib/github/types";
 import type { RepositoryRef } from "@/lib/github/types";
@@ -147,15 +148,15 @@ export function ExperienceCandidateList({
     <section className={styles.state} aria-live="polite">
       <div className={styles.layout}>
         <div className={styles.listPanel}>
-          <p className={styles.eyebrow}>Candidates</p>
-          <p className={styles.listSubtitle}>{`${pluralCount(candidates.candidates.length, "experience")} found`}</p>
+          <p className={styles.eyebrow}>{CANDIDATE_LIST_COPY.eyebrow}</p>
+          <p className={styles.listSubtitle}>{CANDIDATE_LIST_COPY.found(pluralCount(candidates.candidates.length, "experience"))}</p>
           {candidates.insufficientCandidatesReason ? (
             <p className={styles.insufficientReason}>
-              <strong>Why there are not more candidates: </strong>
-              {candidates.insufficientCandidatesReason} The bar is not lowered and candidates are not padded.
+              <strong>{CANDIDATE_LIST_COPY.insufficientLabel}</strong>
+              {candidates.insufficientCandidatesReason} {CANDIDATE_LIST_COPY.insufficientTail}
             </p>
           ) : null}
-          <ul className={styles.candidateList} aria-label="Candidates">
+          <ul className={styles.candidateList} aria-label={CANDIDATE_LIST_COPY.eyebrow}>
             {items.map(({ candidate, commit, normalizedRelatedShas, normalizedTechnicalTopics }) => {
               const title = candidateTitle(candidate, commit);
               const selected = candidate.sha === selectedSha;
@@ -260,7 +261,7 @@ export function StageAExclusions({
 
   return (
     <section className={styles.exclusions} aria-labelledby="stage-a-exclusions-heading">
-      <h3 id="stage-a-exclusions-heading">Excluded in the first pass</h3>
+      <h3 id="stage-a-exclusions-heading">{CANDIDATE_LIST_COPY.exclusionsHeading}</h3>
 
       {overInputBudget.length > 0 ? (
         <details className={styles.exclusionDetails}>
@@ -277,12 +278,12 @@ export function StageAExclusions({
             `llm-wiki/raw/2026-09-11-Stage-A-개별-예산-선별-설계-session-log.md`에 있습니다.
           */}
           <summary>
-            <span>{`The repository is large, so only ${selectedUnitCount} of ${totalUnitCount} work units were judged`}</span>
+            <span>{CANDIDATE_LIST_COPY.judgedSummary(selectedUnitCount, totalUnitCount)}</span>
           </summary>
           <p className={styles.exclusionReason}>
             {WORK_UNIT_SELECTION_EXCLUSION_COPY.over_input_budget}
-            {" Units were picked by score within the analyzable budget, and ties went to the more recent commit."}
-            <span className={styles.heuristicNotice}> The score is an automatically computed heuristic, not a fact from the Repository.</span>
+            {CANDIDATE_LIST_COPY.selectionRule}
+            <span className={styles.heuristicNotice}>{CANDIDATE_LIST_COPY.heuristicNotice}</span>
           </p>
           <ul className={`${styles.exclusionList} ${styles.scrollableList}`}>
             {overInputBudget.map((unit) => (
@@ -305,7 +306,7 @@ export function StageAExclusions({
       {overBudget.length > 0 ? (
         <details className={styles.exclusionDetails}>
           <summary>
-            <span>{`${pluralCount(overBudget.length, "work unit")} excluded for exceeding what one request can carry`}</span>
+            <span>{CANDIDATE_LIST_COPY.overBudgetSummary(pluralCount(overBudget.length, "work unit"))}</span>
           </summary>
           <p className={styles.exclusionReason}>{WORK_UNIT_SELECTION_EXCLUSION_COPY.over_byte_budget}</p>
           <ul className={`${styles.exclusionList} ${styles.scrollableList}`}>
@@ -329,10 +330,10 @@ export function StageAExclusions({
       {unjudgedShas.length > 0 ? (
         <details className={styles.exclusionDetails}>
           <summary>
-            <span>{`${pluralCount(unjudgedShas.length, "work unit")} the model did not judge`}</span>
+            <span>{CANDIDATE_LIST_COPY.unjudgedSummary(pluralCount(unjudgedShas.length, "work unit"))}</span>
           </summary>
           <p className={styles.exclusionReason}>
-            The model returned no judgment for these units. They were not excluded — there is simply no judgment.
+            {CANDIDATE_LIST_COPY.unjudgedReason}
           </p>
           <ul className={styles.exclusionList}>
             {unjudgedShas.map((sha) => (

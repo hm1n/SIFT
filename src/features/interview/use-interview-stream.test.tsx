@@ -7,7 +7,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { INTERVIEW_HISTORY_ITEM_MAX_BYTES, INTERVIEW_HISTORY_MAX_ITEMS } from "./history";
 import { evidenceSnapshotFixture } from "./question-fixture";
 import { encodeSseEvent } from "./sse";
-import { READY_TO_FINISH_PROMPT, useInterviewStream } from "./use-interview-stream";
+import { READY_TO_FINISH_PROMPT } from "@/copy/interview";
+import { useInterviewStream } from "./use-interview-stream";
 
 afterEach(cleanup);
 

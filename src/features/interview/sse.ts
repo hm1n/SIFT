@@ -1,3 +1,4 @@
+import { STREAM_DATA_UNREADABLE_MESSAGE } from "@/copy/interview";
 import { InterviewStreamError } from "./errors";
 import type { InterviewStreamErrorKind } from "./errors";
 
@@ -52,7 +53,7 @@ function parseRecord(record: string): InterviewStreamEvent | null {
   try {
     payload = JSON.parse(dataLines.join("\n"));
   } catch (cause) {
-    throw new InterviewStreamError("stream_interrupted", "Could not parse the stream data.", {
+    throw new InterviewStreamError("stream_interrupted", STREAM_DATA_UNREADABLE_MESSAGE, {
       cause,
     });
   }

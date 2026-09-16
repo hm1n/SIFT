@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { CANDIDATE_ROUTE_COPY } from "@/copy/candidates";
 import { getGitHubTokenFromRequest } from "@/lib/github/auth-session";
 import { GitHubFetchError } from "@/lib/github/errors";
 import { ExperienceCandidateOutputError } from "@/features/experience-candidates/errors";
@@ -104,7 +105,7 @@ function isStageAInput(value: unknown): value is StageAInput {
 
 function errorResponse(error: unknown): Response {
   if (error instanceof GitHubFetchError && error.kind === "auth_revoked") {
-    return Response.json({ error: { kind: "unauthorized", message: "A GitHub sign-in session is required." } }, { status: 401 });
+    return Response.json({ error: { kind: "unauthorized", message: CANDIDATE_ROUTE_COPY.unauthorized } }, { status: 401 });
   }
   if (error instanceof ExperienceCandidateOutputError) {
     const status = {
@@ -124,13 +125,13 @@ function errorResponse(error: unknown): Response {
     return Response.json({ error: {
       kind: error.kind,
       message: error.missingShas
-        ? `${error.message} ${error.missingShas.length} work units were judged three times without completing.`
+        ? `${error.message} ${CANDIDATE_ROUTE_COPY.stageAUnfinished(error.missingShas.length)}`
         : error.message,
       ...(error.missingShas ? { failedCount: error.missingShas.length } : {}),
       ...(error.missingShas?.length === 1 ? { retryable: false } : {}),
     } }, { status });
   }
-  return Response.json({ error: { kind: "server_error", message: "Stage A analysis failed." } }, { status: 500 });
+  return Response.json({ error: { kind: "server_error", message: CANDIDATE_ROUTE_COPY.stageAFailed } }, { status: 500 });
 }
 
 export async function handleStageA(
@@ -153,25 +154,25 @@ export async function handleStageA(
     getGitHubTokenFromRequest(request);
     const declaredLength = Number(request.headers.get("content-length"));
     if (declaredLength > MAX_STAGE_A_BODY_BYTES) {
-      return Response.json({ error: { kind: "body_too_large", message: "The request body must be 4.5MB or smaller." } }, { status: 413 });
+      return Response.json({ error: { kind: "body_too_large", message: CANDIDATE_ROUTE_COPY.bodyTooLarge } }, { status: 413 });
     }
 
     const text = await request.text();
     if (new TextEncoder().encode(text).byteLength > MAX_STAGE_A_BODY_BYTES) {
-      return Response.json({ error: { kind: "body_too_large", message: "The request body must be 4.5MB or smaller." } }, { status: 413 });
+      return Response.json({ error: { kind: "body_too_large", message: CANDIDATE_ROUTE_COPY.bodyTooLarge } }, { status: 413 });
     }
 
     let body: unknown;
     try {
       body = JSON.parse(text);
     } catch {
-      return Response.json({ error: { kind: "invalid_json", message: "The request body must be JSON." } }, { status: 400 });
+      return Response.json({ error: { kind: "invalid_json", message: CANDIDATE_ROUTE_COPY.invalidJson } }, { status: 400 });
     }
     if (
       !isStageAInput(body) ||
       new TextEncoder().encode(text).byteLength > STAGE_A_MAX_REQUEST_BYTES
     ) {
-      return Response.json({ error: { kind: "invalid_request", message: "The Stage A input format is not valid." } }, { status: 422 });
+      return Response.json({ error: { kind: "invalid_request", message: CANDIDATE_ROUTE_COPY.stageAInvalid } }, { status: 422 });
     }
     // 모델에 실제로 실리는 프롬프트를 서버에서 접어 보고 상한을 확인합니다. `renderStageAPrompt`가
     // `createStageAGenerate`와 같은 함수라 여기서 손으로 다시 계산하지 않습니다. 예전에는 요약만
@@ -192,8 +193,8 @@ export async function handleStageA(
         error: {
           kind: "invalid_request",
           message: causedByContributionItems
-            ? "The contribution note is too long, so the Stage A input went over the limit. Shorten it."
-            : "The Stage A input format is not valid.",
+            ? CANDIDATE_ROUTE_COPY.stageAContributionTooLong
+            : CANDIDATE_ROUTE_COPY.stageAInvalid,
         },
       }, { status: 422 });
     }

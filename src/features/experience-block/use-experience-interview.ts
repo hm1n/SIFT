@@ -8,8 +8,8 @@ import {
   INTERVIEW_MAX_TURNS,
   type InterviewHistoryMessage,
 } from "@/features/interview/history";
+import { READY_TO_FINISH_PROMPT } from "@/copy/interview";
 import {
-  READY_TO_FINISH_PROMPT,
   useInterviewStream,
   type InterviewQuestionOutcome,
   type InterviewQuestionTarget,

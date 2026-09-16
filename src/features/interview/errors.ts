@@ -1,4 +1,7 @@
+import { GENERATION_EMPTY_MESSAGE, TRANSPORT_MESSAGE } from "@/copy/interview";
 import type { ExperienceCandidateOutputErrorKind } from "@/features/experience-candidates/errors";
+
+export { GENERATION_EMPTY_MESSAGE } from "@/copy/interview";
 
 /**
  * 전송 계층에서만 생기는 오류 분류입니다.
@@ -164,11 +167,6 @@ export class InterviewStreamError extends Error {
   }
 }
 
-const TRANSPORT_MESSAGE: Record<InterviewStreamTransportErrorKind, string> = {
-  stream_connect_failed: "Could not open the question stream.",
-  stream_interrupted: "The connection dropped while the question was arriving.",
-};
-
 export function transportError(
   kind: InterviewStreamTransportErrorKind,
   options?: ErrorOptions & { retryable?: boolean }
@@ -176,9 +174,7 @@ export function transportError(
   return new InterviewStreamError(kind, TRANSPORT_MESSAGE[kind], options);
 }
 
-export const GENERATION_EMPTY_MESSAGE = "Could not build a question.";
-
-/** 청크 없이 끝난 생성입니다. 서버와 수신부가 같은 문구를 쓰도록 여기 한 곳에 둡니다. */
+/** 청크 없이 끝난 생성입니다. 서버와 수신부가 같은 문구를 쓰도록 `@/copy/interview`에 한 곳으로 둡니다. */
 export function generationEmptyError(options?: ErrorOptions): InterviewStreamError {
   return new InterviewStreamError("generation_empty", GENERATION_EMPTY_MESSAGE, options);
 }

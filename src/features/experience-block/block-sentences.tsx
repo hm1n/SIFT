@@ -28,8 +28,10 @@ export interface BlockSentencesProps {
   readonly emptyText: string;
 }
 
-/** 사용자 주장과 저장소 관찰이 어긋난 상태입니다. 문장 안이 아니라 밖에 그립니다(설계 8절). */
-export const CONFLICT_MARK = "Conflicts with the evidence · needs checking";
+/** 문구는 `@/copy/interview`에 있습니다. */
+import { CONFLICT_MARK } from "@/copy/interview";
+
+export { CONFLICT_MARK };
 
 /** 같은 커밋·파일 인용이 여러 주장에 붙어 있으면 화면에는 한 번만 그립니다. */
 function uniqueSources(sources: readonly { commitSha: string; filePath: string | null }[]) {

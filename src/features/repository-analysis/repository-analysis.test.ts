@@ -146,11 +146,11 @@ describe("analyzeRepository", () => {
 
 describe("toAnalysisError", () => {
   it.each([
-    ["rate_limit", "GitHub API rate limit reached.", "retry"],
-    ["auth_revoked", "Please log in to GitHub again.", "reauthenticate"],
-    ["repo_not_found", "Repository not found.", "select_repository"],
-    ["network", "Couldn't connect to GitHub.", "retry"],
-    ["server_error", "Couldn't load data from GitHub.", "retry"],
+    ["rate_limit", "GitHub 요청 한도에 도달했습니다.", "retry"],
+    ["auth_revoked", "GitHub에 다시 로그인해 주세요.", "reauthenticate"],
+    ["repo_not_found", "Repository를 찾을 수 없습니다.", "select_repository"],
+    ["network", "GitHub에 연결하지 못했습니다.", "retry"],
+    ["server_error", "GitHub에서 데이터를 불러오지 못했습니다.", "retry"],
   ] as const)("%s 오류를 고유 안내와 복구 동작으로 변환한다", (kind, title, recovery) => {
     expect(toAnalysisError(new GitHubFetchError(kind, "failed"), { step: "commits" })).toMatchObject({
       kind,
@@ -171,7 +171,7 @@ describe("toAnalysisError", () => {
       total: 3,
       recovery: "retry",
     });
-    expect(toAnalysisError(error, { step: "details", total: 3 }).message).toContain("1 of 3");
+    expect(toAnalysisError(error, { step: "details", total: 3 }).message).toContain("3건 가운데 1건");
   });
 
   it("인증 취소가 원인인 partial_failure는 인증 재진행으로 복구한다", () => {
@@ -193,8 +193,8 @@ describe("toAnalysisError", () => {
       causeKind: "repo_not_found",
       recovery: "select_repository",
     });
-    expect(result.message).not.toContain("Retry the full fetch");
-    expect(result.message).toContain("Recovery restarts the fetch from the beginning");
+    expect(result.message).not.toContain("전체 조회를 다시 시도해 주세요");
+    expect(result.message).toContain("문제가 해결되면 조회를 처음부터 다시 시작합니다");
   });
 });
 
@@ -381,7 +381,7 @@ describe("generateCandidates", () => {
     if (last?.status !== "error") throw new Error("unreachable");
     expect(last.retryPoint).toBeUndefined();
     expect(last.error).toMatchObject({ kind: "contract_violation", recovery: "retry" });
-    expect(last.error.title).toContain("did not match the server contract");
+    expect(last.error.title).toContain("요청을 처리할 수 없습니다");
   });
 
   it("Stage A 실패는 Stage A부터 재시도할 수 있는 retryPoint를 남긴다", async () => {
@@ -509,9 +509,9 @@ describe("toCandidateGenerationError", () => {
       new CandidateRequestError("stage_a", "llm_timeout", "시간 초과"),
       "stage_a"
     );
-    expect(stageB.title).toContain("exceeded its time budget");
-    expect(stageB.message).toContain("including the GitHub diff and PR lookups");
-    expect(stageA.title).toContain("LLM analysis timed out");
+    expect(stageB.title).toContain("최종 선별이 끝나지 않았습니다");
+    expect(stageB.message).toContain("GitHub에서 diff와 PR을 다시 확인하는 동안");
+    expect(stageA.title).toContain("AI 분석이 끝나지 않았습니다");
     expect(stageA.title).not.toContain("budget");
   });
 

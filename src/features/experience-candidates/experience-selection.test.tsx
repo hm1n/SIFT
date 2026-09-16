@@ -11,10 +11,10 @@ import {
   EVIDENCE_SNAPSHOT_MAX_INPUT_TOKENS,
 } from "./evidence-snapshot";
 
-const CONFIRM_LABEL = "Start interview";
-const BACK_LABEL = "← Candidates";
+const CONFIRM_LABEL = "인터뷰 시작";
+const BACK_LABEL = "← 뒤로";
 /** 확정 실패 안내에서 돌아가는 버튼입니다. InterviewScreen 자체의 뒤로가기(BACK_LABEL)와는 다른 버튼입니다. */
-const CANDIDATE_BACK_LABEL = "← Back to candidates";
+const CANDIDATE_BACK_LABEL = "← 후보 목록으로";
 
 const commit = (
   sha: string,
@@ -98,7 +98,7 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
 
     expect(screen.getByText("Experience")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "재시도 큐 도입" })).toBeInTheDocument();
-    expect(screen.getByText("Preparing the question.")).toBeInTheDocument();
+    expect(screen.getByText("첫 질문을 준비하고 있습니다.")).toBeInTheDocument();
     // 근거는 #98부터 왼쪽 코드 패널이 그립니다.
     expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /aaa\.ts/ })).toBeInTheDocument();
@@ -116,7 +116,7 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
 
     fireEvent.click(screen.getByRole("button", { name: BACK_LABEL }));
     // 인터뷰 화면의 뒤로가기는 대화가 사라진다는 확인을 한 번 받습니다.
-    fireEvent.click(screen.getByRole("button", { name: "Back to candidates" }));
+    fireEvent.click(screen.getByRole("button", { name: "후보 목록으로" }));
     fireEvent.click(screen.getByRole("button", { name: /지연 시간 조정/ }));
     fireEvent.click(screen.getByRole("button", { name: CONFIRM_LABEL }));
 
@@ -133,16 +133,16 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
   it("대표 커밋을 색인에서 찾지 못하면 무엇이 부족한지 알리고 목록으로 돌아갈 수 있다", () => {
     renderList([candidate("abcdef123456")], []);
 
-    fireEvent.click(screen.getByRole("button", { name: /Commit not indexed · abcdef1/ }));
+    fireEvent.click(screen.getByRole("button", { name: /목록에 없는 커밋 · abcdef1/ }));
     fireEvent.click(screen.getByRole("button", { name: CONFIRM_LABEL }));
 
     const alert = screen.getByRole("alert");
     expect(alert).toHaveAttribute("data-selection-error", "representative_commit_not_indexed");
-    expect(alert).toHaveTextContent("wasn't found in the commit index");
+    expect(alert).toHaveTextContent("대표 커밋을 불러온 커밋 목록에서 찾지 못해");
     expect(screen.queryByText("AI 인터뷰")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: CANDIDATE_BACK_LABEL }));
-    expect(screen.getByText("1 experience found")).toBeInTheDocument();
+    expect(screen.getByText("1 experience 발견")).toBeInTheDocument();
   });
 
   it("대표 커밋에 변경 파일이 없으면 근거가 없다고 알린다", () => {
@@ -193,7 +193,7 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
     const action = screen.getByRole("button", { name: CONFIRM_LABEL });
 
     expect(action).toHaveAccessibleName(CONFIRM_LABEL);
-    expect(action).toHaveAccessibleDescription(/Unverifiable · AI-written interpretation/);
+    expect(action).toHaveAccessibleDescription(/Unverifiable · AI가 해석한 내용입니다/);
     expect(action).toHaveAccessibleDescription(/Verified/);
   });
 
@@ -213,10 +213,10 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
     fireEvent.click(screen.getByRole("button", { name: CONFIRM_LABEL }));
 
     expect(
-      screen.getByText(/Confirmed only as belonging to the same PR as the representative commit/)
+      screen.getByText(/실제로 이 경험과 관련 있는지는 AI가 판단했습니다/)
     ).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Code / Evidence" })).toHaveAccessibleDescription(
-      /Unverifiable · AI-written interpretation/
+      /Unverifiable · AI가 해석한 내용입니다/
     );
   });
 
@@ -246,7 +246,7 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
     fireEvent.click(screen.getByRole("button", { name: /상한 절단/ }));
     fireEvent.click(screen.getByRole("button", { name: CONFIRM_LABEL }));
 
-    expect(screen.getByText(/trimmed to fit the estimated evidence input limit/)).toBeInTheDocument();
+    expect(screen.getByText(/코드 변경 일부를 뺐습니다/)).toBeInTheDocument();
   });
 
   it("파일 단위로 절단 표시된 patch도 인터뷰 화면이 알린다", () => {
@@ -273,10 +273,10 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
     fireEvent.click(screen.getByRole("button", { name: /상위 절단 표시/ }));
     fireEvent.click(screen.getByRole("button", { name: CONFIRM_LABEL }));
 
-    expect(screen.getByText(/This diff was truncated/)).toBeInTheDocument();
+    expect(screen.getByText(/이 diff는 일부만 보여 줍니다/)).toBeInTheDocument();
   });
 
-  // PR #105 Codex 리뷰 P1: 인터뷰 활성 여부를 상위가 모르면 AppShell 사이드바의 Change repository가
+  // PR #105 Codex 리뷰 P1: 인터뷰 활성 여부를 상위가 모르면 AppShell 사이드바의 Repository 변경가
   // InterviewScreen의 이탈 확인을 건너뛰고 대화를 잃습니다. 확정·목록 복귀마다 상위에 알려야 합니다.
   it("인터뷰를 확정하고 목록으로 돌아갈 때마다 onInterviewActiveChange를 부른다", () => {
     const onInterviewActiveChange = vi.fn();
@@ -306,7 +306,7 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
     expect(onInterviewActiveChange).toHaveBeenLastCalledWith(true);
 
     fireEvent.click(screen.getByRole("button", { name: BACK_LABEL }));
-    fireEvent.click(screen.getByRole("button", { name: "Back to candidates" }));
+    fireEvent.click(screen.getByRole("button", { name: "후보 목록으로" }));
     expect(onInterviewActiveChange).toHaveBeenLastCalledWith(false);
   });
 
@@ -321,6 +321,6 @@ describe("경험 선택 확정과 인터뷰 진입점", () => {
 
     const alert = screen.getByRole("alert");
     expect(alert).toHaveAttribute("data-selection-error", "evidence_input_too_large");
-    expect(alert).toHaveTextContent("Even without any code changes");
+    expect(alert).toHaveTextContent("코드 변경을 빼고");
   });
 });

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { SAVED_INTERVIEW_REQUEST_COPY } from "@/copy/saved";
 import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
 import {
   ANALYSES_PATH,
@@ -101,10 +102,19 @@ describe("저장된 인터뷰 클라이언트", () => {
     await expect(fetchSavedInterviews(fetchImpl)).rejects.toMatchObject({ kind: "server_error" });
   });
 
-  it("전송 자체가 실패하면 network로 본다", async () => {
-    const fetchImpl = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+  /**
+   * `fetch`가 던지는 message는 브라우저가 만든 영어 원문입니다. 이 값이 화면까지 가는 경로가
+   * 있어(`repository-analysis-view.tsx`의 조회 실패 안내) 분류만 옮기고 문구는 바꿔 답니다.
+   */
+  it("전송 자체가 실패하면 network로 보고 원문 대신 화면 문구를 단다", async () => {
+    const cause = new TypeError("Failed to fetch");
+    const fetchImpl = vi.fn().mockRejectedValue(cause);
 
-    await expect(fetchSavedInterviews(fetchImpl)).rejects.toMatchObject({ kind: "network" });
+    await expect(fetchSavedInterviews(fetchImpl)).rejects.toMatchObject({
+      kind: "network",
+      message: SAVED_INTERVIEW_REQUEST_COPY.network,
+      cause,
+    });
   });
 
   // 화면이 이탈하면 요청도 함께 끊깁니다. 끊긴 것을 실패로 바꾸면 떠난 화면에 오류 안내가 남습니다.

@@ -17,3 +17,10 @@
 .conflict { display: grid; gap: 4px; border: 1px solid #e5c9a8; border-radius: var(--radius); background: #fdf8f1; padding: 8px; }
 .conflictMark { margin: 0; color: #7a5320; font-size: 11px; font-weight: 500; line-height: 1.5; }
 .conflictList { display: grid; gap: 4px; margin: 0; padding-left: 16px; color: #7a5320; font-size: 11px; line-height: 1.5; }
+
+/*
+ * mono 영역 예외입니다. `globals.css`의 body가 한국어 자연어에 `word-break: keep-all`을 걸어
+ * 두므로, Repository 원본값과 코드를 그리는 아래 자리에서는 되돌립니다. 이 값들은 어절이 없는
+ * 경로·SHA·코드라 어절 단위 금지가 뜻을 갖지 않고, 긴 토큰이 칸을 넘길 때 끊어야 합니다.
+ */
+.source { word-break: normal; overflow-wrap: normal; }
