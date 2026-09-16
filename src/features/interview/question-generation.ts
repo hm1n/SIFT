@@ -1,4 +1,5 @@
 import { streamText } from "ai";
+import { LLM_ERROR_CONTEXT } from "@/copy/interview";
 import { generationEmptyError } from "./errors";
 import {
   INTERVIEW_HISTORY_MAX_BYTES,
@@ -523,7 +524,7 @@ export async function startInterviewQuestionStream(
     cleanup();
     throw mapInterviewLlmError(
       signal.reason ?? new DOMException("aborted", "AbortError"),
-      "Question generation"
+      LLM_ERROR_CONTEXT.questionGeneration
     );
   }
 
@@ -555,7 +556,7 @@ export async function startInterviewQuestionStream(
       }
     } catch (error) {
       cleanup();
-      throw mapInterviewLlmError(error, "Question generation");
+      throw mapInterviewLlmError(error, LLM_ERROR_CONTEXT.questionGeneration);
     }
   };
 

@@ -18,13 +18,32 @@ import type { InterviewHistoryMessage } from "@/features/interview/history";
  * 저장할 때 JSON을 한 번 거쳐 걸러냅니다. `JsonValue` 같은 재귀 타입을 쓰면 기존 인터페이스가 그
  * 타입에 대입되지 않아 호출하는 쪽마다 캐스팅이 붙고, 캐스팅이 붙는 순간 검사가 무력해집니다.
  *
- * 읽기와 쓰기를 가리지 않고 모든 연산이 `githubUserId`를 받습니다. 정리 작업인
- * `purgeInterviewsOpenedBefore`만 예외입니다. 소유자 판정을 호출하는 쪽에 맡기지 않고 조회와 갱신
+ * 읽기와 쓰기를 가리지 않고 모든 연산이 `githubUserId`를 받습니다. 정리 작업인 `purge`로 시작하는
+ * 둘만 예외입니다. 소유자 판정을 호출하는 쪽에 맡기지 않고 조회와 갱신
  * 조건에 함께 넣습니다. 읽고 나서 비교하는 방식이면 비교를 빠뜨린 경로가 하나만 있어도 남의 데이터를
  * 읽거나 쓰게 됩니다.
  */
 export interface SiftStore {
   saveAnalysis(input: NewAnalysis): Promise<string>;
+  /**
+   * 저장된 분석 하나입니다. 없거나 그 사용자의 것이 아니면 `null`입니다(이슈 #116).
+   *
+   * 저장된 인터뷰의 요약 화면에서 그 분석의 후보 목록으로 갈 때 씁니다. 화면이 들고 있는 것이
+   * `analysisId`이므로 식별자로 찾습니다.
+   */
+  getAnalysis(id: string, githubUserId: number): Promise<StoredAnalysisRecord | null>;
+  /**
+   * 그 저장소에서 가장 최근에 저장한 분석입니다. 없으면 `null`입니다(이슈 #116).
+   *
+   * Repository를 고르는 화면에서 들어올 때 씁니다. 그 경로에는 `analysisId`가 없고 사용자가 고른
+   * 것은 저장소이므로, 저장소 이름으로 찾습니다. 같은 저장소를 여러 번 분석했으면 마지막 것을
+   * 돌려줍니다. 앞선 분석은 그때의 커밋만 담고 있어 다시 그릴 화면으로는 낡은 값입니다.
+   */
+  getLatestAnalysisByRepo(
+    githubUserId: number,
+    repoOwner: string,
+    repoName: string
+  ): Promise<StoredAnalysisRecord | null>;
   /** 분석이 없거나 그 사용자의 것이 아니면 `null`입니다. 남의 분석에 인터뷰를 붙일 수 없습니다. */
   createInterview(input: NewInterview): Promise<string | null>;
   /**
@@ -54,6 +73,22 @@ export interface SiftStore {
    * 이어 붙이지 않는 이유는 누적된 값 자체가 최신 상태이기 때문입니다.
    */
   appendTurn(input: AppendTurn): Promise<AppendTurnResult>;
+  /**
+   * 이력만 뒤에 이어 붙입니다. 블록 상태와 버전과 진행 상태는 건드리지 않습니다(이슈 #116, backlog 7번).
+   *
+   * `appendTurn`은 블록 버전이 올라야만 씁니다. 그래서 모델 호출이 실패해 블록이 그대로인 턴은 저장할
+   * 길이 자체가 없었고, 모델이 계속 실패하면 그 대화가 영영 저장되지 않았습니다. 2026-09-15에 실제로
+   * 겪은 사고입니다(`.env` 키 이름이 어긋나 인터뷰 두 개의 대화가 한 줄도 저장되지 않았습니다).
+   *
+   * **버전 조건은 그대로 둡니다.** 블록을 덮어쓰지 않으니 조건이 필요 없어 보이지만, 조건이 막는 것이
+   * 하나 더 있습니다. 다른 탭이 이미 저장한 뒤라면 그 턴들이 저장된 대화에 이미 들어 있고, 이쪽은 그
+   * 사실을 모른 채 같은 턴을 한 번 더 붙입니다. 저장된 버전이 기대 버전과 같을 때만 쓰면 그 경우가
+   * 걸러집니다. 모델이 실패한 턴은 블록이 그대로라 두 값이 같으므로 이 조건에 걸리지 않습니다.
+   *
+   * 인터뷰가 없거나 그 사용자의 것이 아니면 `not_found`이고, 저장된 버전이 다르면 `version_conflict`입니다.
+   * `updatedAt`은 갱신합니다.
+   */
+  appendHistory(input: AppendHistory): Promise<AppendHistoryResult>;
   /** 마지막으로 이어간 시각이 최근인 순서입니다. */
   listInterviews(githubUserId: number): Promise<InterviewListItem[]>;
   /**
@@ -78,6 +113,38 @@ export interface SiftStore {
   deleteInterview(id: string, githubUserId: number): Promise<boolean>;
   /** 마지막으로 연 시각이 `before`보다 오래된 인터뷰를 지우고 지운 수를 돌려줍니다. */
   purgeInterviewsOpenedBefore(before: Date): Promise<number>;
+  /**
+   * 딸린 인터뷰가 하나도 없는 분석을 지우고 지운 수를 돌려줍니다(이슈 #116).
+   *
+   * `repository_analysis` → `interview_session`은 `on delete cascade`이지만 반대 방향은 없습니다.
+   * 인터뷰를 지우는 두 경로(사용자 삭제와 90일 정리)는 인터뷰만 지우므로, 마지막 인터뷰가 사라진
+   * 분석은 근거 스냅샷을 든 채 남습니다. 비공개 저장소의 코드가 거기 들어 있습니다.
+   *
+   * 경험을 아직 고르지 않은 분석도 여기서 지워집니다. Stage B 직후에 저장한 분석은 인터뷰가 붙기
+   * 전까지 딸린 인터뷰가 없기 때문입니다. 그래서 `before`를 함께 받아 그보다 오래된 분석만 지웁니다.
+   * 방금 저장한 분석을 지우면 사용자가 후보를 고르는 사이에 그 분석이 사라집니다.
+   *
+   * 정리 작업이라 사용자 번호를 받지 않습니다.
+   */
+  purgeAnalysesWithoutInterviews(before: Date): Promise<number>;
+}
+
+/**
+ * 저장된 분석 한 줄입니다(이슈 #116). `NewAnalysis`에서 사용자 번호를 빼고 식별자와 저장 시각을
+ * 더한 것입니다. 사용자 번호를 돌려주지 않는 이유는 조회 조건에 이미 들어가 있어서, 되돌려 주면
+ * 화면이 그 값으로 다시 판정하고 싶어지기 때문입니다. 소유자 판정은 질의 안에서만 합니다.
+ *
+ * jsonb 칸 셋을 `unknown`으로 두는 것은 `NewAnalysis`와 같은 이유입니다. 모양을 아는 것은 이 값을
+ * 쓰는 화면이고, 저장 계층은 저장하고 돌려줄 뿐입니다.
+ */
+export interface StoredAnalysisRecord {
+  readonly id: string;
+  readonly repoOwner: string;
+  readonly repoName: string;
+  readonly contributionItems: unknown;
+  readonly candidates: unknown;
+  readonly stageASummary: unknown;
+  readonly createdAt: Date;
 }
 
 export interface NewAnalysis {
@@ -107,6 +174,16 @@ export interface AppendTurn {
 }
 
 export type AppendTurnResult = "saved" | "version_conflict" | "not_found";
+
+export interface AppendHistory {
+  readonly githubUserId: number;
+  readonly interviewId: string;
+  readonly turn: readonly InterviewHistoryMessage[];
+  /** 마지막으로 저장에 성공한 블록 버전입니다. 저장된 값이 이와 다르면 쓰지 않습니다. */
+  readonly expectedBlockVersion: number;
+}
+
+export type AppendHistoryResult = AppendTurnResult;
 
 export type InterviewStatus = "in_progress" | "completed";
 

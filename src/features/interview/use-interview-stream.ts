@@ -2,6 +2,7 @@
 
 import { answerLengthBucket, trackEvent } from "@/features/analytics/events";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { READY_TO_FINISH_PROMPT } from "@/copy/interview";
 import type { InterviewStreamError } from "./errors";
 import {
   INTERVIEW_HISTORY_ITEM_MAX_BYTES,
@@ -32,14 +33,6 @@ export type InterviewQuestionOutcome =
   | { readonly kind: "ask"; readonly target: NonNullable<InterviewQuestionTarget>; readonly lastOutcome: InterviewLastOutcome | null }
   | { readonly kind: "ready_to_finish" }
   | { readonly kind: "stop" };
-
-/**
- * `"ready_to_finish"`일 때 질문 자리에 넣는 완료 대기 안내입니다. 실제 모델이 만든 질문이
- * 아니라 이 훅이 고정 문구로 채우는 것이라, 질문·답변 교대 이력 계약을 깨지 않으면서도 종료 전
- * 보충 답변을 받을 자리를 만듭니다(설계 6-2절 6번, 6-3절, 구현검토 2026-09-11 P1-4 재검증).
- */
-export const READY_TO_FINISH_PROMPT =
-  "지금까지 답변으로 확인할 내용은 충분합니다. 더 남기고 싶은 내용이 있다면 이어서 답해 주세요. 없다면 종료를 눌러 마무리할 수 있습니다.";
 
 export type InterviewStreamPhase = "idle" | InterviewStreamStatus;
 

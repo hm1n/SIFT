@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { DELETION_NOTICE_COPY, SAVED_INTERVIEW_LIST_COPY } from "@/copy/saved";
 import { BLOCK_KINDS } from "@/features/experience-block/types";
 import type { InterviewListItemPayload } from "./payload";
+import { daysUntilDeletion, DELETION_WARNING_DAYS } from "./retention";
 import styles from "./saved-interview-list.module.css";
 
 /**
@@ -29,11 +31,39 @@ export interface SavedInterviewListProps {
   onRetry: () => void;
 }
 
+/**
+ * 기한이 지난 인터뷰는 이미 지워진 것으로 보고 그리지 않습니다(이슈 #116, 디자인 원본의
+ * `visibleSessions`).
+ *
+ * 정리 작업은 하루에 한 번 돌고 Vercel Hobby는 지정한 시각부터 한 시간 안의 아무 때나 부르므로, 기한이
+ * 지난 줄이 잠시 남아 있습니다. 그것을 목록에 보이면 사용자가 눌러 열 수 있고, 여는 순간 `opened_at`이
+ * 갱신돼 다시 90일을 사는 인터뷰가 됩니다. 지워진다고 알린 것이 지워지지 않는 쪽이 더 나쁩니다.
+ */
+function notExpired(interviews: readonly InterviewListItemPayload[]): readonly InterviewListItemPayload[] {
+  return interviews.filter((interview) => daysUntilDeletion(interview.openedAt) > 0);
+}
+
 /** 디자인의 `Nov 28`입니다. 저장된 값은 ISO 문자열이라 여기서 사람이 읽는 형식으로 바꿉니다. */
 function formatDate(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return date.toLocaleDateString("ko-KR", { month: "short", day: "numeric" });
+}
+
+/**
+ * 자동 삭제가 가까운 인터뷰에만 붙는 `D-n` 배지입니다(이슈 #116, 디자인 원본).
+ *
+ * 모든 행에 남은 날수를 적지 않습니다. 90일 가운데 80일이 남은 인터뷰에 남은 날수를 적으면 목록이
+ * 지워질 것들의 목록처럼 보입니다. 사용자가 실제로 할 일이 생기는 것은 기한이 가까울 때입니다.
+ */
+function DeletionBadge({ openedAt }: { openedAt: string }) {
+  const daysLeft = daysUntilDeletion(openedAt);
+  if (daysLeft > DELETION_WARNING_DAYS) return null;
+  return (
+    <span className={styles.deletionBadge} title={DELETION_NOTICE_COPY.badgeTitle(daysLeft)}>
+      D-{daysLeft}
+    </span>
+  );
 }
 
 export function SavedInterviewList({
@@ -48,37 +78,38 @@ export function SavedInterviewList({
    * 목록이 좁아 대화상자로 물으면 어느 인터뷰를 지우는지가 화면에서 멀어집니다.
    */
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const interviews = state.status === "ready" ? notExpired(state.interviews) : [];
 
   return (
     <>
       <div className={styles.header}>
-        <span className={styles.label}>Interviews</span>
-        {state.status === "ready" ? <span className={styles.count}>{state.interviews.length}</span> : null}
+        <span className={styles.label}>{SAVED_INTERVIEW_LIST_COPY.sectionLabel}</span>
+        {state.status === "ready" ? <span className={styles.count}>{interviews.length}</span> : null}
       </div>
 
-      {state.status === "loading" ? <p className={styles.notice}>Loading interviews...</p> : null}
+      {state.status === "loading" ? <p className={styles.notice}>{SAVED_INTERVIEW_LIST_COPY.loading}</p> : null}
 
       {state.status === "error" ? (
         <div className={styles.errorBox}>
-          <p className={styles.notice}>Couldn&apos;t load interviews.</p>
-          <button type="button" className={styles.retry} onClick={onRetry}>Try again</button>
+          <p className={styles.notice}>{SAVED_INTERVIEW_LIST_COPY.error}</p>
+          <button type="button" className={styles.retry} onClick={onRetry}>{SAVED_INTERVIEW_LIST_COPY.retry}</button>
         </div>
       ) : null}
 
-      {state.status === "ready" && state.interviews.length === 0 ? (
-        <p className={styles.notice}>No interviews yet. Select an experience candidate to begin.</p>
+      {state.status === "ready" && interviews.length === 0 ? (
+        <p className={styles.notice}>{SAVED_INTERVIEW_LIST_COPY.empty}</p>
       ) : null}
 
-      {state.status === "ready" && state.interviews.length > 0 ? (
+      {state.status === "ready" && interviews.length > 0 ? (
         <ul className={styles.list}>
-          {state.interviews.map((interview) => (
+          {interviews.map((interview) => (
             <li key={interview.id}>
               {confirmingId === interview.id ? (
                 <div className={styles.confirm}>
-                  <p className={styles.confirmText}>Delete this interview? This cannot be undone.</p>
+                  <p className={styles.confirmText}>{SAVED_INTERVIEW_LIST_COPY.deleteConfirm}</p>
                   <div className={styles.confirmActions}>
                     <button type="button" className={styles.cancel} onClick={() => setConfirmingId(null)}>
-                      Cancel
+                      {SAVED_INTERVIEW_LIST_COPY.cancel}
                     </button>
                     <button
                       type="button"
@@ -89,7 +120,7 @@ export function SavedInterviewList({
                         onDelete(interview.id);
                       }}
                     >
-                      Delete
+                      {SAVED_INTERVIEW_LIST_COPY.delete}
                     </button>
                   </div>
                 </div>
@@ -112,13 +143,14 @@ export function SavedInterviewList({
                         PAAR {interview.completedBlockCount}/{BLOCK_KINDS.length}
                         <span className={styles.dot}> · </span>
                         {formatDate(interview.updatedAt)}
+                        <DeletionBadge openedAt={interview.openedAt} />
                       </span>
                     </span>
                   </button>
                   <button
                     type="button"
                     className={styles.deleteIcon}
-                    aria-label={`Delete interview: ${interview.title}`}
+                    aria-label={SAVED_INTERVIEW_LIST_COPY.deleteLabel(interview.title)}
                     onClick={() => setConfirmingId(interview.id)}
                   >
                     ✕

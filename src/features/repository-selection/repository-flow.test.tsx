@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, configure, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { analyzeRepository } from "@/features/repository-analysis/repository-analysis";
 import { emptyInterviewProgress } from "@/features/experience-block/progress";
@@ -9,6 +9,13 @@ import { emptyExperienceBlockState } from "@/features/experience-block/types";
 import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
 import { encodeSseEvent } from "@/features/interview/sse";
 import { RepositoryFlow } from "./repository-flow";
+
+/**
+ * 기다리는 시간을 늘립니다. 이 파일은 화면과 라우트와 저장 계층을 한 번에 지나고, 이슈 #116부터
+ * 분석 화면이 저장된 분석을 먼저 찾는 단계가 하나 더 붙었습니다. 기본값 1초로는 전체 스위트를 함께
+ * 돌릴 때 간헐적으로 넘습니다(2026-09-15에 서로 다른 테스트가 두 번 흔들렸습니다).
+ */
+configure({ asyncUtilTimeout: 5_000 });
 
 vi.mock("@/features/repository-analysis/repository-analysis", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/features/repository-analysis/repository-analysis")>();
@@ -55,6 +62,13 @@ function stubFetch(handlers: Record<string, () => Promise<Response> | Response> 
     for (const [prefix, handler] of Object.entries(handlers)) {
       if (url.includes(prefix)) return Promise.resolve(handler());
     }
+    // 저장된 분석이 없는 것이 기본입니다(이슈 #116). 분석 화면은 저장된 것을 먼저 찾아보고 없을
+    // 때만 분석합니다.
+    if (url.includes("/api/analyses")) {
+      return Promise.resolve(
+        Response.json({ error: { kind: "not_found", message: "저장된 분석이 없습니다." } }, { status: 404 })
+      );
+    }
     if (url.includes("/api/interviews")) return Promise.resolve(Response.json({ interviews: [] }));
     return Promise.resolve(Response.json(LIST));
   });
@@ -87,11 +101,11 @@ describe("RepositoryFlow", () => {
     render(<RepositoryFlow />);
     fireEvent.click(await screen.findByRole("radio", { name: /hello-world/ }));
     fireEvent.change(screen.getByRole("textbox", { name: "Your Contribution" }), { target: { value: "푸시 알림 구현" } });
-    fireEvent.click(screen.getByRole("button", { name: /Analyze/ }));
+    fireEvent.click(screen.getByRole("button", { name: /분석하기/ }));
 
     await waitFor(() => expect(analyzeMock).toHaveBeenCalledWith({ owner: "octocat", repo: "hello-world" }, ["푸시 알림 구현"], expect.any(Function)));
-    expect(screen.queryByRole("heading", { name: "Choose a repository to analyze." })).not.toBeInTheDocument();
-    expect(screen.getByText("No commits found to analyze.")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "분석할 Repository를 선택하세요." })).not.toBeInTheDocument();
+    expect(screen.getByText("기본 브랜치에 커밋이 없습니다.")).toBeInTheDocument();
   });
 
   it("다른 Repository 선택은 목록을 다시 조회해 선택 화면으로 돌아간다", async () => {
@@ -99,13 +113,15 @@ describe("RepositoryFlow", () => {
     const { calls } = stubFetch();
     render(<RepositoryFlow />);
     fireEvent.click(await screen.findByRole("radio", { name: /hello-world/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Analyze/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Choose a different repository" }));
+    fireEvent.click(screen.getByRole("button", { name: /분석하기/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "다른 Repository 선택" }));
 
-    await screen.findByRole("heading", { name: "Choose a repository to analyze." });
+    await screen.findByRole("heading", { name: "분석할 Repository를 선택하세요." });
     expect(repositoryListCalls(calls)).toBe(2);
     // 고른 Repository가 없어도 사이드바는 그대로 있습니다(이슈 #115).
-    expect(within(screen.getByRole("region", { name: "Repository" })).getByText("No repository selected")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("region", { name: "Repository" })).getByText("Repository를 선택하지 않았습니다.")
+    ).toBeInTheDocument();
   });
 
   /**
@@ -117,7 +133,7 @@ describe("RepositoryFlow", () => {
     render(<RepositoryFlow />);
     fireEvent.click(await screen.findByRole("radio", { name: /hello-world/ }));
     fireEvent.change(screen.getByRole("textbox", { name: "Your Contribution" }), { target: { value: "푸시 알림 구현\n스크롤 복원" } });
-    fireEvent.click(screen.getByRole("button", { name: /Analyze/ }));
+    fireEvent.click(screen.getByRole("button", { name: /분석하기/ }));
 
     await waitFor(() => expect(startFlow).toHaveBeenCalledTimes(1));
     expect(startFlow).toHaveBeenCalledWith({ entryPath: "new_analysis", repoVisibility: "public", repoLanguage: "TypeScript" });
@@ -137,9 +153,9 @@ describe("RepositoryFlow", () => {
     analyzeMock.mockImplementation(async (_repo, _items, onStateChange) => onStateChange({ status: "empty", kind: "no_commits" }));
     render(<RepositoryFlow />);
     fireEvent.click(await screen.findByRole("radio", { name: /hello-world/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Analyze/ }));
+    fireEvent.click(screen.getByRole("button", { name: /분석하기/ }));
 
-    expect(await screen.findByText("No commits found to analyze.")).toBeInTheDocument();
+    expect(await screen.findByText("기본 브랜치에 커밋이 없습니다.")).toBeInTheDocument();
     randomUUID.mockRestore();
   });
 
@@ -154,9 +170,9 @@ describe("RepositoryFlow", () => {
     analyzeMock.mockImplementation(async (_repo, _items, onStateChange) => onStateChange({ status: "empty", kind: "no_commits" }));
     render(<RepositoryFlow />);
     fireEvent.click(await screen.findByRole("radio", { name: /hello-world/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Analyze/ }));
+    fireEvent.click(screen.getByRole("button", { name: /분석하기/ }));
 
-    expect(await screen.findByText("No commits found to analyze.")).toBeInTheDocument();
+    expect(await screen.findByText("기본 브랜치에 커밋이 없습니다.")).toBeInTheDocument();
   });
 
   /** 비우지 않으면 다음 분석 전에 일어나는 목록 조회가 지난 분석의 `flow_id`를 달고 나갑니다. */
@@ -164,10 +180,10 @@ describe("RepositoryFlow", () => {
     analyzeMock.mockImplementation(async (_repo, _items, onStateChange) => onStateChange({ status: "empty", kind: "no_commits" }));
     render(<RepositoryFlow />);
     fireEvent.click(await screen.findByRole("radio", { name: /hello-world/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Analyze/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Choose a different repository" }));
+    fireEvent.click(screen.getByRole("button", { name: /분석하기/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "다른 Repository 선택" }));
 
-    await screen.findByRole("heading", { name: "Choose a repository to analyze." });
+    await screen.findByRole("heading", { name: "분석할 Repository를 선택하세요." });
     expect(clearFlow).toHaveBeenCalledTimes(1);
   });
 });
@@ -177,7 +193,7 @@ describe("RepositoryFlow", () => {
  * 것이라 언제나 확인했지만, 이제 저장된 대화는 사이드바에서 다시 이어갈 수 있습니다. 그래서 잃을
  * 것이 있을 때, 즉 저장되지 않은 턴이 남아 있을 때만 확인합니다.
  *
- * 확인을 거는 자리는 그대로 흐름 컴포넌트입니다. 사이드바의 Change repository와 새 경험 찾기는
+ * 확인을 거는 자리는 그대로 흐름 컴포넌트입니다. 사이드바의 Repository 변경와 새 경험 찾기는
  * 인터뷰 화면 밖에 있어서, 화면이 스스로 확인을 걸면 그 두 경로가 빠져나갑니다(PR #105 Codex 리뷰 P1).
  */
 describe("RepositoryFlow 인터뷰 중 이탈", () => {
@@ -217,7 +233,7 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
     analyzeMock.mockImplementation(async (_repo, _items, onStateChange) => {
       onStateChange({
         status: "success",
-        data: { allCommits: [COMMIT], includedCommits: [COMMIT], repository: { fileTree: [], treeTruncated: false, languages: {} } },
+        data: { includedCommits: [COMMIT] },
         candidates: { candidates: [CANDIDATE], insufficientCandidatesReason: null, diffs: [] },
         stageASelection: { excludedUnits: [], thresholdScore: 0, selectedUnitCount: 1, unjudgedShas: [] },
       });
@@ -229,9 +245,9 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
 
     render(<RepositoryFlow />);
     fireEvent.click(await screen.findByRole("radio", { name: /hello-world/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Analyze/ }));
+    fireEvent.click(screen.getByRole("button", { name: /분석하기/ }));
     fireEvent.click(await screen.findByRole("button", { name: /재시도 큐 도입/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Start interview/ }));
+    fireEvent.click(screen.getByRole("button", { name: /인터뷰 시작/ }));
     // 인터뷰 화면이 떴는지는 3열 워크스페이스의 코드 패널로 봅니다.
     await screen.findByRole("region", { name: "Code / Evidence" });
   }
@@ -240,9 +256,9 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
   it("저장되지 않은 답변이 없으면 확인 없이 나간다", async () => {
     await renderWithConfirmedInterview();
 
-    fireEvent.click(screen.getByRole("button", { name: "← Change repository" }));
+    fireEvent.click(screen.getByRole("button", { name: "← Repository 변경" }));
 
-    await screen.findByRole("heading", { name: "Choose a repository to analyze." });
+    await screen.findByRole("heading", { name: "분석할 Repository를 선택하세요." });
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
@@ -255,17 +271,17 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
       "/api/interview/experience-block": () =>
         Response.json({ error: { kind: "storage_failed", message: "끊김" } }, { status: 503 }),
     });
-    const answer = await screen.findByRole("textbox", { name: /Answer/ });
+    const answer = await screen.findByRole("textbox", { name: /답변/ });
     fireEvent.change(answer, { target: { value: "화면이 비어 있었습니다." } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    await screen.findByText("Your last answer wasn't saved.");
+    fireEvent.click(screen.getByRole("button", { name: "전송" }));
+    await screen.findByText("마지막 답변이 저장되지 않았습니다.");
 
-    fireEvent.click(screen.getByRole("button", { name: "← Change repository" }));
+    fireEvent.click(screen.getByRole("button", { name: "← Repository 변경" }));
 
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Continue the interview" }));
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 계속하기" }));
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
   });
@@ -275,15 +291,15 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
       "/api/interview/experience-block": () =>
         Response.json({ error: { kind: "storage_failed", message: "끊김" } }, { status: 503 }),
     });
-    const answer = await screen.findByRole("textbox", { name: /Answer/ });
+    const answer = await screen.findByRole("textbox", { name: /답변/ });
     fireEvent.change(answer, { target: { value: "화면이 비어 있었습니다." } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    await screen.findByText("Your last answer wasn't saved.");
+    fireEvent.click(screen.getByRole("button", { name: "전송" }));
+    await screen.findByText("마지막 답변이 저장되지 않았습니다.");
 
-    fireEvent.click(screen.getByRole("button", { name: "← Change repository" }));
-    fireEvent.click(screen.getByRole("button", { name: "Leave" }));
+    fireEvent.click(screen.getByRole("button", { name: "← Repository 변경" }));
+    fireEvent.click(screen.getByRole("button", { name: "나가기" }));
 
-    await screen.findByRole("heading", { name: "Choose a repository to analyze." });
+    await screen.findByRole("heading", { name: "분석할 Repository를 선택하세요." });
     expect(screen.queryByRole("region", { name: "Code / Evidence" })).not.toBeInTheDocument();
   });
 
@@ -295,9 +311,9 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
   it("확인 없이 나가도 이탈로 센다", async () => {
     await renderWithConfirmedInterview();
 
-    fireEvent.click(screen.getByRole("button", { name: "← Change repository" }));
+    fireEvent.click(screen.getByRole("button", { name: "← Repository 변경" }));
 
-    await screen.findByRole("heading", { name: "Choose a repository to analyze." });
+    await screen.findByRole("heading", { name: "분석할 Repository를 선택하세요." });
     expect(trackEvent).toHaveBeenCalledWith({ name: "interview_abandoned", turn: 0, filled_blocks: 0 });
   });
 
@@ -307,13 +323,13 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
       "/api/interview/experience-block": () =>
         Response.json({ error: { kind: "storage_failed", message: "끊김" } }, { status: 503 }),
     });
-    const answer = await screen.findByRole("textbox", { name: /Answer/ });
+    const answer = await screen.findByRole("textbox", { name: /답변/ });
     fireEvent.change(answer, { target: { value: "화면이 비어 있었습니다." } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    await screen.findByText("Your last answer wasn't saved.");
+    fireEvent.click(screen.getByRole("button", { name: "전송" }));
+    await screen.findByText("마지막 답변이 저장되지 않았습니다.");
 
-    fireEvent.click(screen.getByRole("button", { name: "← Change repository" }));
-    fireEvent.click(screen.getByRole("button", { name: "Continue the interview" }));
+    fireEvent.click(screen.getByRole("button", { name: "← Repository 변경" }));
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 계속하기" }));
 
     const names = trackEvent.mock.calls.map(([event]) => (event as { name: string }).name);
     expect(names).toContain("interview_leave_canceled");
@@ -336,6 +352,7 @@ describe("RepositoryFlow 이어가기", () => {
     completedBlockCount: 1,
     createdAt: "2026-09-10T00:00:00.000Z",
     updatedAt: "2026-09-12T09:00:00.000Z",
+    openedAt: new Date().toISOString(),
   };
   const STORED = {
     ...LIST_ITEM,
@@ -372,7 +389,7 @@ describe("RepositoryFlow 이어가기", () => {
     // 이어가기 화면에서도 사이드바는 그 인터뷰의 저장소를 보입니다.
     expect(within(screen.getByRole("region", { name: "Repository" })).getByText("hello-world")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Continue interview/ }));
+    fireEvent.click(screen.getByRole("button", { name: /인터뷰 계속하기/ }));
 
     expect(await screen.findByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
     // 저장된 대화를 들고 시작합니다.
@@ -404,8 +421,8 @@ describe("RepositoryFlow 이어가기", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
 
-    expect(await screen.findByText("This interview is no longer available.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(await screen.findByText("이 인터뷰를 찾을 수 없습니다.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "다시 시도" })).toBeInTheDocument();
   });
 
   /**
@@ -425,15 +442,15 @@ describe("RepositoryFlow 이어가기", () => {
     });
     render(<RepositoryFlow />);
     fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
-    fireEvent.click(await screen.findByRole("button", { name: /Continue interview/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /인터뷰 계속하기/ }));
     await screen.findByRole("region", { name: "Code / Evidence" });
 
     completed = true;
-    fireEvent.click(screen.getByRole("button", { name: "End interview" }));
-    fireEvent.click(screen.getByRole("button", { name: "End the interview" }));
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 완료" }));
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 완료" }));
 
     // 끝난 인터뷰라 버튼 문구가 이어가기가 아니라 다시 보기입니다.
-    expect(await screen.findByRole("button", { name: /Review interview/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /인터뷰 다시 보기/ })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Code / Evidence" })).not.toBeInTheDocument();
 
     /*
@@ -463,7 +480,7 @@ describe("RepositoryFlow 이어가기", () => {
     render(<RepositoryFlow />);
     fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
 
-    fireEvent.click(await screen.findByRole("button", { name: /Review interview/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /인터뷰 다시 보기/ }));
 
     await screen.findByRole("region", { name: "Code / Evidence" });
     expect(calls.filter((url) => url.includes("/api/interview/stream"))).toHaveLength(0);
@@ -475,9 +492,9 @@ describe("RepositoryFlow 이어가기", () => {
     fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
     await screen.findByRole("heading", { level: 1, name: "재시도 큐 도입" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Find new experience" }));
+    fireEvent.click(screen.getByRole("button", { name: "새 경험 찾기" }));
 
-    expect(await screen.findByRole("heading", { name: "Choose a repository to analyze." })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "분석할 Repository를 선택하세요." })).toBeInTheDocument();
   });
 
   /**
@@ -495,7 +512,7 @@ describe("RepositoryFlow 이어가기", () => {
             encodeSseEvent({ type: "done", seq: 1 }),
           { status: 200 }
         ),
-      // 다른 곳이 먼저 저장한 경우입니다. 저장되지 않은 턴이 남고 "Load latest"가 뜹니다.
+      // 다른 곳이 먼저 저장한 경우입니다. 저장되지 않은 턴이 남고 "최신 내용 불러오기"가 뜹니다.
       "/api/interview/experience-block": () =>
         Response.json({
           state: { ...emptyExperienceBlockState(), version: 1 },
@@ -506,16 +523,16 @@ describe("RepositoryFlow 이어가기", () => {
     });
     render(<RepositoryFlow />);
     fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
-    fireEvent.click(await screen.findByRole("button", { name: /Continue interview/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /인터뷰 계속하기/ }));
     await screen.findByRole("region", { name: "Code / Evidence" });
     const detailCallsBefore = calls.filter((url) => url.includes(`/api/interviews/${INTERVIEW_ID}`)).length;
 
-    const answer = await screen.findByRole("textbox", { name: /Answer/ });
+    const answer = await screen.findByRole("textbox", { name: /답변/ });
     fireEvent.change(answer, { target: { value: "재시도 큐를 붙였습니다." } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Load latest" }));
+    fireEvent.click(screen.getByRole("button", { name: "전송" }));
+    fireEvent.click(await screen.findByRole("button", { name: "최신 내용 불러오기" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Continue the interview" }));
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 계속하기" }));
 
     expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
     expect(calls.filter((url) => url.includes(`/api/interviews/${INTERVIEW_ID}`))).toHaveLength(detailCallsBefore);
@@ -539,9 +556,9 @@ describe("RepositoryFlow 이어가기", () => {
     render(<RepositoryFlow />);
 
     fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
-    fireEvent.click(await screen.findByRole("button", { name: /Continue interview/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /인터뷰 계속하기/ }));
 
-    expect(await screen.findByText("Couldn't open this interview.")).toBeInTheDocument();
+    expect(await screen.findByText("이 인터뷰를 열지 못했습니다.")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Code / Evidence" })).not.toBeInTheDocument();
   });
 
@@ -552,8 +569,71 @@ describe("RepositoryFlow 이어가기", () => {
     render(<RepositoryFlow />);
 
     fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
-    fireEvent.click(await screen.findByRole("button", { name: /Continue interview/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /인터뷰 계속하기/ }));
 
-    expect(await screen.findByText("Couldn't open this interview.")).toBeInTheDocument();
+    expect(await screen.findByText("이 인터뷰를 열지 못했습니다.")).toBeInTheDocument();
+  });
+
+  /**
+   * 한 분석에서 경험을 여러 개 고를 수 있습니다(이슈 #116). 저장된 인터뷰에서 그 분석으로 돌아가는
+   * 길이 없으면 사용자는 같은 저장소를 다시 분석해야 하는데, Stage B가 쓰는 모델은 하루 요청 수가
+   * 프로젝트 전체에서 20회라 그 길이 사실상 막혀 있습니다.
+   */
+  it("이어가기 화면에서 그 인터뷰가 나온 분석의 후보 목록으로 간다", async () => {
+    const savedAnalysis = {
+      id: STORED.analysisId,
+      createdAt: "2026-09-10T00:00:00.000Z",
+      repoOwner: "octocat",
+      repoName: "hello-world",
+      contributionItems: [],
+      candidates: {
+        candidates: {
+          candidates: [
+            {
+              sha: "bbb",
+              relatedShas: [],
+              summary: "다른 경험 후보입니다.",
+              evidence: "근거입니다.",
+              technicalTopics: [],
+              citedFilePaths: [],
+              source: "automatic_recommendation",
+            },
+          ],
+          insufficientCandidatesReason: null,
+          diffs: [],
+        },
+        includedCommits: [
+          {
+            sha: "bbb",
+            title: "다른 커밋",
+            author: "octocat",
+            date: "2026-08-25T00:00:00Z",
+            parentCount: 1,
+            message: "다른 커밋",
+            additions: 3,
+            deletions: 1,
+            changedFiles: 1,
+            files: [{ path: "src/bbb.ts", status: "modified", additions: 3, deletions: 1, changes: 4 }],
+            pullRequests: [],
+          },
+        ],
+      },
+      stageASummary: { excludedUnits: [], selectedUnitCount: 1, thresholdScore: 0, unjudgedShas: [] },
+    };
+    const { calls } = stubFetch({
+      [`/api/interviews/${INTERVIEW_ID}`]: () => Response.json({ interview: STORED }),
+      "/api/interviews": () => Response.json({ interviews: [LIST_ITEM] }),
+      [`/api/analyses/${STORED.analysisId}`]: () => Response.json({ analysis: savedAnalysis }),
+    });
+    render(<RepositoryFlow />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "이 분석의 다른 경험" }));
+
+    expect((await screen.findAllByText("다른 경험 후보입니다."))[0]).toBeInTheDocument();
+    // 저장된 분석을 그대로 그립니다. 다시 분석하지 않습니다.
+    expect(analyzeMock).not.toHaveBeenCalled();
+    // 저장소 이름이 아니라 그 인터뷰가 가리키는 분석 식별자로 엽니다.
+    expect(calls.some((url) => url.includes(`/api/analyses/${STORED.analysisId}`))).toBe(true);
   });
 });

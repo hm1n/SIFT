@@ -1,6 +1,8 @@
+import { SAVED_INTERVIEW_REQUEST_COPY } from "@/copy/saved";
 import type { BlockEditRequestBody, CreateInterviewRequestBody } from "./request";
 import type { SavedInterviewErrorKind } from "./errors";
-import type { InterviewListItemPayload, StoredInterviewPayload } from "./payload";
+import type { InterviewListItemPayload, StoredAnalysisPayload, StoredInterviewPayload } from "./payload";
+import type { StoredAnalysis } from "@/features/repository-analysis/analysis-snapshot";
 
 /**
  * 저장된 인터뷰 경로를 부르는 브라우저 쪽 클라이언트입니다(이슈 #115). 화면에서 fetch 세부를 분리해
@@ -10,6 +12,8 @@ import type { InterviewListItemPayload, StoredInterviewPayload } from "./payload
  * 파일이 다루는 것은 경험을 확정할 때 인터뷰 줄을 만드는 일과, 목록과 복원과 삭제입니다.
  */
 export const INTERVIEWS_PATH = "/api/interviews";
+/** 저장된 분석 경로입니다(이슈 #116). 분석을 저장하고 다시 읽는 일은 인터뷰 경로와 갈라 둡니다. */
+export const ANALYSES_PATH = "/api/analyses";
 
 /** route가 낼 수 없는 전송 실패("network")를 더해 호출부가 한 타입으로 갈라 처리하게 합니다. */
 export type SavedInterviewFetchErrorKind = SavedInterviewErrorKind | "network";
@@ -17,8 +21,8 @@ export type SavedInterviewFetchErrorKind = SavedInterviewErrorKind | "network";
 export class SavedInterviewFetchError extends Error {
   readonly kind: SavedInterviewFetchErrorKind;
 
-  constructor(kind: SavedInterviewFetchErrorKind, message: string) {
-    super(message);
+  constructor(kind: SavedInterviewFetchErrorKind, message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = "SavedInterviewFetchError";
     this.kind = kind;
   }
@@ -50,10 +54,10 @@ async function request<T>(
     response = await fetchImpl(path, init);
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw error;
-    throw new SavedInterviewFetchError(
-      "network",
-      error instanceof Error ? error.message : "네트워크 요청에 실패했습니다."
-    );
+    // `fetch`가 던지는 message는 브라우저가 만든 영어 원문입니다(`Failed to fetch` 등). 이 값이
+    // 화면까지 가는 경로가 있으므로(`repository-analysis-view.tsx`의 조회 실패 안내) 사용자 문구로
+    // 쓰지 않고, 원인은 `cause`로 남겨 디버깅에서만 봅니다.
+    throw new SavedInterviewFetchError("network", SAVED_INTERVIEW_REQUEST_COPY.network, { cause: error });
   }
 
   if (response.status === 204) return null;
@@ -62,7 +66,7 @@ async function request<T>(
   try {
     json = await response.json();
   } catch {
-    throw new SavedInterviewFetchError("network", "응답을 읽지 못했습니다.");
+    throw new SavedInterviewFetchError("network", SAVED_INTERVIEW_REQUEST_COPY.unreadableResponse);
   }
 
   if (!response.ok) {
@@ -83,8 +87,11 @@ export interface CreatedInterview {
 }
 
 /**
- * 경험을 확정할 때 인터뷰 한 줄을 만듭니다. 분석 결과와 근거 스냅샷을 함께 보내 그 시점의 근거를
- * 인터뷰 쪽에 남깁니다. 이어가기는 이 근거만 있으면 성립하므로 분석 결과를 다시 계산하지 않습니다.
+ * 경험을 확정할 때 인터뷰 한 줄을 만듭니다. 저장된 분석에 붙이고 그 시점의 근거 스냅샷을 함께
+ * 보냅니다. 이어가기는 이 근거만 있으면 성립하므로 분석 결과를 다시 계산하지 않습니다.
+ *
+ * 분석을 저장하는 일은 이 요청이 하지 않습니다(이슈 #116). 가리킨 분석이 없거나 남의 것이면
+ * `not_found`로 올라오고, 화면이 분석을 다시 저장한 뒤 새 식별자로 다시 부릅니다.
  */
 export async function createSavedInterview(
   body: CreateInterviewRequestBody,
@@ -100,6 +107,73 @@ export async function createSavedInterview(
     throw new SavedInterviewFetchError("server_error", "서버 응답 형식이 올바르지 않습니다.");
   }
   return { interviewId: result.interviewId, analysisId: result.analysisId };
+}
+
+/**
+ * 분석이 끝난 직후 축약본 한 줄을 저장하고 그 식별자를 돌려줍니다(이슈 #116).
+ *
+ * 화면은 이 식별자를 들고 있다가 경험을 확정할 때 그대로 넘깁니다. 저장에 실패해 식별자가 없으면
+ * 확정 시점에 한 번 더 시도합니다. 분석이 저장돼 있지 않으면 인터뷰를 붙일 자리가 없습니다.
+ */
+export async function saveRepositoryAnalysis(
+  analysis: StoredAnalysis,
+  fetchImpl?: typeof fetch,
+  signal?: AbortSignal
+): Promise<string> {
+  const result = await request<{ analysisId?: unknown }>(
+    ANALYSES_PATH,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ analysis }),
+      signal,
+    },
+    fetchImpl
+  );
+  if (result === null || typeof result.analysisId !== "string") {
+    throw new SavedInterviewFetchError("server_error", "서버 응답 형식이 올바르지 않습니다.");
+  }
+  return result.analysisId;
+}
+
+function toAnalysisPayload(result: { analysis?: unknown } | null): StoredAnalysisPayload {
+  if (result === null || typeof result.analysis !== "object" || result.analysis === null) {
+    throw new SavedInterviewFetchError("server_error", "서버 응답 형식이 올바르지 않습니다.");
+  }
+  return result.analysis as StoredAnalysisPayload;
+}
+
+/**
+ * 그 저장소에서 마지막으로 저장한 분석입니다. 저장된 것이 없으면 `not_found`로 올라옵니다.
+ *
+ * Repository를 고르고 들어올 때 부릅니다. 저장된 분석이 있으면 Stage B를 다시 돌리지 않습니다.
+ * Stage B가 쓰는 모델은 하루 요청 수가 프로젝트 전체 20회라 다시 분석하는 것이 사실상 막혀 있습니다.
+ */
+export async function fetchAnalysisByRepository(
+  owner: string,
+  repo: string,
+  fetchImpl?: typeof fetch,
+  signal?: AbortSignal
+): Promise<StoredAnalysisPayload> {
+  const query = new URLSearchParams({ owner, repo });
+  return toAnalysisPayload(
+    await request<{ analysis?: unknown }>(`${ANALYSES_PATH}?${query.toString()}`, { signal }, fetchImpl)
+  );
+}
+
+/** 저장된 분석 하나를 식별자로 읽습니다. 저장된 인터뷰의 요약 화면에서 그 분석으로 갈 때 씁니다. */
+export async function fetchStoredAnalysis(
+  analysisId: string,
+  fetchImpl?: typeof fetch,
+  signal?: AbortSignal
+): Promise<StoredAnalysisPayload> {
+  return toAnalysisPayload(
+    await request<{ analysis?: unknown }>(
+      `${ANALYSES_PATH}/${encodeURIComponent(analysisId)}`,
+      { signal },
+      fetchImpl
+    )
+  );
 }
 
 /** 저장된 인터뷰 목록입니다. 마지막으로 이어간 시각이 최근인 순서로 옵니다. */

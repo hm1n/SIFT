@@ -155,6 +155,26 @@
   background: var(--color-card);
 }
 
+/*
+ * 이 인터뷰가 나온 분석으로 돌아가는 길입니다(이슈 #116). 이어가기 옆에 두되 보조 버튼입니다.
+ * 이 화면에 들어온 사용자가 가장 자주 할 일은 하던 인터뷰를 잇는 것입니다.
+ */
+.openAnalysis {
+  margin-left: auto;
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-card);
+  color: var(--color-foreground);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.openAnalysis:hover {
+  background: var(--color-muted);
+}
+
 .resume {
   display: inline-flex;
   align-items: center;
@@ -370,4 +390,44 @@
 .editorCancel:focus-visible {
   outline: 2px solid var(--color-foreground);
   outline-offset: 2px;
+}
+
+/*
+ * mono 영역 예외입니다. `globals.css`의 body가 한국어 자연어에 `word-break: keep-all`을 걸어
+ * 두므로, Repository 원본값과 코드를 그리는 아래 자리에서는 되돌립니다. 이 값들은 어절이 없는
+ * 경로·SHA·코드라 어절 단위 금지가 뜻을 갖지 않고, 긴 토큰이 칸을 넘길 때 끊어야 합니다.
+ */
+.commitBadge { word-break: normal; overflow-wrap: normal; }
+
+/* 자동 삭제까지 남은 기간 안내입니다(이슈 #116). 기한이 가까우면 경고색으로 바뀝니다. */
+.deletionNotice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 32px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-muted);
+}
+
+.deletionNoticeWarning {
+  border-bottom-color: var(--color-warning-border);
+  background: var(--color-warning-surface);
+}
+
+.deletionSymbol {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  color: var(--color-muted-foreground);
+}
+
+.deletionNoticeWarning .deletionSymbol,
+.deletionNoticeWarning .deletionText {
+  color: var(--color-warning);
+}
+
+.deletionText {
+  font-family: var(--font-pretendard);
+  font-size: var(--label-size-md);
+  line-height: 1.6;
+  color: var(--color-muted-foreground);
 }

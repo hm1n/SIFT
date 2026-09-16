@@ -1,3 +1,4 @@
+import { COMMIT_NOT_INDEXED_TITLE } from "@/copy/candidates";
 import type { ReadonlyCommitDetail } from "@/lib/github/types";
 import type { ExperienceCandidate } from "./types";
 
@@ -6,8 +7,8 @@ import type { ExperienceCandidate } from "./types";
  * 대표 커밋과 관련 커밋의 `date`(둘 다 `ReadonlyCommitDetail`에 이미 있음) 최소~최대로 기간을 잡습니다.
  * 목록 행과 상세 양쪽이 같은 값을 써야 해서 여기 하나로 모읍니다.
  */
-const MONTH_YEAR_FORMAT = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short" });
-const MONTH_DAY_YEAR_FORMAT = new Intl.DateTimeFormat("en-US", { year: "numeric", month: "short", day: "numeric" });
+const MONTH_YEAR_FORMAT = new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "short" });
+const MONTH_DAY_YEAR_FORMAT = new Intl.DateTimeFormat("ko-KR", { year: "numeric", month: "short", day: "numeric" });
 
 export interface CandidatePeriod {
   readonly start: string;
@@ -28,14 +29,18 @@ export function deriveCandidatePeriod(dates: readonly string[]): CandidatePeriod
   };
 }
 
-/** 화면 문구는 디자인대로 영어라 단수·복수를 구분합니다. `count`가 1이면 단수형을 씁니다. */
+/**
+ * `3 commits`처럼 수량을 세는 문구는 영어로 남깁니다(이슈 #128 사용자 결정). 세는 단위가 mono로
+ * 그려지는 developer metadata 쪽 표기라 한국어 문장과 섞여도 시각 언어가 갈리지 않습니다.
+ * `count`가 1이면 단수형을 씁니다.
+ */
 export function pluralCount(count: number, noun: string): string {
   return `${count} ${count === 1 ? noun : `${noun}s`}`;
 }
 
 /** 근거 목록의 커밋 한 줄에 쓰는 제목입니다. 색인에서 커밋을 못 찾으면 SHA 7자리로 대신합니다. */
 export function commitTitle(commit: ReadonlyCommitDetail | null, sha: string): string {
-  return commit?.title ?? `Commit not indexed · ${sha.slice(0, 7)}`;
+  return commit?.title ?? COMMIT_NOT_INDEXED_TITLE(sha.slice(0, 7));
 }
 
 /**

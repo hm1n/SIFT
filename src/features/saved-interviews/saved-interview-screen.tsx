@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
+import { DELETION_NOTICE_COPY, SAVED_INTERVIEW_SCREEN_COPY } from "@/copy/saved";
 import {
   blockEditByteLength,
   blockMarks,
@@ -11,6 +12,7 @@ import {
   validateBlockEdit,
   type BlockEdits,
 } from "@/features/experience-block/block-edits";
+import { BLOCK_LABELS } from "@/copy/shared";
 import { BlockSentences } from "@/features/experience-block/block-sentences";
 import { BLOCK_MAX_BYTES, BLOCK_MAX_STATEMENTS } from "@/features/experience-block/reducer";
 import { BLOCK_KINDS, type BlockKind, type ExperienceBlockState } from "@/features/experience-block/types";
@@ -21,6 +23,7 @@ import {
 import { isExperienceEvidenceSnapshot } from "@/features/interview/question-request";
 import { SavedInterviewFetchError, saveSavedInterviewBlock } from "./client";
 import { isRestorableBlockState, type StoredInterviewPayload } from "./payload";
+import { daysUntilDeletion, DELETION_WARNING_DAYS } from "./retention";
 import styles from "./saved-interview-screen.module.css";
 
 /**
@@ -43,6 +46,14 @@ export interface SavedInterviewScreenProps {
   onResume: () => void;
   /** 다른 곳에서 먼저 저장했을 때 최신 내용을 다시 읽습니다. 없으면 그 안내만 보입니다. */
   onLoadLatest?: () => void;
+  /**
+   * 이 인터뷰가 나온 분석의 후보 목록을 엽니다(이슈 #116). 없으면 그 버튼을 그리지 않습니다.
+   *
+   * 한 분석에서 경험을 여러 개 고를 수 있는데, 저장된 인터뷰에서 그 분석으로 돌아가는 길이 없으면
+   * 사용자는 같은 저장소를 다시 분석해야 합니다. Stage B가 쓰는 모델은 하루 요청 수가 프로젝트 전체
+   * 20회라 그 길이 사실상 막혀 있습니다.
+   */
+  onOpenAnalysis?: () => void;
   /** 테스트에서 저장 요청을 대체하는 통로입니다. */
   fetchImpl?: typeof fetch;
 }
@@ -77,17 +88,10 @@ function blockSymbol(blockState: ExperienceBlockState, block: BlockKind): "✓" 
   return evaluation.sufficient ? "✓" : "●";
 }
 
-const BLOCK_LABEL: Record<BlockKind, string> = {
-  problem: "Problem",
-  alternatives: "Analyze",
-  action: "Action",
-  result: "Result",
-};
-
 function formatDate(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return date.toLocaleDateString("ko-KR", { month: "short", day: "numeric" });
 }
 
 /**
@@ -111,10 +115,35 @@ function freshState(key: string, version: number): ScreenState {
   return { key, edits: {}, version, editor: null, save: "idle" };
 }
 
+/**
+ * 자동 삭제까지 남은 기간입니다(이슈 #116, 디자인 원본의 삭제 안내 배너).
+ *
+ * 목록의 `D-n` 배지와 달리 기한이 멀어도 보입니다. 이 화면은 인터뷰 하나를 들여다보는 자리라 "이
+ * 인터뷰가 언제까지 남는가"가 그 인터뷰에 대한 사실의 하나이고, 목록처럼 여러 줄이 경쟁하지 않습니다.
+ *
+ * 인터뷰를 열면 기준 시각이 갱신되므로 이 화면에 들어온 직후에는 대개 90일이 남아 있습니다. 그래도
+ * 적는 이유는 저장이 영구적이지 않다는 사실을 사용자가 알아야 하기 때문입니다.
+ */
+function DeletionNotice({ openedAt }: { openedAt: string }) {
+  const daysLeft = daysUntilDeletion(openedAt);
+  const expiringSoon = daysLeft <= DELETION_WARNING_DAYS;
+  return (
+    <div className={`${styles.deletionNotice} ${expiringSoon ? styles.deletionNoticeWarning : ""}`} role="status">
+      <span className={styles.deletionSymbol} aria-hidden="true">⚠</span>
+      <p className={styles.deletionText}>
+        {expiringSoon
+          ? DELETION_NOTICE_COPY.expiringSoon(daysLeft)
+          : DELETION_NOTICE_COPY.remaining(daysLeft)}
+      </p>
+    </div>
+  );
+}
+
 export function SavedInterviewScreen({
   interview,
   onResume,
   onLoadLatest,
+  onOpenAnalysis,
   fetchImpl,
 }: SavedInterviewScreenProps) {
   const candidate = parseStoredCandidate(interview.candidate);
@@ -140,8 +169,8 @@ export function SavedInterviewScreen({
    */
   const canEdit = interview.status === "completed";
   const emptyText = canEdit
-    ? "The interview ended without anything to put here."
-    : "The interview hasn't reached this block yet.";
+    ? SAVED_INTERVIEW_SCREEN_COPY.blockEmptyEnded
+    : SAVED_INTERVIEW_SCREEN_COPY.blockEmptyPending;
 
   const draft = state.editor?.draft ?? null;
   const parsed = draft === null ? null : parseBlockEdit(draft);
@@ -189,7 +218,7 @@ export function SavedInterviewScreen({
   return (
     <section className={styles.screen}>
       <header className={styles.header}>
-        <p className={styles.eyebrow}>Experience</p>
+        <p className={styles.eyebrow}>{SAVED_INTERVIEW_SCREEN_COPY.eyebrow}</p>
         <h1 className={styles.title}>{interview.title}</h1>
         <div className={styles.meta}>
           <span>{interview.repoOwner} / {interview.repoName}</span>
@@ -198,22 +227,24 @@ export function SavedInterviewScreen({
         </div>
       </header>
 
+      <DeletionNotice openedAt={interview.openedAt} />
+
       <div className={styles.body}>
         <div className={styles.column}>
           <section className={styles.section} aria-labelledby="saved-why-heading">
-            <p id="saved-why-heading" className={styles.sectionEyebrow}>Why worth discussing</p>
+            <p id="saved-why-heading" className={styles.sectionEyebrow}>{SAVED_INTERVIEW_SCREEN_COPY.whyHeading}</p>
             {candidate?.evidence ? (
               <>
                 <p className={styles.text}>{candidate.evidence}</p>
                 <p className={styles.notice}>{EVIDENCE_VERIFIABILITY_NOTICE}</p>
               </>
             ) : (
-              <p className={styles.notice}>This interview was saved without the analysis for this candidate.</p>
+              <p className={styles.notice}>{SAVED_INTERVIEW_SCREEN_COPY.noCandidateAnalysis}</p>
             )}
           </section>
 
           <section className={styles.section} aria-labelledby="saved-topics-heading">
-            <p id="saved-topics-heading" className={styles.sectionEyebrow}>Technical topics</p>
+            <p id="saved-topics-heading" className={styles.sectionEyebrow}>{SAVED_INTERVIEW_SCREEN_COPY.topicsHeading}</p>
             {candidate && candidate.technicalTopics.length > 0 ? (
               <>
                 <ul className={styles.topics}>
@@ -222,12 +253,12 @@ export function SavedInterviewScreen({
                 <p className={styles.notice}>{EVIDENCE_VERIFIABILITY_NOTICE}</p>
               </>
             ) : (
-              <p className={styles.notice}>No topics were saved with this interview.</p>
+              <p className={styles.notice}>{SAVED_INTERVIEW_SCREEN_COPY.noTopics}</p>
             )}
           </section>
 
           <section className={styles.section} aria-labelledby="saved-evidence-heading">
-            <p id="saved-evidence-heading" className={styles.sectionEyebrow}>Repository evidence</p>
+            <p id="saved-evidence-heading" className={styles.sectionEyebrow}>{SAVED_INTERVIEW_SCREEN_COPY.evidenceHeading}</p>
             <p className={styles.notice}>{REPOSITORY_VERIFIED_NOTICE}</p>
             {snapshot ? (
               <ul className={styles.commits}>
@@ -238,7 +269,7 @@ export function SavedInterviewScreen({
                     </span>
                     <span className={styles.commitMain}>
                       <span className={styles.commitTitle}>
-                        {commit.title ?? "Not found in the commit index."}
+                        {commit.title ?? SAVED_INTERVIEW_SCREEN_COPY.commitNotIndexed}
                       </span>
                       <span className={styles.commitMeta}>
                         {commit.files.length === 1 ? "1 file" : `${commit.files.length} files`}
@@ -248,17 +279,17 @@ export function SavedInterviewScreen({
                 ))}
               </ul>
             ) : (
-              <p className={styles.notice}>The saved evidence can no longer be read.</p>
+              <p className={styles.notice}>{SAVED_INTERVIEW_SCREEN_COPY.evidenceUnreadable}</p>
             )}
           </section>
 
           <section className={styles.section} aria-labelledby="saved-paar-heading">
             <div className={styles.sectionHeader}>
-              <p id="saved-paar-heading" className={styles.sectionEyebrow}>PAAR experience</p>
+              <p id="saved-paar-heading" className={styles.sectionEyebrow}>{SAVED_INTERVIEW_SCREEN_COPY.paarHeading}</p>
               <span className={styles.progress}>{progress}</span>
             </div>
             {blockState === null ? (
-              <p className={styles.notice}>The saved PAAR blocks can no longer be read.</p>
+              <p className={styles.notice}>{SAVED_INTERVIEW_SCREEN_COPY.blocksUnreadable}</p>
             ) : (
             <ul className={styles.blocks}>
               {BLOCK_KINDS.map((block) => {
@@ -269,19 +300,19 @@ export function SavedInterviewScreen({
                       <span className={styles.blockSymbol} aria-hidden="true">
                         {blockSymbol(blockState, block)}
                       </span>
-                      <span className={styles.blockLabel}>{BLOCK_LABEL[block]}</span>
+                      <span className={styles.blockLabel}>{BLOCK_LABELS[block]}</span>
                       {/*
-                        블록이 넷이라 "Edit"만으로는 어느 블록을 고치는 버튼인지 이름으로 갈리지
+                        블록이 넷이라 "편집"만으로는 어느 블록을 고치는 버튼인지 이름으로 갈리지
                         않습니다. 보이는 글자는 짧게 두고 이름에만 블록을 붙입니다.
                       */}
                       {canEdit && !isEditing ? (
                         <button
                           type="button"
                           className={styles.editButton}
-                          aria-label={`Edit ${BLOCK_LABEL[block]}`}
+                          aria-label={SAVED_INTERVIEW_SCREEN_COPY.editLabel(BLOCK_LABELS[block])}
                           onClick={() => openEditor(block)}
                         >
-                          Edit
+                          {SAVED_INTERVIEW_SCREEN_COPY.edit}
                         </button>
                       ) : null}
                     </div>
@@ -295,7 +326,7 @@ export function SavedInterviewScreen({
                     {isEditing && draft !== null ? (
                       <div className={styles.editor}>
                         <label className={styles.editorLabel} htmlFor={editorId}>
-                          {BLOCK_LABEL[block]} — one sentence per line
+                          {SAVED_INTERVIEW_SCREEN_COPY.editorLabel(BLOCK_LABELS[block])}
                         </label>
                         <textarea
                           id={editorId}
@@ -313,34 +344,31 @@ export function SavedInterviewScreen({
                           오타 하나를 고쳐도 같으므로, 바뀐 뒤에 배지로 알리는 것은 늦습니다.
                         */}
                         <p id={`${editorId}-note`} className={styles.editorNote}>
-                          Editing drops the repository citations on these sentences. Edited text is shown as
-                          your own statement. {remainingBytes.toLocaleString()} bytes left.
+                          {SAVED_INTERVIEW_SCREEN_COPY.editorNote(remainingBytes.toLocaleString())}
                         </p>
                         {rejection === "too_many_statements" ? (
                           <p className={styles.editorError}>
-                            Keep it to {BLOCK_MAX_STATEMENTS} lines or fewer. Each line is one sentence.
+                            {SAVED_INTERVIEW_SCREEN_COPY.tooManyStatements(BLOCK_MAX_STATEMENTS)}
                           </p>
                         ) : null}
                         {rejection === "block_too_large" ? (
                           <p className={styles.editorError}>
-                            This block is over the {BLOCK_MAX_BYTES.toLocaleString()} byte limit the server
-                            uses.
+                            {SAVED_INTERVIEW_SCREEN_COPY.blockTooLarge(BLOCK_MAX_BYTES.toLocaleString())}
                           </p>
                         ) : null}
                         {state.save === "failed" ? (
                           <p className={styles.editorError}>
-                            Your edit wasn&apos;t saved. The block still holds what you see above.
+                            {SAVED_INTERVIEW_SCREEN_COPY.saveFailed}
                           </p>
                         ) : null}
                         {state.save === "conflict" ? (
                           <div className={styles.editorConflict}>
                             <p className={styles.editorConflictText}>
-                              This interview was changed somewhere else, so your edit wasn&apos;t saved. Load
-                              the latest version before editing again.
+                              {SAVED_INTERVIEW_SCREEN_COPY.saveConflict}
                             </p>
                             {onLoadLatest ? (
                               <button type="button" className={styles.editorCancel} onClick={onLoadLatest}>
-                                Load latest
+                                {SAVED_INTERVIEW_SCREEN_COPY.loadLatest}
                               </button>
                             ) : null}
                           </div>
@@ -352,14 +380,14 @@ export function SavedInterviewScreen({
                             disabled={rejection !== null || state.save === "saving"}
                             onClick={() => void saveEditor()}
                           >
-                            {state.save === "saving" ? "Saving…" : "Save"}
+                            {state.save === "saving" ? SAVED_INTERVIEW_SCREEN_COPY.saving : SAVED_INTERVIEW_SCREEN_COPY.save}
                           </button>
                           <button
                             type="button"
                             className={styles.editorCancel}
                             onClick={() => setHeld({ ...state, editor: null, save: "idle" })}
                           >
-                            Cancel
+                            {SAVED_INTERVIEW_SCREEN_COPY.cancel}
                           </button>
                         </div>
                       </div>
@@ -375,8 +403,13 @@ export function SavedInterviewScreen({
 
       <footer className={styles.footer}>
         <span className={styles.footerMeta}>{progress} · {date}</span>
+        {onOpenAnalysis ? (
+          <button type="button" className={styles.openAnalysis} onClick={onOpenAnalysis}>
+            {SAVED_INTERVIEW_SCREEN_COPY.openAnalysis}
+          </button>
+        ) : null}
         <button type="button" className={styles.resume} onClick={onResume}>
-          {interview.status === "completed" ? "Review interview" : "Continue interview"}
+          {interview.status === "completed" ? SAVED_INTERVIEW_SCREEN_COPY.review : SAVED_INTERVIEW_SCREEN_COPY.resume}
           <span className={styles.arrow} aria-hidden="true">→</span>
         </button>
       </footer>

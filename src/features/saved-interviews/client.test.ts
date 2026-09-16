@@ -1,15 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
+import { SAVED_INTERVIEW_REQUEST_COPY } from "@/copy/saved";
 import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
 import {
+  ANALYSES_PATH,
   createSavedInterview,
   deleteSavedInterview,
+  fetchAnalysisByRepository,
   fetchSavedInterview,
   fetchSavedInterviews,
+  fetchStoredAnalysis,
   INTERVIEWS_PATH,
   SavedInterviewFetchError,
+  saveRepositoryAnalysis,
   saveSavedInterviewBlock,
 } from "./client";
 import type { CreateInterviewRequestBody } from "./request";
+import type { StoredAnalysis } from "@/features/repository-analysis/analysis-snapshot";
 
 const INTERVIEW_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -28,14 +34,18 @@ function noContentResponse(): Response {
   } as unknown as Response;
 }
 
+const ANALYSIS_ID = "22222222-2222-4222-8222-222222222222";
+
+const storedAnalysis = {
+  repoOwner: "hm1n",
+  repoName: "SIFT",
+  contributionItems: ["성능 개선"],
+  candidates: { candidates: { candidates: [], insufficientCandidatesReason: null, diffs: [] }, includedCommits: [] },
+  stageASummary: { excludedUnits: [], selectedUnitCount: 0, thresholdScore: 0, unjudgedShas: [] },
+} as unknown as StoredAnalysis;
+
 const createBody: CreateInterviewRequestBody = {
-  analysis: {
-    repoOwner: "hm1n",
-    repoName: "SIFT",
-    contributionItems: ["성능 개선"],
-    candidates: { candidates: { candidates: [], insufficientCandidatesReason: null, diffs: [] }, includedCommits: [] },
-    stageASummary: { excludedUnits: [], selectedUnitCount: 0, thresholdScore: 0, unjudgedShas: [] },
-  },
+  analysisId: ANALYSIS_ID,
   candidateKey: "c1",
   title: "스트리밍 렌더링 최적화",
   evidence: evidenceSnapshotFixture(),
@@ -92,10 +102,19 @@ describe("저장된 인터뷰 클라이언트", () => {
     await expect(fetchSavedInterviews(fetchImpl)).rejects.toMatchObject({ kind: "server_error" });
   });
 
-  it("전송 자체가 실패하면 network로 본다", async () => {
-    const fetchImpl = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
+  /**
+   * `fetch`가 던지는 message는 브라우저가 만든 영어 원문입니다. 이 값이 화면까지 가는 경로가
+   * 있어(`repository-analysis-view.tsx`의 조회 실패 안내) 분류만 옮기고 문구는 바꿔 답니다.
+   */
+  it("전송 자체가 실패하면 network로 보고 원문 대신 화면 문구를 단다", async () => {
+    const cause = new TypeError("Failed to fetch");
+    const fetchImpl = vi.fn().mockRejectedValue(cause);
 
-    await expect(fetchSavedInterviews(fetchImpl)).rejects.toMatchObject({ kind: "network" });
+    await expect(fetchSavedInterviews(fetchImpl)).rejects.toMatchObject({
+      kind: "network",
+      message: SAVED_INTERVIEW_REQUEST_COPY.network,
+      cause,
+    });
   });
 
   // 화면이 이탈하면 요청도 함께 끊깁니다. 끊긴 것을 실패로 바꾸면 떠난 화면에 오류 안내가 남습니다.
@@ -153,5 +172,59 @@ describe("저장된 인터뷰 클라이언트", () => {
         fetchImpl
       )
     ).rejects.toMatchObject({ kind: "version_conflict" });
+  });
+
+  describe("저장된 분석", () => {
+    it("분석을 저장하고 식별자를 돌려준다", async () => {
+      const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(200, { analysisId: ANALYSIS_ID }));
+
+      expect(await saveRepositoryAnalysis(storedAnalysis, fetchImpl)).toBe(ANALYSIS_ID);
+      expect(fetchImpl.mock.calls[0][0]).toBe(ANALYSES_PATH);
+      expect(fetchImpl.mock.calls[0][1].method).toBe("POST");
+      expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ analysis: storedAnalysis });
+    });
+
+    it("식별자가 없는 응답은 형식 오류로 본다", async () => {
+      const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(200, {}));
+
+      await expect(saveRepositoryAnalysis(storedAnalysis, fetchImpl)).rejects.toMatchObject({
+        kind: "server_error",
+      });
+    });
+
+    it("저장소로 찾을 때 이름을 질의 문자열에 싣는다", async () => {
+      const analysis = { ...storedAnalysis, id: ANALYSIS_ID, createdAt: "2026-09-15T00:00:00.000Z" };
+      const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(200, { analysis }));
+
+      expect(await fetchAnalysisByRepository("hm1n", "SIFT", fetchImpl)).toEqual(analysis);
+      expect(String(fetchImpl.mock.calls[0][0])).toBe(`${ANALYSES_PATH}?owner=hm1n&repo=SIFT`);
+    });
+
+    // 저장소 이름에 `/`나 `?`가 들어올 수 있습니다. 그대로 이으면 다른 경로를 부릅니다.
+    it("저장소 이름을 질의 문자열로 감싼다", async () => {
+      const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(200, { analysis: storedAnalysis }));
+
+      await fetchAnalysisByRepository("hm 1n", "SIFT?x=1", fetchImpl);
+
+      expect(String(fetchImpl.mock.calls[0][0])).toBe(`${ANALYSES_PATH}?owner=hm+1n&repo=SIFT%3Fx%3D1`);
+    });
+
+    it("식별자로 하나를 읽는다", async () => {
+      const analysis = { ...storedAnalysis, id: ANALYSIS_ID, createdAt: "2026-09-15T00:00:00.000Z" };
+      const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(200, { analysis }));
+
+      expect(await fetchStoredAnalysis(ANALYSIS_ID, fetchImpl)).toEqual(analysis);
+      expect(String(fetchImpl.mock.calls[0][0])).toBe(`${ANALYSES_PATH}/${ANALYSIS_ID}`);
+    });
+
+    it("저장된 분석이 없으면 not_found로 올린다", async () => {
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValue(jsonResponse(404, { error: { kind: "not_found", message: "없습니다" } }));
+
+      await expect(fetchAnalysisByRepository("hm1n", "SIFT", fetchImpl)).rejects.toMatchObject({
+        kind: "not_found",
+      });
+    });
   });
 });

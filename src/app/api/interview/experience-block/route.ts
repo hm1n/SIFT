@@ -1,4 +1,5 @@
 import { generateObject } from "ai";
+import { LLM_ERROR_CONTEXT } from "@/copy/interview";
 import type { NextRequest } from "next/server";
 import { applyBlockUpdate, blockConflicts, markDisplay } from "@/features/experience-block/reducer";
 import {
@@ -134,18 +135,18 @@ export async function handleExperienceBlockUpdate(
     githubUserId = getGitHubSessionFromRequest(request).githubUserId;
   } catch (error) {
     if (error instanceof GitHubFetchError && error.kind === "auth_revoked") {
-      return errorResponse("unauthorized", "A GitHub sign-in session is required.");
+      return errorResponse("unauthorized", "GitHub 로그인 세션이 필요합니다.");
     }
     // 두 갈래를 남기는 이유는 `stream/route.ts`와 같습니다. 세션 쿠키가 있는데 암호화 키 설정이
     // 없거나 32바이트가 아니면 `server_error`가 그대로 올라옵니다.
-    return errorResponse("server_error", "A server configuration problem stopped the block update from starting.");
+    return errorResponse("server_error", "서버 설정 문제로 블록 갱신을 시작하지 못했습니다.");
   }
 
   const declaredLength = Number(request.headers.get("content-length"));
   if (declaredLength > MAX_EXPERIENCE_BLOCK_BODY_BYTES) {
     return errorResponse(
       "body_too_large",
-      `The request body must be ${Math.floor(MAX_EXPERIENCE_BLOCK_BODY_BYTES / 1024)}KB or smaller.`
+      `요청 본문은 ${Math.floor(MAX_EXPERIENCE_BLOCK_BODY_BYTES / 1024)}KB 이하여야 합니다.`
     );
   }
 
@@ -153,7 +154,7 @@ export async function handleExperienceBlockUpdate(
   if (new TextEncoder().encode(text).byteLength > MAX_EXPERIENCE_BLOCK_BODY_BYTES) {
     return errorResponse(
       "body_too_large",
-      `The request body must be ${Math.floor(MAX_EXPERIENCE_BLOCK_BODY_BYTES / 1024)}KB or smaller.`
+      `요청 본문은 ${Math.floor(MAX_EXPERIENCE_BLOCK_BODY_BYTES / 1024)}KB 이하여야 합니다.`
     );
   }
 
@@ -161,7 +162,7 @@ export async function handleExperienceBlockUpdate(
   try {
     json = JSON.parse(text);
   } catch {
-    return errorResponse("invalid_json", "The request body must be JSON.");
+    return errorResponse("invalid_json", "요청 본문은 JSON이어야 합니다.");
   }
 
   const store = options.store ?? neonStore();
@@ -176,17 +177,33 @@ export async function handleExperienceBlockUpdate(
     const parsedSave = parseSaveOnlyRequestBody(json);
     if (!parsedSave.ok) return errorResponse(parsedSave.kind, parsedSave.message);
     const { history, state, save } = parsedSave.body;
+    const turn = turnsToSave(history, save.pendingTurnIds);
     let saved: BlockUpdateSaveStatus;
     try {
-      saved = await store.appendTurn({
-        githubUserId,
-        interviewId: save.interviewId,
-        turn: turnsToSave(history, save.pendingTurnIds),
-        blockState: state,
-        // 반영이 이미 끝난 값입니다. 여기서 다시 반영하면 같은 답변의 반응이 두 번 기록됩니다.
-        progress: save.progress,
-        expectedBlockVersion: save.expectedBlockVersion,
-      });
+      /**
+       * 블록에 새로 쓸 것이 없으면 이력만 이어 붙입니다(이슈 #116, backlog 7번).
+       *
+       * `appendTurn`은 블록 버전이 올라야만 씁니다. 모델 호출이 실패한 턴은 블록이 그대로라 그 조건에
+       * 걸려 `version_conflict`가 되고, 모델이 계속 실패하면 그 대화가 영영 저장되지 않습니다. 블록을
+       * 건드리지 않는 저장을 따로 두면 대화만 먼저 남길 수 있습니다.
+       */
+      saved =
+        state.version > save.expectedBlockVersion
+          ? await store.appendTurn({
+              githubUserId,
+              interviewId: save.interviewId,
+              turn,
+              blockState: state,
+              // 반영이 이미 끝난 값입니다. 여기서 다시 반영하면 같은 답변의 반응이 두 번 기록됩니다.
+              progress: save.progress,
+              expectedBlockVersion: save.expectedBlockVersion,
+            })
+          : await store.appendHistory({
+              githubUserId,
+              interviewId: save.interviewId,
+              turn,
+              expectedBlockVersion: save.expectedBlockVersion,
+            });
     } catch {
       saved = "failed";
     }
@@ -211,7 +228,7 @@ export async function handleExperienceBlockUpdate(
       AbortSignal.any([request.signal, AbortSignal.timeout(INTERVIEW_QUESTION_TOTAL_TIMEOUT_MS)])
     );
   } catch (error) {
-    const mapped = mapInterviewLlmError(error, "Block update");
+    const mapped = mapInterviewLlmError(error, LLM_ERROR_CONTEXT.blockUpdate);
     return errorResponse(mapped.kind, mapped.message);
   }
 
@@ -219,7 +236,7 @@ export async function handleExperienceBlockUpdate(
   if (!result.ok) {
     return errorResponse(
       "block_update_rejected",
-      `The model output did not pass validation: ${result.errors.map((e) => `${e.kind}(${e.detail})`).join(", ")}`
+      `모델 출력이 검증을 통과하지 못했습니다: ${result.errors.map((e) => `${e.kind}(${e.detail})`).join(", ")}`
     );
   }
 

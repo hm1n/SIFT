@@ -49,11 +49,21 @@
 .selectionError strong { color: #a3272c; font-size: 14px; }
 .selectionError span { color: #7c3b3d; font-size: 13px; line-height: 1.6; }
 .backButton { width: fit-content; min-height: 32px; border: 0; background: none; color: #a3272c; cursor: pointer; font: inherit; font-size: 13px; font-weight: 700; padding: 0; text-decoration: underline; }
-.footer { flex-shrink: 0; border-top: 1px solid var(--color-border); padding: 16px 24px; display: flex; justify-content: space-between; gap: 12px; }
+.footer { flex-shrink: 0; border-top: 1px solid var(--color-border); padding: 16px 24px; display: flex; flex-direction: column; gap: 12px; }
+.footerActions { display: flex; justify-content: space-between; gap: 12px; }
+/* 저장되는 것과 보관 기간을 확정 버튼 바로 위에 적습니다(이슈 #116). 실제로 저장이 일어나는 시점입니다. */
+.storageNotice { font-family: var(--font-pretendard); font-size: var(--label-size-md); line-height: 1.6; color: var(--color-muted-foreground); }
 .primaryButton, .secondaryButton { display: flex; align-items: center; gap: 6px; min-height: 40px; border: 0; border-radius: var(--radius); cursor: pointer; font: inherit; font-size: 13px; font-weight: 500; padding: 0 16px; }
 .primaryButton { background: var(--color-primary); color: var(--color-primary-foreground); }
 .primaryButton:hover { opacity: .85; }
 .secondaryButton { border: 1px solid var(--color-border); background: var(--color-card); color: var(--color-foreground); }
 .secondaryButton:hover { background: var(--color-muted); }
 .primaryButton:focus-visible, .secondaryButton:focus-visible, .backButton:focus-visible, .viewAllButton:focus-visible, .evidenceList a:focus-visible { outline: 3px solid rgba(10, 10, 10, .3); outline-offset: 2px; }
-@media (max-width: 560px) { .footer { flex-direction: column-reverse; justify-content: stretch; } .primaryButton, .secondaryButton { width: 100%; justify-content: center; } }
+@media (max-width: 560px) { .footerActions { flex-direction: column-reverse; justify-content: stretch; } .primaryButton, .secondaryButton { width: 100%; justify-content: center; } }
+
+/*
+ * mono 영역 예외입니다. `globals.css`의 body가 한국어 자연어에 `word-break: keep-all`을 걸어
+ * 두므로, Repository 원본값과 코드를 그리는 아래 자리에서는 되돌립니다. 이 값들은 어절이 없는
+ * 경로·SHA·코드라 어절 단위 금지가 뜻을 갖지 않고, 긴 토큰이 칸을 넘길 때 끊어야 합니다.
+ */
+.evidenceListMeta { word-break: normal; overflow-wrap: normal; }

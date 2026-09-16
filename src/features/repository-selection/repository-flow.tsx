@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { AppShell } from "@/components/shell/app-shell";
 import { Button } from "@/components/shell/button";
 import { StatusScreen } from "@/components/shell/status-screen";
+import { LEAVE_CONFIRM_COPY, RESUME_ERROR_COPY } from "@/copy/repository";
 import { clearFlow, startFlow, trackEvent } from "@/features/analytics/events";
 import { InterviewScreen, type InterviewProgressSnapshot } from "@/features/interview/interview-screen";
 import { RepositoryAnalysisView } from "@/features/repository-analysis/repository-analysis-view";
@@ -15,6 +16,7 @@ import { isRestorableBlockState, type StoredInterviewPayload } from "@/features/
 import { isExperienceEvidenceSnapshot } from "@/features/interview/question-request";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
 import type { RepositorySummary } from "@/lib/github/types";
+import type { AnalyzedRepository } from "@/features/repository-analysis/repository-analysis-view";
 import { RepositorySelectScreen } from "./repository-select-screen";
 import styles from "./repository-flow.module.css";
 
@@ -32,27 +34,22 @@ import styles from "./repository-flow.module.css";
  */
 type Mode =
   | { readonly kind: "select" }
-  | { readonly kind: "analysis"; readonly summary: RepositorySummary; readonly contributionItems: readonly string[] }
+  | {
+      readonly kind: "analysis";
+      readonly summary: AnalyzedRepository;
+      readonly contributionItems: readonly string[];
+      /**
+       * 저장된 인터뷰에서 그 분석의 후보 목록으로 들어올 때 옵니다(이슈 #116). 이 값이 있으면 분석
+       * 화면은 저장소 이름으로 찾지 않고 이 분석을 엽니다.
+       */
+      readonly analysisId?: string;
+    }
   | { readonly kind: "resume"; readonly interviewId: string; readonly stage: "review" | "interview" };
 
-/** 저장된 인터뷰를 읽지 못한 이유별 안내입니다. 없어진 인터뷰와 연결 실패는 사용자가 할 일이 다릅니다. */
+/** 읽지 못한 이유별 안내입니다. 없어진 인터뷰와 연결 실패는 사용자가 할 일이 다릅니다. */
 const RESUME_ERROR: Record<string, { code: string; label: string; sub: string }> = {
-  not_found: {
-    code: "ERROR / NOT FOUND",
-    label: "This interview is no longer available.",
-    sub: "It may have been deleted. Pick another one from Interviews.",
-  },
-  unauthorized: {
-    code: "ERROR / AUTH",
-    label: "Your session has expired.",
-    sub: "Log in again to continue this interview.",
-  },
-};
-
-const RESUME_ERROR_FALLBACK = {
-  code: "ERROR / STORAGE",
-  label: "Couldn't open this interview.",
-  sub: "The server didn't answer. Try again in a moment.",
+  not_found: RESUME_ERROR_COPY.not_found,
+  unauthorized: RESUME_ERROR_COPY.unauthorized,
 };
 
 export function RepositoryFlow() {
@@ -210,6 +207,24 @@ export function RepositoryFlow() {
     );
   }
 
+  /**
+   * 이어가기 화면에서 그 인터뷰가 나온 분석의 후보 목록으로 갑니다(이슈 #116).
+   *
+   * 저장소 이름이 아니라 인터뷰가 가리키는 분석 식별자로 엽니다. 이름으로 찾으면 그 사이에 같은
+   * 저장소를 다시 분석한 결과가 있을 때 사용자가 보던 것과 다른 후보 목록이 열립니다.
+   */
+  function openAnalysis() {
+    if (resumeState.status !== "ready") return;
+    const { interview } = resumeState;
+    navigate({
+      kind: "analysis",
+      summary: { owner: interview.repoOwner, name: interview.repoName },
+      // 저장된 분석을 여는 길이라 이번에 적을 기여 항목이 없습니다. 기여 항목은 분석을 새로 돌릴 때만 쓰입니다.
+      contributionItems: [],
+      analysisId: interview.analysisId,
+    });
+  }
+
   const sidebarInterviews = (
     <SavedInterviewList
       state={interviews.state}
@@ -236,7 +251,14 @@ export function RepositoryFlow() {
 
         {mode.kind === "analysis" ? (
           <RepositoryAnalysisView
+            /**
+             * 분석 화면을 분석마다 새로 만듭니다. 저장된 분석을 열어 둔 채 다른 분석으로 옮기면 화면이
+             * 들고 있는 분석 식별자와 후보가 앞 분석의 것으로 남습니다. 그 상태로 경험을 확정하면 엉뚱한
+             * 분석에 인터뷰가 붙습니다.
+             */
+            key={mode.analysisId ?? `${mode.summary.owner}/${mode.summary.name}`}
             repository={mode.summary}
+            analysisId={mode.analysisId}
             contributionItems={mode.contributionItems}
             onSelectRepository={() => navigate({ kind: "select" })}
             onInterviewActiveChange={setActive}
@@ -254,6 +276,7 @@ export function RepositoryFlow() {
             state={resumeState}
             onRetry={() => setResumeAttempt((count) => count + 1)}
             onResume={() => setMode({ ...mode, stage: "interview" })}
+            onOpenAnalysis={openAnalysis}
             onBackToReview={() => setMode({ ...mode, stage: "review" })}
             onInterviewActiveChange={setActive}
             onUnsavedChange={setUnsaved}
@@ -272,10 +295,9 @@ export function RepositoryFlow() {
             aria-labelledby={leaveConfirmTitleId}
             aria-describedby={leaveConfirmDescId}
           >
-            <p id={leaveConfirmTitleId} className={styles.leaveConfirmTitle}>You have an unsaved answer.</p>
+            <p id={leaveConfirmTitleId} className={styles.leaveConfirmTitle}>{LEAVE_CONFIRM_COPY.title}</p>
             <p id={leaveConfirmDescId} className={styles.leaveConfirmText}>
-              Leaving now drops the answer that hasn&apos;t been saved yet. Everything already saved stays in
-              Interviews on the left, and you can pick it up from there.
+              {LEAVE_CONFIRM_COPY.description}
             </p>
             <div className={styles.leaveConfirmActions}>
               <Button
@@ -287,7 +309,7 @@ export function RepositoryFlow() {
                   run();
                 }}
               >
-                Leave
+                {LEAVE_CONFIRM_COPY.leave}
               </Button>
               <Button
                 variant="secondary"
@@ -298,7 +320,7 @@ export function RepositoryFlow() {
                   setPendingNavigation(null);
                 }}
               >
-                Continue the interview
+                {LEAVE_CONFIRM_COPY.stay}
               </Button>
             </div>
           </div>
@@ -340,6 +362,7 @@ function ResumedInterview({
   state,
   onRetry,
   onResume,
+  onOpenAnalysis,
   onBackToReview,
   onInterviewActiveChange,
   onUnsavedChange,
@@ -351,6 +374,8 @@ function ResumedInterview({
   state: ReturnType<typeof useSavedInterview>;
   onRetry: () => void;
   onResume: () => void;
+  /** 이 인터뷰가 나온 분석의 후보 목록을 엽니다(이슈 #116). */
+  onOpenAnalysis: () => void;
   onBackToReview: () => void;
   onInterviewActiveChange: (active: boolean) => void;
   onUnsavedChange: (hasUnsaved: boolean) => void;
@@ -359,18 +384,18 @@ function ResumedInterview({
   onEnded: () => void;
 }) {
   if (state.status === "loading") {
-    return <StatusScreen kind="loading" code="Loading Interview" label="Opening the saved interview..." sub="" />;
+    return <StatusScreen kind="loading" code="Loading Interview" label={RESUME_ERROR_COPY.loadingLabel} sub="" />;
   }
 
   if (state.status === "error") {
-    const copy = RESUME_ERROR[state.kind] ?? RESUME_ERROR_FALLBACK;
+    const copy = RESUME_ERROR[state.kind] ?? RESUME_ERROR_COPY.fallback;
     return (
       <StatusScreen
         kind="error"
         code={copy.code}
         label={copy.label}
         sub={copy.sub}
-        action={{ label: "Try again", onClick: onRetry }}
+        action={{ label: RESUME_ERROR_COPY.tryAgain, onClick: onRetry }}
       />
     );
   }
@@ -386,7 +411,14 @@ function ResumedInterview({
    */
   const snapshot = isExperienceEvidenceSnapshot(interview.evidence) ? interview.evidence : null;
   if (mode.stage === "review") {
-    return <SavedInterviewScreen interview={interview} onResume={onResume} onLoadLatest={onLoadLatest} />;
+    return (
+      <SavedInterviewScreen
+        interview={interview}
+        onResume={onResume}
+        onLoadLatest={onLoadLatest}
+        onOpenAnalysis={onOpenAnalysis}
+      />
+    );
   }
   if (snapshot === null || !isRestorableBlockState(interview.blockState)) {
     // 이어갈 수 없다고 알립니다. 요약 화면에 그냥 남기면 사용자가 버튼을 눌러도 아무 일도 일어나지
@@ -394,10 +426,10 @@ function ResumedInterview({
     return (
       <StatusScreen
         kind="error"
-        code="ERROR / STORAGE"
-        label="Couldn't open this interview."
-        sub="The saved evidence or blocks can no longer be read. You can still review what was saved."
-        action={{ label: "Back to the summary", onClick: onBackToReview }}
+        code={RESUME_ERROR_COPY.unreadable.code}
+        label={RESUME_ERROR_COPY.unreadable.label}
+        sub={RESUME_ERROR_COPY.unreadable.sub}
+        action={{ label: RESUME_ERROR_COPY.backToSummary, onClick: onBackToReview }}
       />
     );
   }

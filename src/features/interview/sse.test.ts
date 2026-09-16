@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { STREAM_DATA_UNREADABLE_MESSAGE } from "@/copy/interview";
 import { InterviewStreamError } from "./errors";
 import { createSseEventParser, encodeSseEvent, SSE_KEEP_ALIVE } from "./sse";
 
@@ -68,6 +69,9 @@ describe("createSseEventParser", () => {
       createSseEventParser().push("event: chunk\ndata: {깨진\n\n");
     } catch (error) {
       expect((error as InterviewStreamError).kind).toBe("stream_interrupted");
+      // 화면이 `error.message`를 그대로 그립니다(`interview-stream-view.tsx`). 이 자리에 영어가
+      // 남아 있던 것이 이슈 #128에서 드러났습니다.
+      expect((error as InterviewStreamError).message).toBe(STREAM_DATA_UNREADABLE_MESSAGE);
     }
   });
 });

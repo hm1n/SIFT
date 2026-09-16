@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { QUESTION_REQUEST_COPY } from "@/copy/interview";
 import { ExperienceCandidateOutputError } from "@/features/experience-candidates/errors";
 import { generationEmptyError } from "./errors";
 import type { InterviewQuestionStream } from "./question-generation";
@@ -58,14 +59,29 @@ describe("createQuestionSseStream", () => {
     const events = await readEvents(
       createQuestionSseStream(
         questionStream("첫 조각", [
-          new ExperienceCandidateOutputError("llm_rate_limit", "The LLM call limit was reached."),
+          new ExperienceCandidateOutputError("llm_rate_limit", "AI 호출 한도에 걸렸습니다."),
         ])
       )
     );
 
     expect(events).toEqual([
       { type: "chunk", seq: 1, text: "첫 조각" },
-      { type: "error", kind: "llm_rate_limit", message: "The LLM call limit was reached." },
+      { type: "error", kind: "llm_rate_limit", message: "AI 호출 한도에 걸렸습니다." },
+    ]);
+  });
+
+  /**
+   * 분류를 아는 실패는 `mapInterviewLlmError`를 거쳐 한국어 message를 답니다. 그 밖의 예외는 원문이
+   * 영어일 수 있고 화면이 이 값을 오류 박스 첫 줄에 그대로 그립니다.
+   */
+  it("분류를 모르는 실패는 원문 대신 화면 문구를 싣는다", async () => {
+    const events = await readEvents(
+      createQuestionSseStream(questionStream("첫 조각", [new Error("Unexpected token < in JSON")]))
+    );
+
+    expect(events).toEqual([
+      { type: "chunk", seq: 1, text: "첫 조각" },
+      { type: "error", kind: "llm_failure", message: QUESTION_REQUEST_COPY.generationFailed },
     ]);
   });
 

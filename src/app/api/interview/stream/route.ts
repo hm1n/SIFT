@@ -1,4 +1,5 @@
 import type { NextRequest } from "next/server";
+import { QUESTION_REQUEST_COPY } from "@/copy/interview";
 import {
   ExperienceCandidateOutputError,
   type ExperienceCandidateOutputErrorKind,
@@ -47,7 +48,7 @@ function invalidRequest(message: string): Response {
 function bodyTooLarge(): Response {
   return errorResponse(
     "body_too_large",
-    `The request body must be ${Math.floor(MAX_INTERVIEW_STREAM_BODY_BYTES / 1024)}KB or smaller.`,
+    QUESTION_REQUEST_COPY.bodyTooLarge(Math.floor(MAX_INTERVIEW_STREAM_BODY_BYTES / 1024)),
     413
   );
 }
@@ -103,11 +104,11 @@ export function handleInterviewStream(
 ): Response {
   const scenarioParam = request.nextUrl.searchParams.get("scenario") ?? "normal";
   if (!isTestStreamScenario(scenarioParam)) {
-    return invalidRequest("The scenario value is not valid.");
+    return invalidRequest(QUESTION_REQUEST_COPY.invalidScenario);
   }
   const startSeq = readStartSeq(request);
   if (startSeq === "invalid") {
-    return invalidRequest("The Last-Event-ID value is not valid.");
+    return invalidRequest(QUESTION_REQUEST_COPY.invalidLastEventId);
   }
 
   const stream = createTestStream({
@@ -139,7 +140,7 @@ export async function handleInterviewQuestionStream(
     getGitHubTokenFromRequest(request);
   } catch (error) {
     if (error instanceof GitHubFetchError && error.kind === "auth_revoked") {
-      return errorResponse("unauthorized", "A GitHub sign-in session is required.", 401);
+      return errorResponse("unauthorized", QUESTION_REQUEST_COPY.unauthorized, 401);
     }
     /**
      * 두 갈래를 모두 남기는 이유는 아래 갈래도 도달하기 때문입니다.
@@ -152,7 +153,7 @@ export async function handleInterviewQuestionStream(
      * `server_error`는 `interview/errors.ts`의 아는 분류에 등록해 두었습니다. 등록하지 않으면
      * 수신부가 전송 실패로 떨어뜨려 서버 설정 문제에 네트워크 확인 안내가 나갑니다.
      */
-    return errorResponse("server_error", "A server configuration problem stopped question generation from starting.", 500);
+    return errorResponse("server_error", QUESTION_REQUEST_COPY.serverMisconfigured, 500);
   }
 
   /**
@@ -166,7 +167,7 @@ export async function handleInterviewQuestionStream(
    */
   if ((request.headers.get("Last-Event-ID") ?? "") !== "") {
     return invalidRequest(
-      "The question generation stream does not support resuming. Request again without Last-Event-ID."
+      QUESTION_REQUEST_COPY.noResume
     );
   }
 
@@ -182,7 +183,7 @@ export async function handleInterviewQuestionStream(
   try {
     body = JSON.parse(text);
   } catch {
-    return errorResponse("invalid_json", "The request body must be JSON.", 400);
+    return errorResponse("invalid_json", QUESTION_REQUEST_COPY.invalidJson, 400);
   }
   const parsed = parseInterviewStreamRequestBody(body);
   if (!parsed.ok) {
@@ -197,7 +198,7 @@ export async function handleInterviewQuestionStream(
     buildInterviewQuestionPrompt(snapshot, { history, variant: options.variant, targetBlock, targetElement, lastOutcome })
   );
   if (promptBytes > INTERVIEW_QUESTION_MAX_PROMPT_BYTES) {
-    return invalidRequest("The question evidence is over the size limit for a single request.");
+    return invalidRequest(QUESTION_REQUEST_COPY.evidenceTooLarge);
   }
 
   try {
@@ -217,7 +218,7 @@ export async function handleInterviewQuestionStream(
       const status = GENERATION_ERROR_STATUS[error.kind as keyof typeof GENERATION_ERROR_STATUS];
       if (status !== undefined) return errorResponse(error.kind, error.message, status);
     }
-    return errorResponse("llm_failure", "Question generation failed.", 502);
+    return errorResponse("llm_failure", QUESTION_REQUEST_COPY.generationFailed, 502);
   }
 }
 

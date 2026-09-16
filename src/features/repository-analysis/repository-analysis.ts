@@ -5,17 +5,27 @@ import {
   toStageAUnits,
   type CandidateStage,
   type StageACandidateResult,
-  type StageASelectionSummary,
 } from "@/features/experience-candidates/candidate-client";
+import {
+  toExcludedUnitSummary,
+  type ExcludedUnitSummary,
+} from "@/features/experience-candidates/work-unit-selection";
 import type {
   StageBCandidateResult,
 } from "@/features/experience-candidates/types";
+import {
+  CANDIDATE_GENERATION_ERROR_COPY,
+  DIFF_REFETCH_GUIDANCE,
+  GITHUB_FETCH_ERROR_COPY,
+  PARTIAL_FETCH_COPY,
+} from "@/copy/repository";
 import { buildCandidateData } from "@/lib/github/candidate-data";
 import { filterCommitsForDetail } from "@/lib/github/commit-blacklist";
 import type { AuthoredCommitsResult } from "@/lib/github/commits";
 import { GitHubFetchError, type GitHubFetchErrorKind } from "@/lib/github/errors";
 import { fetchAuthoredCommitsFromApi, fetchContributionsFromApi } from "@/lib/github/route-client";
 import type {
+  CandidateCommitIndex,
   CandidateDataOutput,
   CommitSummary,
   ContributionFetchProgress,
@@ -116,7 +126,19 @@ export interface CandidateRetryPoint {
  * 이미 있지만 성공 경로에서는 그동안 어디에도 실리지 않았습니다. 화면이 "판단 불가" 건수를
  * 보여주려면(Task 9-2) 이 값이 성공 상태까지 와야 합니다.
  */
-export interface StageASelectionState extends StageASelectionSummary {
+export interface StageASelectionState {
+  /**
+   * 점수 선별에서 빠진 묶음입니다. 화면이 그리는 필드만 남긴 모양입니다(이슈 #116).
+   *
+   * Stage A가 돌려주는 `ExcludedWorkUnit`은 묶음 안의 커밋 상세를 통째로 들고 있습니다. 화면은 그
+   * 커밋을 한 번도 읽지 않고, 저장된 분석도 이 모양으로 저장합니다. 여기서 줄여 두면 저장된 분석으로
+   * 후보 화면을 다시 그릴 때 모양을 맞추는 코드가 따로 필요 없습니다.
+   */
+  readonly excludedUnits: readonly ExcludedUnitSummary[];
+  /** 선택된 묶음 중 가장 낮은 점수입니다. */
+  readonly thresholdScore: number;
+  /** 점수 선별을 통과해 실제로 모델에 보낸 묶음 수입니다. */
+  readonly selectedUnitCount: number;
   readonly unjudgedShas: readonly string[];
 }
 
@@ -147,7 +169,11 @@ export type AnalysisState =
   | { status: "error"; error: AnalysisError; retryPoint?: CandidateRetryPoint }
   | {
       status: "success";
-      data: CandidateDataOutput;
+      /**
+       * 후보 화면이 읽는 커밋 색인입니다. 저장된 분석으로 이 상태를 다시 만들 수 있어야 하므로
+       * `CandidateDataOutput` 전체가 아니라 화면이 쓰는 만큼만 싣습니다(이슈 #116).
+       */
+      data: CandidateCommitIndex;
       candidates: StageBCandidateResult;
       stageASelection: StageASelectionState;
     };
@@ -190,39 +216,17 @@ function underlyingKind(error: GitHubFetchError): AnalysisError["causeKind"] {
   return undefined;
 }
 
+/** 종류별 복구 수단입니다. 문구는 `@/copy/repository`가, 무엇을 할 수 있는지는 여기가 정합니다. */
+const FETCH_ERROR_RECOVERY = {
+  rate_limit: "retry",
+  auth_revoked: "reauthenticate",
+  repo_not_found: "select_repository",
+  network: "retry",
+  server_error: "retry",
+} as const satisfies Record<Exclude<GitHubFetchErrorKind, "partial_failure">, AnalysisError["recovery"]>;
+
 function errorCopy(kind: Exclude<GitHubFetchErrorKind, "partial_failure">) {
-  switch (kind) {
-    case "rate_limit":
-      return {
-        title: "GitHub API rate limit reached.",
-        message: "Wait for the limit to reset, then retry the full fetch.",
-        recovery: "retry" as const,
-      };
-    case "auth_revoked":
-      return {
-        title: "Please log in to GitHub again.",
-        message: "Your session has expired or access was revoked. Log in again to resume the fetch.",
-        recovery: "reauthenticate" as const,
-      };
-    case "repo_not_found":
-      return {
-        title: "Repository not found.",
-        message: "Check whether the repository was deleted or renamed, and whether your current authentication can access it.",
-        recovery: "select_repository" as const,
-      };
-    case "network":
-      return {
-        title: "Couldn't connect to GitHub.",
-        message: "Check your network connection, then retry the full fetch.",
-        recovery: "retry" as const,
-      };
-    case "server_error":
-      return {
-        title: "Couldn't load data from GitHub.",
-        message: "This may be a GitHub server issue. Wait a moment, then retry the full fetch.",
-        recovery: "retry" as const,
-      };
-  }
+  return { ...GITHUB_FETCH_ERROR_COPY[kind], recovery: FETCH_ERROR_RECOVERY[kind] };
 }
 
 export function toAnalysisError(error: unknown, context: FailureContext): AnalysisError {
@@ -238,15 +242,15 @@ export function toAnalysisError(error: unknown, context: FailureContext): Analys
   const causeKind = underlyingKind(error);
   const range =
     context.step === "details" && context.total !== undefined
-      ? `Failed after collecting ${completed} of ${context.total} items during detail fetch.`
-      : `Failed after collecting ${completed} commits.`;
-  const causeGuidance = causeKind ? ` Original failure cause: ${errorCopy(causeKind).title}` : "";
+      ? PARTIAL_FETCH_COPY.detailRange(completed, context.total)
+      : PARTIAL_FETCH_COPY.commitRange(completed);
+  const causeGuidance = causeKind ? PARTIAL_FETCH_COPY.cause(errorCopy(causeKind).title) : "";
 
   return {
     kind: "partial_failure",
     ...(causeKind === undefined ? {} : { causeKind }),
-    title: "Only part of the repository data was collected.",
-    message: `${range}${causeGuidance} Partial results aren't reused to avoid duplicates or omissions. Recovery restarts the fetch from the beginning.`,
+    title: PARTIAL_FETCH_COPY.title,
+    message: `${range}${causeGuidance}${PARTIAL_FETCH_COPY.guidance}`,
     recovery: causeKind ? errorCopy(causeKind).recovery : "retry",
     completed,
     ...(context.total === undefined ? {} : { total: context.total }),
@@ -333,7 +337,7 @@ export async function generateCandidates(
     // 세 상태(빈 둘·성공)가 같은 선별 값을 싣도록 여기서 한 번만 만듭니다. 후보가 0개일 때가 제외
     // 사유를 가장 알아야 할 순간이라 두 빈 갈래에도 성공 경로와 동일한 객체를 실어 보냅니다(이슈 #58 P1-2).
     const stageASelection: StageASelectionState = {
-      excludedUnits: stageA.excludedUnits,
+      excludedUnits: stageA.excludedUnits.map(toExcludedUnitSummary),
       thresholdScore: stageA.thresholdScore,
       selectedUnitCount: stageA.selectedUnitCount,
       unjudgedShas: stageA.unjudgedShas,
@@ -383,19 +387,10 @@ export async function generateCandidates(
   }
 }
 
-const DIFF_REFETCH_GUIDANCE: Record<Exclude<GitHubFetchErrorKind, "partial_failure">, string> = {
-  rate_limit: "Try generating candidates again once the GitHub API rate limit resets.",
-  auth_revoked: "The sign-in expired or access was revoked. Sign in to GitHub again.",
-  repo_not_found: "Check whether the repository was deleted or renamed, then pick it again.",
-  network: "Check your network connection, then try generating candidates again.",
-  server_error: "This may be a GitHub server problem. Try generating candidates again in a moment.",
-};
-
 export function toCandidateGenerationError(error: unknown, stage: CandidateStage): AnalysisError {
   const fallback: AnalysisError = {
     kind: "contract_violation",
-    title: "Could not generate experience candidates",
-    message: "An unexpected error occurred. Try generating candidates again.",
+    ...CANDIDATE_GENERATION_ERROR_COPY.unknown,
     recovery: "retry",
   };
   if (!(error instanceof CandidateRequestError)) return fallback;
@@ -415,8 +410,8 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
       return {
         kind: "diff_refetch_failure",
         causeKind,
-        title: "Could not re-fetch the diff and PR evidence for the candidates",
-        message: `Collecting the diff and PR info for the final judgment from GitHub failed. ${DIFF_REFETCH_GUIDANCE[causeKind]}`,
+        title: CANDIDATE_GENERATION_ERROR_COPY.diffRefetch.title,
+        message: CANDIDATE_GENERATION_ERROR_COPY.diffRefetch.message(DIFF_REFETCH_GUIDANCE[causeKind]),
         recovery: errorCopy(causeKind).recovery,
       };
     }
@@ -424,8 +419,8 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
     case "json_parse":
       return {
         kind: "llm_schema_violation",
-        title: "The LLM response did not follow the output contract",
-        message: `${error.message} A result that breaks the contract is not used. Try generating candidates again.`,
+        title: CANDIDATE_GENERATION_ERROR_COPY.schemaViolation.title,
+        message: CANDIDATE_GENERATION_ERROR_COPY.schemaViolation.message(error.message),
         recovery: "retry",
       };
     case "unknown_sha":
@@ -433,8 +428,8 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
     case "unknown_file_path":
       return {
         kind: "llm_hallucination_rejected",
-        title: "Rejected a judgment that does not match the actual Repository evidence",
-        message: `${error.message} A result citing a commit or file that is not in the input is not used. Try generating candidates again.`,
+        title: CANDIDATE_GENERATION_ERROR_COPY.hallucinationRejected.title,
+        message: CANDIDATE_GENERATION_ERROR_COPY.hallucinationRejected.message(error.message),
         recovery: "retry",
       };
     case "llm_timeout":
@@ -442,30 +437,25 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
       return stage === "stage_b"
         ? {
             kind: "llm_call_failure",
-            title: "Stage B exceeded its time budget",
-            message:
-              "The whole route, including the GitHub diff and PR lookups, went over its time budget. This may not be an LLM failure. Try generating candidates again in a moment.",
+            ...CANDIDATE_GENERATION_ERROR_COPY.stageBTimeout,
             recovery: "retry",
           }
         : {
             kind: "llm_call_failure",
-            title: "LLM analysis timed out",
-            message: "The analysis did not finish within the time limit. Try generating candidates again in a moment.",
+            ...CANDIDATE_GENERATION_ERROR_COPY.llmTimeout,
             recovery: "retry",
           };
     case "llm_rate_limit":
       return {
         kind: "llm_call_failure",
-        title: "The LLM call limit was reached",
-        message: "Try generating candidates again once the call limit resets.",
+        ...CANDIDATE_GENERATION_ERROR_COPY.llmRateLimit,
         recovery: "retry",
       };
     case "llm_auth":
     case "llm_configuration":
       return {
         kind: "llm_call_failure",
-        title: "There is a problem with the LLM connection settings",
-        message: "This is an LLM authentication or configuration problem on the service side. Try generating candidates again in a moment.",
+        ...CANDIDATE_GENERATION_ERROR_COPY.llmConfiguration,
         recovery: "retry",
       };
     case "llm_network":
@@ -473,34 +463,31 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
     case "llm_failure":
       return {
         kind: "llm_call_failure",
-        title: "The LLM call failed",
-        message: `${error.message} Try generating candidates again in a moment.`,
+        title: CANDIDATE_GENERATION_ERROR_COPY.llmCallFailure.title,
+        message: CANDIDATE_GENERATION_ERROR_COPY.llmCallFailure.message(error.message),
         recovery: "retry",
       };
     case "body_too_large":
       return {
         kind: "request_too_large",
-        title: "The analysis data exceeded the request limit",
-        message:
-          "The collected commit evidence is over the size a single request can carry. Pick a repository with fewer commits.",
+        ...CANDIDATE_GENERATION_ERROR_COPY.requestTooLarge,
         recovery: "select_repository",
       };
     case "fetch_network":
       return {
         kind: "network",
-        title: "Could not reach the candidate generation server",
-        message: "Check your network connection, then try generating candidates again.",
+        ...CANDIDATE_GENERATION_ERROR_COPY.network,
         recovery: "retry",
       };
     case "invalid_request":
       return {
         kind: "contract_violation",
-        title: "The candidate generation request did not match the server contract",
-        message: `${error.message} The same input is not resent as is; the retry rebuilds from the Repository lookup. If this keeps happening it may be a defect you cannot work around.`,
+        title: CANDIDATE_GENERATION_ERROR_COPY.contractViolation.title,
+        message: CANDIDATE_GENERATION_ERROR_COPY.contractViolation.message(error.message),
         recovery: "retry",
       };
     default:
       // invalid_response, invalid_json 등 사용자가 복구 방법을 고를 수 없는 오류입니다.
-      return { ...fallback, message: `${error.message} Try generating candidates again.` };
+      return { ...fallback, message: CANDIDATE_GENERATION_ERROR_COPY.fallback(error.message) };
   }
 }

@@ -3,11 +3,13 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { BLOCK_LABELS } from "@/copy/shared";
 import { emptyInterviewProgress } from "@/features/experience-block/progress";
 import { BLOCK_MAX_BYTES, BLOCK_MAX_STATEMENTS } from "@/features/experience-block/reducer";
 import { emptyExperienceBlockState, type Claim } from "@/features/experience-block/types";
 import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
 import type { StoredInterviewPayload } from "./payload";
+import { RETENTION_DAYS } from "./retention";
 import { SavedInterviewScreen } from "./saved-interview-screen";
 
 afterEach(cleanup);
@@ -46,6 +48,7 @@ function payload(overrides: Partial<StoredInterviewPayload> = {}): StoredIntervi
     completedBlockCount: 1,
     createdAt: "2026-09-10T00:00:00.000Z",
     updatedAt: "2026-09-12T09:00:00.000Z",
+    openedAt: new Date().toISOString(),
     evidence: evidenceSnapshotFixture(),
     history: [
       { role: "question", text: "문제 상황을 알려주세요" },
@@ -75,7 +78,52 @@ describe("SavedInterviewScreen", () => {
 
     expect(screen.getByRole("heading", { level: 1, name: "스트리밍 렌더링 최적화" })).toBeInTheDocument();
     expect(screen.getByText("hm1n / SIFT")).toBeInTheDocument();
-    expect(screen.getAllByText(/Sep 12/)[0]).toBeInTheDocument();
+    expect(screen.getAllByText(/9월 12일/)[0]).toBeInTheDocument();
+  });
+
+  /**
+   * 이 화면이 같은 표를 따로 들고 있었습니다. `Analyze`는 설계 문서의 `ALTERNATIVE`를 대신하는
+   * 이름이라(이슈 #92) 한쪽만 고치면 인터뷰 화면과 저장 화면이 블록을 다르게 부릅니다.
+   * 기존 단정은 `"Problem 편집"`을 리터럴로 들어 나머지 세 블록이 갈려도 통과했습니다.
+   */
+  it("블록 이름은 인터뷰 화면과 같은 표를 쓴다", () => {
+    render(<SavedInterviewScreen interview={payload()} onResume={vi.fn()} />);
+
+    for (const label of Object.values(BLOCK_LABELS)) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+  });
+
+  describe("자동 삭제까지 남은 기간", () => {
+    const DAY_MS = 86_400_000;
+    const openedDaysAgo = (days: number) => new Date(Date.now() - days * DAY_MS).toISOString();
+
+    /** 저장이 영구적이지 않다는 사실은 기한이 멀어도 알려야 합니다. */
+    it("기한이 멀어도 남은 날수를 알린다", () => {
+      render(<SavedInterviewScreen interview={payload({ openedAt: openedDaysAgo(0) })} onResume={vi.fn()} />);
+
+      expect(screen.getByText(`자동 삭제까지 ${RETENTION_DAYS}일 남았습니다. 인터뷰를 열면 기간이 다시 시작됩니다.`)).toBeInTheDocument();
+    });
+
+    it("기한이 가까우면 지워진다는 사실을 앞세운다", () => {
+      render(
+        <SavedInterviewScreen interview={payload({ openedAt: openedDaysAgo(RETENTION_DAYS - 2) })} onResume={vi.fn()} />
+      );
+
+      expect(screen.getByText("이 인터뷰는 2일 뒤에 자동으로 지워집니다.")).toBeInTheDocument();
+    });
+
+    /**
+     * 만료를 알리는 자리라 문구가 어색하면 안 됩니다. 1일 사례는 경고 구간 안이라 실제로 납니다(PR #130 리뷰).
+     * 영어로 셀 때는 `1 day`·`2 days` 갈래가 있었지만 `일`은 수량에 따라 형태가 바뀌지 않습니다.
+     */
+    it("하루가 남으면 1일로 적는다", () => {
+      render(
+        <SavedInterviewScreen interview={payload({ openedAt: openedDaysAgo(RETENTION_DAYS - 1) })} onResume={vi.fn()} />
+      );
+
+      expect(screen.getByText("이 인터뷰는 1일 뒤에 자동으로 지워집니다.")).toBeInTheDocument();
+    });
   });
 
   /** 근거 스냅샷에는 없는 값입니다. 저장된 분석에서 그 후보 하나를 골라 함께 받아 그립니다. */
@@ -92,14 +140,14 @@ describe("SavedInterviewScreen", () => {
   it("후보를 찾지 못한 인터뷰는 그 사실을 알린다", () => {
     render(<SavedInterviewScreen interview={payload({ candidate: null })} onResume={vi.fn()} />);
 
-    expect(screen.getByText("This interview was saved without the analysis for this candidate.")).toBeInTheDocument();
-    expect(screen.getByText("No topics were saved with this interview.")).toBeInTheDocument();
+    expect(screen.getByText("이 인터뷰에는 후보를 고를 때 사용한 분석이 저장되지 않았습니다.")).toBeInTheDocument();
+    expect(screen.getByText("이 인터뷰에는 기술 토픽이 없습니다.")).toBeInTheDocument();
   });
 
   it("저장된 근거를 읽지 못하면 그 사실을 알린다", () => {
     render(<SavedInterviewScreen interview={payload({ evidence: { 이상한: "값" } })} onResume={vi.fn()} />);
 
-    expect(screen.getByText("The saved evidence can no longer be read.")).toBeInTheDocument();
+    expect(screen.getByText("저장된 근거를 읽을 수 없습니다.")).toBeInTheDocument();
   });
 
   /**
@@ -118,20 +166,20 @@ describe("SavedInterviewScreen", () => {
       />
     );
 
-    expect(screen.getByText("The saved evidence can no longer be read.")).toBeInTheDocument();
+    expect(screen.getByText("저장된 근거를 읽을 수 없습니다.")).toBeInTheDocument();
   });
 
   it("저장된 블록 상태를 읽지 못하면 그 사실을 알린다", () => {
     render(<SavedInterviewScreen interview={payload({ blockState: { version: 1 } as never })} onResume={vi.fn()} />);
 
-    expect(screen.getByText("The saved PAAR blocks can no longer be read.")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Edit / })).not.toBeInTheDocument();
+    expect(screen.getByText("저장된 PAAR 블록을 읽을 수 없습니다.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: / 편집$/ })).not.toBeInTheDocument();
   });
 
   it("블록마다 어디까지 왔는지를 기호로 보인다", () => {
     render(<SavedInterviewScreen interview={payload()} onResume={vi.fn()} />);
 
-    const paar = screen.getByRole("region", { name: "PAAR experience" });
+    const paar = screen.getByRole("region", { name: "PAAR 경험" });
     const symbols = within(paar).getAllByText(/[✓●○]/);
     // problem 충분, alternatives 진행 중, action·result 미확인입니다.
     expect(symbols.map((node) => node.textContent)).toEqual(["✓", "●", "○", "○"]);
@@ -142,7 +190,7 @@ describe("SavedInterviewScreen", () => {
     const onResume = vi.fn();
     render(<SavedInterviewScreen interview={payload()} onResume={onResume} />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Continue interview/ }));
+    fireEvent.click(screen.getByRole("button", { name: /인터뷰 계속하기/ }));
 
     expect(onResume).toHaveBeenCalledTimes(1);
   });
@@ -151,7 +199,7 @@ describe("SavedInterviewScreen", () => {
   it("끝난 인터뷰는 다시 보기로 들어간다", () => {
     render(<SavedInterviewScreen interview={payload({ status: "completed" })} onResume={vi.fn()} />);
 
-    expect(screen.getByRole("button", { name: /Review interview/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /인터뷰 다시 보기/ })).toBeInTheDocument();
   });
 });
 
@@ -165,7 +213,7 @@ describe("SavedInterviewScreen 블록 편집", () => {
   it("저장된 블록 문장과 그 문장이 인용한 커밋을 그린다", () => {
     render(<SavedInterviewScreen interview={completed} onResume={vi.fn()} />);
 
-    const paar = screen.getByRole("region", { name: "PAAR experience" });
+    const paar = screen.getByRole("region", { name: "PAAR 경험" });
     expect(within(paar).getByText("모델이 쓴 문장")).toBeInTheDocument();
     expect(within(paar).getByText("abc1234")).toBeInTheDocument();
     expect(within(paar).getByText("src/log.tsx")).toBeInTheDocument();
@@ -175,22 +223,22 @@ describe("SavedInterviewScreen 블록 편집", () => {
   it("진행 중인 인터뷰에는 편집을 열지 않는다", () => {
     render(<SavedInterviewScreen interview={payload()} onResume={vi.fn()} />);
 
-    expect(screen.queryByRole("button", { name: /^Edit / })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: / 편집$/ })).not.toBeInTheDocument();
   });
 
   it("끝난 인터뷰는 블록마다 편집을 연다", () => {
     render(<SavedInterviewScreen interview={completed} onResume={vi.fn()} />);
 
-    expect(screen.getAllByRole("button", { name: /^Edit / })).toHaveLength(4);
+    expect(screen.getAllByRole("button", { name: / 편집$/ })).toHaveLength(4);
   });
 
   it("고쳐 저장하면 문장만 서버로 보내고 저장소 인용을 잃는다", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(savedResponse(2));
     render(<SavedInterviewScreen interview={completed} onResume={vi.fn()} fetchImpl={fetchImpl} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit Problem" }));
+    fireEvent.click(screen.getByRole("button", { name: "Problem 편집" }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "사용자가 고친 문장" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
     await waitFor(() => expect(screen.getByText("사용자가 고친 문장")).toBeInTheDocument());
     // 고친 문장에 예전 주장이 따라오지 않도록 문장은 문자열로만 보냅니다(설계 8절).
@@ -205,8 +253,8 @@ describe("SavedInterviewScreen 블록 편집", () => {
   it("고치기 전에 인용을 잃는다는 것을 알린다", () => {
     render(<SavedInterviewScreen interview={completed} onResume={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit Problem" }));
-    expect(screen.getByText(/drops the repository citations/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Problem 편집" }));
+    expect(screen.getByText(/Repository 인용이 사라지고/)).toBeInTheDocument();
   });
 
   it("이어서 고치면 저장된 뒤의 버전으로 보낸다", async () => {
@@ -215,14 +263,14 @@ describe("SavedInterviewScreen 블록 편집", () => {
     const fetchImpl = vi.fn().mockResolvedValueOnce(savedResponse(2)).mockResolvedValueOnce(savedResponse(3));
     render(<SavedInterviewScreen interview={completed} onResume={vi.fn()} fetchImpl={fetchImpl} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit Problem" }));
+    fireEvent.click(screen.getByRole("button", { name: "Problem 편집" }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "첫 번째 편집" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
     await waitFor(() => expect(screen.getByText("첫 번째 편집")).toBeInTheDocument());
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit Action" }));
+    fireEvent.click(screen.getByRole("button", { name: "Action 편집" }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "두 번째 편집" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
     await waitFor(() => expect(screen.getByText("두 번째 편집")).toBeInTheDocument());
 
     expect(JSON.parse(fetchImpl.mock.calls[1][1].body).blockEdit).toEqual({
@@ -246,14 +294,14 @@ describe("SavedInterviewScreen 블록 편집", () => {
     });
     const fetchImpl = vi.fn().mockResolvedValue(savedResponse(2));
     render(<SavedInterviewScreen interview={interview} onResume={vi.fn()} fetchImpl={fetchImpl} />);
-    expect(screen.getByText("Conflicts with the evidence · needs checking")).toBeInTheDocument();
+    expect(screen.getByText("근거와 어긋납니다 · 확인이 필요합니다")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit Problem" }));
+    fireEvent.click(screen.getByRole("button", { name: "Problem 편집" }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "사용자가 고친 문장" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
     await waitFor(() => expect(screen.getByText("사용자가 고친 문장")).toBeInTheDocument());
-    expect(screen.queryByText("Conflicts with the evidence · needs checking")).not.toBeInTheDocument();
+    expect(screen.queryByText("근거와 어긋납니다 · 확인이 필요합니다")).not.toBeInTheDocument();
     expect(screen.queryByText("커밋에는 그 변경이 없습니다")).not.toBeInTheDocument();
   });
 
@@ -270,36 +318,36 @@ describe("SavedInterviewScreen 블록 편집", () => {
     const fetchImpl = vi.fn().mockResolvedValue(savedResponse(2));
     render(<SavedInterviewScreen interview={interview} onResume={vi.fn()} fetchImpl={fetchImpl} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit Problem" }));
+    fireEvent.click(screen.getByRole("button", { name: "Problem 편집" }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "   " } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
     await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
     expect(JSON.parse(fetchImpl.mock.calls[0][1].body).blockEdit.sentences).toEqual([]);
-    expect(screen.queryByText("Conflicts with the evidence · needs checking")).not.toBeInTheDocument();
+    expect(screen.queryByText("근거와 어긋납니다 · 확인이 필요합니다")).not.toBeInTheDocument();
     expect(screen.queryByText("모델이 쓴 문장")).not.toBeInTheDocument();
   });
 
   it("문장 수 상한을 넘으면 저장을 막는다", () => {
     render(<SavedInterviewScreen interview={completed} onResume={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit Problem" }));
+    fireEvent.click(screen.getByRole("button", { name: "Problem 편집" }));
     fireEvent.change(screen.getByRole("textbox"), {
       target: { value: Array.from({ length: BLOCK_MAX_STATEMENTS + 1 }, (_, i) => `문장 ${i}`).join("\n") },
     });
 
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    expect(screen.getByText(new RegExp(`${BLOCK_MAX_STATEMENTS} lines or fewer`))).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
+    expect(screen.getByText(new RegExp(`최대 ${BLOCK_MAX_STATEMENTS}줄까지 써 주세요`))).toBeInTheDocument();
   });
 
   it("서버가 쓰는 바이트 상한을 넘으면 저장을 막는다", () => {
     render(<SavedInterviewScreen interview={completed} onResume={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit Problem" }));
+    fireEvent.click(screen.getByRole("button", { name: "Problem 편집" }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "가".repeat(BLOCK_MAX_BYTES) } });
 
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    expect(screen.getByText(new RegExp(`${BLOCK_MAX_BYTES.toLocaleString()} byte limit`))).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
+    expect(screen.getByText(new RegExp(`${BLOCK_MAX_BYTES.toLocaleString()}바이트까지 저장할 수 있습니다`))).toBeInTheDocument();
   });
 
   // 저장되지 않은 문장을 저장된 것처럼 그리면 사용자가 고쳤다고 믿고 떠납니다.
@@ -307,11 +355,11 @@ describe("SavedInterviewScreen 블록 편집", () => {
     const fetchImpl = vi.fn().mockResolvedValue(errorResponse(503, "storage_failed"));
     render(<SavedInterviewScreen interview={completed} onResume={vi.fn()} fetchImpl={fetchImpl} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit Problem" }));
+    fireEvent.click(screen.getByRole("button", { name: "Problem 편집" }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "저장되지 않을 문장" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
-    await waitFor(() => expect(screen.getByText(/wasn't saved/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/편집한 내용이 저장되지 않았습니다/)).toBeInTheDocument());
     expect(screen.getByText("모델이 쓴 문장")).toBeInTheDocument();
     expect(screen.getByRole("textbox")).toHaveValue("저장되지 않을 문장");
   });
@@ -328,12 +376,12 @@ describe("SavedInterviewScreen 블록 편집", () => {
       />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit Problem" }));
+    fireEvent.click(screen.getByRole("button", { name: "Problem 편집" }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "늦게 도착한 편집" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
-    await waitFor(() => expect(screen.getByText(/changed somewhere else/)).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("button", { name: "Load latest" }));
+    await waitFor(() => expect(screen.getByText(/다른 곳에서 인터뷰가 바뀌어/)).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "최신 내용 불러오기" }));
     expect(onLoadLatest).toHaveBeenCalledTimes(1);
   });
 
@@ -341,9 +389,9 @@ describe("SavedInterviewScreen 블록 편집", () => {
     const fetchImpl = vi.fn();
     render(<SavedInterviewScreen interview={completed} onResume={vi.fn()} fetchImpl={fetchImpl} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit Problem" }));
+    fireEvent.click(screen.getByRole("button", { name: "Problem 편집" }));
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "버릴 문장" } });
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "취소" }));
 
     expect(screen.getByText("모델이 쓴 문장")).toBeInTheDocument();
     expect(screen.queryByText("버릴 문장")).not.toBeInTheDocument();

@@ -5,7 +5,7 @@ import {
   type WorkUnitSignal,
 } from "./work-unit-score";
 import { renderWorkUnitSummary, summarizeWorkUnit } from "./work-unit-summary";
-import type { WorkUnit } from "./work-unit";
+import type { WorkUnit, WorkUnitKind } from "./work-unit";
 import { STAGE_A_MAX_UNITS } from "./stage-a";
 
 /**
@@ -64,6 +64,45 @@ export interface ExcludedWorkUnit<TCommit extends ScorableCommit>
   readonly signals: readonly WorkUnitSignal[];
 }
 
+/**
+ * 제외된 묶음 하나를 화면과 저장이 쓰는 모양으로 줄인 것입니다(이슈 #116).
+ *
+ * `ExcludedWorkUnit`은 `unit.commits`에 그 묶음의 커밋 상세를 통째로 들고 있습니다. 묶음 상한이
+ * 200이라 그대로 저장하면 후보 밖 커밋 전량을 저장하는 셈이 되어 "원본 커밋 전량을 저장하지
+ * 않는다"는 제약을 깹니다. 제외 목록 화면(`StageAExclusions`)은 라벨과 제목과 점수와 신호만 그리고
+ * 묶음 안의 커밋은 한 번도 읽지 않으므로, 화면이 받는 값도 이 모양으로 좁힙니다.
+ *
+ * 화면과 저장이 같은 타입을 쓰는 것이 중요합니다. 둘이 갈라지면 저장된 분석으로 같은 화면을 그릴 때
+ * 모양을 맞추는 코드가 한 벌 더 생기고, 그 코드가 어긋나도 양쪽 테스트는 각자 통과합니다.
+ */
+export interface ExcludedUnitSummary {
+  readonly unitId: string;
+  readonly kind: WorkUnitKind;
+  readonly title: string;
+  /** Pull Request 묶음이 아니면 `null`입니다. 화면이 `PR #번호` 라벨에만 씁니다. */
+  readonly pullRequestNumber: number | null;
+  readonly score: number;
+  readonly reason: WorkUnitSelectionExclusionReason;
+  readonly signals: readonly WorkUnitSignal[];
+}
+
+export function toExcludedUnitSummary<TCommit extends ScorableCommit>({
+  unit,
+  score,
+  reason,
+  signals,
+}: ExcludedWorkUnit<TCommit>): ExcludedUnitSummary {
+  return {
+    unitId: unit.unitId,
+    kind: unit.kind,
+    title: unit.title,
+    pullRequestNumber: unit.kind === "pull_request" ? unit.pullRequest.number : null,
+    score,
+    reason,
+    signals,
+  };
+}
+
 export interface WorkUnitSelection<TCommit extends ScorableCommit> {
   readonly selected: readonly SelectedWorkUnit<TCommit>[];
   readonly excluded: readonly ExcludedWorkUnit<TCommit>[];
@@ -76,20 +115,8 @@ export interface WorkUnitSelection<TCommit extends ScorableCommit> {
   readonly bytes: number;
 }
 
-/**
- * 사용자에게 보여줄 제외 사유 문구입니다.
- *
- * **제외 결과만 적습니다.** 화면(`experience-candidate-list.tsx`)이 이 문장 뒤에 선택 기준을
- * 이어 붙이므로 기준을 여기서도 말하면 같은 말이 두 번 나옵니다. 이어 붙는 자리라 마침표로
- * 끝내야 두 문장이 됩니다.
- */
-export const WORK_UNIT_SELECTION_EXCLUSION_COPY: Record<
-  WorkUnitSelectionExclusionReason,
-  string
-> = {
-  over_input_budget: "This unit did not make it.",
-  over_byte_budget: "This single unit alone exceeds what one request can carry.",
-};
+/** 제외 사유 문구는 `@/copy/candidates`에 있습니다. */
+export { WORK_UNIT_SELECTION_EXCLUSION_COPY } from "@/copy/candidates";
 
 /**
  * Stage A에 보낼 작업 묶음을 점수 순으로 고릅니다.

@@ -9,7 +9,7 @@ import type {
   ExperienceEvidenceSnapshot,
   StageBCandidateResult,
 } from "./types";
-import type { CandidateDataOutput } from "@/lib/github/types";
+import type { CandidateCommitIndex } from "@/lib/github/types";
 
 /**
  * 인터뷰 대상 확정 상태입니다.
@@ -43,31 +43,8 @@ export interface ConfirmedExperience {
   readonly snapshot: ExperienceEvidenceSnapshot;
 }
 
-/**
- * 근거 스냅샷을 만들지 못한 이유별 안내입니다. 무엇이 부족한지 알리고 다른 후보 선택으로
- * 유도합니다. master-detail에서는 목록이 항상 상세와 함께 보이므로 "뒤로가기"가 화면 이동이
- * 아니라 이 안내를 닫는 것뿐입니다. 문구도 그에 맞춥니다.
- */
-export const EXPERIENCE_SELECTION_ERROR_COPY: Record<
-  EvidenceSnapshotFailureReason,
-  { readonly title: string; readonly message: string }
-> = {
-  representative_commit_not_indexed: {
-    title: "Can't start an interview for this experience",
-    message:
-      "The representative commit wasn't found in the commit index, so its title, message, PR info, and changed files can't be used as evidence. Dismiss this message and select a different experience.",
-  },
-  no_repository_evidence: {
-    title: "Can't start an interview for this experience",
-    message:
-      "Neither the representative commit nor its related commits have any changed files, so there's no code to ask about. Dismiss this message and select a different experience.",
-  },
-  evidence_input_too_large: {
-    title: "This experience's evidence exceeds the interview input limit",
-    message:
-      "Even without any code changes, the commit messages and changed file list alone exceed the limit. Dismiss this message and select a different experience.",
-  },
-};
+/** 실패 이유별 안내는 `@/copy/candidates`에 있습니다. */
+export { EXPERIENCE_SELECTION_ERROR_COPY } from "@/copy/candidates";
 
 /**
  * 상세 화면의 선택 액션이 호출합니다. 확정 시점에 근거 스냅샷을 만들고, 재선택하면 이전 확정
@@ -75,7 +52,7 @@ export const EXPERIENCE_SELECTION_ERROR_COPY: Record<
  */
 export function confirmExperienceSelection(
   item: ExperienceCandidateListItem,
-  data: CandidateDataOutput,
+  data: CandidateCommitIndex,
   candidates: StageBCandidateResult
 ): ExperienceSelectionState {
   // 근거 상한은 모델 입력을 묶는 값이므로 실제 첫 질문 프롬프트로 잽니다. JSON 직렬화로 재면

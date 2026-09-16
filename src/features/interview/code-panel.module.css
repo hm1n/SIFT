@@ -89,3 +89,11 @@
  * 같은 선언을 그대로 복제합니다. 모듈이 자기 완결적인 쪽을 파일 간 셀렉터 공유보다 앞에 둡니다.
  */
 .visuallyHidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+/*
+ * mono 영역 예외입니다. `globals.css`의 body가 한국어 자연어에 `word-break: keep-all`을 걸어
+ * 두므로, Repository 원본값과 코드를 그리는 아래 자리에서는 되돌립니다. 이 값들은 어절이 없는
+ * 경로·SHA·코드라 어절 단위 금지가 뜻을 갖지 않고, 긴 토큰이 칸을 넘길 때 끊어야 합니다.
+ */
+.collapsedFilename, .directoryLabel, .filename, .diffPath, .commitSelector code,
+.diffLineNumber, .diffMark, .diffContent { word-break: normal; overflow-wrap: normal; }

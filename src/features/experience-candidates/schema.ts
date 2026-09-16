@@ -1,4 +1,5 @@
 import { jsonSchema } from "ai";
+import { CANDIDATE_CONTRACT_COPY } from "@/copy/candidates";
 import { ExperienceCandidateOutputError } from "./errors";
 import type {
   ExperienceCandidate,
@@ -108,7 +109,13 @@ function isLooseStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
-function isCandidate(value: unknown): value is ExperienceCandidate {
+/**
+ * 후보 하나의 모양입니다. Stage B 응답과 저장된 분석이 같은 검사를 씁니다(PR #130 리뷰).
+ *
+ * 저장된 분석을 읽을 때도 이 검사를 거칩니다. 모델 응답에 쓰는 것과 갈라 두면 한쪽만 고쳐지고,
+ * 저장은 성공했는데 화면이 그리다 멈추는 값이 남습니다.
+ */
+export function isCandidate(value: unknown): value is ExperienceCandidate {
   if (!isRecord(value)) return false;
 
   return (
@@ -147,7 +154,7 @@ export function validateExperienceCandidateOutput(
   ) {
     throw new ExperienceCandidateOutputError(
       "schema_validation",
-      "The structured experience candidate response did not match the output schema."
+      CANDIDATE_CONTRACT_COPY.schemaMismatch
     );
   }
 
@@ -155,7 +162,7 @@ export function validateExperienceCandidateOutput(
   if (new Set(representativeShas).size !== representativeShas.length) {
     throw new ExperienceCandidateOutputError(
       "schema_validation",
-      "Representative commit SHAs must be distinct across candidates."
+      CANDIDATE_CONTRACT_COPY.duplicateSha
     );
   }
 
@@ -175,7 +182,7 @@ export function validateExperienceCandidateOutput(
   if (!reasonIsValid) {
     throw new ExperienceCandidateOutputError(
       "schema_validation",
-      "When there are zero candidates a reason is required, and it must be a non-empty string rather than null."
+      CANDIDATE_CONTRACT_COPY.reasonRequired
     );
   }
 
@@ -197,7 +204,7 @@ export function assertCandidateShas(
   if (unknownShas.length > 0) {
     throw new ExperienceCandidateOutputError(
       "unknown_sha",
-      `Contains commit SHAs that are not in the input set: ${unknownShas.join(", ")}`,
+      CANDIDATE_CONTRACT_COPY.unknownShas(unknownShas.join(", ")),
       { unknownShas }
     );
   }
@@ -241,7 +248,7 @@ export function assertCandidateEvidence(
     if (unrelatedShas.length > 0) {
       throw new ExperienceCandidateOutputError(
         "unrelated_sha",
-        `Some related SHAs do not belong to the same PR as the representative commit: ${unrelatedShas.join(", ")}`,
+        CANDIDATE_CONTRACT_COPY.unrelatedShas(unrelatedShas.join(", ")),
         { unknownShas: unrelatedShas }
       );
     }
@@ -255,7 +262,7 @@ export function assertCandidateEvidence(
     if (unknownPaths.length > 0) {
       throw new ExperienceCandidateOutputError(
         "unknown_file_path",
-        `Some cited file paths are not in the Repository evidence: ${unknownPaths.join(", ")}`
+        CANDIDATE_CONTRACT_COPY.unknownPaths(unknownPaths.join(", "))
       );
     }
   }
@@ -282,7 +289,7 @@ export function createExperienceCandidateOutputSchema(maxCandidates: number) {
               ? error
               : new ExperienceCandidateOutputError(
                   "schema_validation",
-                  "Validation of the structured experience candidate response failed.",
+                  CANDIDATE_CONTRACT_COPY.validationFailed,
                   { cause: error }
                 ),
         };
