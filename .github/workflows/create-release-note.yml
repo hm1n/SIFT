@@ -1,26 +1,30 @@
 name: Create production release
 
+# Vercel 배포를 `status` 이벤트로 받지 않고 `deployment_status`로 받습니다.
+# `status`는 preview와 production이 같은 context(`Vercel`)와 같은 프로젝트 URL로 오기 때문에 둘을 구분할 수 없고,
+# 프로젝트 이름으로 거르는 방식은 이름이 바뀌면 조건이 조용히 안 맞게 됩니다. 실제로 이 저장소의 프로젝트 이름은
+# `demian`에서 `sift`로 바뀌었습니다. Vercel은 GitHub Deployment를 environment까지 붙여 만들므로
+# (`Production` 또는 `Preview`) 그 값을 프로덕션 승격의 판별 기준으로 씁니다.
 on:
-  status:
+  deployment_status:
 
 permissions:
   contents: write
   pull-requests: read
 
 concurrency:
-  group: production-release-${{ github.event.sha }}-${{ github.event.context }}-${{ github.event.state }}
+  group: production-release-${{ github.event.deployment.sha }}-${{ github.event.deployment.environment }}-${{ github.event.deployment_status.state }}
   cancel-in-progress: false
 
 jobs:
   create-release:
     if: >-
-      github.event.context == 'Vercel' &&
-      github.event.state == 'success' &&
-      github.event.sender.login == 'vercel[bot]' &&
-      startsWith(github.event.target_url, 'https://vercel.com/hm1n/demian/')
+      github.event.deployment_status.state == 'success' &&
+      github.event.deployment.environment == 'Production' &&
+      github.event.sender.login == 'vercel[bot]'
     runs-on: ubuntu-latest
     env:
-      EVENT_SHA: ${{ github.event.sha }}
+      EVENT_SHA: ${{ github.event.deployment.sha }}
       GH_TOKEN: ${{ github.token }}
 
     steps:

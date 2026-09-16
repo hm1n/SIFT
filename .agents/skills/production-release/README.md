@@ -47,7 +47,7 @@
 배포와 GitHub Release 생성은 `.github/workflows/create-release-note.yml`이 자동으로 처리합니다.
 
 1. 릴리즈 PR이 `main`에 병합되면 Vercel이 `main` 최신 커밋을 프로덕션에 배포합니다.
-2. Vercel 배포 성공 시 발생하는 GitHub `status` 이벤트를 워크플로우가 감지합니다.
+2. Vercel 배포 성공 시 발생하는 GitHub `deployment_status` 이벤트 중 environment가 `Production`인 것만 워크플로우가 받습니다. preview 배포는 성공해도 같은 조건을 만족하지 않으므로 릴리즈를 만들지 않습니다.
 3. 이벤트의 커밋이 현재 `origin/main` 최신 커밋과 일치하는지 확인합니다.
 4. 해당 커밋에 연결된 PR 중 `develop → main`, `[release] vX.Y.Z` 형식, 병합 완료 조건을 모두 만족하는 PR이 정확히 1개인지 확인합니다.
 5. 릴리즈 PR 제목과 본문의 버전이 일치하는지, `<!-- release-note:start -->` / `<!-- release-note:end -->` 마커가 각각 1개씩 올바른 순서로 존재하는지 검증합니다.
