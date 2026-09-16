@@ -401,6 +401,22 @@ describe("RepositoryAnalysisView 저장된 분석으로 열기", () => {
     expect(analyzeMock).not.toHaveBeenCalled();
   });
 
+  /**
+   * 조회 실패 안내는 `lookup.message`를 그대로 그립니다. `SavedInterviewFetchError`는 한국어 문구를
+   * 달고 오지만 그 밖의 예외는 원문이 영어일 수 있습니다(`fetch`의 `Failed to fetch` 등). 분류를
+   * 아는 오류만 원문을 쓰고 나머지는 싣지 않습니다. PR #131 CodeRabbit 1차 리뷰 지적입니다.
+   */
+  it("분류를 모르는 예외는 원문을 화면에 싣지 않는다", async () => {
+    const fetchAnalysis = vi
+      .fn<typeof fetchAnalysisByRepository>()
+      .mockRejectedValue(new TypeError("Failed to fetch"));
+
+    renderWithSaved(fetchAnalysis);
+
+    expect(await screen.findByText("저장된 분석이 있는지 확인하지 못했습니다.")).toBeInTheDocument();
+    expect(screen.queryByText(/Failed to fetch/)).not.toBeInTheDocument();
+  });
+
   it("조회 실패를 다시 시도하면 저장된 분석을 다시 찾는다", async () => {
     const fetchAnalysis = vi
       .fn<typeof fetchAnalysisByRepository>()
