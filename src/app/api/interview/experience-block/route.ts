@@ -248,12 +248,24 @@ export async function handleExperienceBlockUpdate(
 
   const result = applyBlockUpdate(state, modelOutput, { snapshot, turnId: answerTurnId, targetBlock });
   if (!result.ok) {
-    // 잡은 예외가 아니라 검증 결과이므로 던져진 오류가 없습니다. 502로 나가는 자리라 오류를 만들어 넘깁니다.
+    /**
+     * 잡은 예외가 아니라 검증 결과이므로 던져진 오류가 없습니다. 502로 나가는 자리라 오류를 만들어
+     * 넘깁니다.
+     *
+     * **Sentry로 가는 오류에는 분류만 넣습니다.** `detail`에는 모델이 생성한 문장이 섞입니다
+     * (`reducer.ts`의 `no_claim_reference`가 `sentence.text`를 자릅니다). 그 문장은 사용자의 답변을
+     * 모델이 다시 쓴 것이라, 그대로 보내면 이슈 #136의 제약인 "사용자 답변 본문이 Sentry 이벤트에
+     * 실리지 않아야 합니다"를 어깁니다. Sentry는 `message`와 `cause.message`를 싣고 비표준 속성은
+     * 싣지 않는 것을 2026-09-16에 실측했습니다(PR #138 리뷰 1라운드).
+     *
+     * 사용자에게 가는 응답은 그대로 둡니다. 어느 문장이 왜 걸렸는지는 화면에서 필요합니다.
+     */
     const detail = result.errors.map((e) => `${e.kind}(${e.detail})`).join(", ");
+    const kinds = result.errors.map(({ kind }) => kind).join(", ");
     return errorResponse(
       "block_update_rejected",
       `모델 출력이 검증을 통과하지 못했습니다: ${detail}`,
-      new Error(`block_update_rejected: ${detail}`)
+      new Error(`block_update_rejected: ${kinds}`)
     );
   }
 

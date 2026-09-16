@@ -14,6 +14,9 @@ import { handleDeleteInterview, handlePatchInterview } from "./interviews/[id]/r
 import { handleStageA } from "./candidates/stage-a/route";
 import { handlePurge } from "./cron/purge/route";
 import { handleInterviewQuestionStream } from "./interview/stream/route";
+import { handleExperienceBlockUpdate } from "./interview/experience-block/route";
+import { emptyExperienceBlockState } from "@/features/experience-block/types";
+import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
 
 /**
  * 라우트가 실제로 오류를 Sentry로 넘기는지 봅니다(이슈 #136).
@@ -204,5 +207,52 @@ describe("4xx 응답은 Sentry로 가지 않습니다", () => {
     const response = await call();
     expect(response.status).toBe(status);
     expect(reported).not.toHaveBeenCalled();
+  });
+});
+
+describe("Sentry 이벤트에 사용자 답변 본문을 싣지 않습니다", () => {
+  /**
+   * PR #138 리뷰 1라운드에서 받은 지적입니다.
+   *
+   * 모델 출력이 검증을 통과하지 못하면 502로 거절하는데, 그 `detail`에 모델이 생성한 문장이 섞입니다
+   * (`reducer.ts`의 `no_claim_reference`가 `sentence.text`를 30자까지 자릅니다). 그 문장은 사용자의
+   * 답변을 모델이 다시 쓴 것이라, Sentry로 그대로 보내면 이슈 #136의 제약을 어깁니다.
+   *
+   * Sentry가 `message`와 `cause.message`를 싣고 비표준 속성은 싣지 않는 것은 2026-09-16에
+   * 실측했습니다. 그래서 `message`에 무엇이 들어가는지가 이 경로의 전부입니다.
+   */
+  it("모델 출력 거절을 보고할 때 문장은 빼고 분류만 보낸다", async () => {
+    const sentence = "재시도 큐를 붙여 실패한 요청을 다시 보냈습니다";
+    const output = {
+      ops: [],
+      // 주장 참조가 없는 표시 문장입니다. `no_claim_reference`로 걸리면서 문장이 detail에 실립니다.
+      display: [{ block: "problem", sentences: [{ text: sentence, claimRefs: [] }] }],
+      evaluation: [],
+      targetResponse: "provided",
+    };
+    const body = {
+      snapshot: evidenceSnapshotFixture(),
+      history: [{ turnId: "t1", question: "질문", answer: sentence }],
+      state: emptyExperienceBlockState(),
+      targetBlock: "problem",
+      targetElement: "a",
+      answerTurnId: "t1",
+    };
+
+    const response = await handleExperienceBlockUpdate(
+      request("/api/interview/experience-block", { body }),
+      { generate: (async () => output) as never, store: createInMemoryStore() }
+    );
+
+    expect(response.status).toBe(502);
+    // 사용자에게 가는 응답은 그대로입니다. 어느 문장이 왜 걸렸는지는 화면에서 필요합니다.
+    const payload = (await response.json()) as { error: { kind: string; message: string } };
+    expect(payload.error.kind).toBe("block_update_rejected");
+    expect(payload.error.message).toContain(sentence.slice(0, 30));
+
+    expect(reported).toHaveBeenCalledTimes(1);
+    const sent = reported.mock.calls[0]?.[0] as Error;
+    expect(sent.message).toContain("no_claim_reference");
+    expect(sent.message).not.toContain(sentence.slice(0, 30));
   });
 });
