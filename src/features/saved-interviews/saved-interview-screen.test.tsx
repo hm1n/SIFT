@@ -88,7 +88,7 @@ describe("SavedInterviewScreen", () => {
     it("기한이 멀어도 남은 날수를 알린다", () => {
       render(<SavedInterviewScreen interview={payload({ openedAt: openedDaysAgo(0) })} onResume={vi.fn()} />);
 
-      expect(screen.getByText(`자동 삭제까지 ${RETENTION_DAYS} days 남았습니다. 인터뷰를 열면 기간이 다시 시작됩니다.`)).toBeInTheDocument();
+      expect(screen.getByText(`자동 삭제까지 ${RETENTION_DAYS}일 남았습니다. 인터뷰를 열면 기간이 다시 시작됩니다.`)).toBeInTheDocument();
     });
 
     it("기한이 가까우면 지워진다는 사실을 앞세운다", () => {
@@ -96,16 +96,19 @@ describe("SavedInterviewScreen", () => {
         <SavedInterviewScreen interview={payload({ openedAt: openedDaysAgo(RETENTION_DAYS - 2) })} onResume={vi.fn()} />
       );
 
-      expect(screen.getByText("이 인터뷰는 2 days 뒤에 자동으로 지워집니다.")).toBeInTheDocument();
+      expect(screen.getByText("이 인터뷰는 2일 뒤에 자동으로 지워집니다.")).toBeInTheDocument();
     });
 
-    /** 만료를 알리는 자리라 문구가 어색하면 안 됩니다. 1일 사례는 경고 구간 안이라 실제로 납니다(PR #130 리뷰). */
-    it("하루가 남으면 단수형으로 적는다", () => {
+    /**
+     * 만료를 알리는 자리라 문구가 어색하면 안 됩니다. 1일 사례는 경고 구간 안이라 실제로 납니다(PR #130 리뷰).
+     * 영어로 셀 때는 `1 day`·`2 days` 갈래가 있었지만 `일`은 수량에 따라 형태가 바뀌지 않습니다.
+     */
+    it("하루가 남으면 1일로 적는다", () => {
       render(
         <SavedInterviewScreen interview={payload({ openedAt: openedDaysAgo(RETENTION_DAYS - 1) })} onResume={vi.fn()} />
       );
 
-      expect(screen.getByText("이 인터뷰는 1 day 뒤에 자동으로 지워집니다.")).toBeInTheDocument();
+      expect(screen.getByText("이 인터뷰는 1일 뒤에 자동으로 지워집니다.")).toBeInTheDocument();
     });
   });
 

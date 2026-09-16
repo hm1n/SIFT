@@ -143,13 +143,13 @@ describe("SavedInterviewList", () => {
     });
 
     // 배지의 설명 문구도 같은 자리입니다(PR #130 리뷰).
-    it("하루가 남으면 배지 설명을 단수형으로 적는다", () => {
+    it("하루가 남으면 배지 설명을 1일로 적는다", () => {
       renderList({
         status: "ready",
         interviews: [item({ id: "soon", title: "곧 지워짐", openedAt: openedDaysAgo(RETENTION_DAYS - 1) })],
       });
 
-      expect(screen.getByTitle("1 day 뒤에 자동으로 지워집니다")).toBeInTheDocument();
+      expect(screen.getByTitle("1일 뒤에 자동으로 지워집니다")).toBeInTheDocument();
     });
 
     /**

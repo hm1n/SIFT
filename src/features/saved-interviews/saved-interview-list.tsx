@@ -4,7 +4,6 @@ import { useState } from "react";
 import { DELETION_NOTICE_COPY, SAVED_INTERVIEW_LIST_COPY } from "@/copy/saved";
 import { BLOCK_KINDS } from "@/features/experience-block/types";
 import type { InterviewListItemPayload } from "./payload";
-import { pluralCount } from "@/features/experience-candidates/candidate-period";
 import { daysUntilDeletion, DELETION_WARNING_DAYS } from "./retention";
 import styles from "./saved-interview-list.module.css";
 
@@ -61,7 +60,7 @@ function DeletionBadge({ openedAt }: { openedAt: string }) {
   const daysLeft = daysUntilDeletion(openedAt);
   if (daysLeft > DELETION_WARNING_DAYS) return null;
   return (
-    <span className={styles.deletionBadge} title={DELETION_NOTICE_COPY.badgeTitle(pluralCount(daysLeft, "day"))}>
+    <span className={styles.deletionBadge} title={DELETION_NOTICE_COPY.badgeTitle(daysLeft)}>
       D-{daysLeft}
     </span>
   );

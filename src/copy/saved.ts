@@ -22,14 +22,15 @@ export const SAVED_INTERVIEW_LIST_COPY = {
 /**
  * 자동 삭제까지 남은 기간입니다(이슈 #116). 기한이 가까우면 화면이 경고색으로 바꿉니다.
  *
- * 남은 날수는 `pluralCount`가 영어로 셉니다(이슈 #128 사용자 결정). 뒤에 조사가 바로 붙지 않도록
- * 수량 다음에 빈칸과 명사를 두는 어순을 씁니다.
+ * 남은 날수는 `일`로 셉니다. 수량을 영어로 세는 `pluralCount`를 쓰지 않는 자리입니다. 세는 단위가
+ * mono로 그려지는 developer metadata가 아니라 본문이고, `일`은 조사가 바로 붙어 어순을 비틀지
+ * 않아도 됩니다.
  */
 export const DELETION_NOTICE_COPY = {
   /** 목록 배지의 설명입니다. 배지 자체는 `D-3` 같은 mono 표기라 영어로 남습니다. */
-  badgeTitle: (days: string) => `${days} 뒤에 자동으로 지워집니다`,
-  expiringSoon: (days: string) => `이 인터뷰는 ${days} 뒤에 자동으로 지워집니다.`,
-  remaining: (days: string) => `자동 삭제까지 ${days} 남았습니다. 인터뷰를 열면 기간이 다시 시작됩니다.`,
+  badgeTitle: (days: number) => `${days}일 뒤에 자동으로 지워집니다`,
+  expiringSoon: (days: number) => `이 인터뷰는 ${days}일 뒤에 자동으로 지워집니다.`,
+  remaining: (days: number) => `자동 삭제까지 ${days}일 남았습니다. 인터뷰를 열면 기간이 다시 시작됩니다.`,
 } as const;
 
 export const SAVED_INTERVIEW_SCREEN_COPY = {
