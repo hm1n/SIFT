@@ -241,6 +241,17 @@ export const STREAM_DATA_UNREADABLE_MESSAGE = "질문이 도착하는 중에 내
 
 export const GENERATION_EMPTY_MESSAGE = "질문을 만들지 못했습니다.";
 
+/**
+ * 인터뷰가 종료 대기로 넘어갔을 때 질문 자리에 넣는 안내입니다. 모델이 만든 질문이 아니라 훅이
+ * 고정 문구로 채우는 것이고, 화면은 이것을 다른 질문과 똑같이 그립니다(설계 6-2절 6번, 6-3절).
+ *
+ * 이름의 `PROMPT`는 모델에게 주는 지시가 아니라 질문 자리를 뜻합니다. 이 디렉터리는 AI 프롬프트를
+ * 담지 않습니다. 이름을 바꾸지 않은 것은 `llm-wiki` 문서 6개가 이 이름으로 이 문구를 가리키기
+ * 때문입니다.
+ */
+export const READY_TO_FINISH_PROMPT =
+  "지금까지 답변으로 확인할 내용은 충분합니다. 더 남기고 싶은 내용이 있다면 이어서 답해 주세요. 없다면 종료를 눌러 마무리할 수 있습니다.";
+
 /** 질문 요청 본문 검증과 스트림 라우트가 내려보내는 문구입니다. 화면이 그대로 그립니다. */
 export const QUESTION_REQUEST_COPY = {
   invalidSnapshot: "질문에 쓸 Repository 근거를 확인할 수 없습니다.",
