@@ -1,4 +1,14 @@
-import { BLOCK_EMPTY_ENDED, BLOCK_EMPTY_PENDING, LOAD_LATEST, NO_INTERVIEWS } from "./shared";
+import {
+  BLOCK_EMPTY_ENDED,
+  BLOCK_EMPTY_PENDING,
+  LOAD_LATEST,
+  NO_INTERVIEWS,
+  SECTION_EXPERIENCE,
+  SECTION_INTERVIEWS,
+  SECTION_REPOSITORY_EVIDENCE,
+  SECTION_TECHNICAL_TOPICS,
+  SECTION_WHY_WORTH_DISCUSSING,
+} from "./shared";
 /**
  * 저장 계층 요청이 화면에 닿기 전에 끊긴 경우입니다. `fetch`가 던지는 영어 원문을 쓰지 않습니다.
  * `repository-analysis-view.tsx`의 조회 실패 안내가 이 message를 그대로 그립니다.
@@ -9,6 +19,8 @@ export const SAVED_INTERVIEW_REQUEST_COPY = {
 } as const;
 
 export const SAVED_INTERVIEW_LIST_COPY = {
+  /** mono 섹션 라벨입니다. 사이드바와 같은 값입니다. */
+  sectionLabel: SECTION_INTERVIEWS,
   loading: "인터뷰를 불러오는 중…",
   error: "인터뷰를 불러오지 못했습니다.",
   retry: "다시 시도",
@@ -34,6 +46,11 @@ export const DELETION_NOTICE_COPY = {
 } as const;
 
 export const SAVED_INTERVIEW_SCREEN_COPY = {
+  /** mono 섹션 라벨입니다. 번역하지 않습니다(이슈 #128 경계표). 후보 상세와 같은 세 섹션입니다. */
+  eyebrow: SECTION_EXPERIENCE,
+  whyHeading: SECTION_WHY_WORTH_DISCUSSING,
+  topicsHeading: SECTION_TECHNICAL_TOPICS,
+  evidenceHeading: SECTION_REPOSITORY_EVIDENCE,
   /** mono 섹션 라벨입니다. 레퍼런스 `TRANSLATIONS.ko`가 이 항목만은 한국어로 둡니다. */
   paarHeading: "PAAR 경험",
   /** PAAR 블록이 비어 있을 때입니다. 끝난 인터뷰인지에 따라 사용자가 할 수 있는 일이 다릅니다. */

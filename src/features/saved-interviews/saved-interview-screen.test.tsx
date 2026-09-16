@@ -3,7 +3,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { BLOCK_LABELS } from "@/features/experience-block/block-labels";
+import { BLOCK_LABELS } from "@/copy/shared";
 import { emptyInterviewProgress } from "@/features/experience-block/progress";
 import { BLOCK_MAX_BYTES, BLOCK_MAX_STATEMENTS } from "@/features/experience-block/reducer";
 import { emptyExperienceBlockState, type Claim } from "@/features/experience-block/types";

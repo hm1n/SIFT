@@ -7,7 +7,7 @@ import {
 } from "@/copy/interview";
 import { BlockSentences } from "@/features/experience-block/block-sentences";
 import { filledBlockCount } from "@/features/experience-block/block-edits";
-import { BLOCK_LABELS } from "@/features/experience-block/block-labels";
+import { BLOCK_LABELS } from "@/copy/shared";
 import { blockConflicts, markDisplay } from "@/features/experience-block/reducer";
 import { BLOCK_KINDS, type BlockKind } from "@/features/experience-block/types";
 import type { UseExperienceInterviewState } from "@/features/experience-block/use-experience-interview";
@@ -128,7 +128,7 @@ export function PaarPanel({ stream, isSaved = false }: PaarPanelProps) {
     <section className={styles.panel} aria-labelledby="paar-panel-heading">
       <div className={styles.header}>
         <h3 id="paar-panel-heading" className={styles.heading}>
-          PAAR
+          {PAAR_PANEL_COPY.heading}
         </h3>
         <span className={styles.count}>
           / {String(filled).padStart(2, "0")} OF {String(PAAR_BLOCK_COUNT).padStart(2, "0")}

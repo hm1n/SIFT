@@ -1,5 +1,6 @@
 import {
   BLOCK_EMPTY_ENDED,
+  SECTION_EXPERIENCE,
   BLOCK_EMPTY_PENDING,
   CONTINUE_INTERVIEW,
   LOAD_LATEST,
@@ -78,6 +79,8 @@ export const STREAM_ERROR_GUIDANCE_COPY = {
 /** 대화 열이 그리는 문구입니다. mono 라벨(`Agent`, `You`, `PAAR`)은 영어로 남아 여기 없습니다. */
 export const STREAM_VIEW_COPY = {
   streamLabel: "AI 질문",
+  /** 제출 단축키 표기입니다. 기호라 번역 대상이 아닙니다. */
+  submitShortcut: "⌘/Ctrl+↵",
   unsavedNotice: "마지막 답변이 저장되지 않았습니다.",
   retrySave: "다시 저장",
   staleNotice: "다른 탭에서 이 인터뷰가 변경됐습니다.",
@@ -104,6 +107,10 @@ export const STREAM_VIEW_COPY = {
 } as const;
 
 export const INTERVIEW_SCREEN_COPY = {
+  /** mono 섹션 라벨입니다. 번역하지 않습니다(이슈 #128 경계표). */
+  eyebrow: SECTION_EXPERIENCE,
+  /** 코드 패널을 여닫는 버튼입니다. 워크스페이스와 탭 모드가 같은 글자를 씁니다. */
+  codePanelToggle: "Code",
   back: "← 뒤로",
   interviewTab: "인터뷰",
   workspaceView: "워크스페이스 보기",
@@ -178,6 +185,8 @@ export const BLOCK_UPDATE_ERROR_CAUSE: Partial<Record<BlockUpdateFetchErrorKind,
 };
 
 export const PAAR_PANEL_COPY = {
+  /** mono 섹션 라벨입니다. 번역하지 않습니다(이슈 #128 경계표). */
+  heading: "PAAR",
   cardNotReflected: "이 블록을 겨냥한 답변이 아직 반영되지 않았습니다.",
   unreflected: "마지막 답변이 아직 반영되지 않았고, 그래서 저장도 되지 않았습니다.",
   updateUnfinished: "마지막 답변을 반영하지 못했습니다.",
@@ -208,6 +217,13 @@ export const PATCH_OMITTED_COPY: Record<EvidencePatchOmittedReason, string> = {
 
 /** mono 섹션 라벨(`Code / Evidence`, `Files`, `Diff`, `File`, `Selected file`)은 영어로 남아 여기 없습니다. */
 export const CODE_PANEL_COPY = {
+  /** mono 섹션 라벨입니다. 번역하지 않습니다(이슈 #128 경계표). */
+  heading: "Code / Evidence",
+  diffMode: "Diff",
+  fileMode: "File",
+  filesLabel: "Files",
+  selectedFile: "Selected file",
+  noDiffBody: "No diff body",
   viewModeLabel: "보기 모드",
   fileModeUnavailable: "— 볼 수 없습니다. GitHub에서 받은 변경 내용에는 파일 전체가 없습니다.",
   expandFiles: "파일 목록 펼치기",

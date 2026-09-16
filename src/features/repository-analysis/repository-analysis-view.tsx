@@ -556,7 +556,7 @@ function SavedAnalysisNotice({
   const date = new Date(savedAt);
   return (
     <div className={styles.savedNotice} role="status">
-      <span className={styles.savedNoticeCode}>SAVED</span>
+      <span className={styles.savedNoticeCode}>{SAVED_ANALYSIS_NOTICE_COPY.savedBadge}</span>
       <p className={styles.savedNoticeText}>
         {SAVED_ANALYSIS_NOTICE_COPY.savedOnBefore}
         <time dateTime={savedAt}>

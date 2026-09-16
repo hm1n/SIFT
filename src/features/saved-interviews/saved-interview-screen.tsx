@@ -12,7 +12,7 @@ import {
   validateBlockEdit,
   type BlockEdits,
 } from "@/features/experience-block/block-edits";
-import { BLOCK_LABELS } from "@/features/experience-block/block-labels";
+import { BLOCK_LABELS } from "@/copy/shared";
 import { BlockSentences } from "@/features/experience-block/block-sentences";
 import { BLOCK_MAX_BYTES, BLOCK_MAX_STATEMENTS } from "@/features/experience-block/reducer";
 import { BLOCK_KINDS, type BlockKind, type ExperienceBlockState } from "@/features/experience-block/types";
@@ -218,7 +218,7 @@ export function SavedInterviewScreen({
   return (
     <section className={styles.screen}>
       <header className={styles.header}>
-        <p className={styles.eyebrow}>Experience</p>
+        <p className={styles.eyebrow}>{SAVED_INTERVIEW_SCREEN_COPY.eyebrow}</p>
         <h1 className={styles.title}>{interview.title}</h1>
         <div className={styles.meta}>
           <span>{interview.repoOwner} / {interview.repoName}</span>
@@ -232,7 +232,7 @@ export function SavedInterviewScreen({
       <div className={styles.body}>
         <div className={styles.column}>
           <section className={styles.section} aria-labelledby="saved-why-heading">
-            <p id="saved-why-heading" className={styles.sectionEyebrow}>Why worth discussing</p>
+            <p id="saved-why-heading" className={styles.sectionEyebrow}>{SAVED_INTERVIEW_SCREEN_COPY.whyHeading}</p>
             {candidate?.evidence ? (
               <>
                 <p className={styles.text}>{candidate.evidence}</p>
@@ -244,7 +244,7 @@ export function SavedInterviewScreen({
           </section>
 
           <section className={styles.section} aria-labelledby="saved-topics-heading">
-            <p id="saved-topics-heading" className={styles.sectionEyebrow}>Technical topics</p>
+            <p id="saved-topics-heading" className={styles.sectionEyebrow}>{SAVED_INTERVIEW_SCREEN_COPY.topicsHeading}</p>
             {candidate && candidate.technicalTopics.length > 0 ? (
               <>
                 <ul className={styles.topics}>
@@ -258,7 +258,7 @@ export function SavedInterviewScreen({
           </section>
 
           <section className={styles.section} aria-labelledby="saved-evidence-heading">
-            <p id="saved-evidence-heading" className={styles.sectionEyebrow}>Repository evidence</p>
+            <p id="saved-evidence-heading" className={styles.sectionEyebrow}>{SAVED_INTERVIEW_SCREEN_COPY.evidenceHeading}</p>
             <p className={styles.notice}>{REPOSITORY_VERIFIED_NOTICE}</p>
             {snapshot ? (
               <ul className={styles.commits}>

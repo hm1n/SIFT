@@ -1,4 +1,10 @@
-import { CHANGE_REPOSITORY, CONNECTING_GITHUB, NO_INTERVIEWS, NO_REPOSITORY_SELECTED } from "./shared";
+import {
+  CHANGE_REPOSITORY,
+  CONNECTING_GITHUB,
+  NO_INTERVIEWS,
+  NO_REPOSITORY_SELECTED,
+  SECTION_INTERVIEWS,
+} from "./shared";
 /** 문서 metadata입니다. 검색 결과와 브라우저 탭에 나갑니다. */
 export const DOCUMENT_COPY = {
   title: "SIFT | Repository 분석",
@@ -22,6 +28,9 @@ export const ACCOUNT_MENU_COPY = {
 } as const;
 
 export const APP_SHELL_COPY = {
+  /** mono 섹션 라벨입니다. 번역하지 않습니다(이슈 #128 경계표). */
+  repositorySection: "Repository",
+  interviewsSection: SECTION_INTERVIEWS,
   /** 사이드바 landmark의 이름입니다. 보이는 라벨이 없어 여기에만 있습니다. */
   workspace: "워크스페이스",
   noRepository: NO_REPOSITORY_SELECTED,

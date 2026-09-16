@@ -1,4 +1,10 @@
-import { CHOOSE_ANOTHER_REPOSITORY } from "./shared";
+import {
+  CHOOSE_ANOTHER_REPOSITORY,
+  SECTION_EXPERIENCE,
+  SECTION_REPOSITORY_EVIDENCE,
+  SECTION_TECHNICAL_TOPICS,
+  SECTION_WHY_WORTH_DISCUSSING,
+} from "./shared";
 import type { EvidenceSnapshotFailureReason, VerifiabilityStatus } from "@/features/experience-candidates/types";
 import type { WorkUnitSignal } from "@/features/experience-candidates/work-unit-score";
 import type { WorkUnitSelectionExclusionReason } from "@/features/experience-candidates/work-unit-selection";
@@ -57,6 +63,8 @@ export const WORK_UNIT_SELECTION_EXCLUSION_COPY: Record<WorkUnitSelectionExclusi
 };
 
 export const CANDIDATE_LIST_COPY = {
+  /** mono 섹션 라벨입니다. 번역하지 않습니다(이슈 #128 경계표). */
+  eyebrow: "Candidates",
   found: (count: string) => `${count} 발견`,
   insufficientLabel: "후보가 더 없는 이유: ",
   insufficientTail: "기준을 낮추거나 후보를 임의로 채우지 않습니다.",
@@ -71,6 +79,12 @@ export const CANDIDATE_LIST_COPY = {
 } as const;
 
 export const CANDIDATE_DETAIL_COPY = {
+  /** mono 섹션 라벨입니다. 번역하지 않습니다(이슈 #128 경계표). */
+  eyebrow: SECTION_EXPERIENCE,
+  whyHeading: SECTION_WHY_WORTH_DISCUSSING,
+  topicsHeading: SECTION_TECHNICAL_TOPICS,
+  evidenceHeading: SECTION_REPOSITORY_EVIDENCE,
+  verifiedListHeading: "VERIFIED FROM REPOSITORY",
   /** 토픽이 빈 배열로 온 후보의 Empty 표시입니다. 스키마에 필드는 있고 고를 것이 없었다는 뜻입니다. */
   topicsEmpty: "이 후보의 diff와 커밋 메시지에서는 기술 토픽을 찾지 못했습니다.",
   commitNotIndexed: "대표 커밋을 불러온 커밋 목록에서 찾지 못했습니다.",
@@ -86,7 +100,11 @@ export const CANDIDATE_DETAIL_COPY = {
    *
    * 이 자리에 두는 이유는 여기가 실제로 저장이 일어나는 시점이기 때문입니다. 로그인 화면에 두면
    * 저장이 일어나기 한참 전이라 읽고 잊습니다. 보관 기간을 함께 적어 "무기한 남는 것은 아니다"까지
-   * 한 문장으로 말합니다. 무엇이 저장되는지를 줄이지 않습니다.
+   * 한 문장으로 말합니다.
+   *
+   * **줄이면 안 되는 것이 셋입니다.** 무엇이 저장되는지(커밋 메시지·파일 경로·코드 변경), 비공개
+   * Repository의 코드도 포함된다는 것, 보관 기간입니다. 이 셋을 빼면 고지가 아니게 됩니다.
+   * 다듬은 것은 `저장`이 세 번 나오던 반복과, 기간을 문장 뒤에 숨기던 어순뿐입니다.
    */
   storageNotice: (days: number) =>
     `인터뷰를 시작하면 이 근거를 서버에 저장합니다. 커밋 메시지, 파일 경로, 코드 변경 내용이 들어가고 비공개 Repository의 코드도 함께 저장됩니다. 열지 않은 채 ${days}일이 지나면 자동으로 지워집니다.`,

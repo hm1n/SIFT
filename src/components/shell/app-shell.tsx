@@ -44,8 +44,8 @@ export function AppShell({ repository, onChangeRepository, interviews, onFindNew
   return (
     <div className={styles.shell}>
       <aside className={styles.sidebar} aria-label={APP_SHELL_COPY.workspace}>
-        <section className={styles.repository} aria-label="Repository">
-          <span className={styles.sectionLabel}>Repository</span>
+        <section className={styles.repository} aria-label={APP_SHELL_COPY.repositorySection}>
+          <span className={styles.sectionLabel}>{APP_SHELL_COPY.repositorySection}</span>
           <div className={styles.repositoryInfo}>
             {repository ? (
               <>
@@ -63,10 +63,10 @@ export function AppShell({ repository, onChangeRepository, interviews, onFindNew
             </button>
           ) : null}
         </section>
-        <section className={styles.interviews} aria-label="Interviews">
+        <section className={styles.interviews} aria-label={APP_SHELL_COPY.interviewsSection}>
           {interviews ?? (
             <>
-              <span className={styles.sectionLabel}>Interviews</span>
+              <span className={styles.sectionLabel}>{APP_SHELL_COPY.interviewsSection}</span>
               <p className={styles.emptyInterviews}>{APP_SHELL_COPY.noInterviews}</p>
             </>
           )}

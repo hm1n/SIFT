@@ -9,6 +9,11 @@ import type { GitHubFetchErrorKind } from "@/lib/github/errors";
 
 export const REPOSITORY_SELECT_COPY = {
   eyebrow: "Repository 선택",
+  /** mono 섹션 라벨입니다. 번역하지 않습니다(이슈 #128 경계표). */
+  repositoriesLabel: "Repositories",
+  privateBadge: "PRIVATE",
+  contributionLabel: "Your Contribution",
+  optionalBadge: "Optional",
   title: "분석할 Repository를 선택하세요.",
   searchPlaceholder: "Repository 이름 검색",
   searchLabel: "Repository 검색",
@@ -85,6 +90,17 @@ export const SAVED_ANALYSIS_LOOKUP_COPY = {
  * 둡니다. `SAVED`는 mono 상태 코드라 영어로 남습니다.
  */
 export const SAVED_ANALYSIS_NOTICE_COPY = {
+  /** mono 섹션 라벨입니다. 번역하지 않습니다(이슈 #128 경계표). */
+  savedBadge: "SAVED",
+  /**
+   * `<time>`을 감싸느라 날짜 앞뒤로 갈립니다. 날짜가 문장 맨 앞이라 앞부분은 없습니다.
+   *
+   * `저장된`으로 시작하던 것을 뺐습니다. 바로 왼쪽에 `SAVED` 배지가 같은 말을 하고 있어 반복입니다.
+   *
+   * 뒷문장의 서술어는 `unusedContribution`과 일부러 다르게 둡니다. 둘은 같은 `<p>` 안에서 이어
+   * 붙으므로(`그 뒤에 올린 커밋은 … 방금 적은 기여 내용은 …`) 서술어까지 같으면 한 문장을 두 번
+   * 읽는 것처럼 보입니다. 빠진 것은 커밋이고 쓰이지 않은 것은 입력이라 사실도 다릅니다.
+   */
   savedOnBefore: "저장된 ",
   savedOnAfter: " 분석입니다. 그 뒤에 올린 커밋은 이 목록에 없습니다.",
   /** 기여 내용을 새로 적고 들어왔는데 저장본을 열었을 때입니다. 적은 것이 쓰이지 않았다고 분명히 알립니다. */

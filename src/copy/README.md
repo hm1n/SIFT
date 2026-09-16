@@ -17,6 +17,7 @@
 담습니다.
 
 - 화면 컴포넌트가 그리는 모든 문구
+- mono로 그리는 영어 섹션 라벨과 상태 코드(`Experience`, `Why worth discussing`, `Repositories`, `SAVED`, `PRIVATE`). **번역하지는 않지만 여기 담습니다.** 처음에는 "번역 대상이 아니므로 쓰는 자리에 둔다"였는데, 그러면 두 화면이 같은 라벨을 각자 들게 됩니다. 실제로 저장본 화면이 PAAR 블록 이름표를 따로 들고 있었고 `Analyze`가 한쪽만 바뀌면 같은 블록을 두 이름으로 부를 참이었습니다. 담는 것과 번역하는 것은 다른 결정입니다.
 - 화면이 `error.message`를 그대로 그리는 오류 문구. 그 자리는 둘뿐입니다. `interview-stream-view.tsx`의 오류 박스와 `repository-analysis-view.tsx`의 `StatusScreen` sub입니다. 그래서 그 두 경로로 흘러드는 서버 문구(`api/candidates/**`, `api/interview/stream`, `llm-error.ts`, `llm-provider.ts`, `sse.ts`, `schema.ts`, `candidate-client.ts`, `question-request.ts`, `question-stream.ts`)까지 여기 있습니다.
 
   이 목록은 한 번 빠뜨렸습니다. 처음 옮길 때 `sse.ts`와 `llm-provider.ts`가 빠졌고, `llm-error.ts`는 목록에 있었는데도 한 갈래만 영어로 남았습니다. 셋 다 분류(`kind`)는 맞아서 기존 테스트가 통과했습니다. **한 파일을 옮길 때는 그 파일이 만드는 message를 전부 세어야 합니다.** 일부만 옮기면 남은 것은 타입으로도 테스트로도 드러나지 않습니다.
@@ -25,7 +26,6 @@
 
 - 화면이 `kind`만 읽고 문구는 따로 쓰는 오류의 원문. `src/lib/github/**`, `features/*/request.ts`, `api/interviews/**`, `api/interview/experience-block`이 여기 해당합니다. 이 값들은 로그와 디버깅용이라 도메인 코드 옆에 두는 편이 낫습니다.
 - AI 프롬프트(`question-prompt.ts`, `block-prompt.ts`, `stage-a.ts`, `stage-b.ts`). 사용자가 읽는 글이 아니라 모델에 주는 지시입니다.
-- mono로 그리는 영어 라벨과 상태 코드. 번역 대상이 아니므로 쓰는 자리에 그대로 둡니다. 경계는 위 위키의 표에 있습니다.
 
 ## 어떻게 쓰는가
 

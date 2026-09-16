@@ -90,7 +90,7 @@ export function ExperienceCandidateDetail({
   return (
     <section className={styles.detail} aria-live="polite">
       <div className={styles.header}>
-        <p className={styles.eyebrow}>Experience</p>
+        <p className={styles.eyebrow}>{CANDIDATE_DETAIL_COPY.eyebrow}</p>
         <h2>{title}</h2>
         {commit === null ? <p className={styles.notice}>{CANDIDATE_DETAIL_COPY.commitNotIndexed}</p> : null}
         <div className={styles.meta}>
@@ -101,13 +101,13 @@ export function ExperienceCandidateDetail({
 
       <div className={styles.body}>
         <section className={styles.section} aria-labelledby="why-heading">
-          <p id="why-heading" className={styles.sectionEyebrow}>Why worth discussing</p>
+          <p id="why-heading" className={styles.sectionEyebrow}>{CANDIDATE_DETAIL_COPY.whyHeading}</p>
           <p className={styles.evidenceText}>{candidate.evidence}</p>
           <p id={EVIDENCE_NOTICE_ID} className={styles.evidenceNotice}>{EVIDENCE_VERIFIABILITY_NOTICE}</p>
         </section>
 
         <section className={styles.section} aria-labelledby="topics-heading">
-          <p id="topics-heading" className={styles.sectionEyebrow}>Technical topics</p>
+          <p id="topics-heading" className={styles.sectionEyebrow}>{CANDIDATE_DETAIL_COPY.topicsHeading}</p>
           {normalizedTechnicalTopics.length > 0 ? (
             <>
               <ul className={styles.topicChips}>
@@ -123,14 +123,14 @@ export function ExperienceCandidateDetail({
         </section>
 
         <section className={`${styles.section} ${styles.evidenceSection}`} aria-labelledby="evidence-heading">
-          <p id="evidence-heading" className={styles.sectionEyebrow}>Repository evidence</p>
+          <p id="evidence-heading" className={styles.sectionEyebrow}>{CANDIDATE_DETAIL_COPY.evidenceHeading}</p>
           <p id={VERIFIED_NOTICE_ID} className={styles.verifiedNotice}>{REPOSITORY_VERIFIED_NOTICE}</p>
           {normalizedRelatedShas.length > 0 ? (
             <p className={styles.aiSelectionNotice}>{RELATED_COMMITS_VERIFICATION_NOTICE}</p>
           ) : null}
           <div className={styles.evidenceListPanel}>
             <div className={styles.evidenceListHeader}>
-              <span>VERIFIED FROM REPOSITORY</span>
+              <span>{CANDIDATE_DETAIL_COPY.verifiedListHeading}</span>
               <span>{pluralCount(commitCount, "commit")}</span>
             </div>
             <ul className={styles.evidenceList}>

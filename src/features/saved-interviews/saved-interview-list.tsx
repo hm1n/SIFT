@@ -83,7 +83,7 @@ export function SavedInterviewList({
   return (
     <>
       <div className={styles.header}>
-        <span className={styles.label}>Interviews</span>
+        <span className={styles.label}>{SAVED_INTERVIEW_LIST_COPY.sectionLabel}</span>
         {state.status === "ready" ? <span className={styles.count}>{interviews.length}</span> : null}
       </div>
 

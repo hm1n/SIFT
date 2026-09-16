@@ -81,18 +81,18 @@ export function CodePanel({ snapshot }: CodePanelProps) {
     >
       <div className={styles.panelHeader}>
         <h3 id="code-panel-heading" className={styles.panelHeading}>
-          Code / Evidence
+          {CODE_PANEL_COPY.heading}
         </h3>
         <div className={styles.viewModes} role="group" aria-label={CODE_PANEL_COPY.viewModeLabel}>
           <button type="button" className={styles.viewMode} aria-pressed={true}>
-            Diff
+            {CODE_PANEL_COPY.diffMode}
           </button>
           {/*
             FILE 모드는 파일 전체 원문이 있어야 하는데 근거 스냅샷은 변경 patch만 싣습니다. 자리를
             비워 두면 디자인의 토글이 사라지므로 비활성 상태로 남기고 이유를 함께 둡니다.
           */}
           <button type="button" className={styles.viewMode} disabled aria-pressed={false}>
-            File
+            {CODE_PANEL_COPY.fileMode}
             <span className={styles.visuallyHidden}>
               {CODE_PANEL_COPY.fileModeUnavailable}
             </span>
@@ -102,7 +102,7 @@ export function CodePanel({ snapshot }: CodePanelProps) {
 
       <div className={`${styles.filesSection} ${filesCollapsed ? styles.filesCollapsed : ""}`}>
         <div className={styles.filesHeader}>
-          <span className={styles.sectionLabel}>Files</span>
+          <span className={styles.sectionLabel}>{CODE_PANEL_COPY.filesLabel}</span>
           <span className={styles.sectionCount}>/ {padded(files.length)}</span>
           {filesCollapsed ? (
             <span className={styles.collapsedFilename}>· {selectedFile.filename}</span>
@@ -214,7 +214,7 @@ function SelectedFileDiff({
   return (
     <div className={styles.diffSection}>
       <div className={styles.diffHeader}>
-        <p className={styles.sectionLabel}>Selected file</p>
+        <p className={styles.sectionLabel}>{CODE_PANEL_COPY.selectedFile}</p>
         <p className={styles.diffPath} title={file.path}>
           {file.path}
         </p>
@@ -267,7 +267,7 @@ function SelectedFileDiff({
 
       {commit.file.patch === null ? (
         <div className={styles.diffEmpty}>
-          <p className={styles.sectionLabel}>No diff body</p>
+          <p className={styles.sectionLabel}>{CODE_PANEL_COPY.noDiffBody}</p>
           <p>
             {commit.file.patchOmittedReason === null
               ? CODE_PANEL_COPY.noPatchBody

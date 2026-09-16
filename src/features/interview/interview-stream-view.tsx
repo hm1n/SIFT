@@ -425,7 +425,7 @@ export function InterviewStreamView({ stream, currentBlockLabel, save }: Intervi
               <div className={styles.composerActions}>
                 {/* 단축키 표시입니다. 키 조합 자체는 두 보조 키를 모두 받습니다. */}
                 <span className={styles.shortcutHint} aria-hidden="true">
-                  ⌘/Ctrl+↵
+                  {STREAM_VIEW_COPY.submitShortcut}
                 </span>
                 <button type="submit" className={styles.submitButton} disabled={!canSubmit}>
                   {STREAM_VIEW_COPY.send}

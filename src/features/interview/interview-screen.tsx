@@ -8,7 +8,7 @@ import { InterviewStreamView } from "./interview-stream-view";
 import { PAAR_BLOCK_COUNT, PaarPanel } from "./paar-panel";
 import { ResizeHandle } from "./resize-handle";
 import { filledBlockCount } from "@/features/experience-block/block-edits";
-import { BLOCK_LABELS } from "@/features/experience-block/block-labels";
+import { BLOCK_LABELS } from "@/copy/shared";
 import {
   useExperienceInterview,
   type RestoredInterview,
@@ -218,7 +218,7 @@ export function InterviewScreen({
             {INTERVIEW_SCREEN_COPY.back}
           </button>
           <span className={styles.headerDivider} aria-hidden="true" />
-          <p className={styles.eyebrow}>Experience</p>
+          <p className={styles.eyebrow}>{INTERVIEW_SCREEN_COPY.eyebrow}</p>
           <h2 className={styles.title}>{title}</h2>
         </div>
         {isTabMode ? null : (
@@ -229,7 +229,7 @@ export function InterviewScreen({
               aria-pressed={showCodePanel}
               onClick={() => setShowCodePanel((shown) => !shown)}
             >
-              Code
+              {INTERVIEW_SCREEN_COPY.codePanelToggle}
             </button>
             <button
               className={styles.panelToggle}
@@ -299,7 +299,7 @@ export function InterviewScreen({
             aria-pressed={activeColumn === "code"}
             onClick={() => setActiveColumn("code")}
           >
-            Code
+            {INTERVIEW_SCREEN_COPY.codePanelToggle}
           </button>
           <button
             className={styles.tab}

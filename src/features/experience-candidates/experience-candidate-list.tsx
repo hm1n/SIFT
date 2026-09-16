@@ -148,7 +148,7 @@ export function ExperienceCandidateList({
     <section className={styles.state} aria-live="polite">
       <div className={styles.layout}>
         <div className={styles.listPanel}>
-          <p className={styles.eyebrow}>Candidates</p>
+          <p className={styles.eyebrow}>{CANDIDATE_LIST_COPY.eyebrow}</p>
           <p className={styles.listSubtitle}>{CANDIDATE_LIST_COPY.found(pluralCount(candidates.candidates.length, "experience"))}</p>
           {candidates.insufficientCandidatesReason ? (
             <p className={styles.insufficientReason}>
@@ -156,7 +156,7 @@ export function ExperienceCandidateList({
               {candidates.insufficientCandidatesReason} {CANDIDATE_LIST_COPY.insufficientTail}
             </p>
           ) : null}
-          <ul className={styles.candidateList} aria-label="Candidates">
+          <ul className={styles.candidateList} aria-label={CANDIDATE_LIST_COPY.eyebrow}>
             {items.map(({ candidate, commit, normalizedRelatedShas, normalizedTechnicalTopics }) => {
               const title = candidateTitle(candidate, commit);
               const selected = candidate.sha === selectedSha;

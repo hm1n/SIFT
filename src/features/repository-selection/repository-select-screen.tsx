@@ -169,7 +169,7 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
         <div className={styles.column}>
           <section className={styles.card} aria-labelledby={`${labelId}-repositories`}>
             <div className={styles.cardHeader}>
-              <span className={styles.label} id={`${labelId}-repositories`}>Repositories</span>
+              <span className={styles.label} id={`${labelId}-repositories`}>{REPOSITORY_SELECT_COPY.repositoriesLabel}</span>
               <span className={styles.count}>{repositories.length}</span>
             </div>
             <div className={styles.searchRow}>
@@ -186,7 +186,7 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
             {filtered.length === 0 ? (
               <p className={styles.noMatch}>{REPOSITORY_SELECT_COPY.noMatch}</p>
             ) : (
-              <div role="radiogroup" aria-label="Repositories">
+              <div role="radiogroup" aria-label={REPOSITORY_SELECT_COPY.repositoriesLabel}>
                 {filtered.map((repository, index) => {
                   const isSelected = repository.id === selectedId;
                   const updated = formatUpdatedLabel(repository.pushedAt, currentTime);
@@ -211,7 +211,7 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
                           <span className={styles.rowMeta}>
                             {repository.language ? <span>{repository.language}</span> : null}
                             {repository.language && repository.visibility === "private" ? <span className={styles.dot}> · </span> : null}
-                            {repository.visibility === "private" ? <span>PRIVATE</span> : null}
+                            {repository.visibility === "private" ? <span>{REPOSITORY_SELECT_COPY.privateBadge}</span> : null}
                           </span>
                         </span>
                         {updated ? <span className={styles.rowUpdated}>{updated}</span> : null}
@@ -225,8 +225,8 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
 
           <section className={styles.contribution} aria-labelledby={labelId}>
             <div className={styles.contributionHeader}>
-              <span className={styles.label} id={labelId}>Your Contribution</span>
-              <span className={styles.optional}>Optional</span>
+              <span className={styles.label} id={labelId}>{REPOSITORY_SELECT_COPY.contributionLabel}</span>
+              <span className={styles.optional}>{REPOSITORY_SELECT_COPY.optionalBadge}</span>
             </div>
             <p className={styles.contributionCopy} id={copyId}>{REPOSITORY_SELECT_COPY.contributionHelp}</p>
             <div className={styles.textareaFrame}>
