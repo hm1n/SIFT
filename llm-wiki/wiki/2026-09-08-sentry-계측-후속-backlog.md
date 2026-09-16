@@ -217,5 +217,16 @@ TestingLibraryElementError: Unable to find an accessible element with the role "
 151~194초). 이 브랜치가 부하를 늘려 생긴 것이 아닙니다.
 
 증상이 위 12번과 같습니다. 뒤 렌더에서 나타나는 요소를 동기 조회(`getByRole`, `getByText`)로 잡는
-단정입니다. 12번을 닫을 때 쓴 것과 같은 수정(`findByRole`)이 후보입니다. 이슈 #136 범위 밖 파일이라
-이번 PR에서 고치지 않았습니다.
+단정이었습니다.
+
+**2026-09-16에 이슈 #136 브랜치에서 닫았습니다.** 범위 밖 파일이지만 이 PR의 CI를 빨갛게 만들
+가능성이 커서 함께 고쳤습니다. 원인은 셋이었고 자리마다 달랐습니다.
+
+- `repository-select-screen.test.tsx`: Loading과 Empty가 `role="status"`를 함께 씁니다. 먼저 잡히는
+  것이 Loading이라 상태 종류를 `waitFor`로 기다리게 바꿨습니다.
+- `repository-flow.test.tsx`: 확인 다이얼로그가 클릭 다음 렌더에서 나타나는데 동기로 잡고 있었습니다.
+  `findByRole`로 바꿨습니다.
+- `saved-interview-screen.test.tsx`: 고친 문장 표시와 충돌 표시 제거가 같은 렌더에서 일어나지
+  않습니다. 두 단정을 한 `waitFor` 안으로 합쳤습니다.
+
+전체 스위트를 여섯 번 연속으로 돌려 전부 통과하는 것을 확인했습니다.
