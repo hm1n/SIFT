@@ -257,7 +257,7 @@ describe("ExperienceCandidateDetail", () => {
     renderDetail();
 
     const notice = screen.getByText(/이 근거를 서버에 저장합니다/);
-    expect(notice).toHaveTextContent("비공개 Repository의 코드도 함께 저장됩니다");
+    expect(notice).toHaveTextContent("비공개 Repository의 코드도 포함됩니다");
     expect(notice).toHaveTextContent(`${RETENTION_DAYS}일`);
     expect(screen.getByRole("button", { name: /인터뷰 시작/ })).toHaveAccessibleDescription(
       /비공개 Repository/

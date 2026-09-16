@@ -346,7 +346,7 @@ describe("RepositoryAnalysisView 저장된 분석으로 열기", () => {
   it("저장된 결과라는 것과 저장한 날짜를 알린다", async () => {
     renderWithSaved(vi.fn<typeof fetchAnalysisByRepository>().mockResolvedValue(storedAnalysis()));
 
-    expect(await screen.findByText(/그 뒤에 올린 커밋은 이 목록에 없습니다/)).toBeInTheDocument();
+    expect(await screen.findByText(/그 뒤에 올린 커밋은 빠져 있습니다/)).toBeInTheDocument();
     expect(screen.getByText("2026년 9월 10일")).toBeInTheDocument();
   });
 
@@ -371,19 +371,19 @@ describe("RepositoryAnalysisView 저장된 분석으로 열기", () => {
       />
     );
 
-    await screen.findByText(/그 뒤에 올린 커밋은 이 목록에 없습니다/);
+    await screen.findByText(/그 뒤에 올린 커밋은 빠져 있습니다/);
     expect(screen.queryByText(/방금 적은 기여 내용/)).not.toBeInTheDocument();
   });
 
   it("다시 분석하면 저장된 결과 안내가 사라지고 분석이 시작된다", async () => {
     renderWithSaved(vi.fn<typeof fetchAnalysisByRepository>().mockResolvedValue(storedAnalysis()));
-    await screen.findByText(/그 뒤에 올린 커밋은 이 목록에 없습니다/);
+    await screen.findByText(/그 뒤에 올린 커밋은 빠져 있습니다/);
     mockState({ status: "loading", loading: { step: "commits" } });
 
     fireEvent.click(screen.getByRole("button", { name: "다시 분석" }));
 
     await waitFor(() => expect(analyzeMock).toHaveBeenCalled());
-    expect(screen.queryByText(/그 뒤에 올린 커밋은 이 목록에 없습니다/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/그 뒤에 올린 커밋은 빠져 있습니다/)).not.toBeInTheDocument();
   });
 
   /**

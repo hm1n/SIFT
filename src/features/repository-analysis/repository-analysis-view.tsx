@@ -558,11 +558,10 @@ function SavedAnalysisNotice({
     <div className={styles.savedNotice} role="status">
       <span className={styles.savedNoticeCode}>{SAVED_ANALYSIS_NOTICE_COPY.savedBadge}</span>
       <p className={styles.savedNoticeText}>
-        {SAVED_ANALYSIS_NOTICE_COPY.savedOnBefore}
         <time dateTime={savedAt}>
           {Number.isNaN(date.getTime()) ? savedAt : date.toLocaleDateString("ko-KR", { year: "numeric", month: "short", day: "numeric" })}
         </time>
-        {SAVED_ANALYSIS_NOTICE_COPY.savedOnAfter}
+        {SAVED_ANALYSIS_NOTICE_COPY.savedOnSuffix}
         {unusedContributionItems ? SAVED_ANALYSIS_NOTICE_COPY.unusedContribution : ""}
       </p>
       <Button variant="secondary" onClick={onReanalyze}>{SAVED_ANALYSIS_NOTICE_COPY.reanalyze}</Button>
