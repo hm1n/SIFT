@@ -19,6 +19,10 @@ envelope 단계까지만 확인했습니다. Sentry organization과 project, DSN
 DSN이 생기면 `scripts/measure-sentry-web-vitals.mts`의 가로채기를 끄고 같은 절차를 한 번 더 돌려
 화면까지 확인합니다.
 
+**2026-09-16에 서버 쪽이 여기 붙었습니다.** 이슈 #136이 서버 계측을 넣으면서 Source Map을 범위 밖에
+두었으므로 서버 스택트레이스도 minified 상태로 보입니다. 위 확인을 할 때 서버 Issue의 프레임이
+읽을 만한지 함께 봅니다.
+
 ## 2. 초기화 비용 21.5~33.3밀리초를 줄일 수 있는지
 
 `instrumentation-client.ts` 실행이 Next.js 경고 기준 16밀리초를 넘습니다. 중앙값 26.1밀리초이고
@@ -61,6 +65,10 @@ Issue #81의 Goal은 "스트리밍이 일어나는 경로의 LCP, CLS, INP를 Se
 
 `.env.example`을 이번에 처음 만들었고 `NEXT_PUBLIC_SENTRY_DSN` 하나만 담았습니다. 코드가 이미
 쓰고 있는 GitHub OAuth와 LLM 관련 환경변수는 담지 않았습니다. Issue #81 범위가 아닙니다.
+
+2026-09-16에 이슈 #136이 `SENTRY_DSN`, `GA_USER_ID_HMAC_SECRET`, `DATABASE_URL`, `CRON_SECRET` 등
+그동안 추가된 값과 함께 `SENTRY_DSN`을 넣었습니다. 남은 것은 여전히 GitHub OAuth와 LLM 관련
+환경변수입니다.
 
 정리 대상은 `src/lib/github/oauth.ts`의 세 개와 `src/features/experience-candidates/llm-provider.ts`의
 여러 개입니다. 이름과 기본값과 필수 여부를 함께 적어야 하므로 별도 작업으로 다룹니다.
@@ -145,3 +153,61 @@ pageload envelope 도착과 지표 수집을 조건 대기로 바꿨지만 상�
 
 이 PR에서 고치지 않았습니다. 이번 변경이 건드리지 않은 파일이고 Issue #81 범위 밖입니다. 스트리밍
 렌더링 측정 작업에서 함께 고칩니다.
+
+## 14. Vercel 서버리스에서 이벤트 도달을 확인하지 못함
+
+이슈 #136이 서버 오류 전송을 로컬 `next start`로만 확인했습니다. 절차와 결과는
+`wiki/2026-09-16-sentry-서버-계측.md` 5절에 있습니다.
+
+Vercel의 서버리스 함수는 응답을 보낸 뒤 동결될 수 있습니다. 전송이 그 전에 끝나지 않으면 이벤트가
+사라집니다. `@sentry/nextjs`가 라우트 핸들러를 자동으로 감싸며 flush를 붙이는 것으로 알려져 있지만
+이 저장소에서 확인한 적은 없습니다.
+
+배포 뒤에 의도적으로 5xx를 내 Sentry Issues에 도착하는지 봅니다. 오지 않으면 `waitUntil`로
+`Sentry.flush()`를 붙이는 것이 다음 후보입니다.
+
+## 15. 스트림 중간 실패가 수집 기준에 걸리지 않음
+
+`api/interview/stream`은 첫 조각을 보낸 뒤에 난 실패를 HTTP 상태가 아니라 스트림 안의 `error`
+이벤트로 보냅니다. 응답은 이미 200으로 시작했으므로 이슈 #136의 status 5xx 기준에 걸리지 않습니다.
+
+이슈 #136의 Why가 적은 "LLM 호출 실패"의 일부가 여전히 보이지 않는다는 뜻입니다. 기준을 상태
+코드에서 떼어내야 하므로 별도 작업으로 다룹니다.
+
+## 16. OAuth 실패가 5xx가 아니라 리다이렉트로 나감
+
+`api/auth/github/login`은 설정 누락을 `?auth_error=config_missing`으로, `api/auth/github/callback`은
+토큰 교환 실패를 리다이렉트로 처리합니다. 둘 다 302라 수집 기준에 걸리지 않습니다.
+
+설정 누락은 사용자가 할 수 있는 일이 없는 서버 문제인데도 조용합니다. 응답 계약을 바꾸지 않고
+전송만 얹을 수 있는지 따로 봅니다.
+
+## 17. Stage A degrade 경로가 부분 실패를 200으로 돌려줌
+
+`api/candidates/stage-a`가 모델 복구 호출에 실패하면 이미 받은 부분 응답을 살려 200으로 돌려줍니다
+(`route.ts`의 `degrade`). 사용자에게는 맞는 동작이지만 실패 사실이 어디에도 남지 않습니다.
+
+## 18. `src/app/error.tsx`가 없음
+
+이슈 #136이 `global-error.tsx`만 추가했습니다. 그래서 렌더 오류가 나면 헤더와 사이드바까지 포함한
+화면 전체가 오류 화면으로 바뀝니다. 세그먼트 단위로 오류를 가두려면 `error.tsx`가 필요한데, 화면
+동작이 바뀌는 일이라 이슈 #136 범위에 넣지 않았습니다.
+
+## 19. `repository-flow` 테스트가 간헐적으로 실패함
+
+2026-09-16에 이슈 #136 브랜치에서 전체 테스트를 여섯 번 돌리다 한 번 관측했습니다.
+`src/features/repository-selection/repository-flow.test.tsx`의 "최신 내용 불러오기를 취소하면 다시
+읽지 않고 인터뷰에 남는다"입니다.
+
+```
+TestingLibraryElementError: Unable to find an accessible element with the role "button" and name "인터뷰 계속하기"
+```
+
+**이 브랜치의 원인이 아닙니다.** `git diff HEAD -- src/features/repository-selection`이 비어 있어
+테스트와 대상 코드가 그대로입니다. 이 브랜치가 client 쪽 모듈 그래프에 더한 것은
+`features/saved-interviews/errors.ts`가 `lib/sentry/report.ts`를 import하는 것 하나뿐이고, 그 모듈은
+타이머도 비동기도 없는 순수 모듈입니다. 파일 단독으로 여덟 번 돌려 한 번 실패하는 것도 확인했습니다.
+
+증상이 위 12번과 같습니다. 뒤 렌더에서 나타나는 요소를 동기 조회(`getByRole`)로 잡는 단정입니다.
+12번을 닫을 때 쓴 것과 같은 수정(`findByRole`)이 후보입니다. 이슈 #136 범위 밖 파일이라 이번
+PR에서 고치지 않았습니다.
