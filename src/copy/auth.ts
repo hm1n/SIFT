@@ -11,8 +11,8 @@ export const AUTH_ERROR_COPY: Record<string, string> = {
 };
 
 export const LOGIN_COPY = {
-  title: ["코드에서 설명할 가치가 있는", "경험을 찾습니다."],
-  description: ["GitHub의 코드와 커밋을 근거로", "기술 면접을 준비합니다."],
+  title: ["코드 속에 숨겨진", "경험을 발견하세요"],
+  description: ["GitHub의 코드와 커밋을 근거로", "설명할 가치가 있는 개발 경험을 찾아보세요"],
   continueWithGitHub: "GitHub으로 계속하기",
   terms: "계속하면 이용약관에 동의하는 것입니다",
   /** 로그인 링크를 누른 뒤의 Loading입니다. `code`는 mono 상태 코드라 영어로 남습니다. */

@@ -53,7 +53,7 @@ function expectAuthenticating() {
 describe("LoginScreen", () => {
   it("세션이 없으면 로고 자리, 제목, 설명, GitHub 로그인 버튼, 약관 문구를 그린다", () => {
     renderLogin();
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/코드에서 설명할 가치가 있는/);
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/코드 속에 숨겨진/);
     expect(screen.getByText(/GitHub의 코드와 커밋을 근거로/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "GitHub으로 계속하기" })).toHaveAttribute("href", LOGIN_PATH);
     expect(screen.getByText("계속하면 이용약관에 동의하는 것입니다")).toBeInTheDocument();
