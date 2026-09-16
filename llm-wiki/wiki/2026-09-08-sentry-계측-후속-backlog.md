@@ -193,21 +193,29 @@ Vercel의 서버리스 함수는 응답을 보낸 뒤 동결될 수 있습니다
 화면 전체가 오류 화면으로 바뀝니다. 세그먼트 단위로 오류를 가두려면 `error.tsx`가 필요한데, 화면
 동작이 바뀌는 일이라 이슈 #136 범위에 넣지 않았습니다.
 
-## 19. `repository-flow` 테스트가 간헐적으로 실패함
+## 19. jsdom 화면 테스트 여럿이 전체 실행에서 간헐적으로 실패함
 
-2026-09-16에 이슈 #136 브랜치에서 전체 테스트를 여섯 번 돌리다 한 번 관측했습니다.
-`src/features/repository-selection/repository-flow.test.tsx`의 "최신 내용 불러오기를 취소하면 다시
-읽지 않고 인터뷰에 남는다"입니다.
+2026-09-16에 이슈 #136 브랜치에서 전체 테스트를 아홉 번 돌리다 두 번 관측했습니다. 회차마다 깨지는
+테스트가 다릅니다.
+
+- `src/features/repository-selection/repository-flow.test.tsx`의 "최신 내용 불러오기를 취소하면 다시 읽지 않고 인터뷰에 남는다"
+- `src/features/saved-interviews/saved-interview-screen.test.tsx`의 "고친 블록에는 예전 충돌을 남기지 않는다"
+- "Repository가 없으면 NO REPOSITORIES 상태를 그리고 목록 카드를 그리지 않는다"
+- "저장되지 않은 답변이 있으면 확인을 먼저 받는다"
+
+첫 번째의 증상은 이렇습니다.
 
 ```
 TestingLibraryElementError: Unable to find an accessible element with the role "button" and name "인터뷰 계속하기"
 ```
 
-**이 브랜치의 원인이 아닙니다.** `git diff HEAD -- src/features/repository-selection`이 비어 있어
-테스트와 대상 코드가 그대로입니다. 이 브랜치가 client 쪽 모듈 그래프에 더한 것은
-`features/saved-interviews/errors.ts`가 `lib/sentry/report.ts`를 import하는 것 하나뿐이고, 그 모듈은
-타이머도 비동기도 없는 순수 모듈입니다. 파일 단독으로 여덟 번 돌려 한 번 실패하는 것도 확인했습니다.
+**이 브랜치의 원인이 아닙니다.** 해당 파일들의 diff가 비어 있어 테스트와 대상 코드가 그대로입니다.
+이 브랜치가 건드린 서버 모듈을 import하는 화면 코드도 없습니다. 파일 단독으로 여덟 번, 여섯 번씩
+돌렸을 때는 각각 한 번, 0번 실패해 전체 실행의 부하에서만 드러납니다.
 
-증상이 위 12번과 같습니다. 뒤 렌더에서 나타나는 요소를 동기 조회(`getByRole`)로 잡는 단정입니다.
-12번을 닫을 때 쓴 것과 같은 수정(`findByRole`)이 후보입니다. 이슈 #136 범위 밖 파일이라 이번
-PR에서 고치지 않았습니다.
+자체 리뷰로 코드를 줄인 뒤에 전체 스위트가 오히려 빨라진 것도 확인했습니다(import 합계 206~245초에서
+151~194초). 이 브랜치가 부하를 늘려 생긴 것이 아닙니다.
+
+증상이 위 12번과 같습니다. 뒤 렌더에서 나타나는 요소를 동기 조회(`getByRole`, `getByText`)로 잡는
+단정입니다. 12번을 닫을 때 쓴 것과 같은 수정(`findByRole`)이 후보입니다. 이슈 #136 범위 밖 파일이라
+이번 PR에서 고치지 않았습니다.
