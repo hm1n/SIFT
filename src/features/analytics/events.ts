@@ -36,16 +36,6 @@ export type RetryScope = "candidate_generation" | "full_analysis";
 /** 커밋 수 버킷입니다. 원값을 보내면 GA4 리포트에서 other로 뭉쳐 쓸 수 없게 됩니다. */
 export type CommitCountBucket = "0-50" | "51-200" | "201-1000" | "1000+";
 
-/**
- * 인터뷰에 닿은 경로입니다. 새 분석을 돌려서 온 것과 저장된 인터뷰를 이어가는 것을 가릅니다.
- *
- * 이 값이 없으면 리포트에서 인터뷰 시작 수가 분석 성공 수보다 커 보이고, 그것을 모르고 보면 분석
- * 단계에 문제가 있다고 읽게 됩니다. 저장된 인터뷰를 잇는 경로가 `analysis_requested`부터
- * `analysis_succeeded`까지를 하나도 거치지 않기 때문입니다(이슈 #115 이후,
- * `llm-wiki/wiki/2026-09-15-GA4-계측-후속-backlog.md` 3번).
- */
-export type EntryPath = "new_analysis" | "resumed_interview";
-
 export type AnalyticsEvent =
   | { name: "login_view"; auth_error?: string }
   | { name: "login_start" }
@@ -201,6 +191,15 @@ function newFlowId(): string | null {
  * `repo_visibility`·`repo_language` 설정을 건너뛰게 만들고, 곧바로 나가는 `analysis_requested`가
  * 저장소 문맥 없이 전송됩니다(PR #129 리뷰). 묶는 값이 없을 뿐 나머지는 그대로 붙어야 합니다.
  */
+/**
+ * 흐름의 진입 경로입니다. `entry_path`로 나가고, 새 분석을 돌려서 온 것과 저장된 인터뷰를 이어가는
+ * 것을 가릅니다.
+ *
+ * 이 값이 없으면 리포트에서 인터뷰 시작 수가 분석 성공 수보다 커 보이고, 그것을 모르고 보면 분석
+ * 단계에 문제가 있다고 읽게 됩니다. 저장된 인터뷰를 잇는 경로가 `analysis_requested`부터
+ * `analysis_succeeded`까지를 하나도 거치지 않기 때문입니다(이슈 #115 이후,
+ * `llm-wiki/wiki/2026-09-15-GA4-계측-후속-backlog.md` 3번).
+ */
 export type FlowStart =
   | { readonly entryPath: "new_analysis"; readonly repoVisibility: string; readonly repoLanguage: string | null }
   | { readonly entryPath: "resumed_interview" };
@@ -209,25 +208,32 @@ export function startFlow(flow: FlowStart): void {
   const flowId = newFlowId();
   // `flow_id`를 못 만들어도 나머지는 세우므로 지울 것이 생긴 것은 마찬가지입니다.
   flowApplied = true;
+  /*
+   * 저장된 인터뷰에는 공개 여부와 언어가 없습니다. 그 값은 GitHub 목록 조회에서 오는 것이고 저장하지
+   * 않으므로 이어가기 경로에서 되살릴 수 없습니다. 앞 분석이 세워 둔 값을 그대로 두면 이어가는
+   * 인터뷰의 이벤트가 엉뚱한 저장소의 문맥을 달고 나가므로 지웁니다.
+   */
+  const isNewAnalysis = flow.entryPath === "new_analysis";
+  const repoContext = isNewAnalysis
+    // 언어가 없는 저장소가 있습니다. 빈 문자열 대신 파라미터를 지워 값 없음과 값 있음을 가릅니다.
+    ? { repo_visibility: flow.repoVisibility, repo_language: flow.repoLanguage }
+    : clearRepoContext();
+  repoContextApplied = isNewAnalysis;
   safelySetGaParams({
     // 만들지 못했으면 아예 싣지 않습니다. 빈 값을 세우면 서로 다른 흐름이 같은 값으로 묶입니다.
     ...(flowId === null ? {} : { flow_id: flowId }),
     entry_path: flow.entryPath,
-    ...repoContextFor(flow),
+    ...repoContext,
   });
 }
 
 /**
- * 저장된 인터뷰에는 공개 여부와 언어가 없습니다. 그 값은 GitHub 목록 조회에서 오는 것이고 저장하지
- * 않으므로 이어가기 경로에서 되살릴 수 없습니다. 앞 분석이 세워 둔 값을 그대로 두면 이어가는
- * 인터뷰의 이벤트가 엉뚱한 저장소의 문맥을 달고 나가므로 지웁니다.
+ * 저장소 문맥을 지우는 파라미터입니다. 세운 적이 없으면 빈 객체라 아무것도 지우지 않습니다.
+ *
+ * 세운 적 없는 파라미터를 null로 지우면 gtag가 그 자리를 빈 문자열로 직렬화해 이후 모든 이벤트에
+ * 실어 보냅니다(`user_id`에서 실측). 지우는 자리가 흐름 시작과 흐름 종료 둘이라 여기 한 번만 적습니다.
  */
-function repoContextFor(flow: FlowStart): Record<string, string | null> {
-  if (flow.entryPath === "new_analysis") {
-    repoContextApplied = true;
-    // 언어가 없는 저장소가 있습니다. 빈 문자열 대신 파라미터를 지워 값 없음과 값 있음을 가릅니다.
-    return { repo_visibility: flow.repoVisibility, repo_language: flow.repoLanguage };
-  }
+function clearRepoContext(): Record<string, null> {
   if (!repoContextApplied) return {};
   repoContextApplied = false;
   return { repo_visibility: null, repo_language: null };
@@ -244,11 +250,7 @@ function repoContextFor(flow: FlowStart): Record<string, string | null> {
 export function clearFlow(): void {
   if (!flowApplied) return;
   flowApplied = false;
-  const repoContext: Record<string, null> = repoContextApplied
-    ? { repo_visibility: null, repo_language: null }
-    : {};
-  repoContextApplied = false;
-  safelySetGaParams({ flow_id: null, entry_path: null, ...repoContext });
+  safelySetGaParams({ flow_id: null, entry_path: null, ...clearRepoContext() });
 }
 
 /** 공통 파라미터 설정도 이벤트 전송과 같은 이유로 예외를 삼킵니다. */

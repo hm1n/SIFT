@@ -292,13 +292,14 @@ export function useInterviewStream({
    * 상태가 아니라 ref입니다. 그리는 데 쓰지 않는 값이라 상태로 두면 조각이 올 때마다 다시 그리게
    * 되고, 스트리밍 중 리렌더 범위를 최소로 둔다는 이 서비스의 제약과 정면으로 부딪힙니다.
    *
-   * `questionShownAt`은 요청 경계를 넘어 남습니다. 답변을 제출할 때 "질문을 읽기 시작한 뒤 얼마나
-   * 지났는지"를 재는 기준점이고, 그 시점은 직전 질문의 첫 조각이기 때문입니다.
+   * `requestStartedAt`은 첫 조각을 센 뒤 비웁니다. 값이 있다는 것이 곧 "이번 요청의 첫 조각을 아직
+   * 세지 않았다"라서, 조각마다 세는 것을 막는 표식을 따로 두지 않아도 됩니다.
+   *
+   * `questionShownAt`은 반대로 요청 경계를 넘어 남습니다. 답변을 제출할 때 "질문을 읽기 시작한 뒤
+   * 얼마나 지났는지"를 재는 기준점이고, 그 시점은 직전 질문의 첫 조각이기 때문입니다.
    */
   const requestStartedAtRef = useRef<number | null>(null);
   const questionShownAtRef = useRef<number | null>(null);
-  /** 이번 요청의 첫 조각을 이미 셌는지입니다. 조각마다 세면 질문 하나가 여러 건이 됩니다. */
-  const questionReportedRef = useRef(false);
   const optionsRef = useRef({
     url,
     snapshot,
@@ -388,7 +389,6 @@ export function useInterviewStream({
     const target = pendingTargetRef.current;
     // 계측이 첫 조각까지의 시간을 재는 기준점입니다(이슈 #126). 재시도는 그 시도부터 다시 잽니다.
     requestStartedAtRef.current = Date.now();
-    questionReportedRef.current = false;
     let body: string | undefined;
     if (current.snapshot !== undefined) {
       // 실제 생성 경로는 요청마다 새 스트림입니다. 앞 질문의 seq를 이어 쓰면 새 질문의 도착 순서
@@ -441,13 +441,13 @@ export function useInterviewStream({
            * 인자 계산까지 try 안에 둡니다. `trackEvent`가 자기 예외를 삼키지만 시각 계산은 그
            * 바깥이고, 여기서 던지면 도착한 조각이 화면에 붙지 못해 질문이 끊깁니다.
            */
-          if (!questionReportedRef.current) {
-            questionReportedRef.current = true;
+          const startedAt = requestStartedAtRef.current;
+          if (startedAt !== null) {
+            requestStartedAtRef.current = null;
             try {
               const now = Date.now();
               questionShownAtRef.current = now;
-              const startedAt = requestStartedAtRef.current;
-              if (target !== null && startedAt !== null) {
+              if (target !== null) {
                 trackEvent({
                   name: "question_shown",
                   turn: current.turnsUsed,
