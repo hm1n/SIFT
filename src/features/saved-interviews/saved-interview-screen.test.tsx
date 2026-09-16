@@ -3,6 +3,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { BLOCK_LABELS } from "@/features/experience-block/block-labels";
 import { emptyInterviewProgress } from "@/features/experience-block/progress";
 import { BLOCK_MAX_BYTES, BLOCK_MAX_STATEMENTS } from "@/features/experience-block/reducer";
 import { emptyExperienceBlockState, type Claim } from "@/features/experience-block/types";
@@ -78,6 +79,19 @@ describe("SavedInterviewScreen", () => {
     expect(screen.getByRole("heading", { level: 1, name: "스트리밍 렌더링 최적화" })).toBeInTheDocument();
     expect(screen.getByText("hm1n / SIFT")).toBeInTheDocument();
     expect(screen.getAllByText(/9월 12일/)[0]).toBeInTheDocument();
+  });
+
+  /**
+   * 이 화면이 같은 표를 따로 들고 있었습니다. `Analyze`는 설계 문서의 `ALTERNATIVE`를 대신하는
+   * 이름이라(이슈 #92) 한쪽만 고치면 인터뷰 화면과 저장 화면이 블록을 다르게 부릅니다.
+   * 기존 단정은 `"Problem 편집"`을 리터럴로 들어 나머지 세 블록이 갈려도 통과했습니다.
+   */
+  it("블록 이름은 인터뷰 화면과 같은 표를 쓴다", () => {
+    render(<SavedInterviewScreen interview={payload()} onResume={vi.fn()} />);
+
+    for (const label of Object.values(BLOCK_LABELS)) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
   });
 
   describe("자동 삭제까지 남은 기간", () => {

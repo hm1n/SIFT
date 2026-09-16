@@ -12,6 +12,7 @@ import {
   validateBlockEdit,
   type BlockEdits,
 } from "@/features/experience-block/block-edits";
+import { BLOCK_LABELS } from "@/features/experience-block/block-labels";
 import { BlockSentences } from "@/features/experience-block/block-sentences";
 import { BLOCK_MAX_BYTES, BLOCK_MAX_STATEMENTS } from "@/features/experience-block/reducer";
 import { BLOCK_KINDS, type BlockKind, type ExperienceBlockState } from "@/features/experience-block/types";
@@ -86,13 +87,6 @@ function blockSymbol(blockState: ExperienceBlockState, block: BlockKind): "✓" 
   if (evaluation === null) return "○";
   return evaluation.sufficient ? "✓" : "●";
 }
-
-const BLOCK_LABEL: Record<BlockKind, string> = {
-  problem: "Problem",
-  alternatives: "Analyze",
-  action: "Action",
-  result: "Result",
-};
 
 function formatDate(iso: string): string {
   const date = new Date(iso);
@@ -306,7 +300,7 @@ export function SavedInterviewScreen({
                       <span className={styles.blockSymbol} aria-hidden="true">
                         {blockSymbol(blockState, block)}
                       </span>
-                      <span className={styles.blockLabel}>{BLOCK_LABEL[block]}</span>
+                      <span className={styles.blockLabel}>{BLOCK_LABELS[block]}</span>
                       {/*
                         블록이 넷이라 "편집"만으로는 어느 블록을 고치는 버튼인지 이름으로 갈리지
                         않습니다. 보이는 글자는 짧게 두고 이름에만 블록을 붙입니다.
@@ -315,7 +309,7 @@ export function SavedInterviewScreen({
                         <button
                           type="button"
                           className={styles.editButton}
-                          aria-label={SAVED_INTERVIEW_SCREEN_COPY.editLabel(BLOCK_LABEL[block])}
+                          aria-label={SAVED_INTERVIEW_SCREEN_COPY.editLabel(BLOCK_LABELS[block])}
                           onClick={() => openEditor(block)}
                         >
                           {SAVED_INTERVIEW_SCREEN_COPY.edit}
@@ -332,7 +326,7 @@ export function SavedInterviewScreen({
                     {isEditing && draft !== null ? (
                       <div className={styles.editor}>
                         <label className={styles.editorLabel} htmlFor={editorId}>
-                          {SAVED_INTERVIEW_SCREEN_COPY.editorLabel(BLOCK_LABEL[block])}
+                          {SAVED_INTERVIEW_SCREEN_COPY.editorLabel(BLOCK_LABELS[block])}
                         </label>
                         <textarea
                           id={editorId}
