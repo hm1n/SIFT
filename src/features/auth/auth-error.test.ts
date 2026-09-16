@@ -7,6 +7,9 @@ import { toAuthErrorParam } from "./auth-error";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
+/** React는 두 따옴표를 모두 지시문으로 읽습니다. 한쪽만 보면 나머지 하나로 경계가 도로 들어옵니다. */
+const CLIENT_DIRECTIVE = /^['"]use client['"]/;
+
 describe("toAuthErrorParam", () => {
   it.each(Object.keys(AUTH_ERROR_COPY))("%s는 그대로 씁니다", (kind) => {
     expect(toAuthErrorParam(kind)).toBe(kind);
@@ -39,6 +42,13 @@ describe("서버와 클라이언트 경계", () => {
     ["auth-error.ts", join(HERE, "auth-error.ts")],
     ["copy/auth.ts", join(HERE, "..", "..", "copy", "auth.ts")],
   ])("%s는 클라이언트 모듈이 아니어야 합니다", (_name, path) => {
-    expect(readFileSync(path, "utf8").trimStart().startsWith('"use client"')).toBe(false);
+    expect(CLIENT_DIRECTIVE.test(readFileSync(path, "utf8").trimStart())).toBe(false);
+  });
+
+  it.each(['"use client"', "'use client'"])("%s로 시작하면 잡습니다", (directive) => {
+    expect(CLIENT_DIRECTIVE.test(`${directive};
+
+export const x = 1;
+`)).toBe(true);
   });
 });
