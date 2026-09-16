@@ -78,7 +78,7 @@ export function mapInterviewLlmError(
     if (error.statusCode === 413) {
       return new ExperienceCandidateOutputError(
         "llm_request",
-        LLM_ERROR_COPY.evidenceTooLarge,
+        LLM_ERROR_COPY.evidenceTooLarge(context),
         { cause: error }
       );
     }

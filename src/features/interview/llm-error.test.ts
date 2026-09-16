@@ -53,6 +53,22 @@ describe("mapInterviewLlmError", () => {
   });
 
   /**
+   * 413은 두 경로가 함께 씁니다. 문구가 작업 이름을 고정해 두면 한쪽에 없는 원인이 표시됩니다.
+   * 블록 갱신이 크기로 실패했는데 "질문 근거"라고 알리던 것이 그 경우입니다.
+   */
+  it.each([
+    ["질문 생성", LLM_ERROR_CONTEXT.questionGeneration, LLM_ERROR_CONTEXT.blockUpdate],
+    ["블록 갱신", LLM_ERROR_CONTEXT.blockUpdate, LLM_ERROR_CONTEXT.questionGeneration],
+  ])("요청 과대(413) 문구는 %s을 가리킨다", (_label, context, other) => {
+    const mapped = mapInterviewLlmError(apiCallError(413), context);
+
+    expect(mapped.kind).toBe("llm_request");
+    expect(mapped.message).toBe(LLM_ERROR_COPY.evidenceTooLarge(context));
+    expect(mapped.message).toContain(context);
+    expect(mapped.message).not.toContain(other);
+  });
+
+  /**
    * 갈래마다 따로 단정하지 않고 한 번에 훑습니다. 다음에 갈래가 하나 늘어도 영어 리터럴이 그대로
    * 남으면 여기서 걸립니다. 분류가 무엇인지는 각 갈래를 만든 테스트가 따로 봅니다.
    */

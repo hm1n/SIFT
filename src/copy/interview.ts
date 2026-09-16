@@ -271,7 +271,8 @@ export const LLM_ERROR_COPY = {
   apiKeyMissing: "AI 연결에 필요한 API 키가 없습니다.",
   authFailed: "AI 인증에 실패했습니다.",
   rateLimit: "AI 요청 한도에 도달했습니다.",
-  evidenceTooLarge: "질문 근거가 AI에 한 번에 보낼 수 있는 크기를 넘습니다.",
+  evidenceTooLarge: (context: string) =>
+    `${context}에 필요한 근거가 AI에 한 번에 보낼 수 있는 크기를 넘습니다.`,
   modelMisconfigured: "사용할 AI 모델 설정이 올바르지 않습니다.",
   temporarilyUnavailable: "AI를 일시적으로 쓸 수 없습니다.",
   rejected: "AI가 요청을 거절했습니다.",
