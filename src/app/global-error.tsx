@@ -5,6 +5,7 @@ import * as Sentry from "@sentry/nextjs";
 import { GLOBAL_ERROR_COPY } from "@/copy/shell";
 import { ButtonLink } from "@/components/shell/button";
 import { StatusScreen } from "@/components/shell/status-screen";
+import styles from "./global-error.module.css";
 import "./globals.css";
 
 /**
@@ -42,7 +43,7 @@ export default function GlobalError({
           sub={GLOBAL_ERROR_COPY.sub}
           action={{ label: GLOBAL_ERROR_COPY.retry, onClick: reset }}
         />
-        <p style={{ display: "flex", justifyContent: "center", paddingBottom: "48px" }}>
+        <p className={styles.home}>
           <ButtonLink href="/" variant="ghost">
             {GLOBAL_ERROR_COPY.home}
           </ButtonLink>
