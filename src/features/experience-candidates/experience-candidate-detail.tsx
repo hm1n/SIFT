@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CANDIDATE_DETAIL_COPY } from "@/copy/candidates";
 import type { ReadonlyCommitDetail, RepositoryRef } from "@/lib/github/types";
 import type { EvidenceSnapshotFailureReason, ExperienceCandidateListItem } from "./types";
 import {
@@ -32,25 +33,6 @@ interface ExperienceCandidateDetailProps {
 const EVIDENCE_NOTICE_ID = "candidate-evidence-verifiability-notice";
 const VERIFIED_NOTICE_ID = "candidate-repository-verified-notice";
 const STORAGE_NOTICE_ID = "candidate-storage-notice";
-
-/**
- * 인터뷰를 시작하면 그 시점의 근거 스냅샷이 서버에 저장되고, 거기에는 커밋 메시지와 파일 경로와 코드
- * 변경 내용이 들어갑니다. 비공개 저장소라면 그 코드가 서버에 남습니다(이슈 #116 Goal 셋째 항목).
- *
- * 이 자리에 두는 이유는 여기가 실제로 저장이 일어나는 시점이기 때문입니다. 로그인 화면에 두면 저장이
- * 일어나기 한참 전이라 읽고 잊습니다. 보관 기간을 함께 적어 "무기한 남는 것은 아니다"까지 한 문장으로
- * 말합니다.
- */
-const STORAGE_NOTICE = `Starting an interview saves this evidence — commit messages, file paths, and code changes — to the server, including code from private repositories. It is deleted automatically after ${RETENTION_DAYS} days without opening it.`;
-
-/**
- * 토픽이 빈 배열로 온 후보의 Empty 표시입니다.
- *
- * #97의 `SCHEMA_GAP_NOTICE`("No corresponding data in the Repository schema...")를 대신합니다.
- * 그 문구는 스키마에 필드가 없다는 뜻이었고, 이제 필드가 있으므로 "이 후보에서는 고를 것이
- * 없었다"는 다른 사실을 말해야 합니다(이슈 #110).
- */
-const TOPICS_EMPTY_NOTICE = "No technical topics were identified from the diffs and commit messages of this candidate.";
 
 /** 목록에 3개 초과일 때 접어 두는 기준입니다. 디자인의 "View all" 기준과 같습니다. */
 const EVIDENCE_LIST_COLLAPSE_THRESHOLD = 3;
@@ -108,9 +90,9 @@ export function ExperienceCandidateDetail({
   return (
     <section className={styles.detail} aria-live="polite">
       <div className={styles.header}>
-        <p className={styles.eyebrow}>Experience</p>
+        <p className={styles.eyebrow}>{CANDIDATE_DETAIL_COPY.eyebrow}</p>
         <h2>{title}</h2>
-        {commit === null ? <p className={styles.notice}>Representative commit not found in the commit index.</p> : null}
+        {commit === null ? <p className={styles.notice}>{CANDIDATE_DETAIL_COPY.commitNotIndexed}</p> : null}
         <div className={styles.meta}>
           <span>{pluralCount(commitCount, "commit")}</span>
           {period ? <span>{period.start === period.end ? period.start : `${period.start} – ${period.end}`}</span> : null}
@@ -119,13 +101,13 @@ export function ExperienceCandidateDetail({
 
       <div className={styles.body}>
         <section className={styles.section} aria-labelledby="why-heading">
-          <p id="why-heading" className={styles.sectionEyebrow}>Why worth discussing</p>
+          <p id="why-heading" className={styles.sectionEyebrow}>{CANDIDATE_DETAIL_COPY.whyHeading}</p>
           <p className={styles.evidenceText}>{candidate.evidence}</p>
           <p id={EVIDENCE_NOTICE_ID} className={styles.evidenceNotice}>{EVIDENCE_VERIFIABILITY_NOTICE}</p>
         </section>
 
         <section className={styles.section} aria-labelledby="topics-heading">
-          <p id="topics-heading" className={styles.sectionEyebrow}>Technical topics</p>
+          <p id="topics-heading" className={styles.sectionEyebrow}>{CANDIDATE_DETAIL_COPY.topicsHeading}</p>
           {normalizedTechnicalTopics.length > 0 ? (
             <>
               <ul className={styles.topicChips}>
@@ -136,19 +118,19 @@ export function ExperienceCandidateDetail({
               <p className={styles.evidenceNotice}>{EVIDENCE_VERIFIABILITY_NOTICE}</p>
             </>
           ) : (
-            <p className={styles.topicsEmpty}>{TOPICS_EMPTY_NOTICE}</p>
+            <p className={styles.topicsEmpty}>{CANDIDATE_DETAIL_COPY.topicsEmpty}</p>
           )}
         </section>
 
         <section className={`${styles.section} ${styles.evidenceSection}`} aria-labelledby="evidence-heading">
-          <p id="evidence-heading" className={styles.sectionEyebrow}>Repository evidence</p>
+          <p id="evidence-heading" className={styles.sectionEyebrow}>{CANDIDATE_DETAIL_COPY.evidenceHeading}</p>
           <p id={VERIFIED_NOTICE_ID} className={styles.verifiedNotice}>{REPOSITORY_VERIFIED_NOTICE}</p>
           {normalizedRelatedShas.length > 0 ? (
             <p className={styles.aiSelectionNotice}>{RELATED_COMMITS_VERIFICATION_NOTICE}</p>
           ) : null}
           <div className={styles.evidenceListPanel}>
             <div className={styles.evidenceListHeader}>
-              <span>VERIFIED FROM REPOSITORY</span>
+              <span>{CANDIDATE_DETAIL_COPY.verifiedListHeading}</span>
               <span>{pluralCount(commitCount, "commit")}</span>
             </div>
             <ul className={styles.evidenceList}>
@@ -171,7 +153,7 @@ export function ExperienceCandidateDetail({
           </div>
           {evidenceEntries.length > EVIDENCE_LIST_COLLAPSE_THRESHOLD ? (
             <button className={styles.viewAllButton} type="button" onClick={() => setShowAllEvidence((value) => !value)}>
-              {showAllEvidence ? "Show less" : `View all ${pluralCount(evidenceEntries.length, "commit")} →`}
+              {showAllEvidence ? CANDIDATE_DETAIL_COPY.showLess : CANDIDATE_DETAIL_COPY.viewAll(pluralCount(evidenceEntries.length, "commit"))}
             </button>
           ) : null}
         </section>
@@ -180,16 +162,18 @@ export function ExperienceCandidateDetail({
           <div className={styles.selectionError} role="alert" data-selection-error={selectionError}>
             <strong>{EXPERIENCE_SELECTION_ERROR_COPY[selectionError].title}</strong>
             <span>{EXPERIENCE_SELECTION_ERROR_COPY[selectionError].message}</span>
-            <button className={styles.backButton} type="button" onClick={onBack}>← Back to candidates</button>
+            <button className={styles.backButton} type="button" onClick={onBack}>{CANDIDATE_DETAIL_COPY.backToList}</button>
           </div>
         ) : null}
       </div>
 
       <div className={styles.footer}>
-        <p id={STORAGE_NOTICE_ID} className={styles.storageNotice}>{STORAGE_NOTICE}</p>
+        <p id={STORAGE_NOTICE_ID} className={styles.storageNotice}>
+          {CANDIDATE_DETAIL_COPY.storageNotice(RETENTION_DAYS)}
+        </p>
         <div className={styles.footerActions}>
           <button className={styles.secondaryButton} type="button" onClick={onSelectRepository}>
-            Choose a different repository
+            {CANDIDATE_DETAIL_COPY.chooseAnotherRepository}
           </button>
           <button
             className={styles.primaryButton}
@@ -197,7 +181,7 @@ export function ExperienceCandidateDetail({
             aria-describedby={`${EVIDENCE_NOTICE_ID} ${VERIFIED_NOTICE_ID} ${STORAGE_NOTICE_ID}`}
             onClick={onConfirm}
           >
-            Start interview <span aria-hidden="true">→</span>
+            {CANDIDATE_DETAIL_COPY.startInterview} <span aria-hidden="true">→</span>
           </button>
         </div>
       </div>

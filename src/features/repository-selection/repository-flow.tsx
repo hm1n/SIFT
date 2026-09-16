@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { AppShell } from "@/components/shell/app-shell";
 import { Button } from "@/components/shell/button";
 import { StatusScreen } from "@/components/shell/status-screen";
+import { LEAVE_CONFIRM_COPY, RESUME_ERROR_COPY } from "@/copy/repository";
 import { clearAnalysisFlow, startAnalysisFlow, trackEvent } from "@/features/analytics/events";
 import { InterviewScreen } from "@/features/interview/interview-screen";
 import { RepositoryAnalysisView } from "@/features/repository-analysis/repository-analysis-view";
@@ -45,24 +46,10 @@ type Mode =
     }
   | { readonly kind: "resume"; readonly interviewId: string; readonly stage: "review" | "interview" };
 
-/** 저장된 인터뷰를 읽지 못한 이유별 안내입니다. 없어진 인터뷰와 연결 실패는 사용자가 할 일이 다릅니다. */
+/** 읽지 못한 이유별 안내입니다. 없어진 인터뷰와 연결 실패는 사용자가 할 일이 다릅니다. */
 const RESUME_ERROR: Record<string, { code: string; label: string; sub: string }> = {
-  not_found: {
-    code: "ERROR / NOT FOUND",
-    label: "This interview is no longer available.",
-    sub: "It may have been deleted. Pick another one from Interviews.",
-  },
-  unauthorized: {
-    code: "ERROR / AUTH",
-    label: "Your session has expired.",
-    sub: "Log in again to continue this interview.",
-  },
-};
-
-const RESUME_ERROR_FALLBACK = {
-  code: "ERROR / STORAGE",
-  label: "Couldn't open this interview.",
-  sub: "The server didn't answer. Try again in a moment.",
+  not_found: RESUME_ERROR_COPY.not_found,
+  unauthorized: RESUME_ERROR_COPY.unauthorized,
 };
 
 export function RepositoryFlow() {
@@ -274,10 +261,9 @@ export function RepositoryFlow() {
             aria-labelledby={leaveConfirmTitleId}
             aria-describedby={leaveConfirmDescId}
           >
-            <p id={leaveConfirmTitleId} className={styles.leaveConfirmTitle}>You have an unsaved answer.</p>
+            <p id={leaveConfirmTitleId} className={styles.leaveConfirmTitle}>{LEAVE_CONFIRM_COPY.title}</p>
             <p id={leaveConfirmDescId} className={styles.leaveConfirmText}>
-              Leaving now drops the answer that hasn&apos;t been saved yet. Everything already saved stays in
-              Interviews on the left, and you can pick it up from there.
+              {LEAVE_CONFIRM_COPY.description}
             </p>
             <div className={styles.leaveConfirmActions}>
               <Button
@@ -289,9 +275,9 @@ export function RepositoryFlow() {
                   run();
                 }}
               >
-                Leave
+                {LEAVE_CONFIRM_COPY.leave}
               </Button>
-              <Button variant="secondary" onClick={() => setPendingNavigation(null)}>Continue the interview</Button>
+              <Button variant="secondary" onClick={() => setPendingNavigation(null)}>{LEAVE_CONFIRM_COPY.stay}</Button>
             </div>
           </div>
         </div>
@@ -352,18 +338,18 @@ function ResumedInterview({
   onEnded: () => void;
 }) {
   if (state.status === "loading") {
-    return <StatusScreen kind="loading" code="Loading Interview" label="Opening the saved interview..." sub="" />;
+    return <StatusScreen kind="loading" code="Loading Interview" label={RESUME_ERROR_COPY.loadingLabel} sub="" />;
   }
 
   if (state.status === "error") {
-    const copy = RESUME_ERROR[state.kind] ?? RESUME_ERROR_FALLBACK;
+    const copy = RESUME_ERROR[state.kind] ?? RESUME_ERROR_COPY.fallback;
     return (
       <StatusScreen
         kind="error"
         code={copy.code}
         label={copy.label}
         sub={copy.sub}
-        action={{ label: "Try again", onClick: onRetry }}
+        action={{ label: RESUME_ERROR_COPY.tryAgain, onClick: onRetry }}
       />
     );
   }
@@ -394,10 +380,10 @@ function ResumedInterview({
     return (
       <StatusScreen
         kind="error"
-        code="ERROR / STORAGE"
-        label="Couldn't open this interview."
-        sub="The saved evidence or blocks can no longer be read. You can still review what was saved."
-        action={{ label: "Back to the summary", onClick: onBackToReview }}
+        code={RESUME_ERROR_COPY.unreadable.code}
+        label={RESUME_ERROR_COPY.unreadable.label}
+        sub={RESUME_ERROR_COPY.unreadable.sub}
+        action={{ label: RESUME_ERROR_COPY.backToSummary, onClick: onBackToReview }}
       />
     );
   }

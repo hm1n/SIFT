@@ -1,3 +1,4 @@
+import { SAVED_INTERVIEW_REQUEST_COPY } from "@/copy/saved";
 import type { BlockEditRequestBody, CreateInterviewRequestBody } from "./request";
 import type { SavedInterviewErrorKind } from "./errors";
 import type { InterviewListItemPayload, StoredAnalysisPayload, StoredInterviewPayload } from "./payload";
@@ -20,8 +21,8 @@ export type SavedInterviewFetchErrorKind = SavedInterviewErrorKind | "network";
 export class SavedInterviewFetchError extends Error {
   readonly kind: SavedInterviewFetchErrorKind;
 
-  constructor(kind: SavedInterviewFetchErrorKind, message: string) {
-    super(message);
+  constructor(kind: SavedInterviewFetchErrorKind, message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = "SavedInterviewFetchError";
     this.kind = kind;
   }
@@ -53,10 +54,10 @@ async function request<T>(
     response = await fetchImpl(path, init);
   } catch (error) {
     if (error instanceof DOMException && error.name === "AbortError") throw error;
-    throw new SavedInterviewFetchError(
-      "network",
-      error instanceof Error ? error.message : "네트워크 요청에 실패했습니다."
-    );
+    // `fetch`가 던지는 message는 브라우저가 만든 영어 원문입니다(`Failed to fetch` 등). 이 값이
+    // 화면까지 가는 경로가 있으므로(`repository-analysis-view.tsx`의 조회 실패 안내) 사용자 문구로
+    // 쓰지 않고, 원인은 `cause`로 남겨 디버깅에서만 봅니다.
+    throw new SavedInterviewFetchError("network", SAVED_INTERVIEW_REQUEST_COPY.network, { cause: error });
   }
 
   if (response.status === 204) return null;
@@ -65,7 +66,7 @@ async function request<T>(
   try {
     json = await response.json();
   } catch {
-    throw new SavedInterviewFetchError("network", "응답을 읽지 못했습니다.");
+    throw new SavedInterviewFetchError("network", SAVED_INTERVIEW_REQUEST_COPY.unreadableResponse);
   }
 
   if (!response.ok) {

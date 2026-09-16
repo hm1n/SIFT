@@ -81,6 +81,14 @@ body {
   color: var(--color-foreground);
   background: var(--color-background);
   font-family: var(--font-sans);
+  /*
+   * 한국어 자연어의 줄바꿈 규칙입니다(이슈 #128). `keep-all`은 한글을 어절 단위로 끊어 단어 중간에서
+   * 갈라지지 않게 하고, `break-word`는 어절 하나가 칸보다 길 때만 끊습니다. 두 속성 모두 상속되므로
+   * 여기 한 번만 둡니다. 코드·diff·파일 경로·SHA·상태 코드를 그리는 mono 영역은 각 모듈의 예외
+   * 규칙이 `word-break: normal`로 되돌립니다.
+   */
+  word-break: keep-all;
+  overflow-wrap: break-word;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

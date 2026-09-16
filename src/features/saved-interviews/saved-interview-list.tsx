@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { DELETION_NOTICE_COPY, SAVED_INTERVIEW_LIST_COPY } from "@/copy/saved";
 import { BLOCK_KINDS } from "@/features/experience-block/types";
 import type { InterviewListItemPayload } from "./payload";
-import { pluralCount } from "@/features/experience-candidates/candidate-period";
 import { daysUntilDeletion, DELETION_WARNING_DAYS } from "./retention";
 import styles from "./saved-interview-list.module.css";
 
@@ -47,7 +47,7 @@ function notExpired(interviews: readonly InterviewListItemPayload[]): readonly I
 function formatDate(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return date.toLocaleDateString("ko-KR", { month: "short", day: "numeric" });
 }
 
 /**
@@ -60,7 +60,7 @@ function DeletionBadge({ openedAt }: { openedAt: string }) {
   const daysLeft = daysUntilDeletion(openedAt);
   if (daysLeft > DELETION_WARNING_DAYS) return null;
   return (
-    <span className={styles.deletionBadge} title={`Automatically deleted in ${pluralCount(daysLeft, "day")}`}>
+    <span className={styles.deletionBadge} title={DELETION_NOTICE_COPY.badgeTitle(daysLeft)}>
       D-{daysLeft}
     </span>
   );
@@ -83,21 +83,21 @@ export function SavedInterviewList({
   return (
     <>
       <div className={styles.header}>
-        <span className={styles.label}>Interviews</span>
+        <span className={styles.label}>{SAVED_INTERVIEW_LIST_COPY.sectionLabel}</span>
         {state.status === "ready" ? <span className={styles.count}>{interviews.length}</span> : null}
       </div>
 
-      {state.status === "loading" ? <p className={styles.notice}>Loading interviews...</p> : null}
+      {state.status === "loading" ? <p className={styles.notice}>{SAVED_INTERVIEW_LIST_COPY.loading}</p> : null}
 
       {state.status === "error" ? (
         <div className={styles.errorBox}>
-          <p className={styles.notice}>Couldn&apos;t load interviews.</p>
-          <button type="button" className={styles.retry} onClick={onRetry}>Try again</button>
+          <p className={styles.notice}>{SAVED_INTERVIEW_LIST_COPY.error}</p>
+          <button type="button" className={styles.retry} onClick={onRetry}>{SAVED_INTERVIEW_LIST_COPY.retry}</button>
         </div>
       ) : null}
 
       {state.status === "ready" && interviews.length === 0 ? (
-        <p className={styles.notice}>No interviews yet. Select an experience candidate to begin.</p>
+        <p className={styles.notice}>{SAVED_INTERVIEW_LIST_COPY.empty}</p>
       ) : null}
 
       {state.status === "ready" && interviews.length > 0 ? (
@@ -106,10 +106,10 @@ export function SavedInterviewList({
             <li key={interview.id}>
               {confirmingId === interview.id ? (
                 <div className={styles.confirm}>
-                  <p className={styles.confirmText}>Delete this interview? This cannot be undone.</p>
+                  <p className={styles.confirmText}>{SAVED_INTERVIEW_LIST_COPY.deleteConfirm}</p>
                   <div className={styles.confirmActions}>
                     <button type="button" className={styles.cancel} onClick={() => setConfirmingId(null)}>
-                      Cancel
+                      {SAVED_INTERVIEW_LIST_COPY.cancel}
                     </button>
                     <button
                       type="button"
@@ -120,7 +120,7 @@ export function SavedInterviewList({
                         onDelete(interview.id);
                       }}
                     >
-                      Delete
+                      {SAVED_INTERVIEW_LIST_COPY.delete}
                     </button>
                   </div>
                 </div>
@@ -150,7 +150,7 @@ export function SavedInterviewList({
                   <button
                     type="button"
                     className={styles.deleteIcon}
-                    aria-label={`Delete interview: ${interview.title}`}
+                    aria-label={SAVED_INTERVIEW_LIST_COPY.deleteLabel(interview.title)}
                     onClick={() => setConfirmingId(interview.id)}
                   >
                     ✕

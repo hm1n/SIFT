@@ -84,7 +84,7 @@ describe("InterviewScreen", () => {
       />
     );
 
-    expect(screen.getByRole("heading", { name: "Representative commit aaaaaaa" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "대표 커밋 aaaaaaa" })).toBeInTheDocument();
   });
 
   /*
@@ -137,7 +137,7 @@ describe("InterviewScreen", () => {
       <InterviewScreen snapshot={evidenceSnapshotFixture()} onBack={vi.fn()} fetchImpl={pendingFetch()} />
     );
 
-    expect(screen.getByText("Preparing the question.")).toBeInTheDocument();
+    expect(screen.getByText("첫 질문을 준비하고 있습니다.")).toBeInTheDocument();
   });
 
   it("도착한 질문을 표시한다", async () => {
@@ -152,7 +152,7 @@ describe("InterviewScreen", () => {
     expect(
       await screen.findByRole("heading", { name: /청크 경계를 세 조건으로 함께 닫은 이유/ })
     ).toBeInTheDocument();
-    expect(await screen.findByText("The question has fully arrived.")).toBeInTheDocument();
+    expect(await screen.findByText("질문이 모두 도착했습니다.")).toBeInTheDocument();
   });
 
   it("질문 생성 오류는 스트림 화면의 안내와 다시 시도를 그대로 쓴다", async () => {
@@ -166,8 +166,8 @@ describe("InterviewScreen", () => {
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent(/질문 생성 호출 한도에 걸렸습니다/);
-    const retry = screen.getByRole("button", { name: "Retry" });
-    expect(retry).toHaveAccessibleDescription(/Try again in a moment/);
+    const retry = screen.getByRole("button", { name: "다시 시도" });
+    expect(retry).toHaveAccessibleDescription(/잠시 후 다시 시도해 주세요/);
   });
 
   it("코드 패널을 대화 왼쪽에, PAAR 패널을 오른쪽에 둔다", () => {
@@ -176,7 +176,7 @@ describe("InterviewScreen", () => {
     );
 
     const code = screen.getByRole("region", { name: "Code / Evidence" });
-    const stream = screen.getByRole("region", { name: "AI question stream" });
+    const stream = screen.getByRole("region", { name: "AI 질문" });
     const paar = screen.getByRole("region", { name: "PAAR" });
     expect(code.compareDocumentPosition(stream) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(stream.compareDocumentPosition(paar) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -192,7 +192,7 @@ describe("InterviewScreen", () => {
     for (const label of ["Problem", "Analyze", "Action", "Result"]) {
       expect(screen.getByRole("heading", { level: 4, name: label })).toBeInTheDocument();
     }
-    expect(screen.getAllByText(/hasn't reached this block yet/)).toHaveLength(4);
+    expect(screen.getAllByText(/대화를 진행하면 AI가 이 블록을 채웁니다/)).toHaveLength(4);
   });
 
   // 개수는 헤더 토글과 패널 머리글 두 곳이 같은 값을 그려야 합니다. 리터럴로 두면 갈립니다.
@@ -217,15 +217,15 @@ describe("InterviewScreen", () => {
     );
 
     const paar = screen.getByRole("region", { name: "PAAR" });
-    expect(paar).toContainElement(screen.getByRole("button", { name: "End interview" }));
+    expect(paar).toContainElement(screen.getByRole("button", { name: "인터뷰 완료" }));
 
-    const input = await screen.findByLabelText("Answer");
+    const input = await screen.findByLabelText("답변");
     await waitFor(() => expect(input).toBeEnabled());
-    fireEvent.click(screen.getByRole("button", { name: "End interview" }));
-    fireEvent.click(screen.getByRole("button", { name: "End the interview" }));
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 완료" }));
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 완료" }));
 
-    expect(screen.queryByLabelText("Answer")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "End interview" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("답변")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "인터뷰 완료" })).not.toBeInTheDocument();
   });
 
   it("헤더 토글로 양옆 패널을 접고 편다", () => {
@@ -235,7 +235,7 @@ describe("InterviewScreen", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Code" }));
     expect(screen.queryByRole("region", { name: "Code / Evidence" })).not.toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "AI question stream" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "AI 질문" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Code" }));
     expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
@@ -243,7 +243,7 @@ describe("InterviewScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "PAAR 0/4" }));
     expect(screen.queryByRole("region", { name: "PAAR" })).not.toBeInTheDocument();
     // 종료 조작이 이 패널 안에 있으므로 접으면 함께 사라집니다. 다시 펴야 끝낼 수 있습니다.
-    expect(screen.queryByRole("button", { name: "End interview" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "인터뷰 완료" })).not.toBeInTheDocument();
   });
 
   // 디자인 원본의 손잡이는 마우스 드래그만 받습니다. 키보드로도 폭을 바꿀 수 있어야 합니다.
@@ -252,7 +252,7 @@ describe("InterviewScreen", () => {
       <InterviewScreen snapshot={evidenceSnapshotFixture()} onBack={vi.fn()} fetchImpl={pendingFetch()} />
     );
 
-    const handle = screen.getByRole("separator", { name: "Resize the code panel" });
+    const handle = screen.getByRole("separator", { name: "코드 패널 폭 조절" });
     expect(handle).toHaveAttribute("aria-valuenow", "300");
 
     fireEvent.keyDown(handle, { key: "ArrowRight" });
@@ -300,15 +300,15 @@ describe("InterviewScreen", () => {
         fetchImpl={fetchImpl}
       />
     );
-    const answer = await screen.findByRole("textbox", { name: /Answer/ });
+    const answer = await screen.findByRole("textbox", { name: /답변/ });
     fireEvent.change(answer, { target: { value: "화면이 비어 있었습니다." } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    await screen.findByText("Your last answer wasn't saved.");
+    fireEvent.click(screen.getByRole("button", { name: "전송" }));
+    await screen.findByText("마지막 답변이 저장되지 않았습니다.");
 
-    fireEvent.click(screen.getByRole("button", { name: "← Candidates" }));
+    fireEvent.click(screen.getByRole("button", { name: "← 뒤로" }));
 
-    const confirm = screen.getByRole("group", { name: /closes this conversation here/ });
-    expect(confirm).toHaveTextContent("One answer you already sent hasn't been saved yet");
+    const confirm = screen.getByRole("group", { name: /저장된 대화와 PAAR 블록은 왼쪽 Interviews에 남습니다/ });
+    expect(confirm).toHaveTextContent("이미 보낸 답변 1개가 아직 저장되지 않아 함께 사라집니다");
   });
 
   it("후보 목록으로 돌아갈 때 대화가 사라진다고 알리고 확인을 받는다", () => {
@@ -317,27 +317,23 @@ describe("InterviewScreen", () => {
       <InterviewScreen snapshot={evidenceSnapshotFixture()} onBack={onBack} fetchImpl={pendingFetch()} />
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "← Candidates" }));
+    fireEvent.click(screen.getByRole("button", { name: "← 뒤로" }));
 
     // 이 버튼이 대화의 유일본을 지우는 자리입니다. 확인을 지나쳐 바로 돌아가면 제출한 답변과 작성
     // 중인 답변이 함께 사라집니다.
     expect(onBack).not.toHaveBeenCalled();
-    const confirm = screen.getByRole("group", { name: /clears this conversation for good/ });
-    expect(confirm).toHaveTextContent("clears this conversation for good");
-    expect(confirm).toHaveTextContent("any answer you're still writing");
-    // 저장 계층이 없어 블록도 함께 사라집니다. 확인 문구가 대화만 말하면 사용자는 블록이 남는다고
-    // 읽습니다(이슈 #91 Tasks). 편집은 더 이상 이 화면에 없으므로 문구에서도 뺐습니다(이슈 #115).
-    expect(confirm).toHaveTextContent("and the PAAR blocks");
-    expect(confirm).toHaveTextContent("Nothing here is saved");
+    const confirm = screen.getByRole("group", { name: /대화, 쓰던 답변, PAAR 블록이 모두 사라집니다/ });
+    expect(confirm).toHaveTextContent("대화, 쓰던 답변, PAAR 블록이 모두 사라집니다");
+    expect(confirm).toHaveTextContent("페이지를 새로 고쳐도 복구할 수 없습니다");
 
-    fireEvent.click(screen.getByRole("button", { name: "Continue the interview" }));
+    fireEvent.click(screen.getByRole("button", { name: "인터뷰 계속하기" }));
     expect(onBack).not.toHaveBeenCalled();
     expect(
-      screen.queryByRole("group", { name: /clears this conversation for good/ })
+      screen.queryByRole("group", { name: /대화, 쓰던 답변, PAAR 블록이 모두 사라집니다/ })
     ).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "← Candidates" }));
-    fireEvent.click(screen.getByRole("button", { name: "Back to candidates" }));
+    fireEvent.click(screen.getByRole("button", { name: "← 뒤로" }));
+    fireEvent.click(screen.getByRole("button", { name: "후보 목록으로" }));
 
     expect(onBack).toHaveBeenCalledTimes(1);
   });
@@ -352,14 +348,14 @@ describe("InterviewScreen", () => {
       <InterviewScreen snapshot={evidenceSnapshotFixture()} onBack={vi.fn()} fetchImpl={pendingFetch()} />
     );
 
-    const tabs = screen.getByRole("group", { name: "Workspace view" });
+    const tabs = screen.getByRole("group", { name: "워크스페이스 보기" });
     expect(tabs).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Interview" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.queryByRole("separator", { name: "Resize the code panel" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "인터뷰" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("separator", { name: "코드 패널 폭 조절" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Code" }));
     expect(screen.getByRole("button", { name: "Code" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: "Interview" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "인터뷰" })).toHaveAttribute("aria-pressed", "false");
   });
 
   it("넓은 폭에서는 탭 없이 세 열을 그린다", () => {
@@ -368,8 +364,8 @@ describe("InterviewScreen", () => {
       <InterviewScreen snapshot={evidenceSnapshotFixture()} onBack={vi.fn()} fetchImpl={pendingFetch()} />
     );
 
-    expect(screen.queryByRole("group", { name: "Workspace view" })).not.toBeInTheDocument();
-    expect(screen.getByRole("separator", { name: "Resize the code panel" })).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "워크스페이스 보기" })).not.toBeInTheDocument();
+    expect(screen.getByRole("separator", { name: "코드 패널 폭 조절" })).toBeInTheDocument();
   });
 
   /*
@@ -395,11 +391,11 @@ describe("InterviewScreen", () => {
     const fetchImpl = testStreamFetch("normal");
     render(<InterviewScreen snapshot={evidenceSnapshotFixture()} onBack={vi.fn()} fetchImpl={fetchImpl} />);
 
-    const input = await screen.findByLabelText("Answer");
+    const input = await screen.findByLabelText("답변");
     await waitFor(() => expect(input).toBeEnabled());
 
     fireEvent.change(input, { target: { value: "첫 답변" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    fireEvent.click(screen.getByRole("button", { name: "전송" }));
 
     expect(screen.getByRole("article", { name: "You" })).toHaveTextContent("첫 답변");
     // 답변 제출 하나가 블록 갱신 호출 하나(이슈 #90)와 다음 질문 요청 하나를 만듭니다: 첫 질문,

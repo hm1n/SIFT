@@ -3,10 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { trackEvent } from "@/features/analytics/events";
-import { AUTH_ERROR_COPY, toAuthErrorParam } from "./auth-error";
+import { toAuthErrorParam } from "./auth-error";
 import { LoginLink, useAuthTransition } from "@/components/shell/auth-transition";
 import { SiftMark } from "@/components/shell/sift-mark";
 import { StatusScreen } from "@/components/shell/status-screen";
+import { AUTH_ERROR_COPY, LOGIN_COPY } from "@/copy/auth";
 import styles from "./login-screen.module.css";
 
 export interface LoginScreenProps {
@@ -46,8 +47,8 @@ export function LoginScreen({ authError }: LoginScreenProps) {
       <StatusScreen
         kind="loading"
         code="Authenticating"
-        label="Connecting to GitHub..."
-        sub="Redirecting you to GitHub to authorize access."
+        label={LOGIN_COPY.authenticatingLabel}
+        sub={LOGIN_COPY.authenticatingSub}
       />
     );
   }
@@ -57,10 +58,10 @@ export function LoginScreen({ authError }: LoginScreenProps) {
       <StatusScreen
         kind="error"
         code="ERROR / AUTH"
-        label="Unable to connect to GitHub."
+        label={LOGIN_COPY.errorLabel}
         sub={AUTH_ERROR_COPY[authError]}
         // 디자인대로 로그인 화면으로 돌아갑니다. 쿼리를 지우면 서버가 오류 없는 화면을 다시 그립니다.
-        action={{ label: "Try again", onClick: () => router.replace("/") }}
+        action={{ label: LOGIN_COPY.tryAgain, onClick: () => router.replace("/") }}
       />
     );
   }
@@ -74,12 +75,12 @@ export function LoginScreen({ authError }: LoginScreenProps) {
           </div>
         </div>
         <div className={styles.copy}>
-          <h1 className={styles.title}>Turn your code into experiences<br />worth talking about.</h1>
-          <p className={styles.description}>Analyze your GitHub history and prepare<br />for technical interviews with real evidence.</p>
+          <h1 className={styles.title}>{LOGIN_COPY.title[0]}<br />{LOGIN_COPY.title[1]}</h1>
+          <p className={styles.description}>{LOGIN_COPY.description[0]}<br />{LOGIN_COPY.description[1]}</p>
         </div>
         <div className={styles.actions}>
-          <LoginLink variant="primary" className={styles.login} iconSize={16}>Continue with GitHub</LoginLink>
-          <p className={styles.terms}>By continuing you agree to our terms</p>
+          <LoginLink variant="primary" className={styles.login} iconSize={16}>{LOGIN_COPY.continueWithGitHub}</LoginLink>
+          <p className={styles.terms}>{LOGIN_COPY.terms}</p>
         </div>
       </div>
     </div>

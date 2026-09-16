@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, type MouseEvent, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { TOP_HEADER_COPY } from "@/copy/shell";
 import { trackEvent } from "@/features/analytics/events";
 import { LOGIN_PATH } from "@/lib/github/auth-paths";
 import { ButtonLink, type ButtonVariant } from "./button";
@@ -15,7 +16,7 @@ interface AuthTransition {
 const AuthTransitionContext = createContext<AuthTransition | null>(null);
 
 /**
- * GitHub 로그인 진입점은 둘입니다. 상단 헤더의 `Log in with GitHub`와 로그인 화면의 `Continue with GitHub`입니다.
+ * GitHub 로그인 진입점은 둘입니다. 상단 헤더의 `GitHub으로 로그인`과 로그인 화면의 `GitHub으로 계속하기`입니다.
  * 헤더는 layout이, 로그인 화면은 page가 그리므로 인증 중 상태를 한쪽의 로컬 상태로 두면 다른 진입점이 닿지 못합니다.
  * PR #100 리뷰가 이 지점이었습니다. layout이 이 provider로 헤더와 화면을 함께 감싸 두 진입점이 같은 상태를 봅니다.
  */
@@ -98,7 +99,7 @@ export function LoginLink({ variant, className, iconSize, children }: LoginLinkP
   return (
     <ButtonLink variant={variant} className={className} href={LOGIN_PATH} onClick={handleClick} aria-busy={isAuthenticating || undefined}>
       <GitHubIcon size={iconSize} />
-      {isAuthenticating ? "Connecting to GitHub…" : children}
+      {isAuthenticating ? TOP_HEADER_COPY.connecting : children}
     </ButtonLink>
   );
 }
