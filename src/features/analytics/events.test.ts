@@ -128,6 +128,21 @@ describe("공통 파라미터", () => {
    * 저장된 인터뷰에는 공개 여부와 언어가 없습니다. 앞 분석이 세워 둔 값을 그대로 두면 이어가는
    * 인터뷰의 이벤트가 엉뚱한 저장소의 문맥을 달고 나갑니다.
    */
+  /**
+   * 저장된 분석의 후보 목록을 다시 여는 갈래입니다(이슈 #116). 이어가기와 마찬가지로 저장소 문맥이
+   * 없고, 분석 이벤트를 하나도 거치지 않습니다.
+   */
+  it("marks a stored analysis as its own flow", async () => {
+    vi.resetModules();
+    const fresh = await import("./events");
+    setGaParams.mockClear();
+    fresh.startFlow({ entryPath: "stored_analysis" });
+    expect(setGaParams).toHaveBeenCalledWith({
+      flow_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      entry_path: "stored_analysis",
+    });
+  });
+
   it("drops the repository context when a resumed interview follows an analysis", () => {
     startFlow({ entryPath: "new_analysis", repoVisibility: "private", repoLanguage: "TypeScript" });
     setGaParams.mockClear();

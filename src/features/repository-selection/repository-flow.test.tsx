@@ -413,6 +413,24 @@ describe("RepositoryFlow 이어가기", () => {
     expect(clearFlow).not.toHaveBeenCalled();
   });
 
+  /**
+   * 저장된 분석의 후보 목록을 여는 경로입니다(이슈 #116). 이 경로도 분석 이벤트를 하나도 거치지
+   * 않으므로 흐름을 새로 세워야 합니다. 세우지 않고 지나가면 직전 이어가기 흐름의 `flow_id`와
+   * `entry_path`가 그대로 남아, 여기서 새로 시작한 인터뷰가 이어가기로 잡힙니다.
+   */
+  it("저장된 분석의 후보 목록을 열면 그 경로로 흐름을 다시 세운다", async () => {
+    stubWithSavedInterview(() => Response.json({ interview: STORED }));
+    render(<RepositoryFlow />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
+    await waitFor(() => expect(startFlow).toHaveBeenCalledWith({ entryPath: "resumed_interview" }));
+    startFlow.mockClear();
+
+    fireEvent.click(await screen.findByRole("button", { name: "이 분석의 다른 경험" }));
+
+    await waitFor(() => expect(startFlow).toHaveBeenCalledWith({ entryPath: "stored_analysis" }));
+  });
+
   it("지워진 인터뷰를 고르면 그 사실을 알리고 다시 시도할 수 있다", async () => {
     stubWithSavedInterview(() =>
       Response.json({ error: { kind: "not_found", message: "없음" } }, { status: 404 })

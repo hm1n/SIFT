@@ -192,16 +192,22 @@ function newFlowId(): string | null {
  * 저장소 문맥 없이 전송됩니다(PR #129 리뷰). 묶는 값이 없을 뿐 나머지는 그대로 붙어야 합니다.
  */
 /**
- * 흐름의 진입 경로입니다. `entry_path`로 나가고, 새 분석을 돌려서 온 것과 저장된 인터뷰를 이어가는
- * 것을 가릅니다.
+ * 흐름의 진입 경로입니다. `entry_path`로 나갑니다. 세 갈래입니다.
  *
- * 이 값이 없으면 리포트에서 인터뷰 시작 수가 분석 성공 수보다 커 보이고, 그것을 모르고 보면 분석
- * 단계에 문제가 있다고 읽게 됩니다. 저장된 인터뷰를 잇는 경로가 `analysis_requested`부터
- * `analysis_succeeded`까지를 하나도 거치지 않기 때문입니다(이슈 #115 이후,
- * `llm-wiki/wiki/2026-09-15-GA4-계측-후속-backlog.md` 3번).
+ * - `new_analysis`: 저장소를 골라 분석을 돌리는 갈래입니다.
+ * - `stored_analysis`: 저장된 분석의 후보 목록을 다시 여는 갈래입니다(이슈 #116).
+ * - `resumed_interview`: 저장된 인터뷰의 대화를 잇는 갈래입니다(이슈 #115).
+ *
+ * 뒤의 둘이 없으면 리포트에서 인터뷰 시작 수가 분석 성공 수보다 커 보이고, 그것을 모르고 보면 분석
+ * 단계에 문제가 있다고 읽게 됩니다. 두 갈래 모두 `analysis_requested`부터 `analysis_succeeded`까지를
+ * 하나도 거치지 않기 때문입니다(`llm-wiki/wiki/2026-09-15-GA4-계측-후속-backlog.md` 3번).
+ *
+ * 저장소 문맥을 싣는 것은 `new_analysis`뿐입니다. 나머지 둘은 저장된 값에서 오는데 공개 여부와
+ * 언어는 저장하지 않습니다.
  */
 export type FlowStart =
   | { readonly entryPath: "new_analysis"; readonly repoVisibility: string; readonly repoLanguage: string | null }
+  | { readonly entryPath: "stored_analysis" }
   | { readonly entryPath: "resumed_interview" };
 
 export function startFlow(flow: FlowStart): void {
