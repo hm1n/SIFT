@@ -1,8 +1,13 @@
 /* Repository 선택 화면입니다. 디자인 파일 `App.tsx`의 `RepoSelectScreen`을 옮겼고 색과 라운드와 폰트는 globals.css 토큰만 씁니다. */
+/*
+ * column flex item의 `min-height` 기본값은 `auto`라 내용보다 작아지지 않습니다. `min-height: 0`이
+ * 없으면 목록이 길어질 때 `.screen`이 `AppShell`의 `.content`를 넘어서고 그대로 잘립니다(이슈 #135).
+ */
 .screen {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 0;
   background: var(--color-card);
 }
 
@@ -32,8 +37,10 @@
   color: var(--color-foreground);
 }
 
+/* 목록과 기여 섹션을 함께 감싸는 스크롤 컨테이너입니다. 셸 안에서 스크롤하는 다른 화면과 같은 구조입니다. */
 .body {
   flex: 1;
+  overflow-y: auto;
   padding: 24px 32px;
 }
 
@@ -258,10 +265,8 @@
   color: #a3a3a3;
 }
 
-/* 화면 안쪽 스크롤 대신 페이지가 스크롤하고 하단 바는 아래에 붙어 따라옵니다. */
+/* 스크롤은 `.body`가 맡고 하단 바는 그 밖의 flex 아이템으로 화면 아래에 고정됩니다. */
 .footer {
-  position: sticky;
-  bottom: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
