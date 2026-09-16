@@ -128,28 +128,24 @@ Error의 sub는 `rate_limit`이 "GitHub rate limit reached. Wait a moment and tr
 - **하단 바는 밀려나 있지 않았습니다.** 이슈는 "하단의 `분석하기` 바도 화면 밖으로 밀려 보이지 않습니다"라고 적었지만, 고치기 전에도 1280x800에서 footer의 위치는 top 753 / bottom 800으로 화면 안이었습니다. `.content`의 `overflow: hidden`이 스크롤포트를 만들어 `position: sticky`가 실제로 동작하고 있었기 때문입니다. 즉 sticky는 무의미한 선언이 아니라 하단 바를 붙들고 있던 장치였고, 접근할 수 없던 것은 목록 아래쪽뿐이었습니다. 이 사실을 모르고 sticky를 먼저 지웠다면 하단 바가 실제로 밀려났을 것입니다.
 - **모바일 폭에서도 페이지 스크롤은 동작하지 않았습니다.** 이슈는 "모바일 폭에서는 `.shell`이 `overflow: visible`이라 지금도 페이지 스크롤이 동작합니다"라고 적었지만, 390x844에서 `documentElement.scrollHeight`와 `clientHeight`가 844로 같아 페이지가 스크롤하지 않았습니다. `@media (max-width: 720px)`가 `.shell`만 `overflow: visible`로 바꾸고 `.content`의 `overflow: hidden`은 그대로 두기 때문입니다. 모바일도 같은 결함을 갖고 있었고, 같은 수정으로 함께 풀렸습니다. 별도 이슈로 나눌 것이 없습니다.
 
-### 측정 절차
+### 측정
 
-이 화면은 GitHub OAuth 세션이 있어야 닿습니다. 그래서 실제 앱 대신, 실제 CSS 파일 네 개(`globals.css`, `top-header.module.css`, `app-shell.module.css`, `repository-select-screen.module.css`)를 그대로 읽어 CSS Module의 스코프만 클래스 접두어로 흉내 낸 정적 하네스를 만들고 Playwright headless Chromium으로 쟀습니다. 마크업은 `repository-select-screen.tsx`의 JSX 구조를 그대로 옮겼습니다. Repository 30개와 3개, 1280x800과 390x844 네 조합입니다.
+이 화면은 GitHub OAuth 세션이 있어야 닿아 실제 앱 대신 정적 하네스로 쟀습니다. 경위와 접은 대안은 `raw/2026-09-16-Repository선택-스크롤-실측과-셀프리뷰-session-log.md`에 있습니다. Repository 30개, 1280x800과 390x844 기준입니다(2026-09-16).
 
-| | 1280x800 수정 전 | 1280x800 수정 후 | 390x844 수정 전 | 390x844 수정 후 |
-| --- | --- | --- | --- | --- |
-| `.body` scrollHeight / clientHeight | 2361 / 2361 | 2361 / 618 | 3171 / 3171 | 3171 / 529 |
-| `.body`가 스크롤되는가 | 아니오 | 예 | 아니오 | 예 |
-| 마지막 Repository에 닿는가 | 아니오 | 예 | 아니오 | 예 |
-| 기여 섹션 textarea에 닿는가 | 아니오 | 예 | 아니오 | 예 |
-| 하단 바가 보이는가 | 예(sticky) | 예(flex item) | 예(sticky) | 예(flex item) |
+| | 1280x800 전 → 후 | 390x844 전 → 후 |
+| --- | --- | --- |
+| `.body` scrollHeight / clientHeight | 2361 / 2361 → 2361 / 618 | 3171 / 3171 → 3171 / 529 |
+| `.body`가 스크롤되는가 | 아니오 → 예 | 아니오 → 예 |
+| 마지막 Repository에 닿는가 | 아니오 → 예 | 아니오 → 예 |
+| 기여 섹션 textarea에 닿는가 | 아니오 → 예 | 아니오 → 예 |
+| 하단 바가 보이는가 | 예(sticky) → 예(flex item) | 예(sticky) → 예(flex item) |
 
-Repository 3개일 때도 하단 바는 같은 자리(top 753 / 797)에 남고 데스크톱에서는 스크롤이 생기지 않습니다. `.body`가 `flex: 1`이라 내용이 짧아도 공간을 채우기 때문입니다.
+Repository 3개일 때도 하단 바는 같은 자리에 남고 데스크톱에서는 스크롤이 생기지 않습니다. `.body`가 `flex: 1`이라 내용이 짧아도 공간을 채우기 때문입니다.
 
-### 넣었다가 재 보고 뺀 것
+### 하지 않기로 한 것
 
-처음에는 `saved-interview-screen.module.css`와 모양을 맞춰 `.body`에 `min-height: 0`을, `.header`와 `.footer`에 `flex-shrink: 0`을 함께 넣었습니다. 셋 다 이 화면에서는 아무 일도 하지 않습니다.
-
-- `.body`의 `min-height: 0`: `overflow-y: auto`가 이미 automatic minimum size를 0으로 만듭니다. `overflow`가 `visible`일 때만 자동 최소 크기가 걸리기 때문입니다.
-- `.header`와 `.footer`의 `flex-shrink: 0`: 둘 다 `min-height`가 `auto`라 내용 높이 아래로 줄지 않습니다. 줄어들 여지는 `.body`가 먼저 다 흡수합니다.
-
-셋을 뺀 CSS로 1280x800, 390x844, 그리고 세로를 360px까지 줄인 1280x360에서 다시 쟀습니다. header 91px·footer 47px·스크롤 가능 여부·마지막 행 도달·하단 바 가시성이 모두 같았습니다. 형제 화면과 모양을 맞추는 것은 근거가 아니라 습관이라 지웠습니다. `saved-interview-screen.module.css`에 남은 같은 선언들도 같은 이유로 무효일 가능성이 있지만, 그 화면은 이번 범위가 아니라 재지 않았습니다.
+- `.body`의 `min-height: 0`과 `.header`·`.footer`의 `flex-shrink: 0`은 넣지 않습니다. 형제 화면에는 있지만 이 화면에서는 셋 다 무효입니다. `overflow-y: auto`가 이미 automatic minimum size를 0으로 만들고, header와 footer는 `min-height`가 `auto`라 내용 높이 아래로 줄지 않습니다. 세로 360px까지 줄여 재도 결과가 같았습니다.
+- 목록 가상화와 페이지네이션은 이슈 Non-goal입니다. 실제 측정 없이 렌더링 최적화를 먼저 넣지 않습니다.
 
 ### 테스트로 고정한 것과 고정하지 못한 것
 
