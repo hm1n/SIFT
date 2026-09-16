@@ -4,7 +4,7 @@ import { fetchCommitDetailsBatch, withoutPatch } from "@/lib/github/contribution
 import { RepositoryContributionFetchError } from "@/lib/github/errors";
 import { readGitHubRouteRequest } from "@/lib/github/route-request";
 import type { CommitSummary } from "@/lib/github/types";
-import { reportServerError } from "@/lib/sentry/report";
+import { reportServerError } from "@/lib/sentry/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;

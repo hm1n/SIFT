@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { errorResponse } from "@/lib/github/api-contract";
 import { getGitHubTokenFromRequest } from "@/lib/github/auth-session";
 import { fetchUserRepositories } from "@/lib/github/repositories";
-import { reportServerError } from "@/lib/sentry/report";
+import { reportServerError } from "@/lib/sentry/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;

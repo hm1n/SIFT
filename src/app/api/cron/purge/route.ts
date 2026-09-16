@@ -3,7 +3,7 @@ import { retentionCutoff } from "@/features/saved-interviews/retention";
 import { neonStore } from "@/lib/db/neon-store";
 import type { SiftStore } from "@/lib/db/store";
 import { DatabaseError } from "@/lib/db/client";
-import { reportServerError } from "@/lib/sentry/report";
+import { reportServerError } from "@/lib/sentry/server";
 
 export const runtime = "nodejs";
 

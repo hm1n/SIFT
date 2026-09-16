@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { savedInterviewErrorResponse } from "./errors";
 import { getGitHubSessionFromRequest } from "@/lib/github/auth-session";
 import { GitHubFetchError } from "@/lib/github/errors";
-import { reportServerError } from "@/lib/sentry/report";
+import { reportServerError } from "@/lib/sentry/server";
 
 /**
  * 저장 계층을 쓰는 라우트가 공통으로 하는 두 가지입니다. 세션에서 사용자 번호를 꺼내는 일과 본문을

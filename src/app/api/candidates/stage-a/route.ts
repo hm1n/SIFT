@@ -21,7 +21,7 @@ import {
 } from "@/features/experience-candidates/stage-a";
 import { modelFacingUnitId } from "@/features/experience-candidates/work-unit";
 import { resolveLlmTimeoutMs } from "@/features/experience-candidates/llm-provider";
-import { reportServerError } from "@/lib/sentry/report";
+import { reportServerError } from "@/lib/sentry/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;

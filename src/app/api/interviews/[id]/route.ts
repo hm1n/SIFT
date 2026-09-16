@@ -11,7 +11,7 @@ import {
 } from "@/features/saved-interviews/request";
 import { getGitHubSessionFromRequest } from "@/lib/github/auth-session";
 import { GitHubFetchError } from "@/lib/github/errors";
-import { reportServerError } from "@/lib/sentry/report";
+import { reportServerError } from "@/lib/sentry/server";
 import { neonStore } from "@/lib/db/neon-store";
 import type { SiftStore } from "@/lib/db/store";
 

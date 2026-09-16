@@ -9,8 +9,7 @@ vi.mock("@sentry/nextjs", () => ({
   captureException: (...args: unknown[]) => captureException(...args),
 }));
 
-const { initSentryServer, resolveServerSentryDsn } = await import("./server");
-const { reportServerError, setServerErrorReporter } = await import("./report");
+const { initSentryServer, reportServerError, resolveServerSentryDsn } = await import("./server");
 
 const VALID_DSN = "https://public@o1.ingest.sentry.io/2";
 const PUBLIC_DSN = "https://public@o1.ingest.sentry.io/3";
@@ -29,7 +28,6 @@ describe("initSentryServer", () => {
 
   afterEach(() => {
     clearDsnEnv();
-    setServerErrorReporter(null);
     vi.restoreAllMocks();
   });
 
@@ -110,40 +108,57 @@ describe("initSentryServer", () => {
     expect(initSentryServer()).toBe(false);
     expect(consoleError).toHaveBeenCalled();
   });
+});
+
+describe("reportServerError", () => {
+  beforeEach(() => {
+    captureException.mockReset();
+    captureException.mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
 
   /**
-   * 초기화에 성공해야만 전송 함수가 등록됩니다. 이 배선이 끊기면 라우트가 `reportServerError`를 불러도
-   * 아무 데도 가지 않고, 그 사실이 화면에도 로그에도 드러나지 않습니다.
+   * 이슈 #136의 단일 규칙입니다. 실제 장애만 Issues에 담깁니다.
+   *
+   * 각 status는 이 앱이 실제로 내보내는 오류 응답에서 가져왔습니다. 500은 `server_error`, 502는 LLM
+   * 실패와 GitHub network, 503은 `storage_failed`와 `llm_rate_limit`, 504는 `llm_timeout`입니다.
    */
-  it("registers the reporter so route errors reach Sentry", () => {
-    process.env.SENTRY_DSN = VALID_DSN;
-    expect(initSentryServer()).toBe(true);
-    const error = new Error("route failure");
-    reportServerError(error, Response.json({}, { status: 500 }));
+  it.each([500, 502, 503, 504])("reports a %d response", (status) => {
+    const error = new Error("server side failure");
+    const response = Response.json({ error: { kind: "server_error" } }, { status });
+    expect(reportServerError(error, response)).toBe(response);
+    expect(captureException).toHaveBeenCalledTimes(1);
     expect(captureException).toHaveBeenCalledWith(error);
   });
 
   /**
-   * 이슈 #136의 제약입니다. DSN이 없으면 전송 함수도 등록되지 않아야 합니다. 호출부가 조심하는 것이
-   * 아니라 구조로 막힙니다.
+   * 사용자 입력 문제는 Sentry로 가지 않아야 합니다. 각 status는 이 앱의 오류 종류에 대응합니다.
+   * 400은 `invalid_json`, 401은 `unauthorized`, 404는 `not_found`, 409는 `version_conflict`,
+   * 413은 `body_too_large`, 422는 `invalid_request`, 429는 GitHub `rate_limit`입니다.
    */
-  it("does not register the reporter when the DSN is absent", () => {
-    captureException.mockClear();
-    expect(initSentryServer()).toBe(false);
-    reportServerError(new Error("route failure"), Response.json({}, { status: 500 }));
-    expect(captureException).not.toHaveBeenCalled();
-  });
+  it.each([200, 204, 400, 401, 404, 409, 413, 422, 429])(
+    "does not report a %d response",
+    (status) => {
+      const response =
+        status === 204
+          ? new Response(null, { status })
+          : Response.json({ error: { kind: "invalid_request" } }, { status });
+      expect(reportServerError(new Error("user side problem"), response)).toBe(response);
+      expect(captureException).not.toHaveBeenCalled();
+    }
+  );
 
-  // 초기화가 실패한 SDK로 전송을 시도하면 요청마다 예외가 납니다.
-  it("does not register the reporter when initialization fails", () => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-    captureException.mockClear();
-    process.env.SENTRY_DSN = VALID_DSN;
-    init.mockImplementation(() => {
-      throw new Error("boom");
+  // 계측이 던지면 사용자가 받을 오류 응답까지 사라집니다.
+  it("returns the response even when capturing throws", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    captureException.mockImplementation(() => {
+      throw new Error("transport down");
     });
-    expect(initSentryServer()).toBe(false);
-    reportServerError(new Error("route failure"), Response.json({}, { status: 500 }));
-    expect(captureException).not.toHaveBeenCalled();
+    const response = Response.json({ error: { kind: "server_error" } }, { status: 500 });
+    expect(reportServerError(new Error("boom"), response)).toBe(response);
+    expect(consoleError).toHaveBeenCalled();
   });
 });

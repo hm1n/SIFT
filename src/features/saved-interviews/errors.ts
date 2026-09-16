@@ -1,5 +1,5 @@
 import { DatabaseError } from "@/lib/db/client";
-import { reportServerError } from "@/lib/sentry/report";
+import { reportServerError } from "@/lib/sentry/server";
 
 /**
  * 저장된 인터뷰 경로가 내는 오류입니다. 화면이 무엇을 보일지 고르려면 종류가 필요합니다.

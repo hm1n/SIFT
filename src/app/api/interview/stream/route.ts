@@ -26,7 +26,7 @@ import {
 } from "@/features/interview/test-stream";
 import { getGitHubTokenFromRequest } from "@/lib/github/auth-session";
 import { GitHubFetchError } from "@/lib/github/errors";
-import { reportServerError } from "@/lib/sentry/report";
+import { reportServerError } from "@/lib/sentry/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -41,11 +41,12 @@ export const maxDuration = 60;
 /**
  * `cause`를 받아 5xx일 때만 Sentry로 보냅니다(이슈 #136). 이유는
  * `interview/experience-block/route.ts`의 같은 함수와 같습니다. 이 라우트도 오류 응답을 여러 자리에서
- * 만들고 그중 일부만 5xx이므로, 상태 코드를 정하는 자리에서 전송도 함께 정합니다.
+ * 만들고 그중 일부만 5xx이므로, 상태 코드를 정하는 자리에서 전송도 함께 정합니다. 4xx 자리가
+ * `cause`를 넘기지 않는 이유도 같습니다.
  */
 function errorResponse(kind: string, message: string, status: number, cause?: unknown): Response {
   return reportServerError(
-    cause ?? new Error(`${kind}: ${message}`),
+    cause,
     Response.json({ error: { kind, message } }, { status })
   );
 }

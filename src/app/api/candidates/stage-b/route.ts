@@ -16,7 +16,7 @@ import { getGitHubTokenFromRequest } from "@/lib/github/auth-session";
 import { fetchCommitDetailBySha } from "@/lib/github/contributions";
 import { GitHubFetchError } from "@/lib/github/errors";
 import { readGitHubRouteRequest } from "@/lib/github/route-request";
-import { reportServerError } from "@/lib/sentry/report";
+import { reportServerError } from "@/lib/sentry/server";
 import type { CommitDetail, GitHubAuth } from "@/lib/github/types";
 
 export const runtime = "nodejs";

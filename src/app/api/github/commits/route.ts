@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { errorResponse, GITHUB_BATCH_LIMITS, GitHubRouteRequestError } from "@/lib/github/api-contract";
-import { reportServerError } from "@/lib/sentry/report";
+import { reportServerError } from "@/lib/sentry/server";
 import { fetchAuthoredCommitsBatch } from "@/lib/github/commits";
 import { decodeCommitCursor, encodeCommitCursor } from "@/lib/github/cursor";
 import { readGitHubRouteRequest } from "@/lib/github/route-request";

@@ -39,7 +39,7 @@ import { turnsToSave } from "@/features/saved-interviews/turn";
 import { getGitHubSessionFromRequest } from "@/lib/github/auth-session";
 import { GitHubFetchError } from "@/lib/github/errors";
 import { neonStore } from "@/lib/db/neon-store";
-import { reportServerError } from "@/lib/sentry/report";
+import { reportServerError } from "@/lib/sentry/server";
 import type { SiftStore } from "@/lib/db/store";
 
 export const runtime = "nodejs";
@@ -60,13 +60,12 @@ export const maxDuration = 60;
  * 5xx입니다. 호출부마다 전송을 얹으면 새 오류 분류나 새 거절 지점이 생길 때 빠뜨릴 자리가 남습니다.
  * 판정은 `experienceBlockErrorStatus`가 이미 내리고 있으므로 전송도 같은 자리에서 합니다.
  *
- * `cause`가 없는 자리가 있습니다. 모델 출력이 검증을 통과하지 못한 경우(`block_update_rejected`)는
- * 잡은 예외가 아니라 검증 결과이므로 던져진 오류가 없습니다. 그 자리에서도 Sentry Issue에 분류와
- * 문구는 남아야 하므로 오류를 만들어 보냅니다.
+ * 4xx 자리는 `cause`를 넘기지 않습니다. status가 500 미만이면 `reportServerError`가 전송하지 않으므로
+ * 값이 무엇이든 쓰이지 않습니다. 5xx를 내는 자리만 원본 오류를 넘깁니다.
  */
 function errorResponse(kind: ExperienceBlockErrorKind, message: string, cause?: unknown): Response {
   return reportServerError(
-    cause ?? new Error(`${kind}: ${message}`),
+    cause,
     Response.json({ error: { kind, message } }, { status: experienceBlockErrorStatus(kind) })
   );
 }
@@ -249,9 +248,12 @@ export async function handleExperienceBlockUpdate(
 
   const result = applyBlockUpdate(state, modelOutput, { snapshot, turnId: answerTurnId, targetBlock });
   if (!result.ok) {
+    // 잡은 예외가 아니라 검증 결과이므로 던져진 오류가 없습니다. 502로 나가는 자리라 오류를 만들어 넘깁니다.
+    const detail = result.errors.map((e) => `${e.kind}(${e.detail})`).join(", ");
     return errorResponse(
       "block_update_rejected",
-      `모델 출력이 검증을 통과하지 못했습니다: ${result.errors.map((e) => `${e.kind}(${e.detail})`).join(", ")}`
+      `모델 출력이 검증을 통과하지 못했습니다: ${detail}`,
+      new Error(`block_update_rejected: ${detail}`)
     );
   }
 

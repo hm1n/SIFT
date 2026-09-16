@@ -1,7 +1,6 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DatabaseError } from "@/lib/db/client";
-import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
 import { createInMemoryStore } from "@/lib/db/in-memory-store";
 import type { SiftStore } from "@/lib/db/store";
 import {
@@ -9,10 +8,8 @@ import {
   GITHUB_SESSION_COOKIE,
   GITHUB_SESSION_KEY_ENV,
 } from "@/lib/github/auth-session";
-import { setServerErrorReporter } from "@/lib/sentry/report";
 import { handleFindAnalysis, handleSaveAnalysis } from "./analyses/route";
 import { handleGetAnalysis } from "./analyses/[id]/route";
-import { handleCreateInterview, handleListInterviews } from "./interviews/route";
 import { handleDeleteInterview, handlePatchInterview } from "./interviews/[id]/route";
 import { handleStageA } from "./candidates/stage-a/route";
 import { handlePurge } from "./cron/purge/route";
@@ -25,10 +22,14 @@ import { handleInterviewQuestionStream } from "./interview/stream/route";
  * 배선돼 있는지를 봅니다. 둘을 나누는 이유는 이슈 #136의 원인이 판정 로직이 틀린 것이 아니라 오류가
  * SDK까지 가는 경로가 아예 없던 것이기 때문입니다. 배선이 빠지면 판정 테스트는 그대로 통과합니다.
  *
- * SDK는 부르지 않습니다. `setServerErrorReporter`에 mock을 등록해 전송 함수에 무엇이 넘어오는지만
- * 봅니다. 라우트는 `@sentry/nextjs`를 import하지 않으므로 이 파일도 SDK를 로드하지 않습니다.
+ * SDK를 mock합니다. 실제 전송을 일으키지 않고 `captureException`에 무엇이 넘어오는지만 봅니다.
  */
 const reported = vi.fn();
+vi.mock("@sentry/nextjs", () => ({
+  init: () => undefined,
+  captureException: (...args: unknown[]) => reported(...args),
+  captureRequestError: () => undefined,
+}));
 
 const OWNER_ID = 44727850;
 
@@ -37,7 +38,6 @@ let savedSecret: string | undefined;
 
 beforeEach(() => {
   reported.mockReset();
-  setServerErrorReporter(reported);
   savedKey = process.env[GITHUB_SESSION_KEY_ENV];
   savedSecret = process.env.CRON_SECRET;
   process.env[GITHUB_SESSION_KEY_ENV] = Buffer.alloc(32, 7).toString("base64");
@@ -45,7 +45,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  setServerErrorReporter(null);
   if (savedKey === undefined) delete process.env[GITHUB_SESSION_KEY_ENV];
   else process.env[GITHUB_SESSION_KEY_ENV] = savedKey;
   if (savedSecret === undefined) delete process.env.CRON_SECRET;
@@ -98,45 +97,17 @@ describe("5xx 응답은 Sentry로 갑니다", () => {
    * 저장 계층이 답하지 않는 경우입니다. 이슈 #136의 Why가 적은 "Neon 질의 실패"가 이 갈래입니다.
    * 라우트마다 따로 확인하는 이유는 catch가 라우트마다 따로 있기 때문입니다.
    */
+  /**
+   * 저장 계층이 답하지 않는 경우입니다. 이슈 #136의 Why가 적은 "Neon 질의 실패"가 이 갈래입니다.
+   *
+   * 라우트를 전수로 훑지 않습니다. 저장 계층을 쓰는 라우트 일곱 개의 catch가 전부
+   * `savedInterviewErrorResponseFor` 하나를 지나므로 그 함수를 한 번 지나면 같은 배선을 확인합니다.
+   * cron purge는 자기 catch에서 직접 감싸므로 따로 봅니다.
+   */
   it.each([
     [
-      "POST /api/analyses",
+      "savedInterviewErrorResponseFor를 지나는 라우트",
       () => handleSaveAnalysis(request("/api/analyses", { body: { analysis: ANALYSIS } }), brokenStore()),
-    ],
-    [
-      "GET /api/analyses",
-      () => handleFindAnalysis(request("/api/analyses?owner=hm1n&repo=SIFT", { method: "GET" }), brokenStore()),
-    ],
-    [
-      "GET /api/analyses/[id]",
-      () => handleGetAnalysis(request("/api/analyses/x", { method: "GET" }), "x", brokenStore()),
-    ],
-    [
-      "GET /api/interviews",
-      () => handleListInterviews(request("/api/interviews", { method: "GET" }), brokenStore()),
-    ],
-    [
-      "POST /api/interviews",
-      () =>
-        handleCreateInterview(
-          request("/api/interviews", {
-            body: { analysisId: "a", candidateKey: "c1", title: "제목", evidence: evidenceSnapshotFixture() },
-          }),
-          brokenStore()
-        ),
-    ],
-    [
-      "DELETE /api/interviews/[id]",
-      () => handleDeleteInterview(request("/api/interviews/x", { method: "DELETE" }), "x", brokenStore()),
-    ],
-    [
-      "PATCH /api/interviews/[id]",
-      () =>
-        handlePatchInterview(
-          request("/api/interviews/x", { method: "PATCH", body: { status: "completed" } }),
-          "x",
-          brokenStore()
-        ),
     ],
     [
       "GET /api/cron/purge",
