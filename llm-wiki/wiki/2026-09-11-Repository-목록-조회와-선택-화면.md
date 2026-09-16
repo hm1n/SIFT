@@ -70,7 +70,7 @@ Error의 sub는 `rate_limit`이 "GitHub rate limit reached. Wait a moment and tr
 - 행은 `role="radiogroup"` 안의 `role="radio"` 버튼입니다. 14px 라디오 기호, `owner / name`, mono 소형 라벨로 `language · PRIVATE`, 오른쪽에 `UPDATED nD AGO`입니다. 언어가 null이면 언어를, 공개 Repository면 `PRIVATE`를 생략합니다. `pushedAt`이 null이면 UPDATED 라벨을 생략합니다.
 - 방향키로 행을 오갑니다. ArrowDown·ArrowRight는 다음 행, ArrowUp·ArrowLeft는 이전 행으로 선택과 DOM 포커스를 함께 옮기고 양 끝에서 순환합니다. roving tabindex라 선택 전에는 첫 행만, 선택 뒤에는 선택된 행만 Tab 순서에 남습니다.
 - 선택은 하나입니다. 검색으로 선택한 행이 가려져도 선택은 유지되어 하단 바에 남습니다.
-- 하단 바는 `position: sticky`로 아래에 붙고 왼쪽에 `owner / name` 또는 "No repository selected", 오른쪽에 primary `Analyze →`입니다. 선택 전에는 disabled(opacity 0.3)입니다.
+- 하단 바는 스크롤 영역 밖의 flex 아이템으로 화면 아래에 남고 왼쪽에 `owner / name` 또는 "No repository selected", 오른쪽에 primary `Analyze →`입니다. 선택 전에는 disabled(opacity 0.3)입니다. 처음에는 `position: sticky`였고 바꾼 경위는 8절에 있습니다.
 
 ### 기여 항목
 
@@ -108,3 +108,58 @@ Error의 sub는 `rate_limit`이 "GitHub rate limit reached. Wait a moment and tr
 - 조직 Repository는 `affiliation` 기본값(owner, collaborator, organization_member)대로 함께 옵니다. Organization 전환과 필터는 이슈 Non-goal입니다.
 - OAuth scope가 `read:user repo`로 넓어져 `/user/repos`가 비공개 Repository도 돌려줍니다. 경위는 `wiki/2026-09-10-디자인-개편-후속-backlog.md` 13번과 `raw/2026-09-11-OAuth-repo-scope-결정-session-log.md`에 있습니다. 기존에 로그인한 세션은 이전 scope(`read:user`)로 발급된 토큰을 그대로 쓰므로, 재로그인해야 비공개 목록이 보입니다.
 - 노션 기능 정의서에 owner·repo 직접 입력 방식이 남아 있는지 확인하지 않았습니다.
+
+## 8. 목록 영역 스크롤 (#135)
+
+### 무엇이 잘못돼 있었나
+
+`AppShell`은 높이를 위에서부터 확정해 내려주고 `.content`가 `overflow: hidden`으로 자릅니다. 그런데 이 화면의 `.screen`에는 `min-height: 0`이 없고 `.body`에는 `overflow-y: auto`가 없었습니다. column flex item의 `min-height` 기본값은 `auto`라 내용보다 작아지지 않으므로, Repository가 많아지면 `.screen`이 셸을 넘어서고 넘어선 부분이 그대로 잘렸습니다. 스크롤 컨테이너가 없어 잘린 부분에 닿을 방법이 없었고, 목록 아래 기여 섹션도 함께 사라졌습니다.
+
+### 고친 것
+
+`.screen`에 `min-height: 0`, `.body`에 `overflow-y: auto` 두 줄입니다. 이제 `.body`가 목록과 기여 섹션을 함께 감싸는 스크롤 컨테이너입니다.
+
+`.footer`의 `position: sticky; bottom: 0`은 제거했습니다. 스크롤을 `.body`가 맡으면 `.footer`는 그 밖의 flex 아이템이라 sticky 없이도 아래에 남습니다. 함께 달려 있던 "화면 안쪽 스크롤 대신 페이지가 스크롤하고 하단 바는 아래에 붙어 따라옵니다"라는 주석은 이 화면이 `AppShell` 안으로 들어오기 전의 전제라 고쳤습니다.
+
+### 실측으로 바로잡은 이슈의 전제 둘
+
+이슈 #135 본문이 적은 두 가지가 실측과 달랐습니다. 브라우저에서 잰 값입니다.
+
+- **하단 바는 밀려나 있지 않았습니다.** 이슈는 "하단의 `분석하기` 바도 화면 밖으로 밀려 보이지 않습니다"라고 적었지만, 고치기 전에도 1280x800에서 footer의 위치는 top 753 / bottom 800으로 화면 안이었습니다. `.content`의 `overflow: hidden`이 스크롤포트를 만들어 `position: sticky`가 실제로 동작하고 있었기 때문입니다. 즉 sticky는 무의미한 선언이 아니라 하단 바를 붙들고 있던 장치였고, 접근할 수 없던 것은 목록 아래쪽뿐이었습니다. 이 사실을 모르고 sticky를 먼저 지웠다면 하단 바가 실제로 밀려났을 것입니다.
+- **모바일 폭에서도 페이지 스크롤은 동작하지 않았습니다.** 이슈는 "모바일 폭에서는 `.shell`이 `overflow: visible`이라 지금도 페이지 스크롤이 동작합니다"라고 적었지만, 390x844에서 `documentElement.scrollHeight`와 `clientHeight`가 844로 같아 페이지가 스크롤하지 않았습니다. `@media (max-width: 720px)`가 `.shell`만 `overflow: visible`로 바꾸고 `.content`의 `overflow: hidden`은 그대로 두기 때문입니다. 모바일도 같은 결함을 갖고 있었고, 같은 수정으로 함께 풀렸습니다. 별도 이슈로 나눌 것이 없습니다.
+
+### 측정 절차
+
+이 화면은 GitHub OAuth 세션이 있어야 닿습니다. 그래서 실제 앱 대신, 실제 CSS 파일 네 개(`globals.css`, `top-header.module.css`, `app-shell.module.css`, `repository-select-screen.module.css`)를 그대로 읽어 CSS Module의 스코프만 클래스 접두어로 흉내 낸 정적 하네스를 만들고 Playwright headless Chromium으로 쟀습니다. 마크업은 `repository-select-screen.tsx`의 JSX 구조를 그대로 옮겼습니다. Repository 30개와 3개, 1280x800과 390x844 네 조합입니다.
+
+| | 1280x800 수정 전 | 1280x800 수정 후 | 390x844 수정 전 | 390x844 수정 후 |
+| --- | --- | --- | --- | --- |
+| `.body` scrollHeight / clientHeight | 2361 / 2361 | 2361 / 618 | 3171 / 3171 | 3171 / 529 |
+| `.body`가 스크롤되는가 | 아니오 | 예 | 아니오 | 예 |
+| 마지막 Repository에 닿는가 | 아니오 | 예 | 아니오 | 예 |
+| 기여 섹션 textarea에 닿는가 | 아니오 | 예 | 아니오 | 예 |
+| 하단 바가 보이는가 | 예(sticky) | 예(flex item) | 예(sticky) | 예(flex item) |
+
+Repository 3개일 때도 하단 바는 같은 자리(top 753 / 797)에 남고 데스크톱에서는 스크롤이 생기지 않습니다. `.body`가 `flex: 1`이라 내용이 짧아도 공간을 채우기 때문입니다.
+
+### 넣었다가 재 보고 뺀 것
+
+처음에는 `saved-interview-screen.module.css`와 모양을 맞춰 `.body`에 `min-height: 0`을, `.header`와 `.footer`에 `flex-shrink: 0`을 함께 넣었습니다. 셋 다 이 화면에서는 아무 일도 하지 않습니다.
+
+- `.body`의 `min-height: 0`: `overflow-y: auto`가 이미 automatic minimum size를 0으로 만듭니다. `overflow`가 `visible`일 때만 자동 최소 크기가 걸리기 때문입니다.
+- `.header`와 `.footer`의 `flex-shrink: 0`: 둘 다 `min-height`가 `auto`라 내용 높이 아래로 줄지 않습니다. 줄어들 여지는 `.body`가 먼저 다 흡수합니다.
+
+셋을 뺀 CSS로 1280x800, 390x844, 그리고 세로를 360px까지 줄인 1280x360에서 다시 쟀습니다. header 91px·footer 47px·스크롤 가능 여부·마지막 행 도달·하단 바 가시성이 모두 같았습니다. 형제 화면과 모양을 맞추는 것은 근거가 아니라 습관이라 지웠습니다. `saved-interview-screen.module.css`에 남은 같은 선언들도 같은 이유로 무효일 가능성이 있지만, 그 화면은 이번 범위가 아니라 재지 않았습니다.
+
+### 테스트로 고정한 것과 고정하지 못한 것
+
+jsdom은 레이아웃을 계산하지 않아 "실제로 스크롤되는지"를 렌더 테스트로 단언할 수 없습니다. `css-module-class-reference.test.ts`가 같은 이유로 렌더 대신 소스를 읽는 선례라, `repository-select-screen.scroll.test.ts`도 CSS를 읽어 `.screen`의 `min-height: 0`과 `.body`의 `overflow-y: auto`가 남아 있는지 봅니다. 두 단정 모두 수정 전 CSS에 대고 돌리면 실패하는 것을 확인했습니다.
+
+고정하지 못한 것은 위 표의 나머지 행입니다. 다음 절차로 손으로 확인합니다.
+
+1. Repository가 15개 이상인 계정으로 로그인해 선택 화면을 엽니다.
+2. 브라우저 창 높이를 800px 이하로 줄입니다.
+3. 목록 위에서 스크롤해 마지막 Repository까지 내려가 그 행을 선택합니다.
+4. 더 내려 기여 항목 textarea까지 닿는지 봅니다.
+5. 스크롤하는 동안 하단 `분석하기` 바가 계속 화면 안에 있는지 봅니다.
+6. 창 폭을 720px 이하로 줄여 3~5를 되풀이합니다.
