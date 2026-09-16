@@ -1,0 +1,809 @@
+// @vitest-environment jsdom
+
+import "@testing-library/jest-dom/vitest";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { INTERVIEW_HISTORY_ITEM_MAX_BYTES, INTERVIEW_HISTORY_MAX_ITEMS } from "./history";
+import { evidenceSnapshotFixture } from "./question-fixture";
+import { encodeSseEvent } from "./sse";
+import { READY_TO_FINISH_PROMPT } from "@/copy/interview";
+import { useInterviewStream } from "./use-interview-stream";
+
+afterEach(cleanup);
+
+function controllableResponse() {
+  let controller: ReadableStreamDefaultController<Uint8Array>;
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(streamController) {
+      controller = streamController;
+    },
+  });
+  return {
+    response: { ok: true, status: 200, body: stream } as unknown as Response,
+    push(text: string) {
+      controller.enqueue(encoder.encode(text));
+    },
+    close() {
+      controller.close();
+    },
+  };
+}
+
+describe("useInterviewStream", () => {
+  it("한 프레임 안에 도착한 청크를 모아 한 번만 반영한다", async () => {
+    const source = controllableResponse();
+    const fetchImpl = vi.fn().mockResolvedValue(source.response);
+    const frames: (() => void)[] = [];
+    const scheduleFrame = vi.fn((callback: () => void) => frames.push(callback));
+
+    const { result } = renderHook(() =>
+      useInterviewStream({
+        url: "/api/interview/stream",
+        fetchImpl,
+        sleep: async () => {},
+        scheduleFrame: (callback) => scheduleFrame(callback),
+        cancelFrame: () => {},
+      })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
+
+    await act(async () => {
+      source.push(encodeSseEvent({ type: "chunk", seq: 1, text: "가" }));
+      source.push(encodeSseEvent({ type: "chunk", seq: 2, text: "나" }));
+      source.push(encodeSseEvent({ type: "chunk", seq: 3, text: "다" }));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(scheduleFrame).toHaveBeenCalledTimes(1));
+    expect(result.current.messages).toHaveLength(0);
+
+    await act(async () => {
+      frames.forEach((frame) => frame());
+    });
+
+    expect(result.current.messages).toHaveLength(1);
+    expect(result.current.messages[0].text).toBe("가나다");
+    expect(result.current.receivedSeq).toBe(3);
+  });
+
+  it("done이 오면 프레임을 기다리지 않고 남은 청크까지 반영하고 메시지를 닫는다", async () => {
+    const source = controllableResponse();
+    const fetchImpl = vi.fn().mockResolvedValue(source.response);
+
+    const { result } = renderHook(() =>
+      useInterviewStream({
+        url: "/api/interview/stream",
+        fetchImpl,
+        sleep: async () => {},
+        // 프레임을 영영 실행하지 않아도 done이 남은 청크를 반영해야 합니다.
+        scheduleFrame: () => 0,
+        cancelFrame: () => {},
+      })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
+
+    source.push(encodeSseEvent({ type: "chunk", seq: 1, text: "마지막 청크" }));
+    source.push(encodeSseEvent({ type: "done", seq: 1 }));
+
+    await waitFor(() => expect(result.current.messages).toHaveLength(1));
+    expect(result.current.messages[0]).toMatchObject({ text: "마지막 청크", isStreaming: false });
+    expect(result.current.status).toBe("done");
+  });
+
+  it("오류가 나도 버퍼에 남은 청크를 화면에 반영한다", async () => {
+    const source = controllableResponse();
+    const fetchImpl = vi.fn().mockResolvedValue(source.response);
+
+    const { result } = renderHook(() =>
+      useInterviewStream({
+        url: "/api/interview/stream",
+        fetchImpl,
+        sleep: async () => {},
+        retryDelaysMs: [],
+        scheduleFrame: () => 0,
+        cancelFrame: () => {},
+      })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalled());
+
+    source.push(encodeSseEvent({ type: "chunk", seq: 1, text: "받은 내용" }));
+    source.close();
+
+    await waitFor(() => expect(result.current.error?.kind).toBe("stream_interrupted"));
+    expect(result.current.messages[0].text).toBe("받은 내용");
+  });
+
+  describe("대화 누적", () => {
+    const snapshot = evidenceSnapshotFixture();
+    const immediate = {
+      sleep: async () => {},
+      retryDelaysMs: [] as number[],
+      scheduleFrame: (callback: () => void) => {
+        callback();
+        return 0;
+      },
+      cancelFrame: () => {},
+    };
+
+    /** 질문 하나를 완결까지 흘려 보냅니다. */
+    function completeQuestion(source: ReturnType<typeof controllableResponse>, text: string) {
+      source.push(encodeSseEvent({ type: "chunk", seq: 1, text }));
+      source.push(encodeSseEvent({ type: "done", seq: 1 }));
+    }
+
+    it("첫 질문이 끝나기 전에는 답변을 받지 않는다", async () => {
+      const first = controllableResponse();
+      const fetchImpl = vi.fn().mockResolvedValueOnce(first.response);
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+
+      first.push(encodeSseEvent({ type: "chunk", seq: 1, text: "아직 도착 중" }));
+      await waitFor(() => expect(result.current.messages).toHaveLength(1));
+
+      expect(result.current.canSubmitAnswer).toBe(false);
+      let accepted = true;
+      act(() => {
+        accepted = result.current.submitAnswer("답변");
+      });
+      expect(accepted).toBe(false);
+      expect(result.current.messages).toHaveLength(1);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    });
+
+    it("답변을 제출하면 대화에 즉시 넣고 확정된 대화 전체를 이력으로 실어 보낸다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(first.response)
+        .mockResolvedValueOnce(second.response);
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      // 첫 질문은 이슈 #76 이전과 같은 본문입니다.
+      expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ snapshot });
+
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+      act(() => {
+        expect(result.current.submitAnswer("첫 답변")).toBe(true);
+      });
+
+      // 요청 결과가 오기 전인데 답변이 이미 대화에 있습니다.
+      expect(result.current.messages).toEqual([
+        expect.objectContaining({ role: "question", text: "첫 질문", isStreaming: false }),
+        expect.objectContaining({ role: "answer", text: "첫 답변", isStreaming: false }),
+      ]);
+      expect(result.current.canSubmitAnswer).toBe(false);
+
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      expect(fetchImpl.mock.calls[1][1].method).toBe("POST");
+      expect(fetchImpl.mock.calls[1][1].headers["Last-Event-ID"]).toBeUndefined();
+      expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual({
+        snapshot,
+        history: [
+          { role: "question", text: "첫 질문" },
+          { role: "answer", text: "첫 답변" },
+        ],
+      });
+
+      completeQuestion(second, "둘째 질문");
+      await waitFor(() => expect(result.current.messages).toHaveLength(3));
+      expect(result.current.messages[2]).toMatchObject({ role: "question", text: "둘째 질문", isStreaming: false });
+      // 새 스트림의 seq는 1부터 다시 셉니다. 앞 질문의 seq를 이어 쓰지 않습니다.
+      expect(result.current.receivedSeq).toBe(1);
+      expect(result.current.canSubmitAnswer).toBe(true);
+    });
+
+    it("답변의 앞뒤 공백을 지우지 않고 그대로 저장하고 보낸다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(first.response)
+        .mockResolvedValueOnce(second.response);
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+      // 들여쓰기로 시작하는 Markdown 코드 블록입니다. 앞 공백을 지우면 평문이 됩니다.
+      const indented = ["    const seq = lastSeq + 1;", "    emit(seq);", ""].join(String.fromCharCode(10));
+      act(() => {
+        expect(result.current.submitAnswer(indented)).toBe(true);
+      });
+
+      expect(result.current.messages[1]).toMatchObject({ role: "answer", text: indented });
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      expect(JSON.parse(fetchImpl.mock.calls[1][1].body).history[1]).toEqual({ role: "answer", text: indented });
+    });
+
+    it("빈 답변과 생성 중 제출은 받지 않는다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(first.response)
+        .mockResolvedValueOnce(second.response);
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+      act(() => {
+        expect(result.current.submitAnswer("   \n ")).toBe(false);
+      });
+      expect(result.current.messages).toHaveLength(1);
+
+      act(() => {
+        expect(result.current.submitAnswer("첫 답변")).toBe(true);
+        // 같은 틱에 두 번 눌러도 답변은 하나만 들어갑니다.
+        expect(result.current.submitAnswer("첫 답변 다시")).toBe(false);
+      });
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      expect(result.current.messages.filter((message) => message.role === "answer")).toHaveLength(1);
+    });
+
+    it("다음 질문 생성이 실패해도 답변은 남고 다시 시도는 그 질문만 다시 만든다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const third = controllableResponse();
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(first.response)
+        .mockResolvedValueOnce(second.response)
+        .mockResolvedValueOnce(third.response);
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+      act(() => {
+        result.current.submitAnswer("첫 답변");
+      });
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+
+      // 둘째 질문이 일부만 오고 끊깁니다.
+      second.push(encodeSseEvent({ type: "chunk", seq: 1, text: "둘째 질문 앞부분" }));
+      await waitFor(() => expect(result.current.messages).toHaveLength(3));
+      second.close();
+      await waitFor(() => expect(result.current.error?.kind).toBe("stream_interrupted"));
+
+      // 실패해도 사용자의 답변은 그대로 있습니다. 오류 표시 중에는 다시 제출할 수 없습니다.
+      expect(result.current.messages[1]).toMatchObject({ role: "answer", text: "첫 답변" });
+      expect(result.current.canSubmitAnswer).toBe(false);
+
+      act(() => {
+        result.current.retry();
+      });
+
+      // 지우는 것은 실패한 질문 하나입니다. 첫 질문과 답변은 남고 같은 이력으로 다시 요청합니다.
+      expect(result.current.messages.map((message) => message.text)).toEqual(["첫 질문", "첫 답변"]);
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
+      expect(JSON.parse(fetchImpl.mock.calls[2][1].body)).toEqual({
+        snapshot,
+        history: [
+          { role: "question", text: "첫 질문" },
+          { role: "answer", text: "첫 답변" },
+        ],
+      });
+
+      completeQuestion(third, "둘째 질문 다시");
+      await waitFor(() => expect(result.current.messages).toHaveLength(3));
+      expect(result.current.messages[2]).toMatchObject({ role: "question", text: "둘째 질문 다시" });
+      expect(result.current.error).toBeNull();
+    });
+
+    it("이력이 상한을 넘으면 보내기 전에 잘라내고 뺀 항목을 상태에 남긴다", async () => {
+      const sources: ReturnType<typeof controllableResponse>[] = [];
+      const fetchImpl = vi.fn().mockImplementation(async () => {
+        const source = controllableResponse();
+        sources.push(source);
+        return source.response;
+      });
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, ...immediate })
+      );
+
+      // 상한까지 채운 뒤 한 쌍을 더 넣습니다.
+      const turns = INTERVIEW_HISTORY_MAX_ITEMS / 2 + 1;
+      for (let turn = 1; turn <= turns; turn += 1) {
+        await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(turn));
+        completeQuestion(sources[turn - 1], `질문 ${turn}`);
+        await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+        act(() => {
+          result.current.submitAnswer(`답변 ${turn}`);
+        });
+      }
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(turns + 1));
+
+      const lastBody = JSON.parse(fetchImpl.mock.calls[turns][1].body);
+      expect(lastBody.history).toHaveLength(INTERVIEW_HISTORY_MAX_ITEMS);
+      // 첫 쌍은 남고 그 다음 쌍이 빠집니다.
+      expect(lastBody.history.slice(0, 3)).toEqual([
+        { role: "question", text: "질문 1" },
+        { role: "answer", text: "답변 1" },
+        { role: "question", text: "질문 3" },
+      ]);
+      expect(result.current.removedHistory).toEqual([
+        { role: "question", text: "질문 2" },
+        { role: "answer", text: "답변 2" },
+      ]);
+      // 화면의 대화는 자르지 않습니다. 잘리는 것은 요청 이력뿐입니다.
+      expect(result.current.messages).toHaveLength(turns * 2);
+    });
+
+    it("상한을 넘는 질문이 오면 제출을 잠그고 다시 시도가 그 질문만 새로 만든다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const third = controllableResponse();
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(first.response)
+        .mockResolvedValueOnce(second.response)
+        .mockResolvedValueOnce(third.response);
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+      act(() => {
+        result.current.submitAnswer("첫 답변");
+      });
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+
+      // 한글 한 글자가 3바이트이므로 글자 수는 상한보다 적어도 바이트는 넘습니다.
+      const tooLong = "가".repeat(INTERVIEW_HISTORY_ITEM_MAX_BYTES / 3 + 10);
+      completeQuestion(second, tooLong);
+      await waitFor(() => expect(result.current.status).toBe("done"));
+
+      // 화면에는 남지만 답변은 받지 않습니다. 서버가 이 질문을 이력으로 거절하기 때문입니다.
+      expect(result.current.messages).toHaveLength(3);
+      expect(result.current.isLastQuestionTooLong).toBe(true);
+      expect(result.current.canSubmitAnswer).toBe(false);
+      act(() => {
+        expect(result.current.submitAnswer("둘째 답변")).toBe(false);
+      });
+
+      act(() => {
+        result.current.retry();
+      });
+      expect(result.current.messages.map((message) => message.text)).toEqual(["첫 질문", "첫 답변"]);
+      expect(result.current.isLastQuestionTooLong).toBe(false);
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(3));
+      expect(JSON.parse(fetchImpl.mock.calls[2][1].body).history).toEqual([
+        { role: "question", text: "첫 질문" },
+        { role: "answer", text: "첫 답변" },
+      ]);
+
+      completeQuestion(third, "둘째 질문 다시");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+      expect(result.current.messages[2]).toMatchObject({ role: "question", text: "둘째 질문 다시" });
+    });
+
+    it("종료하면 답변 제출과 다시 시도를 모두 거절한다", async () => {
+      const first = controllableResponse();
+      const fetchImpl = vi.fn().mockResolvedValue(first.response);
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+      act(() => {
+        result.current.endInterview();
+        // 같은 틱입니다. `canSubmitRef`는 렌더 뒤 effect에서야 거짓이 되므로 이 자리에서는 아직
+        // 참이고, 종료 판정이 ref로 서 있지 않으면 답변이 대화에 들어갑니다.
+        expect(result.current.submitAnswer("같은 틱 답변")).toBe(false);
+      });
+
+      expect(result.current.isEnded).toBe(true);
+      // 대화는 지우지 않습니다. 사라지는 것은 후보 목록으로 돌아갈 때입니다.
+      expect(result.current.messages.map((message) => message.text)).toEqual(["첫 질문"]);
+      expect(result.current.canSubmitAnswer).toBe(false);
+      act(() => {
+        expect(result.current.submitAnswer("종료 뒤 답변")).toBe(false);
+        result.current.retry();
+        result.current.start();
+      });
+      expect(result.current.messages.map((message) => message.text)).toEqual(["첫 질문"]);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    });
+
+    it("도착 중에 종료하면 받은 만큼을 남기고 그 질문을 닫는다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(first.response)
+        .mockResolvedValueOnce(second.response);
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+      act(() => {
+        result.current.submitAnswer("첫 답변");
+      });
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      second.push(encodeSseEvent({ type: "chunk", seq: 1, text: "둘째 질문 앞부분" }));
+      await waitFor(() => expect(result.current.messages).toHaveLength(3));
+
+      act(() => {
+        result.current.endInterview();
+      });
+
+      expect(result.current.messages[2]).toMatchObject({
+        text: "둘째 질문 앞부분",
+        isStreaming: false,
+      });
+      // 끊은 뒤에 오는 이벤트는 화면을 바꾸지 않습니다.
+      second.push(encodeSseEvent({ type: "chunk", seq: 2, text: "뒤에 온 조각" }));
+      second.close();
+      await waitFor(() => expect(result.current.isEnded).toBe(true));
+      expect(result.current.messages[2].text).toBe("둘째 질문 앞부분");
+      expect(result.current.error).toBeNull();
+    });
+
+    it("상한을 넘는 질문이 떠 있는 상태에서 종료하면 상한 초과 판정을 지운다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const fetchImpl = vi
+        .fn()
+        .mockResolvedValueOnce(first.response)
+        .mockResolvedValueOnce(second.response);
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+      act(() => {
+        result.current.submitAnswer("첫 답변");
+      });
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      completeQuestion(second, "가".repeat(INTERVIEW_HISTORY_ITEM_MAX_BYTES / 3 + 10));
+      await waitFor(() => expect(result.current.isLastQuestionTooLong).toBe(true));
+
+      act(() => {
+        result.current.endInterview();
+      });
+
+      // 종료한 대화에는 다시 시도가 없으므로 상한 초과 안내가 권할 조작이 없습니다.
+      expect(result.current.isLastQuestionTooLong).toBe(false);
+      expect(result.current.messages).toHaveLength(3);
+      act(() => {
+        result.current.retry();
+      });
+      expect(result.current.messages).toHaveLength(3);
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    });
+
+    it("근거 스냅샷이 없는 테스트용 스트림에서는 답변을 받지 않는다", async () => {
+      const source = controllableResponse();
+      const fetchImpl = vi.fn().mockResolvedValueOnce(source.response);
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", fetchImpl, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(source, "고정 질문");
+      await waitFor(() => expect(result.current.status).toBe("done"));
+
+      expect(result.current.canSubmitAnswer).toBe(false);
+      act(() => {
+        expect(result.current.submitAnswer("답변")).toBe(false);
+      });
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("블록 대상 연동(이슈 #90)", () => {
+    const snapshot = evidenceSnapshotFixture();
+    const immediate = {
+      sleep: async () => {},
+      retryDelaysMs: [] as number[],
+      scheduleFrame: (callback: () => void) => {
+        callback();
+        return 0;
+      },
+      cancelFrame: () => {},
+    };
+
+    function completeQuestion(source: ReturnType<typeof controllableResponse>, text: string) {
+      source.push(encodeSseEvent({ type: "chunk", seq: 1, text }));
+      source.push(encodeSseEvent({ type: "done", seq: 1 }));
+    }
+
+    it("initialTarget을 첫 질문 요청 본문에 싣는다", async () => {
+      const first = controllableResponse();
+      const fetchImpl = vi.fn().mockResolvedValueOnce(first.response);
+      renderHook(() =>
+        useInterviewStream({
+          url: "/api/interview/stream",
+          snapshot,
+          fetchImpl,
+          initialTarget: { targetBlock: "problem", targetElement: "a" },
+          ...immediate,
+        })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({
+        snapshot,
+        targetBlock: "problem",
+        targetElement: "a",
+      });
+    });
+
+    it("Strict Mode로 두 번 마운트해도 onBeforeQuestion 결과로 다음 질문을 요청한다", async () => {
+      // Strict Mode는 개발에서 effect를 setup → cleanup → setup으로 실행합니다. 언마운트 표시를
+      // setup에서 되돌리지 않으면 첫 cleanup이 남긴 값 때문에 `onBeforeQuestion`의 결과를 항상
+      // 버려, 다음 질문을 시작하지 않고 connecting에서 멈춥니다.
+      const sources: ReturnType<typeof controllableResponse>[] = [];
+      const fetchImpl = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async () => {
+        const source = controllableResponse();
+        sources.push(source);
+        return source.response;
+      });
+      const onBeforeQuestion = vi.fn(async () => ({
+        kind: "ask" as const,
+        target: { targetBlock: "action" as const, targetElement: "b" as const },
+        lastOutcome: null,
+      }));
+      const { result } = renderHook(
+        () => useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, onBeforeQuestion, ...immediate }),
+        { wrapper: StrictMode }
+      );
+      await waitFor(() => expect(sources.length).toBeGreaterThan(0));
+      // 앞선 마운트의 스트림은 cleanup이 끊었으므로 마지막 요청만 살아 있습니다.
+      const asked = sources.length;
+      completeQuestion(sources[asked - 1], "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+      act(() => {
+        expect(result.current.submitAnswer("첫 답변")).toBe(true);
+      });
+
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(asked + 1));
+      expect(JSON.parse(String(fetchImpl.mock.calls[asked]?.[1]?.body))).toMatchObject({
+        targetBlock: "action",
+        targetElement: "b",
+      });
+      expect(result.current.status).not.toBe("done");
+    });
+
+    it("onBeforeQuestion이 정한 대상을 다음 질문 요청 본문에 싣고, 진행 중에는 상태가 connecting이다", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const fetchImpl = vi.fn().mockResolvedValueOnce(first.response).mockResolvedValueOnce(second.response);
+      let resolveBeforeQuestion!: (next: { kind: "ask"; target: { targetBlock: "action"; targetElement: "b" }; lastOutcome: null }) => void;
+      const onBeforeQuestion = vi.fn(
+        () =>
+          new Promise<{ kind: "ask"; target: { targetBlock: "action"; targetElement: "b" }; lastOutcome: null }>((resolve) => {
+            resolveBeforeQuestion = resolve;
+          })
+      );
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, onBeforeQuestion, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+      act(() => {
+        expect(result.current.submitAnswer("첫 답변")).toBe(true);
+      });
+      expect(result.current.status).toBe("connecting");
+      expect(onBeforeQuestion).toHaveBeenCalledWith({
+        history: [
+          { role: "question", text: "첫 질문" },
+          { role: "answer", text: "첫 답변" },
+        ],
+      });
+      // 블록 갱신이 끝나기 전에는 질문을 요청하지 않습니다.
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+
+      act(() => resolveBeforeQuestion({ kind: "ask", target: { targetBlock: "action", targetElement: "b" }, lastOutcome: null }));
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual({
+        snapshot,
+        history: [
+          { role: "question", text: "첫 질문" },
+          { role: "answer", text: "첫 답변" },
+        ],
+        targetBlock: "action",
+        targetElement: "b",
+      });
+    });
+    it("onBeforeQuestion이 준 lastOutcome을 다음 질문 요청 본문에 싣는다 (구현검토 P1-5)", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const fetchImpl = vi.fn().mockResolvedValueOnce(first.response).mockResolvedValueOnce(second.response);
+      const lastOutcome = {
+        blockUpdateFailed: false,
+        targetResponse: "not_done" as const,
+        conflicts: [{ observation: "근거는 fetch 기반 수신을 보여 줍니다." }],
+      };
+      const onBeforeQuestion = vi.fn(async () => ({
+        kind: "ask" as const,
+        target: { targetBlock: "result" as const, targetElement: "b" as const },
+        lastOutcome,
+      }));
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, onBeforeQuestion, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+      act(() => {
+        result.current.submitAnswer("첫 답변");
+      });
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual({
+        snapshot,
+        history: [
+          { role: "question", text: "첫 질문" },
+          { role: "answer", text: "첫 답변" },
+        ],
+        targetBlock: "result",
+        targetElement: "b",
+        lastOutcome,
+      });
+    });
+
+
+
+    it("onBeforeQuestion이 stop을 돌려주면 안내 없이 질문을 요청하지 않고 done으로 둡니다", async () => {
+      const first = controllableResponse();
+      const fetchImpl = vi.fn().mockResolvedValueOnce(first.response);
+      const onBeforeQuestion = vi.fn().mockResolvedValue({ kind: "stop" as const });
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, onBeforeQuestion, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+      act(() => {
+        result.current.submitAnswer("마지막 답변");
+      });
+      await waitFor(() => expect(result.current.status).toBe("done"));
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      // stop은 안내 메시지를 넣지 않습니다. 마지막 메시지는 여전히 사용자 답변입니다.
+      expect(result.current.messages.at(-1)?.role).toBe("answer");
+    });
+
+    it("onBeforeQuestion이 ready_to_finish를 돌려주면 완료 대기 안내를 질문 자리에 넣고 보충 답변을 받는다 (구현검토 P1-4 재검증)", async () => {
+      const first = controllableResponse();
+      const second = controllableResponse();
+      const fetchImpl = vi.fn().mockResolvedValueOnce(first.response).mockResolvedValueOnce(second.response);
+      const onBeforeQuestion = vi
+        .fn()
+        .mockResolvedValueOnce({ kind: "ready_to_finish" as const })
+        .mockResolvedValueOnce({
+          kind: "ask" as const,
+          target: { targetBlock: "result" as const, targetElement: "a" as const },
+          lastOutcome: null,
+        });
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, onBeforeQuestion, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+      act(() => {
+        result.current.submitAnswer("답변");
+      });
+      // 완료 대기 안내가 "질문" 역할로 들어옵니다. 이것이 없으면 다음 답변이 답변 바로 뒤에 붙어 질문·답변 교대
+      // 계약이 깨집니다(이전 수정의 회귀, 재검증에서 발견).
+      await waitFor(() => expect(result.current.messages.at(-1)?.role).toBe("question"));
+      expect(result.current.messages.at(-1)?.text).toBe(READY_TO_FINISH_PROMPT);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+      act(() => {
+        expect(result.current.submitAnswer("보충 답변입니다.")).toBe(true);
+      });
+
+      // 보충 답변이 새 대상을 열어 실제 질문 요청이 나가면, 이력이 여전히 질문·답변·질문·답변으로 번갈아야 하고(서버가 거절하지 않아야 하고), lastOutcome도 그대로 실려야 합니다.
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(2));
+      expect(JSON.parse(fetchImpl.mock.calls[1][1].body)).toEqual({
+        snapshot,
+        history: [
+          { role: "question", text: "첫 질문" },
+          { role: "answer", text: "답변" },
+          { role: "question", text: READY_TO_FINISH_PROMPT },
+          { role: "answer", text: "보충 답변입니다." },
+        ],
+        targetBlock: "result",
+        targetElement: "a",
+      });
+    });
+
+    it("onBeforeQuestion 진행 중 종료하면 응답이 와도 질문을 요청하지 않는다", async () => {
+      const first = controllableResponse();
+      const fetchImpl = vi.fn().mockResolvedValueOnce(first.response);
+      let resolveBeforeQuestion!: (next: { kind: "ask"; target: { targetBlock: "problem"; targetElement: "a" }; lastOutcome: null }) => void;
+      const onBeforeQuestion = vi.fn(
+        () =>
+          new Promise<{ kind: "ask"; target: { targetBlock: "problem"; targetElement: "a" }; lastOutcome: null }>((resolve) => {
+            resolveBeforeQuestion = resolve;
+          })
+      );
+      const { result } = renderHook(() =>
+        useInterviewStream({ url: "/api/interview/stream", snapshot, fetchImpl, onBeforeQuestion, ...immediate })
+      );
+      await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+      completeQuestion(first, "첫 질문");
+      await waitFor(() => expect(result.current.canSubmitAnswer).toBe(true));
+
+      act(() => {
+        result.current.submitAnswer("마지막 답변");
+      });
+      act(() => {
+        result.current.endInterview();
+      });
+      act(() => resolveBeforeQuestion({ kind: "ask", target: { targetBlock: "problem", targetElement: "a" }, lastOutcome: null }));
+      await Promise.resolve();
+
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(result.current.isEnded).toBe(true);
+    });
+  });
+});
+
+/**
+ * 이어가기(이슈 #115)입니다. 저장된 대화를 들고 시작할 수 있어야 하고, 그 대화가 다음 질문 요청의
+ * 이력이 되어야 합니다.
+ */
+describe("useInterviewStream 이어가기", () => {
+  const snapshot = evidenceSnapshotFixture();
+  const restored = [
+    { role: "question" as const, text: "문제 상황을 알려주세요" },
+    { role: "answer" as const, text: "화면이 비어 있었습니다." },
+  ];
+
+  it("저장된 대화를 확정된 메시지로 들고 시작하고 첫 요청의 이력으로 싣는다", async () => {
+    const source = controllableResponse();
+    const fetchImpl = vi.fn().mockResolvedValue(source.response);
+    const { result } = renderHook(() =>
+      useInterviewStream({ url: "/api/interview/stream", snapshot, initialMessages: restored, fetchImpl })
+    );
+
+    expect(result.current.messages.map((message) => ({ role: message.role, text: message.text }))).toEqual(restored);
+    expect(result.current.messages.every((message) => !message.isStreaming)).toBe(true);
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toMatchObject({ history: restored });
+  });
+
+  // 번호를 0부터 다시 세면 새 메시지가 복원된 메시지와 같은 `id`를 받아 React가 둘을 같은 항목으로 봅니다.
+  it("새 메시지의 번호가 저장된 대화 다음부터 이어진다", async () => {
+    const source = controllableResponse();
+    const fetchImpl = vi.fn().mockResolvedValue(source.response);
+    const { result } = renderHook(() =>
+      useInterviewStream({ url: "/api/interview/stream", snapshot, initialMessages: restored, fetchImpl })
+    );
+    await waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      source.push(encodeSseEvent({ type: "chunk", seq: 1, text: "다음 질문" }));
+    });
+
+    await waitFor(() => expect(result.current.messages).toHaveLength(3));
+    expect(new Set(result.current.messages.map((message) => message.id)).size).toBe(3);
+  });
+});

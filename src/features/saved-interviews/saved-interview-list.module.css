@@ -1,0 +1,209 @@
+/* 사이드바의 저장된 인터뷰 목록입니다. 디자인 파일 `App.tsx`의 AppShell INTERVIEWS 영역과 같은 값입니다. */
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  margin-bottom: 8px;
+}
+
+.label,
+.count {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+.count {
+  letter-spacing: normal;
+}
+
+.notice {
+  padding: 0 8px;
+  font-family: var(--font-pretendard);
+  font-size: var(--label-size-md);
+  line-height: 1.6;
+  color: var(--color-muted-foreground);
+}
+
+.errorBox {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+
+.retry {
+  margin-left: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--label-size-md);
+  font-weight: 500;
+  color: var(--color-foreground);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.list {
+  display: grid;
+  gap: 2px;
+  list-style: none;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  border-radius: var(--radius);
+  transition: background-color 120ms ease;
+}
+
+.row:hover {
+  background: #fafafa;
+}
+
+.rowActive,
+.rowActive:hover {
+  background: var(--color-muted);
+}
+
+.open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 8px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.open:focus-visible,
+.deleteIcon:focus-visible {
+  outline: 2px solid var(--color-foreground);
+  outline-offset: -2px;
+  border-radius: var(--radius);
+}
+
+.status {
+  flex-shrink: 0;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  color: var(--color-foreground);
+}
+
+.rowMain {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.title {
+  font-size: var(--label-size-md);
+  font-weight: 500;
+  color: var(--color-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repository,
+.meta {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  color: var(--color-muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dot {
+  color: var(--color-scrollbar);
+}
+
+/* 자동 삭제가 가까운 인터뷰의 `D-n` 배지입니다(이슈 #116). 기한이 7일 이하로 남았을 때만 붙습니다. */
+.deletionBadge {
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid var(--color-warning-border);
+  border-radius: 4px;
+  background: var(--color-warning-surface);
+  color: var(--color-warning);
+}
+
+/* 행 위에 겹치지 않고 오른쪽 자리를 차지합니다. 좁은 목록이라 겹치면 제목을 가립니다. */
+.deleteIcon {
+  flex-shrink: 0;
+  margin-top: 8px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: var(--label-size-md);
+  color: var(--color-scrollbar);
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+
+.deleteIcon:hover,
+.deleteIcon:focus-visible {
+  color: #ef4444;
+}
+
+.confirm {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+}
+
+.confirmText {
+  font-family: var(--font-pretendard);
+  font-size: var(--label-size-md);
+  line-height: 1.5;
+  color: var(--color-foreground);
+}
+
+.confirmActions {
+  display: flex;
+  gap: 6px;
+}
+
+.cancel,
+.delete {
+  flex: 1;
+  padding: 4px 0;
+  border-radius: 4px;
+  font: inherit;
+  font-size: var(--label-size-sm);
+  cursor: pointer;
+}
+
+.cancel {
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-muted-foreground);
+}
+
+.cancel:hover {
+  border-color: var(--color-scrollbar-hover);
+}
+
+.delete {
+  border: 0;
+  background: #ef4444;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.delete:hover {
+  background: #dc2626;
+}

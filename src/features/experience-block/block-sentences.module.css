@@ -1,0 +1,26 @@
+/*
+ * 블록 문장과 출처와 충돌입니다. 인터뷰 화면의 PAAR 패널과 저장된 인터뷰의 요약 화면이 함께 씁니다.
+ * 두 화면의 열 너비가 달라 여백만 각 화면이 정하고, 글자 크기와 충돌 표시는 여기서 한 번만 정합니다.
+ */
+.empty { margin: 0; color: var(--color-muted-foreground); font-size: 12px; line-height: 1.6; }
+
+.sentences { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.sentence { display: grid; gap: 4px; }
+.sentenceText { margin: 0; color: var(--color-foreground); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+
+.sources { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.source { display: flex; gap: 6px; min-width: 0; font-family: var(--font-mono); font-size: 11px; }
+.sourceSha { flex-shrink: 0; color: var(--color-muted-foreground); }
+.sourcePath { overflow: hidden; color: var(--color-scrollbar-hover); text-overflow: ellipsis; white-space: nowrap; }
+
+/* 충돌은 블록 문장 밖입니다. 문장 목록과 떨어져 보이도록 테두리를 둡니다. */
+.conflict { display: grid; gap: 4px; border: 1px solid #e5c9a8; border-radius: var(--radius); background: #fdf8f1; padding: 8px; }
+.conflictMark { margin: 0; color: #7a5320; font-size: 11px; font-weight: 500; line-height: 1.5; }
+.conflictList { display: grid; gap: 4px; margin: 0; padding-left: 16px; color: #7a5320; font-size: 11px; line-height: 1.5; }
+
+/*
+ * mono 영역 예외입니다. `globals.css`의 body가 한국어 자연어에 `word-break: keep-all`을 걸어
+ * 두므로, Repository 원본값과 코드를 그리는 아래 자리에서는 되돌립니다. 이 값들은 어절이 없는
+ * 경로·SHA·코드라 어절 단위 금지가 뜻을 갖지 않고, 긴 토큰이 칸을 넘길 때 끊어야 합니다.
+ */
+.source { word-break: normal; overflow-wrap: normal; }

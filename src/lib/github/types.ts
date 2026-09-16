@@ -1,7 +1,21 @@
-export interface GitHubAuth {
+export interface RepositoryRef {
   owner: string;
   repo: string;
+}
+
+export interface GitHubAuth extends RepositoryRef {
   token: string;
+}
+
+/** 목록 조회 라우트가 돌려주는 Repository 한 건입니다. `AppShell`의 `ShellRepository`와 필드 이름을 맞춰 그대로 넘길 수 있게 합니다. */
+export interface RepositorySummary {
+  id: number;
+  owner: string;
+  name: string;
+  visibility: "public" | "private";
+  language: string | null;
+  /** 마지막 push 시각(ISO 8601)입니다. GitHub가 값을 주지 않으면 null입니다. */
+  pushedAt: string | null;
 }
 
 export interface CommitSummary {
@@ -9,4 +23,101 @@ export interface CommitSummary {
   title: string;
   author: string;
   date: string;
+  parentCount: number;
+}
+
+export interface CommitFileChange {
+  path: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  changes: number;
+  patch?: string;
+}
+
+export interface PullRequestReference {
+  number: number;
+  title: string;
+  state: string;
+  url: string;
+  baseBranch: string;
+  headBranch: string;
+}
+
+export interface CommitDetail extends CommitSummary {
+  message: string;
+  additions: number;
+  deletions: number;
+  changedFiles: number;
+  files: CommitFileChange[];
+  pullRequests: PullRequestReference[];
+}
+
+export type CommitFileChangeWithoutPatch = Omit<CommitFileChange, "patch">;
+
+export type CommitDetailWithoutPatch = Omit<CommitDetail, "files"> & {
+  files: CommitFileChangeWithoutPatch[];
+};
+
+export interface RepositoryTreeEntry {
+  path: string;
+  type: "blob" | "tree" | "commit";
+  sha: string;
+  size?: number;
+}
+
+export interface RepositoryContributionData {
+  commits: CommitDetail[];
+  tree: RepositoryTreeEntry[];
+  treeTruncated: boolean;
+  languages: Record<string, number>;
+}
+
+export type ContributionFetchProgress =
+  | { phase: "commit_details"; completed: number; total: number }
+  | { phase: "repository_metadata" };
+
+export type ReadonlyCommitDetail = Readonly<
+  Omit<CommitDetail, "files" | "pullRequests"> & {
+    files: readonly Readonly<CommitFileChange>[];
+    pullRequests: readonly Readonly<PullRequestReference>[];
+  }
+>;
+
+/** 앞 단계의 실제 조회 결과를 깊은 읽기 전용으로 전달합니다. */
+export type ReadonlyRepositoryContributionData = Readonly<
+  Omit<RepositoryContributionData, "commits" | "tree" | "languages"> & {
+    commits: readonly ReadonlyCommitDetail[];
+    tree: readonly Readonly<RepositoryTreeEntry>[];
+    languages: Readonly<RepositoryContributionData["languages"]>;
+  }
+>;
+
+/** 전체 커밋과 앞 단계의 실제 조회 결과를 출력 조립 함수에 전달합니다. */
+export interface CandidateDataInput {
+  readonly allCommits: readonly Readonly<CommitSummary>[];
+  readonly contributionData: ReadonlyRepositoryContributionData;
+}
+
+/** 개발 경험 후보 생성 기능의 Repository 근거 입력입니다. */
+/**
+ * 후보 화면과 근거 스냅샷이 `CandidateDataOutput`에서 실제로 읽는 부분입니다(이슈 #116).
+ *
+ * 저장된 분석에는 이것만 남습니다. `allCommits`와 저장소의 파일 트리·언어 통계는 Stage B 입력으로만
+ * 쓰이고 그 뒤로 읽히지 않아 저장하지 않기 때문입니다(`analysis-snapshot.ts`). 화면이 받는 타입을
+ * 여기까지 좁혀야 저장된 분석으로 같은 화면을 그릴 수 있습니다. 좁히지 않고 빈 값으로 채워 넘기면
+ * 화면이 언젠가 그 빈 값을 읽고 조용히 어긋납니다.
+ */
+export type CandidateCommitIndex = Pick<CandidateDataOutput, "includedCommits">;
+
+export interface CandidateDataOutput {
+  /** 블랙리스트 제외 여부와 무관한 인증 사용자 본인의 전체 커밋 메타데이터입니다. */
+  readonly allCommits: readonly Readonly<CommitSummary>[];
+  /** 블랙리스트에서 제외되지 않아 상세 조회한 커밋입니다. */
+  readonly includedCommits: readonly ReadonlyCommitDetail[];
+  readonly repository: Readonly<{
+    fileTree: readonly Readonly<RepositoryTreeEntry>[];
+    treeTruncated: boolean;
+    languages: Readonly<Record<string, number>>;
+  }>;
 }

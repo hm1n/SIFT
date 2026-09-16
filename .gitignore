@@ -32,6 +32,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# 예시 파일에는 실제 값이 없으므로 커밋합니다. 위 `.env*`가 이 파일까지 무시하므로 되살립니다.
+!.env.example
 
 # vercel
 .vercel
@@ -47,9 +49,16 @@ next-env.d.ts
 
 # temp
 .token-optimizer
+/.measurements/
 
 # symlink duplicate of .agents/skills
 .claude/skills
 
 # obsidian
 .obsidian
+
+# neon
+# 링크한 프로젝트와 브랜치를 담은 로컬 컨텍스트라 사람마다 다릅니다.
+.neon
+# 스킬 자체가 `.claude/skills`로 무시 대상이라 잠금 파일만 남길 이유가 없습니다.
+skills-lock.json

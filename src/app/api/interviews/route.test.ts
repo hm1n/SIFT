@@ -1,0 +1,293 @@
+import { NextRequest } from "next/server";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
+import { MAX_CREATE_INTERVIEW_BODY_BYTES } from "@/features/saved-interviews/request";
+import { createInMemoryStore } from "@/lib/db/in-memory-store";
+import { DatabaseError } from "@/lib/db/client";
+import type { SiftStore } from "@/lib/db/store";
+import {
+  encryptGitHubSession,
+  GITHUB_SESSION_COOKIE,
+  GITHUB_SESSION_KEY_ENV,
+} from "@/lib/github/auth-session";
+import { handleCreateInterview, handleListInterviews } from "./route";
+import { emptyInterviewProgress } from "@/features/experience-block/progress";
+import { emptyExperienceBlockState } from "@/features/experience-block/types";
+
+const OWNER_ID = 44727850;
+const OTHER_ID = 13579246;
+const snapshot = evidenceSnapshotFixture();
+
+/**
+ * 셸에 남아 있던 값을 잃지 않게 시작할 때 치우고 끝나면 되돌립니다. `client.test.ts`와 같은 방식입니다.
+ */
+let savedKey: string | undefined;
+
+beforeEach(() => {
+  savedKey = process.env[GITHUB_SESSION_KEY_ENV];
+  process.env[GITHUB_SESSION_KEY_ENV] = Buffer.alloc(32, 7).toString("base64");
+});
+
+afterEach(() => {
+  if (savedKey === undefined) delete process.env[GITHUB_SESSION_KEY_ENV];
+  else process.env[GITHUB_SESSION_KEY_ENV] = savedKey;
+});
+
+function cookieFor(githubUserId: number): string {
+  return `${GITHUB_SESSION_COOKIE}=${encryptGitHubSession({ token: "token", githubUserId })}`;
+}
+
+function request(
+  body: unknown,
+  { userId = OWNER_ID, authenticated = true, method = "POST", headers = {} }: {
+    userId?: number;
+    authenticated?: boolean;
+    method?: string;
+    headers?: Record<string, string>;
+  } = {}
+): NextRequest {
+  return new NextRequest("https://example.com/api/interviews", {
+    method,
+    headers: { ...(authenticated ? { cookie: cookieFor(userId) } : {}), ...headers },
+    ...(method === "GET" ? {} : { body: typeof body === "string" ? body : JSON.stringify(body) }),
+  });
+}
+
+const ANALYSIS = {
+  repoOwner: "hm1n",
+  repoName: "SIFT",
+  contributionItems: ["성능 개선"],
+  candidates: { candidates: { candidates: [], insufficientCandidatesReason: null, diffs: [] }, includedCommits: [] },
+  stageASummary: { excludedUnits: [], selectedUnitCount: 0, thresholdScore: 0, unjudgedShas: [] },
+};
+
+/**
+ * 인터뷰를 붙일 분석 한 줄을 먼저 만듭니다. 이슈 #116부터 분석 저장은 `POST /api/analyses`가
+ * 하고 이 경로는 저장된 분석에 붙이기만 합니다.
+ */
+function seedAnalysis(store: SiftStore, githubUserId = OWNER_ID): Promise<string> {
+  return store.saveAnalysis({ githubUserId, ...ANALYSIS });
+}
+
+function createBody(overrides: Record<string, unknown> = {}) {
+  return {
+    analysisId: "11111111-1111-4111-8111-111111111111",
+    candidateKey: "c1",
+    title: "스트리밍 렌더링 최적화",
+    evidence: snapshot,
+    ...overrides,
+  };
+}
+
+/** 언제나 오류를 던지는 저장 계층입니다. 연결이 끊긴 상태를 흉내 냅니다. */
+function brokenStore(kind: "query_failed" | "config_missing"): SiftStore {
+  const fail = async () => {
+    throw new DatabaseError(kind, "흉내 낸 오류");
+  };
+  return {
+    saveAnalysis: fail, createInterview: fail, appendTurn: fail, listInterviews: fail,
+    getInterview: fail, completeInterview: fail, deleteInterview: fail, purgeInterviewsOpenedBefore: fail,
+  } as unknown as SiftStore;
+}
+
+describe("POST /api/interviews", () => {
+  it("저장된 분석에 인터뷰 한 줄을 붙인다", async () => {
+    const store = createInMemoryStore();
+    const analysisId = await seedAnalysis(store);
+
+    const response = await handleCreateInterview(request(createBody({ analysisId })), store);
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(typeof body.interviewId).toBe("string");
+    expect(body.analysisId).toBe(analysisId);
+
+    const stored = await store.getInterview(body.interviewId, OWNER_ID);
+    expect(stored).toMatchObject({ repoOwner: "hm1n", repoName: "SIFT", title: "스트리밍 렌더링 최적화" });
+  });
+
+  /**
+   * 한 분석에서 경험을 여러 개 고를 수 있습니다. 확정할 때마다 분석을 새로 저장하면 같은 분석이 여러
+   * 줄로 쌓이고 목록에 같은 저장소가 여러 번 나옵니다.
+   */
+  it("같은 분석에 인터뷰를 여러 개 붙인다", async () => {
+    const store = createInMemoryStore();
+    const analysisId = await seedAnalysis(store);
+
+    const first = await (await handleCreateInterview(request(createBody({ analysisId })), store)).json();
+    const second = await (
+      await handleCreateInterview(request(createBody({ analysisId, candidateKey: "c2" })), store)
+    ).json();
+
+    expect(second.analysisId).toBe(analysisId);
+    expect(second.interviewId).not.toBe(first.interviewId);
+    expect(await store.listInterviews(OWNER_ID)).toHaveLength(2);
+  });
+
+  /**
+   * 이슈 #115에서는 이 경우에 분석을 새로 저장하고 넘어갔습니다(이슈 #116에서 없앤 폴백). 폴백이
+   * 남아 있으면 확정 요청이 겹칠 때 같은 분석이 여러 줄로 쌓입니다(backlog 9번). 지금은 거절하고,
+   * 분석을 다시 저장하는 일은 화면이 합니다.
+   */
+  it("남의 분석 식별자를 보내면 404이고 아무것도 만들지 않는다", async () => {
+    const store = createInMemoryStore();
+    const mine = await seedAnalysis(store);
+
+    const response = await handleCreateInterview(
+      request(createBody({ analysisId: mine }), { userId: OTHER_ID }),
+      store
+    );
+
+    expect(response.status).toBe(404);
+    expect((await response.json()).error.kind).toBe("not_found");
+    expect(await store.listInterviews(OTHER_ID)).toEqual([]);
+    expect(await store.listInterviews(OWNER_ID)).toEqual([]);
+  });
+
+  it("없는 분석 식별자를 보내면 404이다", async () => {
+    const store = createInMemoryStore();
+
+    const response = await handleCreateInterview(request(createBody()), store);
+
+    expect(response.status).toBe(404);
+    expect(await store.listInterviews(OWNER_ID)).toEqual([]);
+  });
+
+  it("세션이 없으면 401이다", async () => {
+    const response = await handleCreateInterview(request(createBody(), { authenticated: false }), createInMemoryStore());
+    expect(response.status).toBe(401);
+    expect((await response.json()).error.kind).toBe("unauthorized");
+  });
+
+  it("JSON이 아니면 400이다", async () => {
+    const response = await handleCreateInterview(request("{"), createInMemoryStore());
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.kind).toBe("invalid_json");
+  });
+
+  it.each([
+    ["analysisId가 없으면", { analysisId: undefined }],
+    ["analysisId가 빈 문자열이면", { analysisId: "  " }],
+    ["candidateKey가 없으면", { candidateKey: "" }],
+    ["title이 없으면", { title: "  " }],
+    ["근거 스냅샷 모양이 아니면", { evidence: { 이상한: "값" } }],
+  ])("%s 400이다", async (_label, overrides) => {
+    const response = await handleCreateInterview(request(createBody(overrides)), createInMemoryStore());
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.kind).toBe("invalid_request");
+  });
+
+  it("선언한 길이가 상한을 넘으면 본문을 읽기 전에 413이다", async () => {
+    const response = await handleCreateInterview(
+      request(createBody(), { headers: { "content-length": String(MAX_CREATE_INTERVIEW_BODY_BYTES + 1) } }),
+      createInMemoryStore()
+    );
+    expect(response.status).toBe(413);
+  });
+
+  // 연결이 끊긴 것은 다시 시도할 여지가 있고 설정이 없는 것은 없습니다. 두 갈래를 나눕니다.
+  it.each([
+    ["query_failed", 503, "storage_failed"],
+    ["config_missing", 500, "server_error"],
+  ] as const)("저장 계층이 %s를 던지면 %i이다", async (kind, status, errorKind) => {
+    const response = await handleCreateInterview(request(createBody()), brokenStore(kind));
+    expect(response.status).toBe(status);
+    expect((await response.json()).error.kind).toBe(errorKind);
+  });
+});
+
+describe("GET /api/interviews", () => {
+  /** 분석 한 줄을 만들고 거기에 인터뷰를 붙입니다. 목록을 보려면 붙일 분석이 먼저 있어야 합니다. */
+  async function seedInterview(
+    store: SiftStore,
+    overrides: Record<string, unknown> = {},
+    userId = OWNER_ID
+  ): Promise<{ interviewId: string; analysisId: string }> {
+    const analysisId = (overrides.analysisId as string | undefined) ?? (await seedAnalysis(store, userId));
+    const response = await handleCreateInterview(
+      request(createBody({ ...overrides, analysisId }), { userId }),
+      store
+    );
+    return response.json();
+  }
+
+  it("마지막으로 이어간 시각이 최근인 순서로 돌려준다", async () => {
+    // 시각을 고정합니다. 두 줄이 같은 밀리초에 만들어지면 정렬이 무엇을 먼저 둘지 정해지지 않습니다.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-15T00:00:00Z"));
+    const store = createInMemoryStore();
+    const analysisId = await seedAnalysis(store);
+    const first = await seedInterview(store, { title: "먼저", analysisId });
+    const second = await seedInterview(store, { title: "나중", analysisId, candidateKey: "c2" });
+    vi.setSystemTime(new Date("2026-09-15T00:01:00Z"));
+    await store.appendTurn({
+      githubUserId: OWNER_ID,
+      interviewId: second.interviewId,
+      turn: [{ role: "answer", text: "답변" }],
+      blockState: { ...emptyExperienceBlockState(), version: 1 },
+      progress: emptyInterviewProgress(),
+      expectedBlockVersion: 0,
+    });
+
+    const body = await (await handleListInterviews(request(null, { method: "GET" }), store)).json();
+
+    expect(body.interviews.map((item: { title: string }) => item.title)).toEqual(["나중", "먼저"]);
+    expect(body.interviews[1].id).toBe(first.interviewId);
+    vi.useRealTimers();
+  });
+
+  // JSON에는 날짜 타입이 없습니다. 타입만 `Date`로 남으면 받는 쪽이 `getTime()`을 부르다 깨집니다.
+  // 자동 삭제까지 남은 기간을 화면이 세려면 마지막으로 연 시각이 필요합니다(이슈 #116).
+  it("시각을 ISO 문자열로 내보내고 openedAt도 함께 싣는다", async () => {
+    const store = createInMemoryStore();
+    await seedInterview(store);
+
+    const [item] = (await (await handleListInterviews(request(null, { method: "GET" }), store)).json()).interviews;
+
+    expect(typeof item.createdAt).toBe("string");
+    expect(new Date(item.updatedAt).toISOString()).toBe(item.updatedAt);
+    expect(new Date(item.openedAt).toISOString()).toBe(item.openedAt);
+  });
+
+  // 목록 행의 `PAAR n/4`입니다. 응답에 싣지 않으면 화면이 진행도를 그릴 방법이 없습니다.
+  it("충분한 블록 수를 목록 응답에 싣는다", async () => {
+    const store = createInMemoryStore();
+    const { interviewId } = await seedInterview(store);
+    await store.appendTurn({
+      githubUserId: OWNER_ID,
+      interviewId,
+      turn: [{ role: "answer", text: "답변" }],
+      blockState: {
+        ...emptyExperienceBlockState(),
+        version: 1,
+        evaluation: {
+          ...emptyExperienceBlockState().evaluation,
+          problem: { sufficient: true, askable: false, reason: "sufficient" },
+        },
+      },
+      progress: emptyInterviewProgress(),
+      expectedBlockVersion: 0,
+    });
+
+    const [item] = (await (await handleListInterviews(request(null, { method: "GET" }), store)).json()).interviews;
+    expect(item.completedBlockCount).toBe(1);
+  });
+
+  it("다른 사용자의 인터뷰는 목록에 없다", async () => {
+    const store = createInMemoryStore();
+    await seedInterview(store);
+
+    const body = await (await handleListInterviews(request(null, { method: "GET", userId: OTHER_ID }), store)).json();
+    expect(body.interviews).toEqual([]);
+  });
+
+  it("세션이 없으면 401이다", async () => {
+    const response = await handleListInterviews(request(null, { method: "GET", authenticated: false }), createInMemoryStore());
+    expect(response.status).toBe(401);
+  });
+
+  it("저장 계층이 끊기면 503이다", async () => {
+    const response = await handleListInterviews(request(null, { method: "GET" }), brokenStore("query_failed"));
+    expect(response.status).toBe(503);
+  });
+});

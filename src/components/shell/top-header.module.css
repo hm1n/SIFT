@@ -1,0 +1,142 @@
+.header {
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-card);
+  z-index: 10;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-foreground);
+}
+
+.brandName {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: var(--label-tracking-wide);
+  text-transform: uppercase;
+}
+
+.account {
+  position: relative;
+}
+
+.accountButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  color: #404040;
+}
+
+.accountButton:hover,
+.accountButton[aria-expanded="true"] {
+  background: var(--color-accent);
+}
+
+.accountButton:focus-visible {
+  outline: 2px solid var(--color-foreground);
+  outline-offset: 2px;
+}
+
+.avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  font-weight: 500;
+}
+
+.accountLabel {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-md);
+}
+
+.chevron {
+  font-size: var(--label-size-sm);
+  color: var(--color-muted-foreground);
+  transition: transform 120ms ease;
+}
+
+.accountButton[aria-expanded="true"] .chevron {
+  transform: rotate(180deg);
+}
+
+.menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  width: 208px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-card);
+  z-index: 50;
+}
+
+.menuHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-bottom: 1px solid var(--color-muted);
+}
+
+.menuTitle {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-foreground);
+}
+
+.menuSub {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  letter-spacing: var(--label-tracking-wide);
+  color: var(--color-muted-foreground);
+}
+
+.menuBody {
+  padding: 4px 0;
+}
+
+.menuItem {
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  color: #404040;
+  cursor: pointer;
+}
+
+.menuItem:hover,
+.menuItem:focus-visible {
+  background: var(--color-accent);
+  outline: none;
+}
+
+.menuItem:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}

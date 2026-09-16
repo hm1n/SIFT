@@ -1,0 +1,156 @@
+.shell {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--color-card);
+}
+
+.sidebar {
+  width: 208px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--color-border);
+}
+
+.repository {
+  padding: 16px 12px 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sectionLabel {
+  display: block;
+  padding: 0 8px;
+  margin-bottom: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+.repositoryInfo {
+  display: grid;
+  gap: 2px;
+  padding: 0 8px;
+  margin-bottom: 8px;
+}
+
+.repositoryName {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repositoryMeta {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  color: var(--color-muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.changeRepository {
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  font: inherit;
+  font-size: var(--label-size-md);
+  color: var(--color-muted-foreground);
+  cursor: pointer;
+}
+
+.changeRepository:hover,
+.changeRepository:focus-visible {
+  background: var(--color-accent);
+  color: var(--color-foreground);
+  outline: none;
+}
+
+.noRepository {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-scrollbar);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.interviews {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.sidebarFooter {
+  flex-shrink: 0;
+  padding: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+/* 디자인의 `+ 새 경험 찾기`입니다. 사이드바 맨 아래에 붙습니다. */
+.findNew {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-foreground);
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+
+.findNew:hover,
+.findNew:focus-visible {
+  border-color: var(--color-scrollbar-hover);
+  outline: none;
+}
+
+.plus {
+  font-family: var(--font-mono);
+}
+
+.emptyInterviews {
+  padding: 0 8px;
+  font-size: var(--label-size-md);
+  line-height: 1.6;
+  color: var(--color-muted-foreground);
+}
+
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+@media (max-width: 720px) {
+  .shell { flex-direction: column; overflow: visible; }
+  .sidebar { width: 100%; border-right: 0; border-bottom: 1px solid var(--color-border); }
+  .interviews { display: none; }
+}
+
+/*
+ * mono 영역 예외입니다. `globals.css`의 body가 한국어 자연어에 `word-break: keep-all`을 걸어
+ * 두므로, Repository 원본값과 코드를 그리는 아래 자리에서는 되돌립니다. 이 값들은 어절이 없는
+ * 경로·SHA·코드라 어절 단위 금지가 뜻을 갖지 않고, 긴 토큰이 칸을 넘길 때 끊어야 합니다.
+ */
+.repositoryMeta { word-break: normal; overflow-wrap: normal; }

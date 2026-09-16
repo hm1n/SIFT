@@ -1,0 +1,320 @@
+import { describe, expect, expectTypeOf, it } from "vitest";
+import {
+  assertCandidateEvidence,
+  assertCandidateShas,
+  createExperienceCandidateOutputSchema,
+  MAX_TECHNICAL_TOPICS,
+  validateExperienceCandidateOutput,
+} from "./schema";
+import { ExperienceCandidateOutputError } from "./errors";
+import type { ExperienceCandidateOutput } from "./types";
+
+const VALID_OUTPUT: ExperienceCandidateOutput = {
+  candidates: [
+    {
+      sha: "representative",
+      relatedShas: ["related"],
+      summary: "파서와 오류 처리 동시 구현",
+      evidence: "PR 안에서 파서와 오류 처리를 함께 구현했습니다.",
+      technicalTopics: ["TypeScript", "파서"],
+      citedFilePaths: ["src/parser.ts"],
+      source: "contribution_match",
+    },
+    {
+      sha: "automatic",
+      relatedShas: [],
+      summary: "스트리밍 경계 분리",
+      evidence: "스트리밍 경계를 명확하게 분리했습니다.",
+      technicalTopics: ["Streaming"],
+      citedFilePaths: ["src/stream.ts"],
+      source: "automatic_recommendation",
+    },
+    {
+      sha: "third",
+      relatedShas: [],
+      summary: "실패 상태 타입 구분",
+      evidence: "실패 상태를 타입으로 구분했습니다.",
+      technicalTopics: [],
+      citedFilePaths: ["src/errors.ts"],
+      source: "automatic_recommendation",
+    },
+  ],
+  insufficientCandidatesReason: null,
+};
+
+describe("경험 후보 출력 검증", () => {
+  it("유효한 응답을 타입 안전하게 반환한다", () => {
+    const output = validateExperienceCandidateOutput(VALID_OUTPUT, 3);
+
+    expect(output).toEqual(VALID_OUTPUT);
+    expectTypeOf(output).toEqualTypeOf<ExperienceCandidateOutput>();
+  });
+
+  /**
+   * 모델에 보내는 JSON Schema의 `maxItems`는 런타임 검증과 같은 상한을 써야 합니다. 이 값이
+   * 굳어 있으면 상한을 올려도 모델 쪽 계약만 옛 값에 남고, 단위 테스트는 전부 통과합니다.
+   */
+  it("JSON Schema의 maxItems가 넘긴 상한을 따른다", () => {
+    const { jsonSchema } = createExperienceCandidateOutputSchema(7);
+
+    expect(
+      (jsonSchema as { properties: { candidates: { maxItems: number } } }).properties.candidates
+        .maxItems
+    ).toBe(7);
+  });
+
+  it("스키마 위반을 타입 있는 오류로 변환한다", () => {
+    expect(() =>
+      validateExperienceCandidateOutput({
+        candidates: [{ ...VALID_OUTPUT.candidates[0], source: "ranked" }],
+        insufficientCandidatesReason: "후보가 부족합니다.",
+      }, 3)
+    ).toThrowError(
+      expect.objectContaining<Partial<ExperienceCandidateOutputError>>({
+        kind: "schema_validation",
+      })
+    );
+  });
+
+  it("상한보다 적게 고른 응답의 부족 사유를 보존한다", () => {
+    const output = validateExperienceCandidateOutput({
+      candidates: [VALID_OUTPUT.candidates[0]],
+      insufficientCandidatesReason: "근거가 충분한 커밋이 하나뿐입니다.",
+    }, 3);
+
+    expect(output.insufficientCandidatesReason).toBe("근거가 충분한 커밋이 하나뿐입니다.");
+  });
+
+  /**
+   * 이슈 #108 회귀입니다. 부족 사유를 후보 3개 미만에 묶어 두면, 판단 단위가 1~2개인 저장소는
+   * 상한만큼 다 골라도 사유가 없다는 이유로 거부됩니다.
+   */
+  it("후보가 1개 이상이면 부족 사유가 없어도 통과한다", () => {
+    const output = validateExperienceCandidateOutput({
+      candidates: [VALID_OUTPUT.candidates[0]],
+      insufficientCandidatesReason: null,
+    }, 1);
+
+    expect(output.candidates).toHaveLength(1);
+    expect(output.insufficientCandidatesReason).toBeNull();
+  });
+
+  /** 후보 0개에서 사유를 보장하는 계약입니다. `repository-analysis.ts`가 non-null로 읽습니다. */
+  it("후보가 0개인데 부족 사유가 없으면 거부한다", () => {
+    expect(() =>
+      validateExperienceCandidateOutput({
+        candidates: [],
+        insufficientCandidatesReason: null,
+      }, 3)
+    ).toThrowError(
+      expect.objectContaining<Partial<ExperienceCandidateOutputError>>({
+        kind: "schema_validation",
+      })
+    );
+  });
+
+  it("후보가 상한을 초과하면 거부한다", () => {
+    expect(() =>
+      validateExperienceCandidateOutput({
+        candidates: [...VALID_OUTPUT.candidates, VALID_OUTPUT.candidates[0]],
+        insufficientCandidatesReason: null,
+      }, 3)
+    ).toThrowError(
+      expect.objectContaining<Partial<ExperienceCandidateOutputError>>({
+        kind: "schema_validation",
+      })
+    );
+  });
+
+  /**
+   * 이슈 #110 회귀 4건입니다. `hasOnlyKeys`가 키 목록을 정확히 대조하므로, JSON Schema의
+   * `required`만 고치고 런타임 목록을 빠뜨리면 필드가 빠진 응답이 그대로 통과합니다. 반대로
+   * 런타임 목록만 고치면 두 필드를 채운 정상 응답이 거부됩니다. 네 방향을 모두 잠급니다.
+   */
+  const without = (key: string) => (candidate: Record<string, unknown>) =>
+    Object.fromEntries(Object.entries(candidate).filter(([name]) => name !== key));
+
+  it.each([
+    ["summary가 없으면", without("summary")],
+    ["technicalTopics가 없으면", without("technicalTopics")],
+    ["summary가 문자열이 아니면", (candidate: Record<string, unknown>) => ({ ...candidate, summary: 3 })],
+    ["technicalTopics가 배열이 아니면", (candidate: Record<string, unknown>) => ({
+      ...candidate,
+      technicalTopics: "React",
+    })],
+  ])("%s 거부한다", (_label, mutate) => {
+    expect(() =>
+      validateExperienceCandidateOutput({
+        candidates: [mutate({ ...VALID_OUTPUT.candidates[0] })],
+        insufficientCandidatesReason: null,
+      }, 3)
+    ).toThrowError(
+      expect.objectContaining<Partial<ExperienceCandidateOutputError>>({
+        kind: "schema_validation",
+      })
+    );
+  });
+
+  /**
+   * 이슈 #110 Constraint 회귀입니다. 두 필드에 `minLength`·`minItems`·`maxItems`를 런타임으로
+   * 걸면, 한 후보의 제목이 비었다는 이유만으로 응답 전체(후보 최대 `STAGE_B_MAX_CANDIDATES`개)가
+   * 버려집니다. 빈 값과 상한 초과는 화면 정규화가 처리하고 검증은 통과시켜야 합니다.
+   */
+  it.each([
+    ["summary가 빈 문자열이어도", { summary: "" }],
+    ["technicalTopics가 빈 배열이어도", { technicalTopics: [] }],
+    ["technicalTopics에 빈 문자열이 섞여 있어도", { technicalTopics: ["React", ""] }],
+    ["technicalTopics가 상한을 넘겨도", {
+      technicalTopics: Array.from(
+        { length: MAX_TECHNICAL_TOPICS + 1 },
+        (_unused, index) => `topic-${index}`
+      ),
+    }],
+  ])("%s 후보를 버리지 않는다", (_label, patch) => {
+    const output = validateExperienceCandidateOutput({
+      candidates: [{ ...VALID_OUTPUT.candidates[0], ...patch }],
+      insufficientCandidatesReason: null,
+    }, 3);
+
+    expect(output.candidates).toHaveLength(1);
+  });
+
+  /**
+   * PR #118 CodeRabbit 리뷰 회귀입니다. `maxItems`는 요청이 아니라 강제입니다. Gemini 구조화
+   * 출력이 직접 거부하므로, 상한을 여기 걸면 토픽이 7개인 응답이 `validateExperienceCandidateOutput`과
+   * 화면 정규화에 닿기 전에 사라지고 후보 전체가 버려집니다. 개수는 프롬프트로만 요청하고
+   * 초과분은 정규화가 자릅니다.
+   */
+  it("JSON Schema가 technicalTopics의 개수를 제한하지 않는다", () => {
+    const { jsonSchema } = createExperienceCandidateOutputSchema(3);
+
+    expect(
+      (jsonSchema as {
+        properties: {
+          candidates: { items: { properties: { technicalTopics: Record<string, unknown> } } };
+        };
+      }).properties.candidates.items.properties.technicalTopics
+    ).toEqual({ type: "array", items: { type: "string" } });
+  });
+
+  it("같은 대표 SHA를 여러 후보로 반복하면 거부한다", () => {
+    expect(() =>
+      validateExperienceCandidateOutput({
+        candidates: VALID_OUTPUT.candidates.map((candidate) => ({
+          ...candidate,
+          sha: "representative",
+        })),
+        insufficientCandidatesReason: null,
+      }, 3)
+    ).toThrowError(
+      expect.objectContaining<Partial<ExperienceCandidateOutputError>>({
+        kind: "schema_validation",
+      })
+    );
+  });
+});
+
+describe("후보 SHA 검증", () => {
+  it("대표 SHA와 관련 SHA가 모두 입력에 있으면 전체 결과를 반환한다", () => {
+    expect(
+      assertCandidateShas(VALID_OUTPUT, ["representative", "related", "automatic", "third"])
+    ).toBe(VALID_OUTPUT);
+  });
+
+  it("하나라도 입력에 없는 SHA이면 일부 후보도 반환하지 않고 오류로 처리한다", () => {
+    expect(() =>
+      assertCandidateShas(VALID_OUTPUT, ["representative", "automatic", "third"])
+    ).toThrowError(
+      expect.objectContaining<Partial<ExperienceCandidateOutputError>>({
+        kind: "unknown_sha",
+        unknownShas: ["related"],
+      })
+    );
+  });
+});
+
+describe("후보 Repository 근거 검증", () => {
+  const evidenceInput = {
+    commits: [
+      {
+        sha: "representative",
+        files: [{ path: "src/parser.ts" }],
+        pullRequests: [{ number: 10 }],
+      },
+      {
+        sha: "related",
+        files: [{ path: "src/parser.test.ts" }],
+        pullRequests: [{ number: 10 }],
+      },
+      {
+        sha: "automatic",
+        files: [{ path: "src/stream.ts" }],
+        pullRequests: [],
+      },
+      {
+        sha: "third",
+        files: [{ path: "src/errors.ts" }],
+        pullRequests: [],
+      },
+    ],
+    fileTree: [{ path: "README.md" }],
+  };
+
+  it("입력에 존재해도 대표 커밋과 같은 PR이 아닌 관련 SHA는 거부한다", () => {
+    const output = {
+      ...VALID_OUTPUT,
+      candidates: [
+        { ...VALID_OUTPUT.candidates[0], relatedShas: ["automatic"] },
+        ...VALID_OUTPUT.candidates.slice(1),
+      ],
+    };
+
+    expect(() => assertCandidateEvidence(output, evidenceInput)).toThrowError(
+      expect.objectContaining<Partial<ExperienceCandidateOutputError>>({
+        kind: "unrelated_sha",
+      })
+    );
+  });
+
+  /**
+   * 이슈 #108 회귀입니다. 대표 커밋의 `pullRequests`가 비어 있으면 빈 배열에 대한 `every`가 항상
+   * `true`라, 관련 SHA가 무엇이든 `unrelated_sha`가 됐습니다. 자기 SHA를 넣은 응답도 같습니다.
+   */
+  it("Pull Request가 없는 대표 커밋의 관련 SHA는 자기 SHA라도 거부한다", () => {
+    const output = {
+      ...VALID_OUTPUT,
+      candidates: [
+        VALID_OUTPUT.candidates[0],
+        { ...VALID_OUTPUT.candidates[1], relatedShas: ["automatic"] },
+        VALID_OUTPUT.candidates[2],
+      ],
+    };
+
+    expect(() => assertCandidateEvidence(output, evidenceInput)).toThrowError(
+      expect.objectContaining<Partial<ExperienceCandidateOutputError>>({
+        kind: "unrelated_sha",
+        unknownShas: ["automatic"],
+      })
+    );
+  });
+
+  it("Pull Request가 없는 대표 커밋도 관련 SHA가 비어 있으면 통과한다", () => {
+    expect(assertCandidateEvidence(VALID_OUTPUT, evidenceInput)).toBe(VALID_OUTPUT);
+  });
+
+  it("Repository 파일 트리와 후보 커밋에 없는 인용 경로는 거부한다", () => {
+    const output = {
+      ...VALID_OUTPUT,
+      candidates: [
+        { ...VALID_OUTPUT.candidates[0], citedFilePaths: ["src/invented.ts"] },
+        ...VALID_OUTPUT.candidates.slice(1),
+      ],
+    };
+
+    expect(() => assertCandidateEvidence(output, evidenceInput)).toThrowError(
+      expect.objectContaining<Partial<ExperienceCandidateOutputError>>({
+        kind: "unknown_file_path",
+      })
+    );
+  });
+});

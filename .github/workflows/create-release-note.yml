@@ -1,0 +1,222 @@
+name: Create production release
+
+# Vercel 배포를 `status` 이벤트로 받지 않고 `deployment_status`로 받습니다.
+# `status`는 preview와 production이 같은 context(`Vercel`)와 같은 프로젝트 URL로 오기 때문에 둘을 구분할 수 없고,
+# 프로젝트 이름으로 거르는 방식은 이름이 바뀌면 조건이 조용히 안 맞게 됩니다. 실제로 이 저장소의 프로젝트 이름은
+# `demian`에서 `sift`로 바뀌었습니다. Vercel은 GitHub Deployment를 environment까지 붙여 만들므로
+# (`Production` 또는 `Preview`) 그 값을 프로덕션 승격의 판별 기준으로 씁니다.
+on:
+  deployment_status:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: production-release-${{ github.event.deployment.sha }}-${{ github.event.deployment.environment }}-${{ github.event.deployment_status.state }}
+  cancel-in-progress: false
+
+jobs:
+  create-release:
+    if: >-
+      github.event.deployment_status.state == 'success' &&
+      github.event.deployment.environment == 'Production' &&
+      github.event.sender.login == 'vercel[bot]'
+    runs-on: ubuntu-latest
+    env:
+      EVENT_SHA: ${{ github.event.deployment.sha }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Verify latest main deployment
+        id: main
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch origin main --tags
+
+          MAIN_SHA="$(git rev-parse origin/main)"
+          if [[ "$MAIN_SHA" != "$EVENT_SHA" ]]; then
+            echo "현재 main 최신 커밋의 배포가 아니므로 릴리즈를 생성하지 않습니다."
+            echo "event_sha=$EVENT_SHA"
+            echo "main_sha=$MAIN_SHA"
+            echo "eligible=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Vercel 성공 상태가 현재 main 최신 커밋과 일치합니다: $EVENT_SHA"
+          echo "eligible=true" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve release pull request
+        if: steps.main.outputs.eligible == 'true'
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PULLS_JSON="$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/commits/${EVENT_SHA}/pulls?per_page=100"
+          )"
+
+          MATCHING_PULLS="$(
+            jq \
+              --arg repository "$GITHUB_REPOSITORY" \
+              '[
+                .[]
+                | select(
+                    .merged_at != null
+                    and .base.ref == "main"
+                    and .head.ref == "develop"
+                    and .head.repo.full_name == $repository
+                    and (.title | test("^\\[release\\] v[0-9]+\\.[0-9]+\\.[0-9]+$"))
+                  )
+              ]' \
+              <<< "$PULLS_JSON"
+          )"
+
+          PULL_COUNT="$(jq 'length' <<< "$MATCHING_PULLS")"
+          if [[ "$PULL_COUNT" -ne 1 ]]; then
+            echo "배포 SHA에 연결된 유효한 릴리즈 PR은 정확히 1개여야 합니다. 발견: $PULL_COUNT" >&2
+            jq -r '.[] | "- #\(.number) \(.title) (\(.head.ref) -> \(.base.ref))"' <<< "$MATCHING_PULLS" >&2
+            exit 1
+          fi
+
+          PR_NUMBER="$(jq -r '.[0].number' <<< "$MATCHING_PULLS")"
+          PR_TITLE="$(jq -r '.[0].title' <<< "$MATCHING_PULLS")"
+          PR_BODY="$(jq -r '.[0].body // ""' <<< "$MATCHING_PULLS")"
+
+          if [[ "$PR_TITLE" =~ ^\[release\]\ (v[0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          else
+            echo "릴리즈 PR 제목 형식이 올바르지 않습니다: $PR_TITLE" >&2
+            exit 1
+          fi
+
+          BODY_VERSION="$(
+            awk '
+              /^## 릴리즈 버전[[:space:]]*$/ { in_version_section = 1; next }
+              in_version_section && /^## / { exit }
+              in_version_section && match($0, /`v[0-9]+\.[0-9]+\.[0-9]+`/) {
+                print substr($0, RSTART + 1, RLENGTH - 2)
+                exit
+              }
+            ' <<< "$PR_BODY"
+          )"
+
+          if [[ "$BODY_VERSION" != "$VERSION" ]]; then
+            echo "릴리즈 PR 제목과 본문의 버전이 일치하지 않습니다." >&2
+            echo "title_version=$VERSION" >&2
+            echo "body_version=${BODY_VERSION:-missing}" >&2
+            exit 1
+          fi
+
+          START_COUNT="$(grep -cF '<!-- release-note:start -->' <<< "$PR_BODY" || true)"
+          END_COUNT="$(grep -cF '<!-- release-note:end -->' <<< "$PR_BODY" || true)"
+          if [[ "$START_COUNT" -ne 1 || "$END_COUNT" -ne 1 ]]; then
+            echo "릴리즈 노트 시작/종료 마커가 각각 정확히 1개 필요합니다." >&2
+            echo "start_count=$START_COUNT" >&2
+            echo "end_count=$END_COUNT" >&2
+            exit 1
+          fi
+
+          START_LINE="$(grep -nF '<!-- release-note:start -->' <<< "$PR_BODY" | cut -d: -f1)"
+          END_LINE="$(grep -nF '<!-- release-note:end -->' <<< "$PR_BODY" | cut -d: -f1)"
+          if [[ "$START_LINE" -ge "$END_LINE" ]]; then
+            echo "릴리즈 노트 마커의 순서가 올바르지 않습니다." >&2
+            exit 1
+          fi
+
+          if [[ "$END_LINE" -le "$((START_LINE + 1))" ]]; then
+            echo "릴리즈 노트 마커 사이에 본문이 없습니다." >&2
+            exit 1
+          fi
+
+          sed -n "$((START_LINE + 1)),$((END_LINE - 1))p" <<< "$PR_BODY" > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "릴리즈 PR에서 추출한 릴리즈 노트에 비공백 내용이 없습니다." >&2
+            exit 1
+          fi
+
+          echo "릴리즈 PR을 확인했습니다: #$PR_NUMBER $PR_TITLE"
+          echo "pr_number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create or recover production release
+        if: steps.main.outputs.eligible == 'true'
+        shell: bash
+        env:
+          PR_NUMBER: ${{ steps.release.outputs.pr_number }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          TAG_REF="$(git ls-remote --tags origin "refs/tags/${VERSION}")"
+          if [[ -n "$TAG_REF" ]]; then
+            TAG_EXISTS=true
+          else
+            TAG_EXISTS=false
+          fi
+
+          if gh api --silent "repos/${GITHUB_REPOSITORY}/releases/tags/${VERSION}" 2> release-error.txt; then
+            RELEASE_EXISTS=true
+          elif grep -q 'HTTP 404' release-error.txt; then
+            RELEASE_EXISTS=false
+          else
+            echo "GitHub Release 존재 여부를 확인하지 못했습니다." >&2
+            cat release-error.txt >&2
+            exit 1
+          fi
+
+          if [[ "$TAG_EXISTS" == true ]]; then
+            git fetch origin "refs/tags/${VERSION}:refs/tags/${VERSION}"
+            TAG_SHA="$(git rev-list -n 1 "$VERSION")"
+            if [[ "$TAG_SHA" != "$EVENT_SHA" ]]; then
+              echo "기존 태그가 현재 배포 SHA와 다른 커밋을 가리킵니다." >&2
+              echo "version=$VERSION" >&2
+              echo "tag_sha=$TAG_SHA" >&2
+              echo "event_sha=$EVENT_SHA" >&2
+              exit 1
+            fi
+          fi
+
+          if [[ "$TAG_EXISTS" == true && "$RELEASE_EXISTS" == true ]]; then
+            echo "태그와 GitHub Release가 이미 존재합니다: $VERSION"
+            exit 0
+          fi
+
+          if [[ "$TAG_EXISTS" == false && "$RELEASE_EXISTS" == true ]]; then
+            echo "GitHub Release는 존재하지만 대응하는 Git 태그가 없습니다: $VERSION" >&2
+            exit 1
+          fi
+
+          if [[ "$TAG_EXISTS" == false ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$VERSION" "$EVENT_SHA" -m "$VERSION"
+            git push origin "refs/tags/${VERSION}"
+            echo "배포 SHA에 태그를 생성했습니다: $VERSION -> $EVENT_SHA"
+          else
+            echo "기존 태그를 사용해 GitHub Release 생성을 재시도합니다: $VERSION"
+          fi
+
+          gh release create "$VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$VERSION" \
+            --notes-file release-notes.md \
+            --verify-tag
+
+          {
+            echo "### Production release"
+            echo "- Version: \`$VERSION\`"
+            echo "- Commit: \`$EVENT_SHA\`"
+            echo "- Pull Request: #$PR_NUMBER"
+          } >> "$GITHUB_STEP_SUMMARY"

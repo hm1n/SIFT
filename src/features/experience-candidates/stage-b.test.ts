@@ -1,0 +1,576 @@
+import { APICallError, generateObject, RetryError } from "ai";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  buildStageBPayload,
+  createStageBGenerate,
+  selectStageBCandidates,
+  STAGE_B_MAX_CANDIDATES,
+  STAGE_B_MAX_PATCH_CHARS,
+  STAGE_B_MAX_TOTAL_PATCH_CHARS,
+} from "./stage-b";
+import { MAX_TECHNICAL_TOPICS } from "./schema";
+
+// `createStageBGenerate`가 실제로 보내는 시스템 프롬프트를 가로채기 위한 부분 모킹입니다.
+// `generateObject`만 대체하고 나머지(`APICallError`, `RetryError`)는 실제 구현을 씁니다.
+vi.mock("ai", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("ai")>();
+  return { ...actual, generateObject: vi.fn() };
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+import type { CommitDetail } from "@/lib/github/types";
+
+const candidates = [
+  { sha: "a", source: "contribution_match" as const, contributionItem: "성능 개선" },
+  { sha: "b", source: "automatic_recommendation" as const, contributionItem: null },
+];
+const commits: CommitDetail[] = candidates.map(({ sha }, index) => ({
+  sha, title: sha, author: "me", date: "2026-08-21", parentCount: 1, message: sha,
+  additions: 1, deletions: 0, changedFiles: 1,
+  files: [{ path: `src/${sha}.ts`, status: "modified", additions: 1, deletions: 0, changes: 1, patch: "x".repeat(index ? 10 : STAGE_B_MAX_PATCH_CHARS + 1) }],
+  pullRequests: [{ number: index ? 2 : 1, title: "PR", state: "closed", url: "url", baseBranch: "develop", headBranch: "feature" }],
+}));
+
+describe("Stage B", () => {
+  it("파일 patch를 상한에서 자르고 절단 여부를 모델에 표시한다", () => {
+    const payload = buildStageBPayload(commits, candidates);
+    expect(payload.workUnits[0].commits[0].files[0].patch).toHaveLength(STAGE_B_MAX_PATCH_CHARS);
+    expect(payload.workUnits[0].commits[0].files[0].patchTruncated).toBe(true);
+  });
+
+  it("정상 후보와 부족 사유를 검증하고 입력 근거만 허용한다", async () => {
+    const output = await selectStageBCandidates(commits, candidates, async () => ({
+      candidates: [{ sha: "a", relatedShas: [], summary: "경험 요약 한 줄", evidence: "diff 근거", technicalTopics: ["TypeScript"], citedFilePaths: ["src/a.ts"], source: "contribution_match" }],
+      insufficientCandidatesReason: "독립적인 경험이 하나뿐입니다.",
+    }));
+    expect(output.candidates).toHaveLength(1);
+  });
+
+  it("후보 몫을 넘긴 파일의 patch를 생략하고 SHA와 파일 stat은 유지한다", () => {
+    const large = [
+      {
+        ...commits[0],
+        files: Array.from({ length: STAGE_B_MAX_TOTAL_PATCH_CHARS / STAGE_B_MAX_PATCH_CHARS }, (_, fileIndex) => ({
+          ...commits[0].files[0],
+          path: `src/a-${fileIndex}.ts`,
+          patch: "x".repeat(STAGE_B_MAX_PATCH_CHARS),
+        })),
+      },
+      commits[1],
+    ];
+    const payload = buildStageBPayload(large, candidates);
+    const starved = payload.workUnits[0].commits[0].files.filter((file) => !("patch" in file));
+    expect(starved.length).toBeGreaterThan(0);
+    expect(starved[0]).toMatchObject({ additions: 1, deletions: 0, changes: 1 });
+    // 예산 때문에 patch가 빠진 파일도 절단 표시를 받아야 모델이 전체 diff로 오해하지 않는다.
+    expect(starved.every((file) => file.patchTruncated === true)).toBe(true);
+  });
+
+  it("앞 후보가 몫을 다 써도 뒤 후보는 자기 몫의 patch를 받는다", () => {
+    const greedy = [
+      {
+        ...commits[0],
+        files: Array.from({ length: STAGE_B_MAX_TOTAL_PATCH_CHARS / STAGE_B_MAX_PATCH_CHARS }, (_, fileIndex) => ({
+          ...commits[0].files[0],
+          path: `src/a-${fileIndex}.ts`,
+          patch: "x".repeat(STAGE_B_MAX_PATCH_CHARS),
+        })),
+      },
+      {
+        ...commits[1],
+        files: [{ ...commits[1].files[0], patch: "y".repeat(STAGE_B_MAX_PATCH_CHARS) }],
+      },
+    ];
+    const payload = buildStageBPayload(greedy, candidates);
+    const usedByFirst = payload.workUnits[0].commits[0].files.reduce(
+      (sum, file) => sum + (file.patch?.length ?? 0),
+      0
+    );
+    expect(usedByFirst).toBe(STAGE_B_MAX_TOTAL_PATCH_CHARS / 2);
+    expect(payload.workUnits[1].commits[0].files[0].patch).toHaveLength(STAGE_B_MAX_PATCH_CHARS);
+  });
+
+  it("후보 수가 늘어도 모든 후보가 자기 몫을 받고 총량 상한을 넘지 않는다", () => {
+    const count = 20;
+    const many = Array.from({ length: count }, (_, index) => ({
+      ...commits[0],
+      sha: `sha-${index}`,
+      files: [{ ...commits[0].files[0], path: `src/${index}.ts`, patch: "x".repeat(STAGE_B_MAX_PATCH_CHARS) }],
+    }));
+    const manyCandidates = many.map(({ sha }) => ({
+      sha,
+      source: "automatic_recommendation" as const,
+      contributionItem: null,
+    }));
+    const payload = buildStageBPayload(many, manyCandidates);
+    const perCandidate = payload.workUnits
+      .flatMap((unit) => unit.commits)
+      .map((commit) => commit.files.reduce((sum, file) => sum + (file.patch?.length ?? 0), 0));
+    const share = Math.floor(STAGE_B_MAX_TOTAL_PATCH_CHARS / count);
+    expect(perCandidate).toEqual(Array.from({ length: count }, () => share));
+    expect(perCandidate.reduce((sum, chars) => sum + chars, 0)).toBeLessThanOrEqual(
+      STAGE_B_MAX_TOTAL_PATCH_CHARS
+    );
+  });
+
+  it("몫을 다 쓰지 않은 후보의 잔액을 뒤 후보로 이월한다", () => {
+    const frugal = [
+      { ...commits[0], files: [{ ...commits[0].files[0], patch: "x".repeat(10) }] },
+      {
+        ...commits[1],
+        files: [{ ...commits[1].files[0], patch: "y".repeat(STAGE_B_MAX_PATCH_CHARS) }],
+      },
+    ];
+    const payload = buildStageBPayload(frugal, candidates);
+    expect(payload.workUnits[0].commits[0].files[0].patch).toHaveLength(10);
+    // 잔액이 이월돼도 파일별 상한은 그대로 적용된다.
+    expect(payload.workUnits[1].commits[0].files[0].patch).toHaveLength(STAGE_B_MAX_PATCH_CHARS);
+    expect(payload.workUnits[1].commits[0].files[0]).not.toHaveProperty("patchTruncated");
+  });
+
+  it("후보 3개 계약과 부족 사유 계약을 검증한다", async () => {
+    const threeCandidates = [...candidates, { sha: "c", source: "automatic_recommendation" as const, contributionItem: null }];
+    // c는 b와 다른 PR(3)에 속해야 한다. 그렇지 않으면 PR 중복 정리가 b·c를 하나로 묶어 이 계약
+    // 테스트(후보 3개 그대로 통과)가 깨진다.
+    const threeCommits = [
+      ...commits,
+      {
+        ...commits[1],
+        sha: "c",
+        pullRequests: [{ ...commits[1].pullRequests[0], number: 3 }],
+        files: [{ ...commits[1].files[0], path: "src/c.ts" }],
+      },
+    ];
+    const output = await selectStageBCandidates(threeCommits, threeCandidates, async () => ({
+      candidates: threeCandidates.map(({ sha, source }) => ({ sha, relatedShas: [], summary: "경험 요약 한 줄", evidence: "근거", technicalTopics: ["TypeScript"], citedFilePaths: [`src/${sha}.ts`], source })),
+      insufficientCandidatesReason: null,
+    }));
+    expect(output.candidates).toHaveLength(3);
+    await expect(selectStageBCandidates(commits, candidates, async () => ({ candidates: [], insufficientCandidatesReason: null }))).rejects.toMatchObject({ kind: "schema_validation" });
+  });
+
+  /**
+   * 이슈 #108 회귀입니다. 후보 상한이 3으로 고정되어 있으면 판단 단위가 1개나 2개인 저장소는
+   * "서로 다른 묶음에서 3개"와 "부족 사유 null"을 동시에 만족할 수 없어 `schema_validation`으로
+   * 실패했습니다. `hm1n/programmers-badge-v1`(1묶음)과 `hm1n/CAREER-CAMP-TIL`(2묶음)이 그랬습니다.
+   */
+  it.each([1, 2])("판단 단위가 %i개면 그만큼만 골라도 부족 사유 없이 통과한다", async (unitCount) => {
+    const units = commits.slice(0, unitCount);
+    const unitCandidates = candidates.slice(0, unitCount);
+
+    const output = await selectStageBCandidates(units, unitCandidates, async (payload) => {
+      expect(payload.candidateLimit).toBe(unitCount);
+      return {
+        candidates: units.map(({ sha }) => ({
+          sha,
+          relatedShas: [],
+          summary: "경험 요약 한 줄",
+          evidence: "근거",
+          technicalTopics: ["TypeScript"],
+          citedFilePaths: [`src/${sha}.ts`],
+          source: "automatic_recommendation" as const,
+        })),
+        insufficientCandidatesReason: null,
+      };
+    });
+
+    expect(output.candidates).toHaveLength(unitCount);
+    expect(output.insufficientCandidatesReason).toBeNull();
+  });
+
+  it("입력 커밋 수보다 많은 후보를 돌려주면 거부한다", async () => {
+    await expect(
+      selectStageBCandidates(commits.slice(0, 1), candidates.slice(0, 1), async () => ({
+        candidates: commits.map(({ sha }) => ({
+          sha,
+          relatedShas: [],
+          summary: "경험 요약 한 줄",
+          evidence: "근거",
+          technicalTopics: ["TypeScript"],
+          citedFilePaths: [`src/${sha}.ts`],
+          source: "automatic_recommendation" as const,
+        })),
+        insufficientCandidatesReason: null,
+      }))
+    ).rejects.toMatchObject({ kind: "schema_validation" });
+  });
+
+  /**
+   * 판단 단위가 상한보다 많으면 `STAGE_B_MAX_CANDIDATES`가 실제 상한이 됩니다. 이 판정은 같은
+   * Pull Request 후보 정리가 끝난 뒤에 적용합니다. 정리 전에 개수를 재면 모델이 같은 묶음에서 둘
+   * 이상 고른 응답이 정리에 닿기 전에 거부됩니다.
+   */
+  it("정리 후에도 STAGE_B_MAX_CANDIDATES를 넘는 후보는 거부한다", async () => {
+    const manyCommits: CommitDetail[] = Array.from(
+      { length: STAGE_B_MAX_CANDIDATES + 1 },
+      (_, index) => ({
+        ...commits[1],
+        sha: `m${index}`,
+        files: [{ ...commits[1].files[0], path: `src/m${index}.ts` }],
+        pullRequests: [{ ...commits[1].pullRequests[0], number: 100 + index }],
+      })
+    );
+    const manyCandidates = manyCommits.map(({ sha }) => ({
+      sha,
+      source: "automatic_recommendation" as const,
+      contributionItem: null,
+    }));
+
+    await expect(
+      selectStageBCandidates(manyCommits, manyCandidates, async (payload) => {
+        expect(payload.candidateLimit).toBe(STAGE_B_MAX_CANDIDATES);
+        return {
+          candidates: manyCommits.map(({ sha }) => ({
+            sha,
+            relatedShas: [],
+            summary: "경험 요약 한 줄",
+            evidence: "근거",
+            technicalTopics: ["TypeScript"],
+            citedFilePaths: [`src/${sha}.ts`],
+            source: "automatic_recommendation" as const,
+          })),
+          insufficientCandidatesReason: null,
+        };
+      })
+    ).rejects.toMatchObject({ kind: "schema_validation" });
+  });
+
+  /**
+   * 이슈 #108 회귀입니다. 대표 커밋에 Pull Request가 없으면 빈 배열에 대한 `every`가 항상 `true`라
+   * 관련 SHA가 무엇이든 `unrelated_sha`가 됐고, 자기 SHA를 넣은 응답도 같이 거부됐습니다.
+   */
+  it("Pull Request가 없는 대표 커밋은 관련 SHA가 비면 통과하고 자기 SHA를 넣으면 거부한다", async () => {
+    const noPrCommit: CommitDetail = { ...commits[0], pullRequests: [] };
+    const rawCandidate = {
+      sha: "a",
+      relatedShas: [] as string[],
+      summary: "경험 요약 한 줄",
+      evidence: "근거",
+      technicalTopics: ["TypeScript"],
+      citedFilePaths: ["src/a.ts"],
+      source: "contribution_match" as const,
+    };
+
+    const output = await selectStageBCandidates([noPrCommit], [candidates[0]], async () => ({
+      candidates: [rawCandidate],
+      insufficientCandidatesReason: null,
+    }));
+    expect(output.candidates).toHaveLength(1);
+
+    await expect(
+      selectStageBCandidates([noPrCommit], [candidates[0]], async () => ({
+        candidates: [{ ...rawCandidate, relatedShas: ["a"] }],
+        insufficientCandidatesReason: null,
+      }))
+    ).rejects.toMatchObject({ kind: "unrelated_sha" });
+  });
+
+  it("입력 밖 SHA와 다른 PR 관련 SHA를 전체 거부한다", async () => {
+    await expect(selectStageBCandidates(commits, candidates, async () => ({ candidates: [{ sha: "z", relatedShas: [], summary: "경험 요약 한 줄", evidence: "근거", technicalTopics: ["TypeScript"], citedFilePaths: ["src/a.ts"], source: "contribution_match" }], insufficientCandidatesReason: "부족" }))).rejects.toMatchObject({ kind: "unknown_sha" });
+    await expect(selectStageBCandidates(commits, candidates, async () => ({ candidates: [{ sha: "a", relatedShas: ["b"], summary: "경험 요약 한 줄", evidence: "근거", technicalTopics: ["TypeScript"], citedFilePaths: ["src/a.ts"], source: "contribution_match" }], insufficientCandidatesReason: "부족" }))).rejects.toMatchObject({ kind: "unrelated_sha" });
+  });
+
+  it("diff에 없는 인용 경로를 전체 거부한다", async () => {
+    await expect(selectStageBCandidates(commits, candidates, async () => ({ candidates: [{ sha: "a", relatedShas: [], summary: "경험 요약 한 줄", evidence: "근거", technicalTopics: ["TypeScript"], citedFilePaths: ["src/unknown.ts"], source: "contribution_match" }], insufficientCandidatesReason: "부족" }))).rejects.toMatchObject({ kind: "unknown_file_path" });
+  });
+
+  it("모델의 source를 Stage A 값으로 교정한다", async () => {
+    const output = await selectStageBCandidates(commits, candidates, async () => ({ candidates: [{ sha: "a", relatedShas: [], summary: "경험 요약 한 줄", evidence: "근거", technicalTopics: ["TypeScript"], citedFilePaths: ["src/a.ts"], source: "automatic_recommendation" }], insufficientCandidatesReason: "부족" }));
+    expect(output.candidates[0].source).toBe("contribution_match");
+  });
+
+  // 이슈 #19 실측: provider가 분당 토큰 한도 초과를 429가 아니라 413으로 반환한다.
+  // 413을 한도로 분류하지 않으면 일반 실패(502)로 새어 재시도 가능 여부를 알 수 없다.
+  const rateLimitBody = '{"error":{"code":"rate_limit_exceeded","type":"tokens"}}';
+  const tooLargeBody = '{"error":{"code":"request_too_large","type":"invalid_request_error"}}';
+  // Gemini가 잘못된 키에 돌려주는 400 본문(2026-09-01 실측). 상태 코드는 요청 형식 오류와 같고
+  // `details`의 `reason`만 다르다.
+  const invalidKeyBody =
+    '{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.",' +
+    '"status":"INVALID_ARGUMENT","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo",' +
+    '"reason":"API_KEY_INVALID","domain":"googleapis.com"}]}}';
+  // 413은 상태 코드만으로는 갈리지 않는다. 한도 초과 413은 기다리면 풀리지만, 요청·컨텍스트가
+  // 너무 큰 413은 같은 페이로드로 몇 번을 기다려도 풀리지 않는다. 본문으로 판별해야 한다.
+  it.each([
+    { statusCode: 429, responseBody: "", kind: "llm_rate_limit" },
+    { statusCode: 413, responseBody: rateLimitBody, kind: "llm_rate_limit" },
+    { statusCode: 413, responseBody: tooLargeBody, kind: "llm_request" },
+    { statusCode: 413, responseBody: "", kind: "llm_request" },
+    // Gemini는 잘못된 키를 401이 아니라 400으로 돌려준다(2026-09-01 실측).
+    { statusCode: 400, responseBody: invalidKeyBody, kind: "llm_auth" },
+    { statusCode: 400, responseBody: "", kind: "llm_request" },
+    // Gemini는 모델 과부하를 503, 내부 오류를 500으로 돌려준다. 기다리면 풀리는 실패다.
+    { statusCode: 500, responseBody: "", kind: "llm_failure" },
+    { statusCode: 503, responseBody: "", kind: "llm_failure" },
+  ] as const)("상태 코드 $statusCode를 본문에 따라 $kind로 매핑한다", async ({ statusCode, responseBody, kind }) => {
+    const error = new APICallError({
+      message: "provider error",
+      url: "https://example.test",
+      requestBodyValues: {},
+      statusCode,
+      responseHeaders: {},
+      responseBody,
+    });
+    await expect(
+      selectStageBCandidates(commits, candidates, async () => {
+        throw error;
+      })
+    ).rejects.toMatchObject({ kind });
+  });
+
+  // 이슈 #19 실측: SDK가 재시도한 실패는 `RetryError`로 감싸져 오고, `RetryError`는
+  // `APICallError`가 아니다. 벗기지 않으면 한도 초과가 llm_failure로 뭉개진다.
+  it.each([
+    { statusCode: 429, responseBody: "", kind: "llm_rate_limit" },
+    { statusCode: 413, responseBody: rateLimitBody, kind: "llm_rate_limit" },
+    { statusCode: 413, responseBody: tooLargeBody, kind: "llm_request" },
+    { statusCode: 401, responseBody: "", kind: "llm_auth" },
+    { statusCode: 400, responseBody: invalidKeyBody, kind: "llm_auth" },
+    { statusCode: 404, responseBody: "", kind: "llm_configuration" },
+    { statusCode: 503, responseBody: "", kind: "llm_failure" },
+  ] as const)("재시도로 감싸인 $statusCode도 $kind로 매핑한다", async ({ statusCode, responseBody, kind }) => {
+    const wrapped = new RetryError({
+      message: "failed after 3 attempts",
+      reason: "maxRetriesExceeded",
+      errors: [
+        new APICallError({
+          message: "provider error",
+          url: "https://example.test",
+          requestBodyValues: {},
+          statusCode,
+          responseHeaders: {},
+          responseBody,
+        }),
+      ],
+    });
+    await expect(
+      selectStageBCandidates(commits, candidates, async () => {
+        throw wrapped;
+      })
+    ).rejects.toMatchObject({ kind });
+  });
+
+  it("시한 중단을 llm_timeout으로 보존한다", async () => {
+    vi.useFakeTimers();
+    const promise = selectStageBCandidates(commits, candidates, async (_payload, signal) => new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true })), 10);
+    const assertion = expect(promise).rejects.toMatchObject({ kind: "llm_timeout" });
+    await vi.advanceTimersByTimeAsync(10);
+    await assertion;
+    vi.useRealTimers();
+  });
+});
+
+// Codex 리뷰 P1-1: Stage B 검증기가 대표 SHA 중복만 막아서, 같은 Pull Request의 커밋 여러 개가
+// 최종 후보 자리를 나눠 가지면 최종 후보 3개가 실제로는 경험 1개일 수 있었다.
+describe("Stage B 최종 후보의 PR 중복 정리", () => {
+  const samePrCommits: CommitDetail[] = ["p1", "p2", "p3"].map((sha) => ({
+    sha,
+    title: sha,
+    author: "me",
+    date: "2026-08-21",
+    parentCount: 1,
+    message: sha,
+    additions: 1,
+    deletions: 0,
+    changedFiles: 1,
+    files: [{ path: `src/${sha}.ts`, status: "modified", additions: 1, deletions: 0, changes: 1 }],
+    pullRequests: [{ number: 9, title: "PR", state: "closed", url: "url", baseBranch: "develop", headBranch: "feature" }],
+  }));
+  const samePrCandidates = samePrCommits.map(({ sha }) => ({
+    sha,
+    source: "automatic_recommendation" as const,
+    contributionItem: null,
+  }));
+  const toRawCandidate = ({ sha }: { sha: string }) => ({
+    sha,
+    relatedShas: [],
+    summary: "경험 요약 한 줄",
+    evidence: "근거",
+    technicalTopics: ["TypeScript"],
+    citedFilePaths: [`src/${sha}.ts`],
+    source: "automatic_recommendation" as const,
+  });
+
+  it("같은 PR 커밋 3개를 최종 후보로 돌려주면 1개로 정리되고 부족 사유가 채워진다", async () => {
+    const output = await selectStageBCandidates(samePrCommits, samePrCandidates, async () => ({
+      candidates: samePrCommits.map(toRawCandidate),
+      insufficientCandidatesReason: null,
+    }));
+    expect(output.candidates).toHaveLength(1);
+    expect(output.candidates[0].sha).toBe("p1");
+    expect(output.insufficientCandidatesReason).toBe(
+      "같은 Pull Request에서 나온 후보를 하나로 합쳐 1개가 되었습니다."
+    );
+  });
+
+  it("정리 후 남는 후보는 모델 출력 순서상 첫 번째다 (결정성)", async () => {
+    const output = await selectStageBCandidates(samePrCommits, samePrCandidates, async () => ({
+      candidates: [samePrCommits[1], samePrCommits[2], samePrCommits[0]].map(toRawCandidate),
+      insufficientCandidatesReason: null,
+    }));
+    expect(output.candidates).toHaveLength(1);
+    expect(output.candidates[0].sha).toBe("p2");
+  });
+
+  it("서로 다른 PR 3개면 정리되지 않고 부족 사유는 null로 남는다", async () => {
+    const differentPrCommits = samePrCommits.map((commit, index) => ({
+      ...commit,
+      pullRequests: [{ ...commit.pullRequests[0], number: 9 + index }],
+    }));
+    const differentPrCandidates = differentPrCommits.map(({ sha }) => ({
+      sha,
+      source: "automatic_recommendation" as const,
+      contributionItem: null,
+    }));
+    const output = await selectStageBCandidates(differentPrCommits, differentPrCandidates, async () => ({
+      candidates: differentPrCommits.map(toRawCandidate),
+      insufficientCandidatesReason: null,
+    }));
+    expect(output.candidates).toHaveLength(3);
+    expect(output.insufficientCandidatesReason).toBeNull();
+  });
+
+  it("buildStageBPayload가 같은 PR 커밋을 한 workUnits 항목으로 접는다", () => {
+    const payload = buildStageBPayload(samePrCommits, samePrCandidates);
+    expect(payload.workUnits).toHaveLength(1);
+    expect(payload.workUnits[0].pullRequest?.number).toBe(9);
+    expect(payload.workUnits[0].commits.map((commit) => commit.sha)).toEqual(["p1", "p2", "p3"]);
+  });
+
+  it("PR이 없는 커밋은 자기 자신만의 workUnits 항목이 된다", () => {
+    const noPrCommit: CommitDetail = { ...samePrCommits[0], sha: "no-pr", pullRequests: [] };
+    const noPrCandidate = { sha: "no-pr", source: "automatic_recommendation" as const, contributionItem: null };
+    const payload = buildStageBPayload([noPrCommit, samePrCommits[0]], [noPrCandidate, samePrCandidates[0]]);
+    expect(payload.workUnits).toHaveLength(2);
+    expect(payload.workUnits[0].pullRequest).toBeNull();
+    expect(payload.workUnits[0].commits.map((commit) => commit.sha)).toEqual(["no-pr"]);
+    expect(payload.workUnits[1].pullRequest?.number).toBe(9);
+  });
+
+  it("PR 없는 커밋 여러 개는 서로 다른 묶음으로 남아 정리 대상이 되지 않는다", async () => {
+    const noPrCommits: CommitDetail[] = ["q1", "q2"].map((sha) => ({
+      ...samePrCommits[0],
+      sha,
+      files: [{ ...samePrCommits[0].files[0], path: `src/${sha}.ts` }],
+      pullRequests: [],
+    }));
+    const noPrCandidates = noPrCommits.map(({ sha }) => ({
+      sha,
+      source: "automatic_recommendation" as const,
+      contributionItem: null,
+    }));
+    const output = await selectStageBCandidates(noPrCommits, noPrCandidates, async () => ({
+      candidates: noPrCommits.map(toRawCandidate),
+      insufficientCandidatesReason: "독립적인 경험이 둘뿐입니다.",
+    }));
+    expect(output.candidates).toHaveLength(2);
+    expect(output.insufficientCandidatesReason).toBe("독립적인 경험이 둘뿐입니다.");
+  });
+});
+
+describe("출력 계약 프롬프트", () => {
+  async function capturedSystemPrompt(candidateLimit: number) {
+    const generateObjectMock = vi.mocked(generateObject);
+    generateObjectMock.mockResolvedValue({ object: { candidates: [], insufficientCandidatesReason: "없음" } } as unknown as Awaited<
+      ReturnType<typeof generateObject>
+    >);
+
+    await createStageBGenerate("test-model")(
+      { workUnits: [], candidateLimit },
+      new AbortController().signal
+    );
+
+    const { system } = generateObjectMock.mock.calls.at(-1)![0];
+    // `system`은 문자열 한 덩어리로 조립해 넘깁니다. 문구의 등장 순서를 보는 테스트가 있어
+    // 여기서 문자열로 좁혀 둡니다.
+    return typeof system === "string" ? system : "";
+  }
+
+  /**
+   * 2026-08-25까지 이 계약은 로컬 제공자에만 붙었습니다. Gemini는 스키마만 보고 지켰기 때문입니다.
+   * 판단 단위가 1~2개인 저장소가 들어오면서 Gemini도 부족 사유를 채우지 않아 실패했으므로 갈래를
+   * 없앴습니다(이슈 #108).
+   */
+  it("프로덕션 경로에도 출력 계약을 싣는다", async () => {
+    vi.stubEnv("NEXT_PUBLIC_LLM_BASE_URL", undefined);
+
+    const system = await capturedSystemPrompt(3);
+
+    expect(system).toContain("insufficientCandidatesReason");
+    expect(system).toContain("citedFilePaths");
+    expect(system).toContain("실제 diff와 PR 소속만 근거로");
+  });
+
+  it("제공자에 따라 출력 계약이 갈리지 않는다", async () => {
+    vi.stubEnv("NEXT_PUBLIC_LLM_BASE_URL", undefined);
+    const production = await capturedSystemPrompt(3);
+
+    vi.stubEnv("NEXT_PUBLIC_LLM_BASE_URL", "http://localhost:11434/v1");
+    vi.stubEnv("STAGE_B_MODEL", "qwen2.5:7b");
+
+    expect(await capturedSystemPrompt(3)).toBe(production);
+  });
+
+  it("계산된 후보 상한을 프롬프트 문장에 넣는다", async () => {
+    expect(await capturedSystemPrompt(1)).toContain("최대 1개의 개발 경험 후보");
+    expect(await capturedSystemPrompt(20)).toContain("최대 20개의 개발 경험 후보");
+  });
+
+  it("Pull Request가 없는 판단 단위의 relatedShas를 빈 배열로 못박는다", async () => {
+    expect(await capturedSystemPrompt(3)).toContain("pullRequest가 null인 workUnits 항목");
+  });
+
+  /**
+   * `assertCandidateEvidence`는 대표 커밋과 relatedShas에 적힌 커밋의 파일만 인용으로 받습니다.
+   * 이 관계를 문장에 적지 않으면 모델이 relatedShas를 비운 채 같은 묶음의 다른 커밋 파일을
+   * 인용해 `unknown_file_path`로 거부됩니다. `hm1n/SIFT` 6회 중 5회가 그렇게 실패했습니다
+   * (이슈 #108).
+   */
+  it("인용 경로와 relatedShas의 관계를 프롬프트에 적는다", async () => {
+    const system = await capturedSystemPrompt(3);
+
+    expect(system).toContain(
+      "citedFilePaths에는 sha와 relatedShas에 적은 커밋의 files[].path만 넣습니다"
+    );
+    expect(system).toContain("relatedShas에 먼저 넣으세요");
+  });
+
+  /**
+   * 이슈 #110 회귀입니다. 두 필드는 `assertCandidateEvidence` 같은 대조 검증이 없어, 프롬프트가
+   * 유일한 규칙입니다. 여기서 규칙이 빠지면 커밋 type prefix가 그대로 실린 제목이나 입력에 없는
+   * 기술 이름이 화면까지 그대로 갑니다.
+   *
+   * technicalTopics 쪽 네 문장은 2026-09-14에 실측으로 하나씩 붙인 것이라 함께 봅니다. 특히
+   * "어느 프로젝트에나 해당하는 말"을 막는 문장이 빠지면 토픽이 `오류 처리`·`상태 관리`로
+   * 되돌아가 후보를 구분하지 못합니다. 회차별 수치는
+   * `llm-wiki/raw/2026-09-14-경험후보-요약문장과-기술토픽-session-log.md` §4에 있습니다.
+   */
+  it("summary와 technicalTopics의 작성 규칙을 프롬프트에 적는다", async () => {
+    const system = await capturedSystemPrompt(3);
+
+    expect(system).toContain("명사형으로 끝내고 40자를 넘기지 마세요");
+    expect(system).toContain("type prefix(feat, fix, chore 같은 말머리)와 SHA, PR 번호는 넣지 마세요");
+    expect(system).toContain(`기술적 문제와 기법을 최대 ${MAX_TECHNICAL_TOPICS}개`);
+    expect(system).toContain("두세 낱말짜리 명사구로 짧게 적습니다");
+    expect(system).toContain("어느 프로젝트에나 해당하는 말은 항목으로 쓰지 말고");
+    expect(system).toContain("summary에 쓴 문장을 그대로 옮기지 마세요");
+    expect(system).toContain("summary와 technicalTopics 두 필드만은 커밋 메시지와 같은 언어로 적습니다");
+    expect(system).toContain("뒤에 나오는 응답 언어 지시보다 우선합니다");
+    expect(system).toContain("넣을 것이 없으면 빈 배열로 두세요");
+  });
+
+  /**
+   * PR #118 CodeRabbit 리뷰 회귀입니다. 프롬프트 끝의 "한국어로 답하세요"는 응답 전체에 걸리므로,
+   * 두 필드의 언어 규칙이 그보다 앞에 있고 우선한다고 적혀 있어야 영어 저장소에서 제목과 토픽이
+   * 한국어로 끌려가지 않습니다. 순서가 뒤집히면 문구가 남아 있어도 효력을 잃습니다.
+   */
+  it("두 필드의 언어 규칙이 전체 응답 언어 지시보다 앞에 온다", async () => {
+    const system = await capturedSystemPrompt(3);
+
+    expect(system.indexOf("커밋 메시지와 같은 언어로 적습니다")).toBeLessThan(
+      system.indexOf("한국어로 답하세요")
+    );
+  });
+});

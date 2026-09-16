@@ -1,0 +1,316 @@
+import type { NextRequest } from "next/server";
+import { CANDIDATE_ROUTE_COPY } from "@/copy/candidates";
+import { getGitHubTokenFromRequest } from "@/lib/github/auth-session";
+import { GitHubFetchError } from "@/lib/github/errors";
+import { ExperienceCandidateOutputError } from "@/features/experience-candidates/errors";
+import type {
+  StageACandidate,
+  StageACandidateOutput,
+} from "@/features/experience-candidates/types";
+import {
+  STAGE_A_MAX_PROMPT_BYTES,
+  STAGE_A_MAX_REQUEST_BYTES,
+  STAGE_A_MAX_UNITS,
+  STAGE_A_MIN_LLM_BUDGET_MS,
+  STAGE_A_TIMEOUT_MS,
+  buildStageAPayload,
+  renderStageAPrompt,
+  selectStageACandidates,
+  type GenerateStageA,
+  type StageAInput,
+} from "@/features/experience-candidates/stage-a";
+import { modelFacingUnitId } from "@/features/experience-candidates/work-unit";
+import { resolveLlmTimeoutMs } from "@/features/experience-candidates/llm-provider";
+
+export const runtime = "nodejs";
+export const maxDuration = 60;
+export const MAX_STAGE_A_BODY_BYTES = 4.5 * 1024 * 1024;
+
+function isStageAInput(value: unknown): value is StageAInput {
+  const isCount = (item: unknown) => Number.isInteger(item) && (item as number) >= 0;
+  const isStringArray = (item: unknown) =>
+    Array.isArray(item) && item.every((entry) => typeof entry === "string");
+  // Stage A는 patch를 받지 않습니다. 묶음 요약에는 patch가 들어갈 자리가 없지만, 클라이언트가
+  // 임의 필드를 덧붙여 보내는 경로를 막기 위해 요약 필드 수를 고정합니다.
+  // `unitId`는 Stage B의 `resolveWorkUnitKey`와 같은 형식입니다. PR 묶음은 `pr:번호`, 단일
+  // 커밋은 `commit:SHA`(40자)입니다.
+  const UNIT_ID_PATTERN = /^(pr:\d+|commit:[0-9a-f]{40})$/;
+  const isSummary = (item: unknown) => {
+    if (typeof item !== "object" || item === null) return false;
+    const summary = item as Record<string, unknown>;
+    return (
+      Object.keys(summary).length === 10 &&
+      typeof summary.unitId === "string" &&
+      UNIT_ID_PATTERN.test(summary.unitId) &&
+      (summary.kind === "pull_request" || summary.kind === "commit") &&
+      // kind와 unitId 접두어가 어긋나면 한 요약 안에서 기준이 갈립니다. renderWorkUnitSummary는
+      // kind를 보고 커밋 제목 줄을 넣거나 빼는데, 머리줄 맨 앞의 식별자는 modelFacingUnitId가
+      // 접두어를 보고 정합니다. 둘이 다른 것을 가리키는 요약을 모델에 보내게 되고, 여기서 막지
+      // 않으면 LLM 호출 한 번을 쓴 뒤에야 드러납니다(Codex 리뷰, 이슈 #101). 즉시 422로
+      // 거부합니다.
+      summary.kind === (summary.unitId.startsWith("pr:") ? "pull_request" : "commit") &&
+      typeof summary.title === "string" &&
+      isCount(summary.commitCount) &&
+      (summary.commitCount as number) >= 1 &&
+      isCount(summary.spanDays) &&
+      isCount(summary.additions) &&
+      isCount(summary.deletions) &&
+      isStringArray(summary.commitTitles) &&
+      isCount(summary.changedFilePathCount) &&
+      isStringArray(summary.topFilePaths)
+    );
+  };
+  const isUnit = (item: unknown) => {
+    if (typeof item !== "object" || item === null) return false;
+    const unit = item as { unitId?: unknown; representativeSha?: unknown; summary?: unknown };
+    if (typeof unit.unitId !== "string" || !UNIT_ID_PATTERN.test(unit.unitId)) return false;
+    if (typeof unit.representativeSha !== "string" || !/^[0-9a-f]{40}$/.test(unit.representativeSha)) {
+      return false;
+    }
+    if (!isSummary(unit.summary)) return false;
+    if ((unit.summary as { unitId: string }).unitId !== unit.unitId) return false;
+    // 단일 커밋 단위는 대표 SHA가 곧 그 커밋 자신이어야 합니다. 대리 지표가 아니라 실제 값으로
+    // 확인합니다.
+    if (unit.unitId.startsWith("commit:") && unit.unitId !== `commit:${unit.representativeSha}`) {
+      return false;
+    }
+    return true;
+  };
+
+  const input = value as StageAInput;
+  if (typeof value !== "object" || value === null) return false;
+  if (!Array.isArray(input.units) || !input.units.every(isUnit)) return false;
+  if (input.units.length === 0 || input.units.length > STAGE_A_MAX_UNITS) return false;
+  // 같은 묶음을 두 번 보내면 전수 응답 계약이 성립하지 않습니다.
+  const unitIds = input.units.map(({ unitId }) => unitId);
+  if (new Set(unitIds).size !== unitIds.length) return false;
+  /**
+   * `unitId`가 서로 달라도 모델에게 보이는 식별자(단일 커밋은 SHA 앞 7자리)는 같을 수 있습니다.
+   * 이 경우 모델은 두 항목을 구분하지 못해 하나로만 응답하고, 뒤 단계는 어느 커밋이 실제로
+   * 판단받았는지 조용히 잘못 판단합니다(Codex 리뷰, 이슈 #101). 모델을 부르기 전에 여기서
+   * 막습니다.
+   */
+  const modelFacingIds = input.units.map(({ unitId }) => modelFacingUnitId(unitId));
+  if (new Set(modelFacingIds).size !== modelFacingIds.length) return false;
+  if (!Array.isArray(input.contributionItems)) return false;
+  if (!input.contributionItems.every((item) => typeof item === "string" && item.length > 0)) {
+    return false;
+  }
+  return (
+    Number.isInteger(input.candidateLimit) &&
+    input.candidateLimit >= 1 &&
+    input.candidateLimit <= input.units.length
+  );
+}
+
+function errorResponse(error: unknown): Response {
+  if (error instanceof GitHubFetchError && error.kind === "auth_revoked") {
+    return Response.json({ error: { kind: "unauthorized", message: CANDIDATE_ROUTE_COPY.unauthorized } }, { status: 401 });
+  }
+  if (error instanceof ExperienceCandidateOutputError) {
+    const status = {
+      schema_validation: 502,
+      unknown_sha: 502,
+      json_parse: 502,
+      unrelated_sha: 502,
+      unknown_file_path: 502,
+      llm_network: 502,
+      llm_auth: 502,
+      llm_rate_limit: 503,
+      llm_timeout: 504,
+      llm_configuration: 500,
+      llm_request: 502,
+      llm_failure: 502,
+    }[error.kind];
+    return Response.json({ error: {
+      kind: error.kind,
+      message: error.missingShas
+        ? `${error.message} ${CANDIDATE_ROUTE_COPY.stageAUnfinished(error.missingShas.length)}`
+        : error.message,
+      ...(error.missingShas ? { failedCount: error.missingShas.length } : {}),
+      ...(error.missingShas?.length === 1 ? { retryable: false } : {}),
+    } }, { status });
+  }
+  return Response.json({ error: { kind: "server_error", message: CANDIDATE_ROUTE_COPY.stageAFailed } }, { status: 500 });
+}
+
+export async function handleStageA(
+  request: NextRequest,
+  generate?: GenerateStageA,
+  timeoutMs?: number
+): Promise<Response> {
+  /**
+   * 예산을 라우트 전체로 한 번만 잽니다.
+   *
+   * 복구 호출마다 새 시한을 주면 라우트가 `maxDuration` 60초를 넘길 수 있습니다. 넘기면 플랫폼이
+   * 함수를 끊어 우리 오류 계약이 나가지 못합니다. 남은 시간을 각 호출의 시한으로 넘겨 세 번을
+   * 합쳐도 한 번의 예산 안에서 끝나게 합니다. 로컬 제공자일 때만 `LLM_TIMEOUT_MS`가 예산을
+   * 대신합니다. Stage B 라우트가 같은 방식을 씁니다.
+   */
+  const startedAt = Date.now();
+  const totalBudgetMs = timeoutMs ?? resolveLlmTimeoutMs(STAGE_A_TIMEOUT_MS);
+  const remainingBudgetMs = () => totalBudgetMs - (Date.now() - startedAt);
+  try {
+    getGitHubTokenFromRequest(request);
+    const declaredLength = Number(request.headers.get("content-length"));
+    if (declaredLength > MAX_STAGE_A_BODY_BYTES) {
+      return Response.json({ error: { kind: "body_too_large", message: CANDIDATE_ROUTE_COPY.bodyTooLarge } }, { status: 413 });
+    }
+
+    const text = await request.text();
+    if (new TextEncoder().encode(text).byteLength > MAX_STAGE_A_BODY_BYTES) {
+      return Response.json({ error: { kind: "body_too_large", message: CANDIDATE_ROUTE_COPY.bodyTooLarge } }, { status: 413 });
+    }
+
+    let body: unknown;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      return Response.json({ error: { kind: "invalid_json", message: CANDIDATE_ROUTE_COPY.invalidJson } }, { status: 400 });
+    }
+    if (
+      !isStageAInput(body) ||
+      new TextEncoder().encode(text).byteLength > STAGE_A_MAX_REQUEST_BYTES
+    ) {
+      return Response.json({ error: { kind: "invalid_request", message: CANDIDATE_ROUTE_COPY.stageAInvalid } }, { status: 422 });
+    }
+    // 모델에 실제로 실리는 프롬프트를 서버에서 접어 보고 상한을 확인합니다. `renderStageAPrompt`가
+    // `createStageAGenerate`와 같은 함수라 여기서 손으로 다시 계산하지 않습니다. 예전에는 요약만
+    // 손으로 다시 이어붙여 기여 항목이 빠졌고, 그 결과 기여 항목이 긴 요청이 이 가드를 통과한 뒤
+    // 실제 프롬프트에서는 Groq 분당 토큰 한도를 넘겨 413을 받았습니다(Codex 리뷰 P2-1).
+    const stageAPayload = buildStageAPayload(body);
+    const promptBytes = new TextEncoder().encode(renderStageAPrompt(stageAPayload)).byteLength;
+    if (promptBytes > STAGE_A_MAX_PROMPT_BYTES) {
+      // 원인을 구분해 알려줍니다. 요약만으로도 이미 상한을 넘었다면 기여 항목과 무관한 입력
+      // 문제입니다. 요약은 상한 안인데 기여 항목을 더해 넘었다면 기여 항목이 원인입니다.
+      // 오류 종류(kind)는 화면이 문구를 소유한 계약이라 늘리지 않고 메시지만 구분합니다.
+      const summaryOnlyBytes = new TextEncoder().encode(
+        stageAPayload.units.map(({ summary }) => summary).join("\n")
+      ).byteLength;
+      const causedByContributionItems =
+        stageAPayload.contributionItems.length > 0 && summaryOnlyBytes <= STAGE_A_MAX_PROMPT_BYTES;
+      return Response.json({
+        error: {
+          kind: "invalid_request",
+          message: causedByContributionItems
+            ? CANDIDATE_ROUTE_COPY.stageAContributionTooLong
+            : CANDIDATE_ROUTE_COPY.stageAInvalid,
+        },
+      }, { status: 422 });
+    }
+    /**
+     * 병합 결과를 요청 상한까지 자릅니다.
+     *
+     * 호출 하나하나는 `selectStageACandidates`가 상한을 강제하지만 부분 응답과 복구 응답을
+     * 합치는 지점은 아무도 세지 않았습니다. 복구에 넘기는 상한에 `Math.max(1, ...)` 바닥이
+     * 있어 부분 응답이 이미 상한을 채웠어도 복구가 최소 하나를 더 얹습니다. 실측에서 상한 5에
+     * 후보 6개, 상한 2에 후보 3개가 나왔습니다.
+     *
+     * 바닥을 0으로 내리는 대신 병합 지점에서 자릅니다. 복구에 "최대 0개"를 요구하면 모델이 하나만
+     * 줘도 청크 전체가 복구 불가능한 422로 죽습니다. 요구는 그대로 두고 결과만 정리합니다.
+     *
+     * 기여 항목에 맞은 후보를 먼저 남깁니다. 명시적으로 맞은 것이 모델 재량 추천보다 근거가
+     * 강합니다. 같으면 입력 순서로 끊어 같은 입력이 같은 결과를 내게 합니다.
+     *
+     * 잘린 후보는 버리지 않고 미분류로 내립니다. 개수가 맞지 않으면 뒤에서 추적이 안 됩니다.
+     */
+    const trimToLimit = (
+      candidates: readonly StageACandidate[],
+      limit: number
+    ): { kept: StageACandidate[]; demoted: string[] } => {
+      if (candidates.length <= limit) return { kept: [...candidates], demoted: [] };
+      const ranked = candidates
+        .map((candidate, index) => ({ candidate, index }))
+        .sort((left, right) => {
+          const priority = (item: { candidate: StageACandidate }) =>
+            item.candidate.source === "contribution_match" ? 0 : 1;
+          return priority(left) - priority(right) || left.index - right.index;
+        });
+      return {
+        kept: ranked.slice(0, limit).sort((l, r) => l.index - r.index).map(({ candidate }) => candidate),
+        demoted: ranked.slice(limit).map(({ candidate }) => candidate.sha),
+      };
+    };
+
+    /**
+     * 끝내 판단을 받지 못한 묶음을 `unjudgedShas`로 내리고 나머지를 살립니다.
+     *
+     * 이전에는 여기서 예외를 던졌습니다. `andbread` 실측에서 청크 하나가 복구를 소진하자 이미
+     * 끝난 다섯 청크의 결과까지 버려지고 Stage A 전체가 실패했습니다. 묶음 63개가 정상이었는데
+     * 3개 때문에 전부 사라졌습니다.
+     */
+    const degrade = (
+      partial: StageACandidateOutput,
+      unjudgedShas: readonly string[]
+    ): StageACandidateOutput => ({
+      candidates: partial.candidates,
+      unclassifiedShas: partial.unclassifiedShas,
+      unjudgedShas: [...unjudgedShas],
+    });
+
+    const selectWithRecovery = async (
+      input: StageAInput,
+      attemptsLeft = 2
+    ): Promise<StageACandidateOutput> => {
+      try {
+        return await selectStageACandidates(input, generate, Math.max(1, remainingBudgetMs()));
+      } catch (error) {
+        // 모델이 형식에 맞는 응답 자체를 만들지 못한 경우입니다. 살릴 부분 응답이 없으므로 같은
+        // 입력을 그대로 다시 보냅니다. 실측에서 같은 입력이 시도마다 다른 출력을 냈습니다.
+        if (
+          error instanceof ExperienceCandidateOutputError &&
+          error.kind === "schema_validation" &&
+          !error.partialOutput &&
+          attemptsLeft > 0 &&
+          remainingBudgetMs() >= STAGE_A_MIN_LLM_BUDGET_MS
+        ) {
+          return await selectWithRecovery(input, attemptsLeft - 1);
+        }
+        if (
+          !(error instanceof ExperienceCandidateOutputError) ||
+          !error.missingShas?.length || !error.partialOutput
+        ) {
+          throw error;
+        }
+        const partial = error.partialOutput;
+        const missingShas = error.missingShas;
+        // 잔여 예산이 복구 한 번을 담지 못하면 시작하지 않고 부분 결과를 살립니다. 시작해 놓고
+        // 시한에 걸리면 그만큼 라우트 예산만 쓰고 결과는 같습니다.
+        if (attemptsLeft === 0 || remainingBudgetMs() < STAGE_A_MIN_LLM_BUDGET_MS) {
+          return degrade(partial, missingShas);
+        }
+
+        const missing = new Set(missingShas);
+        let recovered: StageACandidateOutput;
+        try {
+          recovered = await selectWithRecovery({
+            ...input,
+            units: input.units.filter(({ representativeSha }) => missing.has(representativeSha)),
+            candidateLimit: Math.max(1, input.candidateLimit - partial.candidates.length),
+          }, attemptsLeft - 1);
+        } catch {
+          // 복구 호출이 어떤 이유로 실패하든 이미 받은 부분 응답은 살립니다. 실측에서 모델이
+          // 스키마를 못 맞춰 제공자가 400을 돌려주는 경우가 간헐적으로 있었고, 그때마다 정상
+          // 판단된 묶음까지 함께 버려졌습니다.
+          return degrade(partial, missingShas);
+        }
+        const { kept, demoted } = trimToLimit(
+          [...partial.candidates, ...recovered.candidates],
+          input.candidateLimit
+        );
+        return {
+          candidates: kept,
+          unclassifiedShas: [...partial.unclassifiedShas, ...recovered.unclassifiedShas, ...demoted],
+          unjudgedShas: recovered.unjudgedShas,
+        };
+      }
+    };
+    return Response.json(await selectWithRecovery(body));
+  } catch (error) {
+    return errorResponse(error);
+  }
+}
+
+export function POST(request: NextRequest): Promise<Response> {
+  return handleStageA(request);
+}

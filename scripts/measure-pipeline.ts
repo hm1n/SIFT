@@ -1,0 +1,712 @@
+/**
+ * 이슈 #19 실데이터 측정 스크립트. 수동 실행 전용이며 vitest 스위트에는 포함되지 않습니다.
+ * 파일명이 `*.test.ts`가 아니므로 vitest 기본 include 패턴에 잡히지 않습니다.
+ *
+ * GITHUB_TOKEN=$(gh auth token) npx tsx --env-file=.env scripts/measure-pipeline.ts <owner> <repo> <phase>
+ *
+ * phase:
+ *   commits   커밋 목록 페이지네이션 소요 시간과 블랙리스트 통과 수
+ *   details   상세 조회 순차 소요 시간, changedFiles·patch 분포, 페이로드 크기
+ *   parallel  상세 조회 병렬도별 소요 시간과 secondary rate limit 관측
+ *   commit    단일 커밋 상세 조회. changedFiles 3000 상한 왜곡 관측용
+ *   stage-a   실제 Gemini 호출 소요 시간과 선정 결과 (GOOGLE_GENERATIVE_AI_API_KEY 필요)
+ *   stage-b   실제 Gemini 호출 소요 시간과 선정 결과 (GOOGLE_GENERATIVE_AI_API_KEY 필요)
+ *
+ * 옵션:
+ *   --limit=N              입력 커밋 수
+ *   --cache=<경로>          상세 조회 결과를 저장소 밖 임시 경로에 캐시해 반복 측정에서 재사용
+ *   --model=<id>           Stage A 모델 오버라이드. NEXT_PUBLIC_LLM_BASE_URL을 설정한 로컬
+ *                          실행에서는 STAGE_A_MODEL 환경변수가 모델을 결정하므로 무시됩니다.
+ *                          --stage-b-model도 같습니다
+ *   --stage-b-model=<id>   Stage B 모델 오버라이드
+ *   --concurrency=1,2,4    parallel 단계의 병렬도 목록
+ *   --skip-stage-a         Stage A를 건너뛰고 Stage B만 측정
+ *   --sha=<40자 SHA>        commit 단계의 대상 커밋
+ *   --item=<기여 항목>       Stage A 기여 항목. 여러 번 지정 가능
+ *   --selection-bytes=N    Stage A 선별 예산 오버라이드. 상한 재산정 측정에 씁니다
+ *
+ * 출력에는 수치와 요약만 담습니다. API 키와 응답 원문은 출력하지 않습니다. `[usage]` 줄이
+ * 남기는 것은 토큰 **개수**뿐이며 프롬프트 본문이 아닙니다. 회당 비용을 추정치가 아닌 실측으로
+ * 내려면 이 개수가 필요합니다(이슈 #70·#71).
+ */
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { APICallError } from "ai";
+import { filterCommitsForDetail } from "../src/lib/github/commit-blacklist";
+import { fetchAuthoredCommits, GITHUB_API_BASE, githubFetch } from "../src/lib/github/commits";
+import { fetchCommitDetail } from "../src/lib/github/contributions";
+import {
+  buildStageAPayload,
+  createStageAGenerate,
+  STAGE_A_CANDIDATE_QUOTA,
+  renderStageAPrompt,
+  selectStageACandidates,
+  STAGE_A_TIMEOUT_MS,
+} from "../src/features/experience-candidates/stage-a";
+import {
+  assertStageARequestWithinLimits,
+  expandCandidatesToCommits,
+  toStageAUnits,
+} from "../src/features/experience-candidates/candidate-client";
+import { STAGE_A_MAX_SELECTION_BYTES } from "../src/features/experience-candidates/work-unit-selection";
+import { modelFacingUnitId } from "../src/features/experience-candidates/work-unit";
+import { syntheticCommitSha, syntheticPullRequestUnitId } from "./synthetic-unit-id";
+import {
+  buildStageBPayload,
+  createStageBGenerate,
+  selectStageBCandidates,
+  STAGE_B_MAX_INPUT_COMMITS,
+  STAGE_B_MAX_PATCH_CHARS,
+} from "../src/features/experience-candidates/stage-b";
+import { resolveEffectiveSettings } from "./effective-settings";
+import type { LlmUsageSample } from "../src/features/experience-candidates/llm-provider";
+import type { CommitDetail, CommitSummary, GitHubAuth } from "../src/lib/github/types";
+import type { GenerateStageA } from "../src/features/experience-candidates/stage-a";
+import type { StageACandidate } from "../src/features/experience-candidates/types";
+
+const [owner, repo, phase = "commits", ...rest] = process.argv.slice(2);
+const token = process.env.GITHUB_TOKEN;
+
+if (!owner || !repo || !token) {
+  console.log("사용법: GITHUB_TOKEN=$(gh auth token) npx tsx scripts/measure-pipeline.ts <owner> <repo> <phase>");
+  process.exit(1);
+}
+
+const auth: GitHubAuth = { owner, repo, token };
+const numericOption = (name: string, fallback: number) => {
+  const hit = rest.find((option) => option.startsWith(`--${name}=`));
+  return hit === undefined ? fallback : Number(hit.slice(name.length + 3));
+};
+
+/**
+ * 유효 설정을 여기서 한 번만 계산합니다. 규칙과 그 근거는 `effective-settings.ts`에 있고 그
+ * 파일에 테스트가 붙어 있습니다. phase가 모델이나 상한을 손으로 다시 계산하면 실행은 정상인데
+ * 기록이 실제와 달라집니다.
+ */
+const modelOption = rest.find((option) => option.startsWith("--model="))?.slice("--model=".length);
+const stageBModelOption = rest
+  .find((option) => option.startsWith("--stage-b-model="))
+  ?.slice("--stage-b-model=".length);
+const {
+  stageAModel: effectiveStageAModel,
+  stageBModel: effectiveStageBModel,
+  maxInputCommits: effectiveMaxInputCommits,
+  maxTotalPatchChars: effectiveMaxTotalPatchChars,
+} = resolveEffectiveSettings({ stageAModel: modelOption, stageBModel: stageBModelOption });
+
+const ms = () => performance.now();
+const round = (value: number) => Math.round(value);
+
+/**
+ * probe 헤더는 숫자여야 한다. `githubFetch`는 상태 코드를 보지 않고 Response를 돌려주므로
+ * 헤더가 없을 때 `Number(null)`이 0이 되고, 그 0이 잔량·소비량으로 조용히 측정에 섞인다.
+ * probe는 모든 소비량 계산의 기준값이므로 값을 만들어내지 말고 즉시 실패시킨다.
+ */
+function rateLimitHeader(response: Response, name: string) {
+  const raw = response.headers.get(name);
+  const value = raw === null ? Number.NaN : Number(raw);
+  if (!Number.isFinite(value)) {
+    throw new Error(`rate limit probe 실패: ${name} 헤더가 없거나 숫자가 아니다`);
+  }
+  return value;
+}
+
+/**
+ * core rate limit 사용량. `/rate_limit` 엔드포인트는 캐시된 값을 돌려줘(실측: 헤더가 4762를
+ * 가리킬 때 4996을 응답) 소비량 계산에 쓸 수 없다. 권위 있는 값은 각 응답의
+ * `x-ratelimit-used` 헤더뿐이므로 core 요청 하나를 던져 헤더를 읽는다.
+ * 이 probe 자체가 1을 소비하므로 두 probe 사이의 실제 소비량은 `used 차이 - 1`이다.
+ *
+ * 비성공 응답(401 토큰 만료, 403 한도 소진·차단, 429)에서는 이 계산이 성립하지 않는다. 소비가
+ * 1이 아닐 수 있고 헤더도 없을 수 있다. 측정을 이어가면 위조된 수치가 결과에 남으므로 던진다.
+ */
+async function coreRateLimit() {
+  const response = await githubFetch(`${GITHUB_API_BASE}/user`, token!);
+  if (!response.ok) {
+    throw new Error(`rate limit probe 실패: GET /user 응답 ${response.status}`);
+  }
+  return {
+    limit: rateLimitHeader(response, "x-ratelimit-limit"),
+    remaining: rateLimitHeader(response, "x-ratelimit-remaining"),
+    used: rateLimitHeader(response, "x-ratelimit-used"),
+  };
+}
+
+/** probe 두 번 사이에 측정 대상이 실제로 소비한 요청 수. 뒤 probe 자신의 1을 제외한다. */
+const consumed = (before: { used: number }, after: { used: number }) => after.used - before.used - 1;
+
+/**
+ * LLM 실패의 원인 계층을 펼친다. 파이프라인이 원인을 `ExperienceCandidateOutputError`로 감싸므로
+ * 어떤 모델·스키마가 왜 거부됐는지는 cause를 따라가야 보인다. 응답 본문은 앞부분만 남긴다.
+ */
+function describeLlmFailure(error: unknown) {
+  const lines: string[] = [];
+  let current: unknown = error;
+  for (let depth = 0; current instanceof Error && depth < 4; depth += 1) {
+    lines.push(`  cause[${depth}] ${current.name}: ${current.message.slice(0, 200)}`);
+    if (APICallError.isInstance(current)) {
+      lines.push(`  cause[${depth}] status=${current.statusCode} body=${String(current.responseBody).slice(0, 400)}`);
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return lines.join("\n");
+}
+
+function percentile(sorted: readonly number[], fraction: number) {
+  if (sorted.length === 0) return 0;
+  return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))];
+}
+
+function distribution(label: string, values: readonly number[]) {
+  const sorted = [...values].sort((a, b) => a - b);
+  const total = sorted.reduce((sum, value) => sum + value, 0);
+  console.log(
+    `${label}: n=${sorted.length} 합=${round(total)} 평균=${round(total / (sorted.length || 1))} ` +
+      `중앙=${round(percentile(sorted, 0.5))} p90=${round(percentile(sorted, 0.9))} 최대=${round(sorted.at(-1) ?? 0)}`
+  );
+}
+
+async function loadCommits() {
+  const before = await coreRateLimit();
+  const startedAt = ms();
+  const { commits, repositoryHasCommits } = await fetchAuthoredCommits(auth);
+  const elapsed = ms() - startedAt;
+  const after = await coreRateLimit();
+  const included = filterCommitsForDetail(commits);
+  console.log(`[commits] ${owner}/${repo} 커밋 있음=${repositoryHasCommits}`);
+  console.log(`[commits] 작성자 커밋=${commits.length} 블랙리스트 통과=${included.length} 제외=${commits.length - included.length}`);
+  console.log(`[commits] 전체 페이지네이션 소요=${round(elapsed)}ms 예상 페이지 수=${Math.ceil(commits.length / 100)}`);
+  console.log(`[commits] core rate limit 소비=${consumed(before, after)} 잔량=${after.remaining}/${after.limit}`);
+  return { commits, included };
+}
+
+/** 상세 조회 1건의 소요 시간을 개별로 남겨 배치 크기 판단 근거를 만듭니다. */
+async function fetchDetailsSequential(targets: readonly CommitSummary[]) {
+  const details: CommitDetail[] = [];
+  const durations: number[] = [];
+  for (const commit of targets) {
+    const startedAt = ms();
+    details.push(await fetchCommitDetail(auth, commit));
+    durations.push(ms() - startedAt);
+  }
+  return { details, durations };
+}
+
+/**
+ * LLM 단계를 반복 측정할 때 상세 조회를 다시 하지 않도록 캐시한다. 커밋당 2요청·844ms라
+ * 반복 측정이 rate limit을 불필요하게 소진한다. 캐시는 저장소 밖 임시 경로에만 쓴다.
+ */
+async function fetchDetailsCached(targets: readonly CommitSummary[]) {
+  const cachePath = rest.find((option) => option.startsWith("--cache="))?.slice("--cache=".length);
+  if (cachePath === undefined) return (await fetchDetailsSequential(targets)).details;
+  if (existsSync(cachePath)) {
+    const cached = JSON.parse(readFileSync(cachePath, "utf8")) as CommitDetail[];
+    // 캐시는 전체를 담고 있으므로 요청한 대상만 골라낸다. 그러지 않으면 --limit이 무시된다.
+    const wanted = new Set(targets.map(({ sha }) => sha));
+    const picked = cached.filter(({ sha }) => wanted.has(sha));
+    if (picked.length === targets.length) {
+      console.log(`[cache] 상세 ${picked.length}건 재사용 (GitHub 요청 0회)`);
+      return picked;
+    }
+    console.log(`[cache] 캐시 미스 ${targets.length - picked.length}건, 전체 재조회`);
+  }
+  const concurrency = numericOption("concurrency", 1);
+  const queue = [...targets];
+  const detailsBySha = new Map<string, CommitDetail>();
+  await Promise.all(Array.from({ length: concurrency }, async () => {
+    for (;;) {
+      const commit = queue.shift();
+      if (commit === undefined) return;
+      detailsBySha.set(commit.sha, await fetchCommitDetail(auth, commit));
+    }
+  }));
+  const details = targets.map(({ sha }) => detailsBySha.get(sha)!);
+  writeFileSync(cachePath, JSON.stringify(details));
+  console.log(`[cache] 상세 ${details.length}건 저장`);
+  return details;
+}
+
+function reportDetailShape(details: readonly CommitDetail[]) {
+  const changedFiles = details.map((detail) => detail.changedFiles);
+  const patchChars = details.map((detail) =>
+    detail.files.reduce((sum, file) => sum + (file.patch?.length ?? 0), 0)
+  );
+  const perFilePatch = details.flatMap((detail) =>
+    detail.files.flatMap((file) => (file.patch === undefined ? [] : [file.patch.length]))
+  );
+  const missingPatch = details.flatMap((detail) =>
+    detail.files.filter((file) => file.patch === undefined)
+  ).length;
+  const totalFiles = details.reduce((sum, detail) => sum + detail.files.length, 0);
+
+  distribution("[details] 커밋별 changedFiles", changedFiles);
+  distribution("[details] 커밋별 patch 문자 수", patchChars);
+  distribution("[details] 파일별 patch 문자 수", perFilePatch);
+  console.log(`[details] 전체 파일=${totalFiles} patch 없는 파일=${missingPatch}`);
+
+  // changedFiles 왜곡: 상세 응답의 파일 목록은 300개/페이지로 잘리고 3000개가 하드 상한이다.
+  const at300 = details.filter((detail) => detail.changedFiles === 300);
+  const at3000 = details.filter((detail) => detail.changedFiles >= 3000);
+  console.log(`[details] changedFiles==300 커밋=${at300.length} changedFiles>=3000 커밋=${at3000.length}`);
+  console.log(`[details] changedFiles 최대=${Math.max(0, ...changedFiles)} (3000 상한 왜곡 관측=${at3000.length > 0})`);
+
+  const perFileOverLimit = perFilePatch.filter((length) => length > STAGE_B_MAX_PATCH_CHARS).length;
+  console.log(
+    `[details] STAGE_B_MAX_PATCH_CHARS(${STAGE_B_MAX_PATCH_CHARS}) 초과 파일=${perFileOverLimit}/${perFilePatch.length}`
+  );
+
+  const prCounts = details.map((detail) => detail.pullRequests.length);
+  distribution("[details] 커밋별 PR 수", prCounts);
+}
+
+/** Stage A·B 페이로드의 직렬화 바이트 수. Vercel 요청 본문 4.5MB 상한과 비교합니다. */
+function reportPayloadSizes(details: readonly CommitDetail[]) {
+  const encoder = new TextEncoder();
+  const stageA = buildStageAPayload({
+    units: toStageAUnits(details).units,
+    candidateLimit: 1,
+    contributionItems: [],
+  });
+  const stageABytes = encoder.encode(JSON.stringify(stageA)).byteLength;
+  console.log(
+    `[payload] Stage A 입력 커밋=${details.length} 직렬화=${stageABytes}B (${(stageABytes / 1024).toFixed(1)}KB, 4.5MB의 ${((stageABytes / (4.5 * 1024 * 1024)) * 100).toFixed(2)}%)`
+  );
+
+  const capped = details.slice(0, effectiveMaxInputCommits);
+  const candidates: StageACandidate[] = capped.map(({ sha }) => ({
+    sha,
+    source: "automatic_recommendation",
+    contributionItem: null,
+  }));
+  const stageB = buildStageBPayload(capped, candidates);
+  const stageBBytes = encoder.encode(JSON.stringify(stageB)).byteLength;
+  // 페이로드가 Pull Request 단위 묶음으로 바뀌었다(Codex 리뷰 P1-1). 커밋 단위 집계는 펼쳐서 센다.
+  const stageBCommits = stageB.workUnits.flatMap((unit) => unit.commits);
+  const usedPatch = stageBCommits.reduce(
+    (sum, commit) => sum + commit.files.reduce((inner, file) => inner + (file.patch?.length ?? 0), 0),
+    0
+  );
+  const truncatedFiles = stageBCommits.reduce(
+    (sum, commit) => sum + commit.files.filter((file) => file.patchTruncated === true).length,
+    0
+  );
+  const droppedFiles = stageBCommits.reduce(
+    (sum, commit) => sum + commit.files.filter((file) => file.patch === undefined).length,
+    0
+  );
+  console.log(
+    `[payload] Stage B 입력 커밋=${capped.length} 직렬화=${stageBBytes}B (${(stageBBytes / 1024).toFixed(1)}KB) ` +
+      `patch 사용=${usedPatch}/${effectiveMaxTotalPatchChars}자`
+  );
+  console.log(
+    `[payload] Stage B 절단 파일=${truncatedFiles} patch 생략 파일=${droppedFiles} 총량 상한 도달=${usedPatch >= effectiveMaxTotalPatchChars}`
+  );
+}
+
+async function runCommits() {
+  await loadCommits();
+}
+
+async function runDetails() {
+  const { included } = await loadCommits();
+  const limit = numericOption("limit", included.length);
+  const targets = included.slice(0, limit);
+  const before = await coreRateLimit();
+  const startedAt = ms();
+  // --cache가 있으면 상세를 캐시에 저장한다. 묶음 방식 측정(measure-grouping.mts)의 입력을
+  // 만드는 용도라 소요 시간 분포는 이 경로에서 재지 않는다.
+  const cachePath = rest.find((option) => option.startsWith("--cache="));
+  const { details, durations } =
+    cachePath === undefined
+      ? await fetchDetailsSequential(targets)
+      : { details: await fetchDetailsCached(targets), durations: [] as number[] };
+  const elapsed = ms() - startedAt;
+  const after = await coreRateLimit();
+
+  /**
+   * `--cache`를 쓰면 캐시가 맞으면 디스크만 읽고, 캐시가 비어 있으면 `--concurrency`만큼
+   * 병렬로 조회합니다. 두 경우 모두 실제 단일 스레드 순차 네트워크 조회가 아니므로, 이 시간을
+   * "순차 조회 소요"로 보고하고 그대로 프로덕션 예산으로 환산하면 근거 없이 낙관적인(캐시 적중
+   * 시 거의 0에 가까운) 숫자가 나갑니다(Codex 리뷰, 이슈 #101). `--cache` 없이 부른, 보장된
+   * 단일 스레드 순차 조회에서만 이 두 줄을 보고합니다.
+   */
+  if (cachePath === undefined) {
+    console.log(`[details] 순차 조회 커밋=${details.length} 총 소요=${round(elapsed)}ms 커밋당 평균=${round(elapsed / (details.length || 1))}ms`);
+    if (durations.length > 0) distribution("[details] 커밋별 조회 소요(ms)", durations);
+    // 이 줄은 프로덕션 예산 환산이 목적이라 로컬 축소값이 아니라 상수를 씁니다.
+    console.log(
+      `[details] 커밋 ${STAGE_B_MAX_INPUT_COMMITS}개 순차 환산=${round((elapsed / (details.length || 1)) * STAGE_B_MAX_INPUT_COMMITS)}ms`
+    );
+  }
+  console.log(`[details] core rate limit 소비=${consumed(before, after)} 잔량=${after.remaining}/${after.limit}`);
+  reportDetailShape(details);
+  reportPayloadSizes(details);
+}
+
+/** 병렬도를 바꿔가며 같은 커밋 집합을 조회하고 secondary rate limit 발생 여부를 본다. */
+async function runParallel() {
+  const { included } = await loadCommits();
+  const limit = numericOption("limit", Math.min(effectiveMaxInputCommits, included.length));
+  const targets = included.slice(0, limit);
+  const listed = rest.find((option) => option.startsWith("--concurrency="));
+  const concurrencies =
+    listed === undefined
+      ? [1, 2, 4, 8]
+      : listed.slice("--concurrency=".length).split(",").map(Number);
+
+  for (const concurrency of concurrencies) {
+    const before = await coreRateLimit();
+    const queue = [...targets];
+    let failure: string | null = null;
+    const startedAt = ms();
+    await Promise.all(
+      Array.from({ length: concurrency }, async () => {
+        for (;;) {
+          const commit = queue.shift();
+          if (commit === undefined) return;
+          try {
+            await fetchCommitDetail(auth, commit);
+          } catch (error) {
+            failure ??= `${(error as Error & { kind?: string }).kind ?? "unknown"}: ${(error as Error).message}`;
+          }
+        }
+      })
+    );
+    const elapsed = ms() - startedAt;
+    const after = await coreRateLimit();
+    console.log(
+      `[parallel] 병렬도=${concurrency} 커밋=${targets.length} 총 소요=${round(elapsed)}ms ` +
+        `커밋당=${round(elapsed / (targets.length || 1))}ms rate limit 소비=${consumed(before, after)} 잔량=${after.remaining}`
+    );
+    if (failure !== null) console.log(`[parallel] 병렬도=${concurrency} 실패 관측: ${failure}`);
+  }
+}
+
+/**
+ * Stage A의 "입력 SHA를 정확히 한 번씩" 계약은 모델이 지키지 못하면 schema_validation으로
+ * 끝나 원인이 보이지 않는다. 검증 전에 실제 decision 수와 누락·중복 수를 남긴다.
+ */
+/**
+ * 전수 응답 계약은 입력 묶음 수를 기준으로 잽니다.
+ *
+ * 이전에는 기대값으로 커밋 수를 받았습니다. 판단 단위가 PR 묶음으로 바뀌면서 `demian`에서
+ * 묶음 15개를 커밋 90개와 비교하게 되어 계약 충족 판정이 구조적으로 항상 거짓이었습니다.
+ * 같은 줄의 누락은 `payload.units`로 계산해 맞았으므로 한 줄 안에서 두 지표가 서로 모순했습니다.
+ */
+function logUsage(stage: string, usage: LlmUsageSample) {
+  const show = (value: number | null) => (value === null ? "없음" : String(value));
+  console.log(
+    `[usage] ${stage} 입력=${show(usage.inputTokens)} 출력=${show(usage.outputTokens)} ` +
+      `합계=${show(usage.totalTokens)}`
+  );
+}
+
+function instrumentedStageAGenerate(model: string | undefined): GenerateStageA {
+  const generate = createStageAGenerate(model, (usage) => logUsage("stage-a", usage));
+  return async (payload, abortSignal) => {
+    const output = await generate(payload, abortSignal);
+    const decisions =
+      (output as { decisions?: { unitId?: string }[] }).decisions ?? [];
+    const returned = decisions.map((decision) => decision.unitId);
+    const unique = new Set(returned);
+    const expected = payload.units.length;
+    // 모델은 단일 커밋 단위에 대해 SHA 7자리로만 답합니다. 입력 쪽 식별자도 같은 형태로
+    // 바꿔야 비교가 맞습니다.
+    const inputIds = new Set(payload.units.map(({ unitId }) => modelFacingUnitId(unitId)));
+    const missing = [...inputIds].filter((id) => !unique.has(id)).length;
+    console.log(
+      `[stage-a] 모델 응답 decision=${returned.length}/${expected} 고유=${unique.size} ` +
+        `누락=${missing} 중복=${returned.length - unique.size} 계약충족=${returned.length === expected && unique.size === expected && missing === 0}`
+    );
+    return output;
+  };
+}
+
+async function runStageA() {
+  const { included } = await loadCommits();
+  const limit = numericOption("limit", included.length);
+  const targets = included.slice(0, limit);
+  const details = await fetchDetailsCached(targets);
+  const contributionItems = rest
+    .filter((option) => option.startsWith("--item="))
+    .map((option) => option.slice("--item=".length));
+  console.log(
+    `[stage-a] 입력 커밋=${details.length} 기여 항목=${contributionItems.length} 모델=${effectiveStageAModel}`
+  );
+  reportPayloadSizes(details);
+
+  const startedAt = ms();
+  try {
+    // 후보 상한은 프로덕션이 쓰는 값과 같아야 합니다. 전역 상한 20을 그대로 쓰면 클라이언트가
+    // 실제로 보내는 쿼터와 다른 것을 재게 되고, Stage B로 넘어가는 후보 수도 달라집니다.
+    // 기여 항목이 선별 예산을 먹는다. 프로덕션과 같게 넘겨야 같은 묶음 수를 잰다.
+    // 선별 예산을 플래그로 바꿔 가며 잽니다. 프로덕션 상한 10,500바이트는 Groq 무료 등급의 분당
+    // 토큰 8,000에서 나온 값이라 Gemini에서 재산정해야 하고, 그 재산정에 필요한 것이 묶음 수를
+    // 늘렸을 때 전수 응답 계약이 유지되는지입니다.
+    const selectionBytes = numericOption("selection-bytes", STAGE_A_MAX_SELECTION_BYTES);
+    const syntheticUnits = numericOption("synthetic-units", 0);
+    const {
+      units: stageAUnits,
+      workUnits: stageAWorkUnits,
+      excludedUnits,
+      thresholdScore,
+    } = toStageAUnits(details, contributionItems, selectionBytes);
+    /**
+     * 묶음 수의 천장을 재려고 입력을 부풀립니다.
+     *
+     * 전수 응답 계약(입력 묶음 N개면 decisions도 N개)이 묶음 수에 따라 깨진다는 것은 Groq 시절에
+     * 확인했습니다. 66묶음에서 첫 시도 준수가 33퍼센트였습니다. Gemini가 어디서 깨지는지는 저장소
+     * 크기에 막혀 재지 못했고, 개수 상한을 실측 없이 정하면 다음 저장소에서 같은 문제가 납니다.
+     *
+     * 실제 묶음을 복제하되 PR 번호와 대표 SHA를 새로 붙여 서로 다른 묶음으로 만듭니다. 이렇게 만든
+     * 입력으로는 **형식 계약만** 잴 수 있습니다. 내용이 중복이므로 어느 것을 골랐는지는 판단 품질의
+     * 근거가 되지 않습니다. 계약이 깨지는 지점을 찾는 것이 목적입니다.
+     */
+    const inflatedUnits =
+      syntheticUnits <= stageAUnits.length
+        ? stageAUnits
+        : Array.from({ length: syntheticUnits }, (_, index) => {
+            const source = stageAUnits[index % stageAUnits.length];
+            const round = Math.floor(index / stageAUnits.length);
+            if (round === 0) return source;
+            /**
+             * 커밋 단위는 모델에게 `modelFacingUnitId`가 자른 SHA 앞 7자리만 보입니다. 원본
+             * unitId 뒤에 라운드 접미사만 붙이면 그 7자리는 라운드마다 그대로라 모든 복제본이
+             * 모델에게 완전히 같은 식별자로 보이고, 실제로는 한 곳으로 뭉개져 전수 응답 계약을
+             * 재는 이 실험 자체가 성립하지 않습니다(Codex 리뷰, 이슈 #101). 새로 붙인 대표 SHA로
+             * unitId 자체를 다시 만들어야 라운드마다 실제로 구별됩니다. `syntheticCommitSha`가
+             * index마다 다른 SHA 앞 7자리를 보장합니다.
+             */
+            const representativeSha = syntheticCommitSha(index);
+            const unitId = source.unitId.startsWith("commit:")
+              ? `commit:${representativeSha}`
+              : syntheticPullRequestUnitId(source.unitId, round);
+            return {
+              ...source,
+              unitId,
+              representativeSha,
+              summary: { ...source.summary, unitId },
+            };
+          });
+    if (syntheticUnits > stageAUnits.length) {
+      console.log(
+        `[stage-a] 합성 입력: 실제 묶음 ${stageAUnits.length}개를 복제해 ${inflatedUnits.length}개로 부풀림. ` +
+          `형식 계약만 잰다`
+      );
+    }
+    // 합성 입력은 상한 검증을 일부러 건너뜁니다. 상한 위에서 계약이 어떻게 되는지 재는 것이
+    // 목적이라 상한으로 먼저 끊으면 잴 수가 없습니다. 실제 입력은 프로덕션과 같게 검증합니다.
+    if (syntheticUnits <= stageAUnits.length) {
+      assertStageARequestWithinLimits(stageAUnits, contributionItems);
+    }
+    const candidateLimit = Math.min(STAGE_A_CANDIDATE_QUOTA, inflatedUnits.length);
+    // 실제로 모델에 실리는 프롬프트 바이트입니다. 상한을 재산정하려면 묶음 수만이 아니라 그
+    // 묶음이 실제로 몇 바이트인지 알아야 합니다.
+    const stageAPromptBytes = new TextEncoder().encode(
+      renderStageAPrompt(
+        buildStageAPayload({ units: inflatedUnits, contributionItems, candidateLimit })
+      )
+    ).byteLength;
+    // 제외 사유를 갈라 봅니다. 갈라 두지 않으면 선별이 멈춘 원인이 바이트 예산인지 점수 경계인지
+    // 알 수 없습니다. 예산을 올려도 묶음 수가 그대로인 저장소가 있어 이 구분이 필요했습니다.
+    const overInputBudget = excludedUnits.filter(
+      ({ reason }) => reason === "over_input_budget"
+    ).length;
+    const overBytes = excludedUnits.filter(({ reason }) => reason === "over_byte_budget").length;
+    console.log(
+      `[stage-a] 선별 예산=${selectionBytes}B 선별 입력묶음=${inflatedUnits.length} ` +
+        `제외묶음=${excludedUnits.length}(상한초과 ${overInputBudget}, 분량초과 ${overBytes}) ` +
+        `경계점수=${thresholdScore} 프롬프트=${stageAPromptBytes}B 후보상한=${candidateLimit}`
+    );
+    const output = await selectStageACandidates(
+      {
+        units: inflatedUnits,
+        candidateLimit,
+        contributionItems,
+      },
+      instrumentedStageAGenerate(modelOption)
+    );
+    const elapsed = ms() - startedAt;
+    console.log(`[stage-a] 성공 소요=${round(elapsed)}ms 예산=${STAGE_A_TIMEOUT_MS}ms 사용률=${((elapsed / STAGE_A_TIMEOUT_MS) * 100).toFixed(1)}%`);
+    console.log(
+      `[stage-a] 후보=${output.candidates.length}/${candidateLimit} 미분류=${output.unclassifiedShas.length} 판단불가=${output.unjudgedShas.length} ` +
+        `기여항목매칭=${output.candidates.filter((candidate) => candidate.source === "contribution_match").length}`
+    );
+    // 품질 검증용. SHA와 분류만 남기고 모델 원문은 출력하지 않는다.
+    for (const candidate of output.candidates) {
+      const detail = details.find(({ sha }) => sha === candidate.sha);
+      console.log(
+        `[stage-a] 후보 ${candidate.sha.slice(0, 7)} ${candidate.source} item=${candidate.contributionItem ?? "-"} ` +
+          `+${detail?.additions}/-${detail?.deletions} files=${detail?.changedFiles} | ${detail?.title}`
+      );
+    }
+    return { details, candidates: output.candidates, workUnits: stageAWorkUnits };
+  } catch (error) {
+    const elapsed = ms() - startedAt;
+    console.log(`[stage-a] 실패 소요=${round(elapsed)}ms kind=${(error as Error & { kind?: string }).kind ?? "unknown"} ${(error as Error).message}
+${describeLlmFailure(error)}`);
+    throw error;
+  }
+}
+
+/**
+ * Stage A를 건너뛰고 캐시한 상세를 그대로 후보로 써서 Stage B만 측정한다.
+ * Stage A 출력이 실행마다 흔들려(실측) Stage B 소요·품질을 반복 비교할 수 없기 때문이다.
+ */
+async function stageBInputWithoutStageA() {
+  const { included } = await loadCommits();
+  const targets = included.slice(0, numericOption("limit", effectiveMaxInputCommits));
+  const details = await fetchDetailsCached(targets);
+  // 커밋 하나하나를 후보로 두면 프로덕션과 다른 것을 잰다. 프로덕션 후보는 PR 묶음이다.
+  const { units, workUnits } = toStageAUnits(details);
+  const candidates: StageACandidate[] = units.map(({ representativeSha }) => ({
+    sha: representativeSha,
+    source: "automatic_recommendation",
+    contributionItem: null,
+  }));
+  console.log(`[stage-b] Stage A 생략, 캐시 상세 ${details.length}건에서 묶음 ${candidates.length}개를 후보로 사용`);
+  return { details, candidates, workUnits };
+}
+
+/**
+ * `buildStageBPayload`는 커밋 순서대로 patch 예산을 소비하므로 뒤쪽 후보가 굶을 수 있다.
+ * 후보별로 실제 배정된 patch 문자 수를 순서대로 남겨 선정이 예산 배분에 편향되는지 본다.
+ */
+function reportPatchBudgetShare(commits: readonly CommitDetail[], candidates: readonly StageACandidate[]) {
+  const payload = buildStageBPayload(commits, candidates);
+  const shares = payload.workUnits.flatMap((unit) => unit.commits).map((commit, index) => ({
+    index,
+    sha: commit.sha,
+    chars: commit.files.reduce((sum, file) => sum + (file.patch?.length ?? 0), 0),
+    starved: commit.files.length > 0 && commit.files.every((file) => file.patch === undefined),
+  }));
+  const funded = shares.filter(({ chars }) => chars > 0).length;
+  console.log(`[budget] 후보 ${shares.length}개 중 patch 배정받음=${funded} 완전히 굶음=${shares.filter(({ starved }) => starved).length}`);
+  console.log(
+    `[budget] 순서별 배정 문자: ${shares.map(({ index, chars }) => `${index}:${chars}`).join(" ")}`
+  );
+  return new Map(shares.map(({ sha, chars }) => [sha, chars]));
+}
+
+async function runStageB() {
+  const { details, candidates, workUnits } = rest.includes("--skip-stage-a")
+    ? await stageBInputWithoutStageA()
+    : await runStageA();
+  // 프로덕션은 후보 묶음을 대표 커밋 여럿으로 펼쳐서 Stage B에 넣는다(`candidate-client.ts`의
+  // `fetchStageBCandidatesFromApi`). 예전에는 여기서 묶음당 SHA 하나를 그대로 잘라 써서 조회
+  // 시간과 patch 몫을 운영 입력이 아닌 것에서 재고 있었다(Codex 리뷰 P2-3).
+  // 로컬 제공자로 측정할 때는 축소된 상한을 그대로 따라야 합니다. 상수를 직접 넘기면 컨텍스트를
+  // 넘는 입력을 보내고, Ollama가 프롬프트를 조용히 자른 뒤 모델이 보지 못한 파일을 인용해
+  // `unknown_file_path`로 끝납니다(2026-08-25 실측).
+  const expanded = expandCandidatesToCommits(candidates, workUnits, effectiveMaxInputCommits);
+  const commits = details.filter((detail) => expanded.some(({ sha }) => sha === detail.sha));
+
+  // 같은 PR에서 커밋 여러 개가 실제로 펼쳐졌는지 확인한다. 하나도 없으면 이 측정은 커밋 단위
+  // 입력과 구별되지 않으므로 운영 경로를 검증하지 못한다.
+  const commitsByPullRequest = new Map<number, string[]>();
+  for (const detail of commits) {
+    for (const pullRequest of detail.pullRequests) {
+      const bucket = commitsByPullRequest.get(pullRequest.number) ?? [];
+      bucket.push(detail.sha);
+      commitsByPullRequest.set(pullRequest.number, bucket);
+    }
+  }
+  const multiCommitUnits = [...commitsByPullRequest.entries()].filter(([, shas]) => shas.length > 1);
+  const uniqueShas = new Set(expanded.map(({ sha }) => sha)).size;
+
+  console.log(
+    `[stage-b] 후보 묶음=${candidates.length} 펼친 커밋=${expanded.length}/${effectiveMaxInputCommits} ` +
+      `SHA 중복=${expanded.length - uniqueShas} 상세=${commits.length}건`
+  );
+  console.log(
+    `[stage-b] PR 수=${commitsByPullRequest.size} 커밋 2개 이상 PR=${multiCommitUnits.length}` +
+      (multiCommitUnits.length === 0
+        ? "  경고: 펼쳐도 PR마다 커밋 1개뿐이다. 운영 입력을 검증하지 못한다"
+        : `  최대=${Math.max(...multiCommitUnits.map(([, shas]) => shas.length))}커밋`)
+  );
+  const patchShare = reportPatchBudgetShare(commits, expanded);
+
+  const startedAt = ms();
+  try {
+    console.log(`[stage-b] 모델=${effectiveStageBModel}`);
+    const output = await selectStageBCandidates(
+      commits,
+      expanded,
+      createStageBGenerate(stageBModelOption, (usage) => logUsage("stage-b", usage))
+    );
+    const elapsed = ms() - startedAt;
+    console.log(`[stage-b] 성공 소요=${round(elapsed)}ms 최종 후보=${output.candidates.length}`);
+    for (const candidate of output.candidates) {
+      const detail = details.find(({ sha }) => sha === candidate.sha);
+      console.log(
+        `[stage-b] 선정 ${candidate.sha.slice(0, 7)} related=${candidate.relatedShas.length} ` +
+          `citedFiles=${candidate.citedFilePaths.length} evidence=${candidate.evidence.length}자 ` +
+          `배정patch=${patchShare.get(candidate.sha) ?? 0}자 | ${detail?.title}`
+      );
+      console.log(`[stage-b]   PR=${detail?.pullRequests.map(({ number }) => `#${number}`).join(",") || "없음"}`);
+      for (const relatedSha of candidate.relatedShas) {
+        const related = details.find(({ sha }) => sha === relatedSha);
+        console.log(`[stage-b]   related ${relatedSha.slice(0, 7)} PR=${related?.pullRequests.map(({ number }) => `#${number}`).join(",") || "없음"} | ${related?.title}`);
+      }
+    }
+    if (output.insufficientCandidatesReason !== null) {
+      console.log(`[stage-b] 후보 부족 사유 있음(길이=${output.insufficientCandidatesReason.length}자)`);
+    }
+  } catch (error) {
+    const elapsed = ms() - startedAt;
+    console.log(`[stage-b] 실패 소요=${round(elapsed)}ms kind=${(error as Error & { kind?: string }).kind ?? "unknown"} ${(error as Error).message}
+${describeLlmFailure(error)}`);
+    throw error;
+  }
+}
+
+/**
+ * 단일 커밋 상세를 조회해 changedFiles 상한 왜곡을 직접 관측한다.
+ * 파일이 3000개를 넘는 커밋은 측정 대상 Repository에 없어 공개 대형 커밋으로 기전을 확인한다.
+ */
+async function runCommit() {
+  const sha = rest.find((option) => option.startsWith("--sha="))?.slice("--sha=".length);
+  if (sha === undefined) {
+    console.log("--sha=<40자 SHA> 가 필요합니다.");
+    return;
+  }
+  const before = await coreRateLimit();
+  const startedAt = ms();
+  const detail = await fetchCommitDetail(auth, {
+    sha,
+    title: "",
+    author: "",
+    date: "",
+    parentCount: 0,
+  });
+  const elapsed = ms() - startedAt;
+  const after = await coreRateLimit();
+  const patchChars = detail.files.reduce((sum, file) => sum + (file.patch?.length ?? 0), 0);
+  console.log(`[commit] ${sha.slice(0, 8)} 조회 소요=${round(elapsed)}ms 요청 소비=${consumed(before, after)}`);
+  console.log(
+    `[commit] changedFiles=${detail.changedFiles} additions=${detail.additions} deletions=${detail.deletions} ` +
+      `patch 총 문자=${patchChars}`
+  );
+  console.log(
+    `[commit] 3000 상한 도달=${detail.changedFiles >= 3000} ` +
+      `(도달 시 changedFiles는 포화하지만 additions/deletions는 실제 총량을 유지해 신호가 불일치한다)`
+  );
+}
+
+const phases: Record<string, () => Promise<unknown>> = {
+  commits: runCommits,
+  commit: runCommit,
+  details: runDetails,
+  parallel: runParallel,
+  "stage-a": runStageA,
+  "stage-b": runStageB,
+};
+
+const run = phases[phase];
+if (run === undefined) {
+  console.log(`알 수 없는 phase: ${phase}. 사용 가능: ${Object.keys(phases).join(", ")}`);
+  process.exit(1);
+}
+run().catch((error: unknown) => {
+  console.log(`측정 중단: ${(error as Error).message}`);
+  process.exitCode = 1;
+});

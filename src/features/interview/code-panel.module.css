@@ -1,0 +1,99 @@
+/*
+ * 인터뷰 워크스페이스의 왼쪽 코드 패널입니다. 구조와 타이포그래피는 디자인 원본
+ * (`Chat Interface Design/src/App.tsx`의 `CodePanel`·`FileRow`·`DiffLineRow`)을 따르고, 색과
+ * 라운드는 `globals.css` 토큰만 씁니다.
+ *
+ * diff 줄의 추가·삭제는 디자인 원본과 같은 초록·빨강으로 가릅니다. 이슈 #98은 semantic 색을
+ * Non-goal로 두고 배경 대비와 기호와 왼쪽 표시선만 썼지만, 실물을 본 뒤 디자인 원본대로
+ * 넣기로 했습니다. 색만으로 가르지는 않습니다. `+`/`−` 기호와 줄 번호가 그대로 남아 색을
+ * 구분하지 못해도 추가와 삭제를 읽을 수 있습니다. 값은 `globals.css`의 diff 토큰입니다.
+ */
+
+/*
+ * `position: relative`는 스크린리더 전용 문구(`.visuallyHidden` 계열) 때문입니다. 그 요소들은
+ * `position: absolute`인데 위치 잡을 조상이 없으면 초기 컨테이닝 블록을 기준으로 놓입니다. 그러면
+ * 스크롤 영역 안에 있어도 잘리지 않고, 정적 위치가 아래로 갈수록 문서 자체가 길어져 화면 아래에
+ * 빈 스크롤 영역이 생깁니다(2026-09-15 실측: body.scrollHeight 422, html.scrollHeight 1036).
+ */
+.panel { position: relative; display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; border-right: 1px solid var(--color-border); background: var(--color-card); }
+
+.panelHeader { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; border-bottom: 1px solid var(--color-border); padding: 8px 12px; }
+.panelHeading { margin: 0; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); font-weight: 400; letter-spacing: var(--label-tracking); text-transform: uppercase; }
+
+.viewModes { display: flex; border: 1px solid var(--color-border); border-radius: var(--radius); overflow: hidden; }
+.viewMode { border: 0; background: none; color: var(--color-muted-foreground); cursor: pointer; font-family: var(--font-mono); font-size: var(--label-size-xs); letter-spacing: var(--label-tracking-wide); text-transform: uppercase; padding: 3px 8px; }
+.viewMode[aria-pressed="true"] { background: var(--color-primary); color: var(--color-primary-foreground); }
+.viewMode:disabled { color: var(--color-scrollbar); cursor: not-allowed; }
+
+.filesSection { display: flex; flex-direction: column; flex: 0 0 38%; min-height: 0; overflow: hidden; border-bottom: 1px solid var(--color-border); }
+.filesCollapsed { flex: 0 0 auto; }
+
+.filesHeader { display: flex; align-items: center; gap: 6px; flex-shrink: 0; background: var(--color-muted); padding: 6px 12px; }
+.sectionLabel { margin: 0; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); letter-spacing: var(--label-tracking); text-transform: uppercase; }
+.sectionCount { color: var(--color-scrollbar-hover); font-family: var(--font-mono); font-size: var(--label-size-xs); }
+.collapsedFilename { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); }
+.collapseButton { margin-left: auto; border: 0; border-radius: var(--radius); background: none; color: var(--color-muted-foreground); cursor: pointer; font-family: var(--font-mono); font-size: var(--label-size-xs); letter-spacing: var(--label-tracking-wide); padding: 2px 6px; }
+.collapseButton:hover { background: var(--color-accent); color: var(--color-foreground); }
+
+.fileTree { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0; }
+.directory + .directory { margin-top: 4px; }
+.directoryLabel { margin: 0; padding: 2px 12px; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fileList { margin: 0; padding: 0; list-style: none; }
+
+.fileRow { display: flex; align-items: center; gap: 6px; width: 100%; border: 0; background: none; cursor: pointer; padding: 3px 12px 3px 20px; text-align: left; }
+.fileRow:hover { background: var(--color-muted); }
+.fileRow[aria-current="true"] { background: var(--color-accent); }
+.fileStatus { flex-shrink: 0; width: 10px; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); }
+.fileRow[aria-current="true"] .fileStatus { color: var(--color-foreground); }
+.filename { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-md); }
+.fileRow:hover .filename { color: var(--color-foreground); }
+.fileRow[aria-current="true"] .filename { color: var(--color-foreground); font-weight: 500; }
+.fileStat { flex-shrink: 0; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); }
+/* 파일 행과 diff 헤더의 +/− 집계입니다. diff 줄과 같은 초록·빨강을 씁니다. */
+.fileStat[data-kind="add"], .diffStats [data-kind="add"] { color: var(--color-diff-add); }
+.fileStat[data-kind="del"], .diffStats [data-kind="del"] { color: var(--color-diff-del); }
+
+.diffSection { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden; }
+.diffHeader { display: grid; gap: 4px; flex-shrink: 0; border-bottom: 1px solid var(--color-border); padding: 8px 12px; }
+.diffPath { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-foreground); font-family: var(--font-mono); font-size: var(--label-size-sm); font-weight: 500; }
+.commitSelector { display: flex; align-items: center; gap: 6px; }
+.commitSelector code { color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); }
+.commitStep { border: 0; background: none; color: var(--color-muted-foreground); cursor: pointer; font-family: var(--font-mono); font-size: var(--label-size-sm); line-height: 1; padding: 2px 4px; }
+.commitStep:hover:not(:disabled) { color: var(--color-foreground); }
+.commitStep:disabled { color: var(--color-scrollbar); cursor: not-allowed; }
+.commitTitle { margin: 0; color: var(--color-muted-foreground); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+.diffStats { display: flex; gap: 8px; margin: 0; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); }
+
+.diffBody { flex: 1; min-height: 0; overflow: auto; padding: 2px 0; }
+.diffLine { display: flex; align-items: flex-start; border-left: 2px solid transparent; min-width: 0; }
+.diffLine[data-type="add"] { background: var(--color-diff-add-surface); }
+.diffLine[data-type="del"] { background: var(--color-diff-del-surface); }
+.diffLine[data-type="add"] .diffMark { color: var(--color-diff-add); }
+.diffLine[data-type="del"] .diffMark { color: var(--color-diff-del); }
+.diffLineNumber { flex-shrink: 0; width: 34px; border-right: 1px solid var(--color-border); padding: 0 6px; text-align: right; user-select: none; color: var(--color-scrollbar); font-family: var(--font-mono); font-size: var(--label-size-xs); line-height: 20px; }
+.diffMark { flex-shrink: 0; width: 14px; text-align: center; user-select: none; color: var(--color-muted-foreground); font-family: var(--font-mono); font-size: var(--label-size-xs); line-height: 20px; }
+.diffContent { flex: 1; min-width: 0; padding: 0 6px; white-space: pre; color: var(--color-foreground); font-family: var(--font-mono); font-size: var(--label-size-md); line-height: 20px; }
+/* 취소선은 색이 없던 때의 대체 표시였습니다. 디자인 원본에는 없어 색을 넣으며 함께 걷었습니다. */
+.diffLine[data-type="del"] .diffContent { color: var(--color-muted-foreground); }
+.diffMeta { display: flex; align-items: flex-start; background: var(--color-muted); }
+.diffMeta .diffContent { color: var(--color-muted-foreground); }
+
+.diffEmpty { display: grid; gap: 6px; padding: 12px; }
+.diffEmpty p:last-child { margin: 0; color: var(--color-muted-foreground); font-size: 12px; line-height: 1.6; }
+.diffNotice, .panelNotice { flex-shrink: 0; margin: 0; border-top: 1px solid var(--color-border); background: var(--color-muted); color: var(--color-muted-foreground); font-size: 11px; line-height: 1.6; padding: 8px 12px; }
+
+.fileRow:focus-visible, .collapseButton:focus-visible, .viewMode:focus-visible, .commitStep:focus-visible { outline: 2px solid var(--color-foreground); outline-offset: -2px; }
+
+/*
+ * 시각적으로만 숨깁니다. `repository-analysis.module.css`·`experience-candidate-detail.module.css`와
+ * 같은 선언을 그대로 복제합니다. 모듈이 자기 완결적인 쪽을 파일 간 셀렉터 공유보다 앞에 둡니다.
+ */
+.visuallyHidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+/*
+ * mono 영역 예외입니다. `globals.css`의 body가 한국어 자연어에 `word-break: keep-all`을 걸어
+ * 두므로, Repository 원본값과 코드를 그리는 아래 자리에서는 되돌립니다. 이 값들은 어절이 없는
+ * 경로·SHA·코드라 어절 단위 금지가 뜻을 갖지 않고, 긴 토큰이 칸을 넘길 때 끊어야 합니다.
+ */
+.collapsedFilename, .directoryLabel, .filename, .diffPath, .commitSelector code,
+.diffLineNumber, .diffMark, .diffContent { word-break: normal; overflow-wrap: normal; }
