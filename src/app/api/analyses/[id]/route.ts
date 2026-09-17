@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import {
   savedInterviewErrorResponse,
-  toSavedInterviewError,
+  savedInterviewErrorResponseFor,
 } from "@/features/saved-interviews/errors";
 import { toStoredAnalysisPayload } from "@/features/saved-interviews/payload";
 import { requireUserId } from "@/features/saved-interviews/route-request";
@@ -35,8 +35,7 @@ export async function handleGetAnalysis(
     if (payload === null) return savedInterviewErrorResponse("not_found", "저장된 분석을 읽을 수 없습니다.");
     return Response.json({ analysis: payload });
   } catch (error) {
-    const mapped = toSavedInterviewError(error);
-    return savedInterviewErrorResponse(mapped.kind, mapped.message);
+    return savedInterviewErrorResponseFor(error);
   }
 }
 

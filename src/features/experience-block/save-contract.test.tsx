@@ -3,7 +3,7 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { NextRequest } from "next/server";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { handleExperienceBlockUpdate } from "@/app/api/interview/experience-block/route";
 import { evidenceSnapshotFixture } from "@/features/interview/question-fixture";
 import { encodeSseEvent } from "@/features/interview/sse";
@@ -15,6 +15,18 @@ import {
 import { createInMemoryStore } from "@/lib/db/in-memory-store";
 import type { SiftStore } from "@/lib/db/store";
 import { useExperienceInterview } from "./use-experience-interview";
+
+/**
+ * 서버 SDK를 가립니다. 이 파일은 훅과 route를 한자리에서 돌리는 jsdom 테스트이고, route가
+ * `@/lib/sentry/server`를 거쳐 `@sentry/nextjs`를 싣습니다. jsdom에서 서버 빌드를 로드하면
+ * `@sentry/server-utils`의 번들러 플러그인이 `TypeError: The URL must be of scheme file`로 깨집니다.
+ * 이 테스트가 보는 것은 저장 계약이라 실제 전송은 필요 없습니다.
+ */
+vi.mock("@sentry/nextjs", () => ({
+  init: () => undefined,
+  captureException: () => undefined,
+  captureRequestError: () => undefined,
+}));
 
 /**
  * 훅이 만든 요청을 실제 route가 그대로 받아 저장까지 가는지 봅니다(이슈 #115).

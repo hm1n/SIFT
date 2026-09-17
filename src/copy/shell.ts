@@ -38,3 +38,22 @@ export const APP_SHELL_COPY = {
   noInterviews: NO_INTERVIEWS,
   findNewExperience: "새 경험 찾기",
 } as const;
+
+/**
+ * 화면을 그리다 잡히지 않은 오류가 난 경우입니다. `src/app/global-error.tsx`가 씁니다(이슈 #136).
+ *
+ * 무엇이 잘못됐는지가 아니라 무엇을 하면 되는지를 씁니다. 여기 오는 사용자는 화면을 전부 잃은
+ * 상태라 원인 설명으로 할 수 있는 일이 없습니다. `NO_REPOSITORY_SELECTED`와 `BLOCK_EMPTY_PENDING`이
+ * 같은 기준을 씁니다.
+ *
+ * 이 화면은 루트 레이아웃까지 대체하므로 헤더와 사이드바가 없습니다. 그래서 돌아갈 자리를 문장으로
+ * 알려 줍니다.
+ */
+export const GLOBAL_ERROR_COPY = {
+  /** mono 상태 코드입니다. 번역하지 않습니다(이슈 #128 경계표). */
+  code: "ERROR",
+  label: "화면을 그리지 못했습니다.",
+  sub: "다시 시도해도 같으면 처음 화면으로 돌아가 주세요. 저장된 인터뷰는 그대로 남아 있습니다.",
+  retry: "다시 시도",
+  home: "처음 화면으로",
+} as const;

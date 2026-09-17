@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { errorResponse } from "@/lib/github/api-contract";
 import { fetchRepositoryMetadata } from "@/lib/github/contributions";
 import { readGitHubRouteRequest } from "@/lib/github/route-request";
+import { reportServerError } from "@/lib/sentry/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -11,6 +12,6 @@ export async function POST(request: NextRequest): Promise<Response> {
     const { auth } = await readGitHubRouteRequest(request);
     return Response.json(await fetchRepositoryMetadata(auth));
   } catch (error) {
-    return errorResponse(error);
+    return reportServerError(error, errorResponse(error));
   }
 }

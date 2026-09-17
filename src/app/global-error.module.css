@@ -1,0 +1,9 @@
+/*
+ * `global-error`는 루트 레이아웃을 대체하므로 헤더가 없습니다. 돌아갈 자리를 가리키는 링크를 상태
+ * 화면 아래에 가운데로 둡니다.
+ */
+.home {
+  display: flex;
+  justify-content: center;
+  padding-bottom: 48px;
+}

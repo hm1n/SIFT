@@ -278,7 +278,7 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "← Repository 변경" }));
 
-    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "인터뷰 계속하기" }));
@@ -329,7 +329,9 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
     await screen.findByText("마지막 답변이 저장되지 않았습니다.");
 
     fireEvent.click(screen.getByRole("button", { name: "← Repository 변경" }));
-    fireEvent.click(screen.getByRole("button", { name: "인터뷰 계속하기" }));
+    // 확인 대화는 클릭 다음 렌더에 나타납니다. 동기로 잡으면 전체 스위트의 부하에서 간헐적으로
+    // 놓칩니다(sentry backlog 19번).
+    fireEvent.click(await screen.findByRole("button", { name: "인터뷰 계속하기" }));
 
     const names = trackEvent.mock.calls.map(([event]) => (event as { name: string }).name);
     expect(names).toContain("interview_leave_canceled");
@@ -550,7 +552,7 @@ describe("RepositoryFlow 이어가기", () => {
     fireEvent.click(screen.getByRole("button", { name: "전송" }));
     fireEvent.click(await screen.findByRole("button", { name: "최신 내용 불러오기" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "인터뷰 계속하기" }));
+    fireEvent.click(await screen.findByRole("button", { name: "인터뷰 계속하기" }));
 
     expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
     expect(calls.filter((url) => url.includes(`/api/interviews/${INTERVIEW_ID}`))).toHaveLength(detailCallsBefore);
