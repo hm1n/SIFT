@@ -16,6 +16,7 @@ import { getGitHubTokenFromRequest } from "@/lib/github/auth-session";
 import { fetchCommitDetailBySha } from "@/lib/github/contributions";
 import { GitHubFetchError } from "@/lib/github/errors";
 import { readGitHubRouteRequest } from "@/lib/github/route-request";
+import { reportServerError } from "@/lib/sentry/server";
 import type { CommitDetail, GitHubAuth } from "@/lib/github/types";
 
 export const runtime = "nodejs";
@@ -143,13 +144,18 @@ export async function handleStageB(
         })),
     });
   } catch (error) {
-    if (error instanceof ExperienceCandidateOutputError) return llmErrorResponse(error);
-    if (error instanceof GitHubRouteRequestError || error instanceof GitHubFetchError) {
-      return githubErrorResponse(error);
+    if (error instanceof ExperienceCandidateOutputError) {
+      return reportServerError(error, llmErrorResponse(error));
     }
-    return Response.json(
-      { error: { kind: "server_error", message: CANDIDATE_ROUTE_COPY.stageBFailed } },
-      { status: 500 }
+    if (error instanceof GitHubRouteRequestError || error instanceof GitHubFetchError) {
+      return reportServerError(error, githubErrorResponse(error));
+    }
+    return reportServerError(
+      error,
+      Response.json(
+        { error: { kind: "server_error", message: CANDIDATE_ROUTE_COPY.stageBFailed } },
+        { status: 500 }
+      )
     );
   }
 }

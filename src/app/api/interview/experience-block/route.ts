@@ -39,6 +39,7 @@ import { turnsToSave } from "@/features/saved-interviews/turn";
 import { getGitHubSessionFromRequest } from "@/lib/github/auth-session";
 import { GitHubFetchError } from "@/lib/github/errors";
 import { neonStore } from "@/lib/db/neon-store";
+import { reportServerError } from "@/lib/sentry/server";
 import type { SiftStore } from "@/lib/db/store";
 
 export const runtime = "nodejs";
@@ -52,8 +53,21 @@ export const maxDuration = 60;
  * `ExperienceBlockState`를 돌려주는 것까지만 합니다. 요청 ID·상태 버전 충돌 처리는 무상태 서버가
  * 보장할 수 없어(설계 3-2절) 클라이언트 훅의 몫으로 남겨 둡니다.
  */
-function errorResponse(kind: ExperienceBlockErrorKind, message: string): Response {
-  return Response.json({ error: { kind, message } }, { status: experienceBlockErrorStatus(kind) });
+/**
+ * `cause`를 받아 5xx일 때만 Sentry로 보냅니다(이슈 #136).
+ *
+ * 전송을 이 함수 안에 두는 이유입니다. 이 라우트는 오류 응답을 열 자리 남짓에서 만들고 그중 몇 개가
+ * 5xx입니다. 호출부마다 전송을 얹으면 새 오류 분류나 새 거절 지점이 생길 때 빠뜨릴 자리가 남습니다.
+ * 판정은 `experienceBlockErrorStatus`가 이미 내리고 있으므로 전송도 같은 자리에서 합니다.
+ *
+ * 4xx 자리는 `cause`를 넘기지 않습니다. status가 500 미만이면 `reportServerError`가 전송하지 않으므로
+ * 값이 무엇이든 쓰이지 않습니다. 5xx를 내는 자리만 원본 오류를 넘깁니다.
+ */
+function errorResponse(kind: ExperienceBlockErrorKind, message: string, cause?: unknown): Response {
+  return reportServerError(
+    cause,
+    Response.json({ error: { kind, message } }, { status: experienceBlockErrorStatus(kind) })
+  );
 }
 
 export type GenerateBlockUpdate = (
@@ -139,7 +153,7 @@ export async function handleExperienceBlockUpdate(
     }
     // 두 갈래를 남기는 이유는 `stream/route.ts`와 같습니다. 세션 쿠키가 있는데 암호화 키 설정이
     // 없거나 32바이트가 아니면 `server_error`가 그대로 올라옵니다.
-    return errorResponse("server_error", "서버 설정 문제로 블록 갱신을 시작하지 못했습니다.");
+    return errorResponse("server_error", "서버 설정 문제로 블록 갱신을 시작하지 못했습니다.", error);
   }
 
   const declaredLength = Number(request.headers.get("content-length"));
@@ -229,14 +243,29 @@ export async function handleExperienceBlockUpdate(
     );
   } catch (error) {
     const mapped = mapInterviewLlmError(error, LLM_ERROR_CONTEXT.blockUpdate);
-    return errorResponse(mapped.kind, mapped.message);
+    return errorResponse(mapped.kind, mapped.message, mapped);
   }
 
   const result = applyBlockUpdate(state, modelOutput, { snapshot, turnId: answerTurnId, targetBlock });
   if (!result.ok) {
+    /**
+     * 잡은 예외가 아니라 검증 결과이므로 던져진 오류가 없습니다. 502로 나가는 자리라 오류를 만들어
+     * 넘깁니다.
+     *
+     * **Sentry로 가는 오류에는 분류만 넣습니다.** `detail`에는 모델이 생성한 문장이 섞입니다
+     * (`reducer.ts`의 `no_claim_reference`가 `sentence.text`를 자릅니다). 그 문장은 사용자의 답변을
+     * 모델이 다시 쓴 것이라, 그대로 보내면 이슈 #136의 제약인 "사용자 답변 본문이 Sentry 이벤트에
+     * 실리지 않아야 합니다"를 어깁니다. Sentry는 `message`와 `cause.message`를 싣고 비표준 속성은
+     * 싣지 않는 것을 2026-09-16에 실측했습니다(PR #138 리뷰 1라운드).
+     *
+     * 사용자에게 가는 응답은 그대로 둡니다. 어느 문장이 왜 걸렸는지는 화면에서 필요합니다.
+     */
+    const detail = result.errors.map((e) => `${e.kind}(${e.detail})`).join(", ");
+    const kinds = result.errors.map(({ kind }) => kind).join(", ");
     return errorResponse(
       "block_update_rejected",
-      `모델 출력이 검증을 통과하지 못했습니다: ${result.errors.map((e) => `${e.kind}(${e.detail})`).join(", ")}`
+      `모델 출력이 검증을 통과하지 못했습니다: ${detail}`,
+      new Error(`block_update_rejected: ${kinds}`)
     );
   }
 

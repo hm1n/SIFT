@@ -278,7 +278,7 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "← Repository 변경" }));
 
-    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "인터뷰 계속하기" }));
@@ -468,7 +468,7 @@ describe("RepositoryFlow 이어가기", () => {
     fireEvent.click(screen.getByRole("button", { name: "전송" }));
     fireEvent.click(await screen.findByRole("button", { name: "최신 내용 불러오기" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "인터뷰 계속하기" }));
+    fireEvent.click(await screen.findByRole("button", { name: "인터뷰 계속하기" }));
 
     expect(screen.getByRole("region", { name: "Code / Evidence" })).toBeInTheDocument();
     expect(calls.filter((url) => url.includes(`/api/interviews/${INTERVIEW_ID}`))).toHaveLength(detailCallsBefore);

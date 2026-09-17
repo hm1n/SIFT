@@ -4,6 +4,7 @@ import { fetchCommitDetailsBatch, withoutPatch } from "@/lib/github/contribution
 import { RepositoryContributionFetchError } from "@/lib/github/errors";
 import { readGitHubRouteRequest } from "@/lib/github/route-request";
 import type { CommitSummary } from "@/lib/github/types";
+import { reportServerError } from "@/lib/sentry/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -26,11 +27,11 @@ export async function POST(request: NextRequest): Promise<Response> {
     return Response.json({ commits: commits.map(withoutPatch), completed: commits.length, total });
   } catch (error) {
     if (error instanceof RepositoryContributionFetchError && error.partialCommits) {
-      return errorResponse(
+      return reportServerError(error, errorResponse(
         new RepositoryContributionFetchError(error.kind, error.message, error.partialCommits.map(withoutPatch), { cause: error.cause }),
         total
-      );
+      ));
     }
-    return errorResponse(error, total);
+    return reportServerError(error, errorResponse(error, total));
   }
 }
