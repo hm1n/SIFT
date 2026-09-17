@@ -29,12 +29,12 @@ vi.mock("next/navigation", () => ({ useRouter: () => routerMock }));
 /** 계측 전송부를 대체합니다. 무엇을 보내는지만 보고 실제 gtag는 부르지 않습니다. */
 const trackEvent = vi.fn();
 const setAnalyticsUser = vi.fn();
-const clearAnalysisFlow = vi.fn();
+const clearFlow = vi.fn();
 vi.mock("@/features/analytics/events", () => ({
   trackEvent: (...args: unknown[]) => trackEvent(...args),
   setAnalyticsUser: (...args: unknown[]) => setAnalyticsUser(...args),
-  startAnalysisFlow: vi.fn(),
-  clearAnalysisFlow: (...args: unknown[]) => clearAnalysisFlow(...args),
+  startFlow: vi.fn(),
+  clearFlow: (...args: unknown[]) => clearFlow(...args),
 }));
 
 /** layout이 감싸는 provider를 함께 둡니다. 로그인 화면은 provider 밖에서 그릴 수 없습니다. */
@@ -53,7 +53,7 @@ beforeEach(() => {
   sessionCookieValue = "not-a-real-session";
   trackEvent.mockClear();
   setAnalyticsUser.mockClear();
-  clearAnalysisFlow.mockClear();
+  clearFlow.mockClear();
   routerMock.replace.mockClear();
   vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
 });
@@ -180,13 +180,13 @@ describe("Home 계측", () => {
    */
   it("세션이 없으면 분석 묶음도 함께 비운다", async () => {
     render(await renderHome());
-    expect(clearAnalysisFlow).toHaveBeenCalled();
+    expect(clearFlow).toHaveBeenCalled();
   });
 
   it("세션이 있으면 분석 묶음을 비우지 않는다", async () => {
     cookieNames.add(GITHUB_SESSION_COOKIE);
     render(await renderHome());
-    expect(clearAnalysisFlow).not.toHaveBeenCalled();
+    expect(clearFlow).not.toHaveBeenCalled();
   });
 
   it("세션 쿠키를 HMAC으로 바꿔 user_id로 내려보낸다", async () => {

@@ -5,6 +5,14 @@ import type {
   AnalysisStage,
   RecoveryAction,
 } from "@/features/repository-analysis/repository-analysis";
+import type { ExperienceInterviewEndReason } from "@/features/experience-block/use-experience-interview";
+import type {
+  BlockElement,
+  BlockKind,
+  ProgressReason,
+  TargetResponse,
+} from "@/features/experience-block/types";
+import type { InterviewStreamErrorKind } from "@/features/interview/errors";
 
 /**
  * GA4로 나가는 퍼널 이벤트의 어휘입니다. 전송은 `lib/analytics/ga.ts`가 하고 여기는 무엇을 어떤
@@ -15,9 +23,11 @@ import type {
  * 계측 전용 문자열을 따로 지으면 분류가 늘거나 바뀔 때 화면 안내와 계측이 조용히 갈라지고, 타입에서
  * 유도하면 컴파일이 누락을 잡습니다(이슈 #125 Approach).
  *
- * 이슈 #125는 1차 범위인 퍼널 이벤트 12종 가운데 10종을 다룹니다. `candidate_confirmed`와
- * `interview_started`는 화면 구조에 직접 붙어 있어 화면 개편 확정 뒤로 미뤘습니다. 경위는
- * `llm-wiki/wiki/2026-09-15-GA4-계측-후속-backlog.md` 2번에 있습니다.
+ * 이슈 #125가 1차 퍼널 10종을 담고 이슈 #126이 인터뷰 안쪽을 잇습니다. `candidate_confirmed`와
+ * 후보 탐색 2종은 아직 없습니다. 셋 다 후보 화면의 구조에 직접 붙는데 그 화면이 master-detail로
+ * 바뀌면서 첫 후보가 자동으로 선택되어, "상세를 열었다"가 사용자의 액션이 아니게 되었습니다.
+ * 화면 개편이 확정된 뒤에 정의부터 다시 잡습니다
+ * (`llm-wiki/wiki/2026-09-15-GA4-계측-후속-backlog.md` 2번).
  */
 
 /** 재시도가 후보 생성부터인지 분석 전체부터인지입니다. 화면의 재시도 라벨과 같은 근거로 갈립니다. */
@@ -46,7 +56,58 @@ export type AnalyticsEvent =
       recovery: RecoveryAction;
       stage?: AnalysisStage;
     }
-  | { name: "analysis_retried"; error_kind: AnalysisError["kind"]; retry_scope: RetryScope };
+  | { name: "analysis_retried"; error_kind: AnalysisError["kind"]; retry_scope: RetryScope }
+  /**
+   * 대화가 열린 순간입니다. `turn`은 그 시점까지 확정된 턴 수로, 새 인터뷰는 0이고 이어가기는
+   * 저장된 턴 수입니다.
+   *
+   * 어느 경로로 왔는지는 파라미터로 싣지 않습니다. `entry_path`가 공통 파라미터라 이 이벤트에도
+   * 그대로 붙습니다(`repo_visibility`를 `analysis_requested`에 싣지 않는 것과 같은 이유).
+   */
+  | { name: "interview_started"; turn: number }
+  /**
+   * 대화가 끝난 자리입니다. 셋을 가려 세면 나가려다 돌아온 비율과, 그만둔 시점의 성과가 함께
+   * 보입니다.
+   *
+   * `filled_blocks`는 그 시점에 문장이 들어 있는 경험 블록 수입니다. 채운 뒤에 떠났다면 목적을
+   * 이루고 나간 것이고 비어 있다면 인터뷰가 실패한 것이라, 이 값이 없으면 이탈 건수를 해석할 수
+   * 없습니다(이슈 #126 Why). 화면의 `PAAR n/4`와 같은 함수를 봅니다.
+   */
+  | { name: "interview_completed"; end_reason: ExperienceInterviewEndReason; turn: number; filled_blocks: number }
+  | { name: "interview_abandoned"; turn: number; filled_blocks: number }
+  | { name: "interview_leave_canceled"; turn: number; filled_blocks: number }
+  /**
+   * 질문의 첫 조각이 도착한 순간입니다. `ttft_ms`는 요청을 보낸 시점부터 그 조각까지입니다.
+   *
+   * 질문이 다 도착한 시점이 아니라 첫 조각으로 잽니다. 사용자가 읽기 시작할 수 있는 시점이 거기고,
+   * 답변 포기와 관계있는지 보려는 것이 이 값의 용도입니다(이슈 #126 Goal).
+   */
+  | { name: "question_shown"; turn: number; block: BlockKind; element: BlockElement; ttft_ms: number }
+  /**
+   * 답변을 제출한 순간입니다. 답변 텍스트는 보내지 않습니다(이슈 #126 Constraint). 얼마나 성의
+   * 있게 답했는지의 대략적 분포만 필요하므로 길이를 버킷으로 바꿔 싣습니다.
+   *
+   * `think_time_ms`는 질문의 첫 조각이 도착한 시점부터 잽니다. 입력을 시작한 시점부터 재면 질문을
+   * 읽고 망설인 시간이 빠져, 질문이 답하기 어려운지를 판단할 수 없습니다(이슈 #126 Approach).
+   * 첫 조각 시점을 모르는 경우(이어가기 직후의 보충 답변처럼)에는 싣지 않습니다.
+   */
+  | { name: "answer_submitted"; turn: number; answer_length_bucket: AnswerLengthBucket; think_time_ms?: number }
+  /**
+   * 답변 하나가 블록에 반영된 결과입니다. 블록 문장은 보내지 않고 분류만 보냅니다.
+   *
+   * `response`는 이번 질문 하나에 대한 반응이고 `evaluation`은 그 블록의 누적 진행 사유입니다. 둘을
+   * 함께 싣습니다. 블록이 충분한지는 `sufficient` 하나로 판단하지 않는다는 것이 이 도메인의 결정이라
+   * (`ProgressReason`), 사유를 빼면 왜 더 묻지 않았는지가 사라집니다.
+   */
+  | {
+      name: "block_progressed";
+      block: BlockKind;
+      element: BlockElement;
+      response: TargetResponse;
+      evaluation?: ProgressReason;
+    }
+  /** 질문 스트림이 실패한 순간입니다. 오류 분류는 화면 안내가 쓰는 것과 같은 유니온입니다. */
+  | { name: "interview_stream_failed"; turn: number; error_kind: InterviewStreamErrorKind };
 
 /**
  * 이벤트 하나를 보냅니다. 화면 컴포넌트는 이 함수와 아래 세터만 부르고 `window.gtag`를 직접 부르지
@@ -85,8 +146,18 @@ export function setAnalyticsUser(userId: string | null): void {
   safelySetGaParams({ user_id: userId });
 }
 
-/** 분석 공통 파라미터를 실제로 세운 적이 있는지입니다. `userIdApplied`와 같은 이유로 필요합니다. */
+/** 흐름 공통 파라미터를 실제로 세운 적이 있는지입니다. `userIdApplied`와 같은 이유로 필요합니다. */
 let flowApplied = false;
+
+/**
+ * 저장소 문맥(`repo_visibility`, `repo_language`)을 세운 적이 있는지입니다. `flowApplied`와 따로
+ * 둡니다. 저장된 인터뷰를 잇는 흐름은 흐름을 세우면서도 저장소 문맥은 세우지 않기 때문입니다.
+ *
+ * 로그인하자마자 저장된 인터뷰를 이어가면 분석을 한 번도 하지 않은 채 흐름이 시작됩니다. 그때 두
+ * 값을 한 가드로 묶어 두면 세운 적 없는 저장소 문맥을 null로 지우게 되고, gtag가 그 자리를 빈
+ * 문자열로 직렬화해 이후 모든 이벤트에 실어 보냅니다.
+ */
+let repoContextApplied = false;
 
 function newFlowId(): string | null {
   try {
@@ -97,14 +168,20 @@ function newFlowId(): string | null {
 }
 
 /**
- * 분석 한 번을 묶는 공통 파라미터입니다. 분석을 시작할 때 세우고 저장소를 바꾸면 비웁니다.
+ * 흐름 하나를 묶는 공통 파라미터입니다. 흐름을 시작할 때 세우고 Repository 선택으로 돌아가거나
+ * 로그아웃하면 비웁니다.
+ *
+ * 흐름은 두 갈래입니다. 분석을 돌려 후보를 고르는 갈래와 저장된 인터뷰를 이어가는 갈래이고,
+ * `entry_path`가 둘을 가릅니다. 저장 경로가 생기기 전에는 앞 갈래뿐이라 이 함수 이름도
+ * `startAnalysisFlow`였습니다.
  *
  * `repo_visibility`와 `repo_language`를 `analysis_requested`의 파라미터로 따로 싣지 않고 여기서
  * 세웁니다. 공통 파라미터는 이후 모든 이벤트에 붙으므로 `analysis_requested`에도 그대로 실리고,
  * 뒤따르는 분석 이벤트까지 같은 값을 갖게 됩니다.
  *
- * 발급 시점을 저장소를 고른 순간이 아니라 분석을 시작하는 순간으로 둡니다. "분석 한 번을 묶는
- * 값"이라는 정의에 맞고, 화면 순서가 바뀌어도 분석 시작이라는 액션은 남기 때문입니다.
+ * 발급 시점을 저장소를 고른 순간이 아니라 분석을 시작하는 순간으로 둡니다. "한 번의 흐름을 묶는
+ * 값"이라는 정의에 맞고, 화면 순서가 바뀌어도 분석 시작이라는 액션은 남기 때문입니다. 이어가기는
+ * 저장된 인터뷰를 여는 순간입니다.
  *
  * `flow_id`를 부르는 쪽에서 받지 않고 여기서 만듭니다. `crypto.randomUUID`는 보안 컨텍스트
  * (HTTPS와 localhost)에만 있어서, LAN 주소로 띄운 개발 서버처럼 없는 곳에서는 부르는 순간
@@ -114,31 +191,72 @@ function newFlowId(): string | null {
  * `repo_visibility`·`repo_language` 설정을 건너뛰게 만들고, 곧바로 나가는 `analysis_requested`가
  * 저장소 문맥 없이 전송됩니다(PR #129 리뷰). 묶는 값이 없을 뿐 나머지는 그대로 붙어야 합니다.
  */
-export function startAnalysisFlow(flow: { repoVisibility: string; repoLanguage: string | null }): void {
+/**
+ * 흐름의 진입 경로입니다. `entry_path`로 나갑니다. 세 갈래입니다.
+ *
+ * - `new_analysis`: 저장소를 골라 분석을 돌리는 갈래입니다.
+ * - `stored_analysis`: 저장된 분석의 후보 목록을 다시 여는 갈래입니다(이슈 #116).
+ * - `resumed_interview`: 저장된 인터뷰의 대화를 잇는 갈래입니다(이슈 #115).
+ *
+ * 뒤의 둘이 없으면 리포트에서 인터뷰 시작 수가 분석 성공 수보다 커 보이고, 그것을 모르고 보면 분석
+ * 단계에 문제가 있다고 읽게 됩니다. 두 갈래 모두 `analysis_requested`부터 `analysis_succeeded`까지를
+ * 하나도 거치지 않기 때문입니다(`llm-wiki/wiki/2026-09-15-GA4-계측-후속-backlog.md` 3번).
+ *
+ * 저장소 문맥을 싣는 것은 `new_analysis`뿐입니다. 나머지 둘은 저장된 값에서 오는데 공개 여부와
+ * 언어는 저장하지 않습니다.
+ */
+export type FlowStart =
+  | { readonly entryPath: "new_analysis"; readonly repoVisibility: string; readonly repoLanguage: string | null }
+  | { readonly entryPath: "stored_analysis" }
+  | { readonly entryPath: "resumed_interview" };
+
+export function startFlow(flow: FlowStart): void {
   const flowId = newFlowId();
-  // `flow_id`를 못 만들어도 저장소 문맥은 세우므로 지울 것이 생긴 것은 마찬가지입니다.
+  // `flow_id`를 못 만들어도 나머지는 세우므로 지울 것이 생긴 것은 마찬가지입니다.
   flowApplied = true;
-  safelySetGaParams({
-    // 만들지 못했으면 아예 싣지 않습니다. 빈 값을 세우면 서로 다른 분석이 같은 값으로 묶입니다.
-    ...(flowId === null ? {} : { flow_id: flowId }),
-    repo_visibility: flow.repoVisibility,
+  /*
+   * 저장된 인터뷰에는 공개 여부와 언어가 없습니다. 그 값은 GitHub 목록 조회에서 오는 것이고 저장하지
+   * 않으므로 이어가기 경로에서 되살릴 수 없습니다. 앞 분석이 세워 둔 값을 그대로 두면 이어가는
+   * 인터뷰의 이벤트가 엉뚱한 저장소의 문맥을 달고 나가므로 지웁니다.
+   */
+  const isNewAnalysis = flow.entryPath === "new_analysis";
+  const repoContext = isNewAnalysis
     // 언어가 없는 저장소가 있습니다. 빈 문자열 대신 파라미터를 지워 값 없음과 값 있음을 가릅니다.
-    repo_language: flow.repoLanguage,
+    ? { repo_visibility: flow.repoVisibility, repo_language: flow.repoLanguage }
+    : clearRepoContext();
+  repoContextApplied = isNewAnalysis;
+  safelySetGaParams({
+    // 만들지 못했으면 아예 싣지 않습니다. 빈 값을 세우면 서로 다른 흐름이 같은 값으로 묶입니다.
+    ...(flowId === null ? {} : { flow_id: flowId }),
+    entry_path: flow.entryPath,
+    ...repoContext,
   });
 }
 
 /**
- * 분석 묶음을 지웁니다. 저장소를 바꿀 때와 로그아웃할 때 부릅니다.
+ * 저장소 문맥을 지우는 파라미터입니다. 세운 적이 없으면 빈 객체라 아무것도 지우지 않습니다.
+ *
+ * 세운 적 없는 파라미터를 null로 지우면 gtag가 그 자리를 빈 문자열로 직렬화해 이후 모든 이벤트에
+ * 실어 보냅니다(`user_id`에서 실측). 지우는 자리가 흐름 시작과 흐름 종료 둘이라 여기 한 번만 적습니다.
+ */
+function clearRepoContext(): Record<string, null> {
+  if (!repoContextApplied) return {};
+  repoContextApplied = false;
+  return { repo_visibility: null, repo_language: null };
+}
+
+/**
+ * 흐름 묶음을 지웁니다. Repository 선택으로 돌아갈 때와 로그아웃할 때 부릅니다.
  *
  * 한 번도 세운 적이 없으면 아무 일도 하지 않습니다. `gtag('set', { flow_id: null })`을 부르면 gtag가
  * 그 자리를 빈 문자열로 직렬화해 이후 모든 이벤트에 실어 보냅니다. `user_id`에서 실측한 것과 같은
- * 동작이고(2026-09-15), 이 가드가 없으면 로그인 화면처럼 분석을 한 적 없는 자리에서 지우기를 부를 수
- * 없습니다.
+ * 동작이고(2026-09-15), 이 가드가 없으면 로그인 화면처럼 흐름을 시작한 적 없는 자리에서 지우기를
+ * 부를 수 없습니다.
  */
-export function clearAnalysisFlow(): void {
+export function clearFlow(): void {
   if (!flowApplied) return;
   flowApplied = false;
-  safelySetGaParams({ flow_id: null, repo_visibility: null, repo_language: null });
+  safelySetGaParams({ flow_id: null, entry_path: null, ...clearRepoContext() });
 }
 
 /** 공통 파라미터 설정도 이벤트 전송과 같은 이유로 예외를 삼킵니다. */
@@ -158,4 +276,18 @@ export function commitCountBucket(count: number): CommitCountBucket {
   if (count <= 200) return "51-200";
   if (count <= 1000) return "201-1000";
   return "1000+";
+}
+
+/**
+ * 답변 길이 버킷입니다. 답변 텍스트는 어떤 형태로도 보내지 않으므로(이슈 #126 Constraint) 길이만
+ * 보내고, 그마저 원값을 보내면 GA4 리포트에서 other로 뭉쳐 쓸 수 없게 되므로 버킷으로 바꿉니다.
+ */
+export type AnswerLengthBucket = "0-100" | "101-500" | "501-2000" | "2000+";
+
+/** 경계는 0-100, 101-500, 501-2000, 2000+입니다. 2000은 `501-2000`이고 2001부터 `2000+`입니다. */
+export function answerLengthBucket(length: number): AnswerLengthBucket {
+  if (length <= 100) return "0-100";
+  if (length <= 500) return "101-500";
+  if (length <= 2000) return "501-2000";
+  return "2000+";
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { trackEvent } from "@/features/analytics/events";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
 import type { BlockUpdateTurn } from "@/features/interview/block-prompt";
 import {
@@ -17,6 +18,7 @@ import {
 } from "@/features/interview/use-interview-stream";
 import { completeSavedInterview } from "@/features/saved-interviews/client";
 import type { BlockUpdateSaveStatus, SavedTurnStatus } from "@/features/saved-interviews/save-status";
+import { filledBlockCount } from "./block-edits";
 import { BlockUpdateFetchError, fetchBlockUpdate, fetchSaveOnly, type BlockUpdateFetchErrorKind } from "./client";
 import type { InterviewProgress } from "./progress";
 import { emptyInterviewProgress, recordAsked, recordResponse, selectNextTarget } from "./progress";
@@ -672,6 +674,29 @@ export function useExperienceInterview({
       // 충돌은 사용자 진술과 근거가 어긋난 지점이라는 사실 자체가 바뀌지 않으므로).
       const lastOutcome = buildLastOutcome(outcome, blockStateRef.current.conflicts);
 
+      /*
+       * 이번 답변이 블록에 어떻게 반영됐는지 남깁니다(이슈 #126). 블록 문장은 보내지 않고 분류만
+       * 보냅니다. 반영이 실패한 턴은 `targetResponse`가 없으므로 세지 않습니다. 실패는
+       * `interview_stream_failed`가 아니라 화면의 미반영 안내가 다루는 별개 사건입니다.
+       *
+       * 인자 계산까지 try 안에 둡니다. 여기서 던지면 다음 질문 요청까지 함께 멈춥니다.
+       */
+      try {
+        const answered = answeredTargetRef.current;
+        const evaluation = blockStateRef.current.evaluation[answered.targetBlock];
+        if (outcome.targetResponse !== null) {
+          trackEvent({
+            name: "block_progressed",
+            block: answered.targetBlock,
+            element: answered.targetElement,
+            response: outcome.targetResponse,
+            ...(evaluation === null ? {} : { evaluation: evaluation.reason }),
+          });
+        }
+      } catch {
+        // 계측이 죽는 것이 대화가 멈추는 것보다 낫습니다.
+      }
+
       const nextTurnsUsed = isSupplementaryAnswer ? turnsUsedRef.current : turnsUsedRef.current + 1;
       if (!isSupplementaryAnswer) {
         turnsUsedRef.current = nextTurnsUsed;
@@ -707,7 +732,10 @@ export function useExperienceInterview({
       answeredTargetRef.current = target;
       setCurrentTarget(target);
       answeredAskedCountRef.current = progressRef.current[next.block].elements[next.element].askedCount;
-      return { kind: "ask", target, lastOutcome };
+      // 이 요청이 속한 턴을 함께 돌려줍니다. 계측이 옵션으로 받은 값을 요청 시점에 읽으면 한 턴
+      // 뒤처집니다. 여기서 턴 수를 올린 직후 스트림 훅이 요청을 보내는데, 그 사이에 렌더가 끝나지
+      // 않아 옵션을 옮겨 담는 effect가 아직 돌지 않았기 때문입니다(PR #139 리뷰 1라운드).
+      return { kind: "ask", target, lastOutcome, turn: nextTurnsUsed };
     },
     [applyTurn]
   );
@@ -726,7 +754,32 @@ export function useExperienceInterview({
     // 더 물을 것이 없는 상태로 이어가면 질문을 요청하지 않습니다.
     autoStart: initial.target !== null,
     onBeforeQuestion,
+    // 계측이 실을 턴 번호입니다. 세는 규칙이 이 훅에 있으므로 스트림 훅이 다시 세지 않습니다.
+    turnsUsed,
   });
+
+  /**
+   * 종료를 한 번만 셉니다(이슈 #126). 상한 종료와 사용자 종료가 겹칠 수 있고, 끝난 인터뷰를 다시
+   * 연 것은 끝낸 사건이 아니라 이미 끝나 있던 것을 읽는 것이라 세지 않습니다.
+   *
+   * 인자 계산까지 try 안에 둡니다. `trackEvent`가 자기 예외를 삼키지만 `filledBlockCount` 호출은
+   * 그 바깥이고, 여기서 던지면 종료 자체가 멈춰 사용자가 대화를 닫지 못합니다.
+   */
+  const completedReportedRef = useRef(restore?.status === "completed");
+  const reportCompleted = useCallback((reason: ExperienceInterviewEndReason) => {
+    if (completedReportedRef.current) return;
+    completedReportedRef.current = true;
+    try {
+      trackEvent({
+        name: "interview_completed",
+        end_reason: reason,
+        turn: turnsUsedRef.current,
+        filled_blocks: filledBlockCount(blockStateRef.current),
+      });
+    } catch {
+      // 계측이 죽는 것이 대화를 잃는 것보다 낫습니다.
+    }
+  }, []);
 
   // 상한 도달로 정한 종료 사유를 실제 종료로 잇습니다. 훅 스스로 `endInterview`를 부르는 유일한
   // 자리입니다. 사용자 종료는 아래 `endInterview` 래퍼가 직접 부릅니다.
@@ -744,6 +797,7 @@ export function useExperienceInterview({
   // 바뀝니다.
   useEffect(() => {
     if (endReason !== "turn_limit" || inner.isEnded) return;
+    reportCompleted("turn_limit");
     inner.endInterview();
     // 정리는 곧바로 시작하고, 완료 표시만 그 결과를 기다립니다(PR #127 리뷰).
     markCompleted(flushPendingSaves());
@@ -789,6 +843,8 @@ export function useExperienceInterview({
   // 위 효과와 같은 이유로 `inner.endInterview`만 둡니다.
   const endInterview = useCallback(() => {
     if (endReason === null) setEndReason("user");
+    // 상한 종료가 이미 셌으면 `reportCompleted`가 자기 안에서 걸러냅니다.
+    reportCompleted(endReason ?? "user");
     const interrupted = activeRef.current;
     activeAbortRef.current?.abort();
     if (interrupted !== null) {

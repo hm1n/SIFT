@@ -26,15 +26,15 @@ const routerMock = { push: vi.fn(), refresh: vi.fn(), replace: vi.fn() };
 vi.mock("next/navigation", () => ({ useRouter: () => routerMock }));
 
 const trackEvent = vi.fn();
-const startAnalysisFlow = vi.fn();
-const clearAnalysisFlow = vi.fn();
+const startFlow = vi.fn();
+const clearFlow = vi.fn();
 vi.mock("@/features/analytics/events", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/features/analytics/events")>();
   return {
     ...original,
     trackEvent: (...args: unknown[]) => trackEvent(...args),
-    startAnalysisFlow: (...args: unknown[]) => startAnalysisFlow(...args),
-    clearAnalysisFlow: (...args: unknown[]) => clearAnalysisFlow(...args),
+    startFlow: (...args: unknown[]) => startFlow(...args),
+    clearFlow: (...args: unknown[]) => clearFlow(...args),
   };
 });
 
@@ -83,8 +83,8 @@ function repositoryListCalls(calls: readonly string[]): number {
 beforeEach(() => {
   analyzeMock.mockReset();
   trackEvent.mockReset();
-  startAnalysisFlow.mockReset();
-  clearAnalysisFlow.mockReset();
+  startFlow.mockReset();
+  clearFlow.mockReset();
   advanceAnalysisTracker.mockReset();
   advanceAnalysisTracker.mockImplementation((tracker: unknown) => ({ tracker, events: [] }));
   stubFetch();
@@ -135,8 +135,8 @@ describe("RepositoryFlow", () => {
     fireEvent.change(screen.getByRole("textbox", { name: "Your Contribution" }), { target: { value: "푸시 알림 구현\n스크롤 복원" } });
     fireEvent.click(screen.getByRole("button", { name: /분석하기/ }));
 
-    await waitFor(() => expect(startAnalysisFlow).toHaveBeenCalledTimes(1));
-    expect(startAnalysisFlow).toHaveBeenCalledWith({ repoVisibility: "public", repoLanguage: "TypeScript" });
+    await waitFor(() => expect(startFlow).toHaveBeenCalledTimes(1));
+    expect(startFlow).toHaveBeenCalledWith({ entryPath: "new_analysis", repoVisibility: "public", repoLanguage: "TypeScript" });
     expect(trackEvent).toHaveBeenCalledWith({ name: "analysis_requested", contribution_item_count: 2 });
     expect(JSON.stringify(trackEvent.mock.calls)).not.toContain("hello-world");
   });
@@ -184,7 +184,7 @@ describe("RepositoryFlow", () => {
     fireEvent.click(await screen.findByRole("button", { name: "다른 Repository 선택" }));
 
     await screen.findByRole("heading", { name: "분석할 Repository를 선택하세요." });
-    expect(clearAnalysisFlow).toHaveBeenCalledTimes(1);
+    expect(clearFlow).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -302,6 +302,41 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
     await screen.findByRole("heading", { name: "분석할 Repository를 선택하세요." });
     expect(screen.queryByRole("region", { name: "Code / Evidence" })).not.toBeInTheDocument();
   });
+
+  /**
+   * 확인 대화가 뜨지 않는 경로가 이탈의 대부분입니다. 저장이 끝난 상태로 나가는 경우인데, 이것을
+   * 세지 않으면 이탈 건수가 "저장 안 된 답변을 버린 경우"만 세게 되어 이슈 #126의 Goal인 "중도
+   * 종료가 몇 번째 턴에 몰리는지"에 답하지 못합니다.
+   */
+  it("확인 없이 나가도 이탈로 센다", async () => {
+    await renderWithConfirmedInterview();
+
+    fireEvent.click(screen.getByRole("button", { name: "← Repository 변경" }));
+
+    await screen.findByRole("heading", { name: "분석할 Repository를 선택하세요." });
+    expect(trackEvent).toHaveBeenCalledWith({ name: "interview_abandoned", turn: 0, filled_blocks: 0 });
+  });
+
+  /** 나가려다 돌아온 비율을 보려면 두 선택지를 가려 세야 합니다. */
+  it("확인 대화에서 계속하기를 누르면 이탈이 아니라 취소로 센다", async () => {
+    await renderWithConfirmedInterview({
+      "/api/interview/experience-block": () =>
+        Response.json({ error: { kind: "storage_failed", message: "끊김" } }, { status: 503 }),
+    });
+    const answer = await screen.findByRole("textbox", { name: /답변/ });
+    fireEvent.change(answer, { target: { value: "화면이 비어 있었습니다." } });
+    fireEvent.click(screen.getByRole("button", { name: "전송" }));
+    await screen.findByText("마지막 답변이 저장되지 않았습니다.");
+
+    fireEvent.click(screen.getByRole("button", { name: "← Repository 변경" }));
+    // 확인 대화는 클릭 다음 렌더에 나타납니다. 동기로 잡으면 전체 스위트의 부하에서 간헐적으로
+    // 놓칩니다(sentry backlog 19번).
+    fireEvent.click(await screen.findByRole("button", { name: "인터뷰 계속하기" }));
+
+    const names = trackEvent.mock.calls.map(([event]) => (event as { name: string }).name);
+    expect(names).toContain("interview_leave_canceled");
+    expect(names).not.toContain("interview_abandoned");
+  });
 });
 
 /**
@@ -363,6 +398,41 @@ describe("RepositoryFlow 이어가기", () => {
     expect(screen.getByText("화면이 비어 있었습니다.")).toBeInTheDocument();
   });
 
+  /**
+   * 이 경로는 `analysis_requested`부터 `analysis_succeeded`까지를 하나도 거치지 않습니다. 여기서
+   * 흐름을 세우지 않으면 이어가기로 일어난 이벤트가 `flow_id` 없이, 또는 지난 분석의 값을 달고
+   * 나가 리포트에서 인터뷰 시작 수가 분석 성공 수보다 커 보입니다.
+   */
+  it("사이드바에서 저장된 인터뷰를 열면 이어가기 흐름을 세운다", async () => {
+    stubWithSavedInterview(() => Response.json({ interview: STORED }));
+    render(<RepositoryFlow />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
+
+    await waitFor(() => expect(startFlow).toHaveBeenCalledWith({ entryPath: "resumed_interview" }));
+    // 이어가기는 흐름을 새로 세우는 것이지 비우는 것이 아닙니다. 비우면 곧바로 나가는
+    // `interview_started`가 묶는 값 없이 전송됩니다.
+    expect(clearFlow).not.toHaveBeenCalled();
+  });
+
+  /**
+   * 저장된 분석의 후보 목록을 여는 경로입니다(이슈 #116). 이 경로도 분석 이벤트를 하나도 거치지
+   * 않으므로 흐름을 새로 세워야 합니다. 세우지 않고 지나가면 직전 이어가기 흐름의 `flow_id`와
+   * `entry_path`가 그대로 남아, 여기서 새로 시작한 인터뷰가 이어가기로 잡힙니다.
+   */
+  it("저장된 분석의 후보 목록을 열면 그 경로로 흐름을 다시 세운다", async () => {
+    stubWithSavedInterview(() => Response.json({ interview: STORED }));
+    render(<RepositoryFlow />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /^재시도 큐 도입/ }));
+    await waitFor(() => expect(startFlow).toHaveBeenCalledWith({ entryPath: "resumed_interview" }));
+    startFlow.mockClear();
+
+    fireEvent.click(await screen.findByRole("button", { name: "이 분석의 다른 경험" }));
+
+    await waitFor(() => expect(startFlow).toHaveBeenCalledWith({ entryPath: "stored_analysis" }));
+  });
+
   it("지워진 인터뷰를 고르면 그 사실을 알리고 다시 시도할 수 있다", async () => {
     stubWithSavedInterview(() =>
       Response.json({ error: { kind: "not_found", message: "없음" } }, { status: 404 })
@@ -402,6 +472,20 @@ describe("RepositoryFlow 이어가기", () => {
     // 끝난 인터뷰라 버튼 문구가 이어가기가 아니라 다시 보기입니다.
     expect(await screen.findByRole("button", { name: /인터뷰 다시 보기/ })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Code / Evidence" })).not.toBeInTheDocument();
+
+    /*
+     * 끝낸 사건은 종료로만 셉니다. 끝낸 직후에도 요약 화면으로 옮기느라 `navigate`를 한 번 더
+     * 지나는데, 거기서 이탈로도 세면 끝까지 한 사용자가 중도 이탈로 한 번 더 잡혀 두 수가 모두
+     * 틀립니다.
+     */
+    const names = trackEvent.mock.calls.map(([event]) => (event as { name: string }).name);
+    expect(trackEvent).toHaveBeenCalledWith({
+      name: "interview_completed",
+      end_reason: "user",
+      turn: 1,
+      filled_blocks: 0,
+    });
+    expect(names).not.toContain("interview_abandoned");
   });
 
   // 끝난 인터뷰를 다시 열면 대화가 다시 자라나면 안 됩니다.

@@ -10,6 +10,7 @@ import { ExperienceCandidateList, StageAExclusions } from "@/features/experience
 import { advanceAnalysisTracker, createAnalysisTracker, type AnalysisTracker } from "@/features/analytics/analysis-events";
 import { trackEvent } from "@/features/analytics/events";
 import type { ConfirmedExperience } from "@/features/experience-candidates/experience-selection";
+import type { InterviewProgressSnapshot } from "@/features/interview/interview-screen";
 import {
   createSavedInterview,
   fetchAnalysisByRepository,
@@ -122,6 +123,8 @@ export interface RepositoryAnalysisViewProps {
   onLoadLatestInterview?: (interviewId: string) => void;
   /** 저장되지 않은 턴이 있는지 알립니다. 이탈 확인을 받을지 흐름이 판단합니다. */
   onUnsavedInterviewChange?: (hasUnsaved: boolean) => void;
+  /** 대화의 진행 상황입니다. 흐름이 이탈을 셀 때 씁니다(이슈 #126). 그대로 전달만 합니다. */
+  onInterviewProgressChange?: (progress: InterviewProgressSnapshot) => void;
   /** 인터뷰를 끝냈을 때 그 인터뷰의 요약 화면으로 옮깁니다. */
   onInterviewEnded?: (interviewId: string) => void;
   /** 다른 Repository 선택입니다. 선택 화면으로 되돌아가는 일은 `RepositoryFlow`가 합니다. */
@@ -153,6 +156,7 @@ export function RepositoryAnalysisView({
   onInterviewCreated,
   onLoadLatestInterview,
   onUnsavedInterviewChange,
+  onInterviewProgressChange,
   onInterviewEnded,
 }: RepositoryAnalysisViewProps) {
   const router = useRouter();
@@ -525,6 +529,7 @@ export function RepositoryAnalysisView({
             interviewId={interviewId}
             onLoadLatestInterview={interviewId === null ? undefined : () => onLoadLatestInterview?.(interviewId)}
             onUnsavedInterviewChange={onUnsavedInterviewChange}
+            onInterviewProgressChange={onInterviewProgressChange}
             onInterviewEnded={interviewId === null ? undefined : () => onInterviewEnded?.(interviewId)}
           />
         </div>
