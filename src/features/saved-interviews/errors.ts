@@ -1,4 +1,5 @@
 import { DatabaseError } from "@/lib/db/client";
+import { reportServerError } from "@/lib/sentry/server";
 
 /**
  * 저장된 인터뷰 경로가 내는 오류입니다. 화면이 무엇을 보일지 고르려면 종류가 필요합니다.
@@ -54,4 +55,20 @@ export function toSavedInterviewError(error: unknown): {
     return { kind: "server_error", message: "서버 설정 문제로 저장소를 쓸 수 없습니다." };
   }
   return { kind: "server_error", message: "저장 중에 알 수 없는 문제가 생겼습니다." };
+}
+
+/**
+ * 저장 계층이 던진 오류를 응답으로 옮기면서 5xx만 Sentry로 보냅니다. 저장 계층을 쓰는 라우트의
+ * 최상위 catch는 전부 이 함수 하나를 부릅니다.
+ *
+ * 이슈 #136에서 만들었습니다. 같은 세 줄(`toSavedInterviewError` 호출과 응답 생성)이 라우트 네 개에
+ * 여덟 번 반복돼 있었고, 거기에 전송을 하나씩 얹으면 새 catch가 생길 때마다 빠뜨릴 자리가 남습니다.
+ * 옮기는 규칙과 보내는 규칙을 한 자리에 둡니다.
+ *
+ * `storage_failed`(503)와 `server_error`(500)는 전송되고, 이 함수로 오지 않는 `not_found`(404)나
+ * `invalid_request`(400) 같은 사용자 입력 문제는 애초에 예외가 아니라 값으로 갈라져 나갑니다.
+ */
+export function savedInterviewErrorResponseFor(error: unknown): Response {
+  const mapped = toSavedInterviewError(error);
+  return reportServerError(error, savedInterviewErrorResponse(mapped.kind, mapped.message));
 }

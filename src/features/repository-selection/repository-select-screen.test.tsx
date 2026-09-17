@@ -50,8 +50,11 @@ describe("RepositorySelectScreen 상태", () => {
 
   it("Repository가 없으면 NO REPOSITORIES 상태를 그리고 목록 카드를 그리지 않는다", async () => {
     renderScreen(() => Promise.resolve([]));
-    const status = await screen.findByRole("status");
-    expect(status).toHaveAttribute("data-status-kind", "empty");
+    // `role="status"`는 Loading과 Empty가 함께 씁니다. 먼저 잡히는 것이 Loading이라 종류로 기다립니다.
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveAttribute("data-status-kind", "empty")
+    );
+    const status = screen.getByRole("status");
     expect(status).toHaveTextContent("불러온 Repository가 없습니다.");
     expect(screen.queryByRole("radiogroup")).not.toBeInTheDocument();
   });

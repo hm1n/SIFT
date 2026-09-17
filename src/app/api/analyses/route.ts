@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import {
   savedInterviewErrorResponse,
-  toSavedInterviewError,
+  savedInterviewErrorResponseFor,
 } from "@/features/saved-interviews/errors";
 import { toStoredAnalysisPayload } from "@/features/saved-interviews/payload";
 import { MAX_SAVE_ANALYSIS_BODY_BYTES, parseSaveAnalysisBody } from "@/features/saved-interviews/request";
@@ -48,8 +48,7 @@ export async function handleSaveAnalysis(
     });
     return Response.json({ analysisId });
   } catch (error) {
-    const mapped = toSavedInterviewError(error);
-    return savedInterviewErrorResponse(mapped.kind, mapped.message);
+    return savedInterviewErrorResponseFor(error);
   }
 }
 
@@ -86,8 +85,7 @@ export async function handleFindAnalysis(
     }
     return Response.json({ analysis: payload });
   } catch (error) {
-    const mapped = toSavedInterviewError(error);
-    return savedInterviewErrorResponse(mapped.kind, mapped.message);
+    return savedInterviewErrorResponseFor(error);
   }
 }
 

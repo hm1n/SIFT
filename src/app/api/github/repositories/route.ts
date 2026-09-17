@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { errorResponse } from "@/lib/github/api-contract";
 import { getGitHubTokenFromRequest } from "@/lib/github/auth-session";
 import { fetchUserRepositories } from "@/lib/github/repositories";
+import { reportServerError } from "@/lib/sentry/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -16,6 +17,6 @@ export async function GET(request: NextRequest): Promise<Response> {
     const repositories = await fetchUserRepositories(token);
     return Response.json({ repositories });
   } catch (error) {
-    return errorResponse(error);
+    return reportServerError(error, errorResponse(error));
   }
 }

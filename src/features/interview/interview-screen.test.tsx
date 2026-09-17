@@ -4,12 +4,21 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { emptyExperienceBlockState } from "@/features/experience-block/types";
+import { emptyInterviewProgress } from "@/features/experience-block/progress";
 import { fitPanelWidths, InterviewScreen } from "./interview-screen";
 import { DEFAULT_EXPERIENCE_BLOCK_UPDATE_URL } from "@/features/experience-block/use-experience-interview";
 import { evidenceSnapshotFixture, FIXTURE_REPRESENTATIVE_SHA } from "./question-fixture";
 import { createTestStream, type TestStreamScenario } from "./test-stream";
 
 afterEach(cleanup);
+
+const trackEvent = vi.fn();
+vi.mock("@/features/analytics/events", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/features/analytics/events")>();
+  return { ...original, trackEvent: (...args: unknown[]) => trackEvent(...args) };
+});
+
+afterEach(() => trackEvent.mockReset());
 
 /** 이 화면이 답변마다 부르는 블록 갱신에 항상 성공 응답을 준비해 둡니다(이슈 #90). */
 function defaultBlockUpdateResponse(): Response {
@@ -444,5 +453,207 @@ describe("fitPanelWidths", () => {
 
     expect(fitted.code).toBe(300);
     expect(700 - fitted.code - 4).toBeGreaterThanOrEqual(280);
+  });
+});
+
+/**
+ * 새 분석에서 온 인터뷰와 저장된 인터뷰를 잇는 인터뷰가 모두 이 화면을 지납니다. 두 경로를 한
+ * 자리에서 셀 수 있는 곳이 여기뿐이라 시작 이벤트가 이 화면에 붙습니다.
+ */
+describe("InterviewScreen 계측", () => {
+  const RESTORED = {
+    history: [
+      { role: "question", text: "문제 상황을 알려주세요" },
+      { role: "answer", text: "화면이 비어 있었습니다." },
+    ],
+    blockState: emptyExperienceBlockState(),
+    progress: emptyInterviewProgress(),
+  } as const;
+
+  it("대화가 열리면 interview_started를 한 번 남긴다", async () => {
+    render(
+      <InterviewScreen snapshot={evidenceSnapshotFixture()} onBack={vi.fn()} fetchImpl={pendingFetch()} />
+    );
+
+    await waitFor(() => expect(trackEvent).toHaveBeenCalledWith({ name: "interview_started", turn: 0 }));
+    expect(trackEvent.mock.calls.filter(([event]) => event.name === "interview_started")).toHaveLength(1);
+  });
+
+  /** 이어가기는 저장된 턴 수부터 셉니다. 0으로 보내면 중도 이탈이 몰린 턴이 앞으로 당겨집니다. */
+  it("이어가기는 저장된 턴 수를 싣는다", async () => {
+    render(
+      <InterviewScreen
+        snapshot={evidenceSnapshotFixture()}
+        onBack={vi.fn()}
+        restore={{ ...RESTORED, status: "in_progress" }}
+        fetchImpl={pendingFetch()}
+      />
+    );
+
+    await waitFor(() => expect(trackEvent).toHaveBeenCalledWith({ name: "interview_started", turn: 1 }));
+  });
+
+  /**
+   * 끝난 인터뷰를 다시 열면 이 화면이 읽기 전용으로 뜹니다. 세면 인터뷰 시작 수가 요약을 다시 열어
+   * 본 횟수만큼 부풀어 중도 이탈률이 실제보다 낮게 보입니다.
+   */
+  it("끝난 인터뷰를 다시 열면 세지 않는다", async () => {
+    render(
+      <InterviewScreen
+        snapshot={evidenceSnapshotFixture()}
+        onBack={vi.fn()}
+        restore={{ ...RESTORED, status: "completed" }}
+        fetchImpl={pendingFetch()}
+      />
+    );
+
+    // 화면이 다 그려진 뒤에 봅니다. 마운트 직후에 보면 아직 보내지 않은 것과 구분되지 않습니다.
+    expect(await screen.findByRole("region", { name: "PAAR" })).toBeInTheDocument();
+    expect(trackEvent.mock.calls.map(([event]) => event.name)).not.toContain("interview_started");
+  });
+});
+
+/**
+ * 인터뷰 안쪽 4종입니다(이슈 #126). 배선 지점과 파라미터, 그리고 금지 값이 실리지 않는다는 것을
+ * 함께 고정합니다.
+ */
+describe("InterviewScreen 턴 계측", () => {
+  /** 이 테스트가 보내는 답변과, 테스트 스트림이 만드는 질문에 들어 있는 낱말입니다. */
+  const ANSWER = "화면이 비어 있었습니다. 재시도 큐를 두고 순서를 지켰습니다.";
+
+  function eventsNamed(name: string) {
+    return trackEvent.mock.calls
+      .map(([event]) => event as { name: string })
+      .filter((event) => event.name === name);
+  }
+
+  it("질문의 첫 조각이 도착하면 그 질문이 겨냥한 블록과 함께 남긴다", async () => {
+    render(
+      <InterviewScreen
+        snapshot={evidenceSnapshotFixture()}
+        onBack={vi.fn()}
+        fetchImpl={testStreamFetch("normal")}
+      />
+    );
+
+    await screen.findByText("질문이 모두 도착했습니다.");
+    // 첫 질문은 항상 problem.a를 겨냥합니다(이슈 #90 설계 6절).
+    expect(trackEvent).toHaveBeenCalledWith({
+      name: "question_shown",
+      turn: 0,
+      block: "problem",
+      element: "a",
+      ttft_ms: expect.any(Number),
+    });
+    // 조각마다 세면 질문 하나가 여러 건이 됩니다.
+    expect(eventsNamed("question_shown")).toHaveLength(1);
+  });
+
+  it("답변을 제출하면 길이 버킷과 생각한 시간을 남기고 텍스트는 보내지 않는다", async () => {
+    render(
+      <InterviewScreen
+        snapshot={evidenceSnapshotFixture()}
+        onBack={vi.fn()}
+        fetchImpl={testStreamFetch("normal")}
+      />
+    );
+    const answer = await screen.findByRole("textbox", { name: /답변/ });
+    fireEvent.change(answer, { target: { value: ANSWER } });
+    fireEvent.click(screen.getByRole("button", { name: "전송" }));
+
+    await waitFor(() => expect(eventsNamed("answer_submitted")).toHaveLength(1));
+    expect(trackEvent).toHaveBeenCalledWith({
+      name: "answer_submitted",
+      turn: 1,
+      answer_length_bucket: "0-100",
+      think_time_ms: expect.any(Number),
+    });
+  });
+
+  /**
+   * PR #139 리뷰 1라운드의 회귀 테스트입니다. 요청이 속한 턴을 옵션에서 읽으면 한 턴 뒤처집니다.
+   * 호출부가 턴 수를 올린 직후 이 훅이 요청을 보내는데, 그 사이에 렌더가 끝나지 않아 옵션을 옮겨
+   * 담는 effect가 아직 돌지 않습니다. 고치기 전에는 두 번째 질문도 턴 0으로 기록되었습니다.
+   */
+  it("두 번째 질문은 다음 턴 번호로 남긴다", async () => {
+    render(
+      <InterviewScreen
+        snapshot={evidenceSnapshotFixture()}
+        onBack={vi.fn()}
+        fetchImpl={testStreamFetch("normal")}
+      />
+    );
+    const answer = await screen.findByRole("textbox", { name: /답변/ });
+    fireEvent.change(answer, { target: { value: ANSWER } });
+    fireEvent.click(screen.getByRole("button", { name: "전송" }));
+
+    const shownTurns = () =>
+      trackEvent.mock.calls
+        .map(([event]) => event as { name: string; turn: number })
+        .filter((event) => event.name === "question_shown")
+        .map((event) => event.turn);
+
+    await waitFor(() => expect(shownTurns()).toHaveLength(2));
+    expect(shownTurns()).toEqual([0, 1]);
+  });
+
+  it("답변이 블록에 반영되면 그 블록과 반응을 남긴다", async () => {
+    render(
+      <InterviewScreen
+        snapshot={evidenceSnapshotFixture()}
+        onBack={vi.fn()}
+        fetchImpl={testStreamFetch("normal")}
+      />
+    );
+    const answer = await screen.findByRole("textbox", { name: /답변/ });
+    fireEvent.change(answer, { target: { value: ANSWER } });
+    fireEvent.click(screen.getByRole("button", { name: "전송" }));
+
+    await waitFor(() => expect(eventsNamed("block_progressed")).toHaveLength(1));
+    // 기본 응답은 빈 블록 상태에 `targetResponse: "provided"`입니다. 평가가 없으면 싣지 않습니다.
+    expect(trackEvent).toHaveBeenCalledWith({
+      name: "block_progressed",
+      block: "problem",
+      element: "a",
+      response: "provided",
+    });
+  });
+
+  it("질문 스트림이 실패하면 오류 분류를 남긴다", async () => {
+    render(
+      <InterviewScreen
+        snapshot={evidenceSnapshotFixture()}
+        onBack={vi.fn()}
+        fetchImpl={testStreamFetch("error")}
+      />
+    );
+
+    await screen.findByRole("alert");
+    await waitFor(() => expect(eventsNamed("interview_stream_failed")).toHaveLength(1));
+  });
+
+  /**
+   * 사용자 답변 텍스트와 AI가 만든 질문 문장은 어떤 이벤트에도 실리지 않습니다(이슈 #126
+   * Constraint). 길이 버킷과 블록 식별자만 보냅니다.
+   */
+  it("답변 텍스트와 질문 문장을 어떤 파라미터로도 보내지 않는다", async () => {
+    render(
+      <InterviewScreen
+        snapshot={evidenceSnapshotFixture()}
+        onBack={vi.fn()}
+        fetchImpl={testStreamFetch("normal")}
+      />
+    );
+    const answer = await screen.findByRole("textbox", { name: /답변/ });
+    fireEvent.change(answer, { target: { value: ANSWER } });
+    fireEvent.click(screen.getByRole("button", { name: "전송" }));
+    await waitFor(() => expect(eventsNamed("answer_submitted")).toHaveLength(1));
+
+    const sent = JSON.stringify(trackEvent.mock.calls);
+    expect(sent).not.toContain("재시도 큐");
+    expect(sent).not.toContain("청크 경계");
+    // 근거 스냅샷의 커밋 SHA와 파일 경로도 금지 값입니다.
+    expect(sent).not.toContain(FIXTURE_REPRESENTATIVE_SHA);
+    expect(sent).not.toContain(".ts");
   });
 });

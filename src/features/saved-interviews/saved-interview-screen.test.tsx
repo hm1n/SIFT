@@ -300,9 +300,12 @@ describe("SavedInterviewScreen 블록 편집", () => {
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "사용자가 고친 문장" } });
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
-    await waitFor(() => expect(screen.getByText("사용자가 고친 문장")).toBeInTheDocument());
-    expect(screen.queryByText("근거와 어긋납니다 · 확인이 필요합니다")).not.toBeInTheDocument();
-    expect(screen.queryByText("커밋에는 그 변경이 없습니다")).not.toBeInTheDocument();
+    // 고친 문장 표시와 충돌 표시 제거가 같은 렌더에서 일어나지 않습니다. 둘을 함께 기다립니다.
+    await waitFor(() => {
+      expect(screen.getByText("사용자가 고친 문장")).toBeInTheDocument();
+      expect(screen.queryByText("근거와 어긋납니다 · 확인이 필요합니다")).not.toBeInTheDocument();
+      expect(screen.queryByText("커밋에는 그 변경이 없습니다")).not.toBeInTheDocument();
+    });
   });
 
   it("블록을 모두 지우면 빈 목록을 보내고 예전 충돌도 남기지 않는다", async () => {

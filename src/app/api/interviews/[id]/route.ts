@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import {
   savedInterviewErrorResponse,
-  toSavedInterviewError,
+  savedInterviewErrorResponseFor,
 } from "@/features/saved-interviews/errors";
 import { toStoredInterviewPayload } from "@/features/saved-interviews/payload";
 import {
@@ -11,6 +11,7 @@ import {
 } from "@/features/saved-interviews/request";
 import { getGitHubSessionFromRequest } from "@/lib/github/auth-session";
 import { GitHubFetchError } from "@/lib/github/errors";
+import { reportServerError } from "@/lib/sentry/server";
 import { neonStore } from "@/lib/db/neon-store";
 import type { SiftStore } from "@/lib/db/store";
 
@@ -31,7 +32,12 @@ function requireUserId(request: NextRequest): { userId: number } | { response: R
     if (error instanceof GitHubFetchError && error.kind === "auth_revoked") {
       return { response: savedInterviewErrorResponse("unauthorized", "GitHub 인증 세션이 필요합니다.") };
     }
-    return { response: savedInterviewErrorResponse("server_error", "서버 설정 문제로 요청을 처리하지 못했습니다.") };
+    return {
+      response: reportServerError(
+        error,
+        savedInterviewErrorResponse("server_error", "서버 설정 문제로 요청을 처리하지 못했습니다.")
+      ),
+    };
   }
 }
 
@@ -48,8 +54,7 @@ export async function handleGetInterview(
     if (interview === null) return savedInterviewErrorResponse("not_found", NOT_FOUND_MESSAGE);
     return Response.json({ interview: toStoredInterviewPayload(interview) });
   } catch (error) {
-    const mapped = toSavedInterviewError(error);
-    return savedInterviewErrorResponse(mapped.kind, mapped.message);
+    return savedInterviewErrorResponseFor(error);
   }
 }
 
@@ -67,8 +72,7 @@ export async function handleDeleteInterview(
     // 지운 뒤에 돌려줄 내용이 없습니다. 빈 객체를 싣는 것보다 본문이 없다는 것을 상태로 말합니다.
     return new Response(null, { status: 204 });
   } catch (error) {
-    const mapped = toSavedInterviewError(error);
-    return savedInterviewErrorResponse(mapped.kind, mapped.message);
+    return savedInterviewErrorResponseFor(error);
   }
 }
 
@@ -181,8 +185,7 @@ export async function handlePatchInterview(
     if (!completed) return savedInterviewErrorResponse("not_found", NOT_FOUND_MESSAGE);
     return new Response(null, { status: 204 });
   } catch (error) {
-    const mapped = toSavedInterviewError(error);
-    return savedInterviewErrorResponse(mapped.kind, mapped.message);
+    return savedInterviewErrorResponseFor(error);
   }
 }
 

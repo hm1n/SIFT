@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { INTERVIEW_SCREEN_COPY } from "@/copy/interview";
+import { trackEvent } from "@/features/analytics/events";
 import type { ExperienceEvidenceSnapshot } from "@/features/experience-candidates/types";
 import { CodePanel } from "./code-panel";
 import { InterviewStreamView } from "./interview-stream-view";
@@ -14,6 +15,19 @@ import {
   type RestoredInterview,
 } from "@/features/experience-block/use-experience-interview";
 import styles from "./interview-screen.module.css";
+
+/**
+ * 대화의 진행 상황입니다. 중도 이탈을 셀 때 몇 번째 턴이었는지와 그때 블록이 몇 개 채워져 있었는지를
+ * 함께 남기는 데 씁니다. 채운 뒤에 떠난 것과 비어 있는 채로 떠난 것은 해석이 완전히 다릅니다.
+ *
+ * `isEnded`를 함께 싣습니다. 끝낸 뒤의 이동은 이탈이 아니라 종료의 뒷정리인데, 그것을 이동 방식이나
+ * 확인 대화를 건너뛰었는지로 미루어 보면 화면이 바뀔 때마다 판정이 흔들립니다.
+ */
+export interface InterviewProgressSnapshot {
+  readonly turn: number;
+  readonly filledBlocks: number;
+  readonly isEnded: boolean;
+}
 
 export interface InterviewScreenProps {
   snapshot: ExperienceEvidenceSnapshot;
@@ -29,6 +43,14 @@ export interface InterviewScreenProps {
   onLoadLatest?: () => void;
   /** 저장되지 않은 턴이 있는지 알립니다. 이 화면을 떠날 때 확인을 받을지 흐름이 판단합니다. */
   onUnsavedChange?: (hasUnsaved: boolean) => void;
+  /**
+   * 대화가 어디까지 왔는지 알립니다(이슈 #126). 이 화면을 떠나는 자리는 흐름 컴포넌트의
+   * `navigate` 한 곳인데 거기서는 턴 수도 블록 수도 알 수 없어, 떠나기 전에 올려 둡니다.
+   *
+   * 받는 쪽은 이 값을 상태가 아니라 ref에 담습니다. 그리는 데 쓰지 않는 값이라 상태로 두면 턴마다
+   * 흐름 전체가 다시 그려집니다.
+   */
+  onProgressChange?: (progress: InterviewProgressSnapshot) => void;
   /**
    * 사용자가 인터뷰를 끝냈을 때 불립니다. 끝난 인터뷰의 요약 화면으로 돌아가는 데 씁니다.
    *
@@ -139,6 +161,7 @@ export function InterviewScreen({
   restore,
   onLoadLatest,
   onUnsavedChange,
+  onProgressChange,
   onEnded,
   fetchImpl,
 }: InterviewScreenProps) {
@@ -149,6 +172,24 @@ export function InterviewScreen({
    * 형제라 한쪽이 훅을 들면 다른 쪽이 볼 수 없습니다. 공통 부모인 여기서 들고 양쪽에 나눠 줍니다.
    */
   const stream = useExperienceInterview({ snapshot, interviewId, restore, onCompleted: onEnded, fetchImpl });
+
+  /*
+   * 대화가 열렸다고 알립니다. 새 분석에서 온 것과 저장된 인터뷰를 이어가는 것이 모두 이 화면을
+   * 지나므로, 두 경로를 한 자리에서 셀 수 있는 곳이 여기뿐입니다. 어느 쪽인지는 `entry_path`
+   * 공통 파라미터가 가릅니다.
+   *
+   * 끝난 인터뷰를 다시 연 것은 세지 않습니다. 그때도 이 화면이 뜨지만 읽기 전용이고, 세면
+   * 인터뷰 시작 수가 요약을 다시 열어 본 횟수만큼 부풀어 중도 이탈률이 실제보다 낮게 보입니다.
+   * 판정은 저장된 상태를 직접 읽습니다. 화면이 읽기 전용인지로 미루어 보지 않습니다.
+   */
+  const startedRef = useRef(false);
+  useEffect(() => {
+    if (startedRef.current || restore?.status === "completed") return;
+    startedRef.current = true;
+    // 저장된 대화에서 이어가면 그 턴 수부터 셉니다. 새 인터뷰는 0입니다. 첫 렌더의 값이라 훅이
+    // 저장된 대화에서 되살린 수 그대로이고, 세는 규칙을 이 화면이 다시 적지 않습니다.
+    trackEvent({ name: "interview_started", turn: stream.turnsUsed });
+  }, [restore, stream.turnsUsed]);
 
   /*
    * 저장이 밀린 턴이 있는지를 위로 알립니다(이슈 #115). 흐름 컴포넌트가 이 화면을 떠날 때 확인을
@@ -165,6 +206,15 @@ export function InterviewScreen({
    * 셉니다. 편집은 저장된 인터뷰의 요약 화면에 있습니다(이슈 #115).
    */
   const filledBlocks = filledBlockCount(stream.blockState);
+
+  /*
+   * 진행 상황을 흐름에 올려 둡니다(이슈 #126). 이 화면을 떠나는 자리는 흐름의 navigate 한 곳이고
+   * 거기서는 이 값을 알 수 없으므로, 바뀔 때마다 미리 올립니다. 받는 쪽이 ref에 담아 두므로
+   * 이 효과가 다시 그리기를 일으키지 않습니다.
+   */
+  useEffect(() => {
+    onProgressChange?.({ turn: stream.turnsUsed, filledBlocks, isEnded: stream.isEnded });
+  }, [onProgressChange, stream.turnsUsed, stream.isEnded, filledBlocks]);
 
   const title =
     snapshot.representativeCommit.title ??
