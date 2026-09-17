@@ -30,7 +30,20 @@ export type InterviewQuestionTarget = { readonly targetBlock: BlockKind; readonl
  * - `"stop"`: 언마운트·상한 도달처럼 안내 없이 그대로 멈춰야 합니다.
  */
 export type InterviewQuestionOutcome =
-  | { readonly kind: "ask"; readonly target: NonNullable<InterviewQuestionTarget>; readonly lastOutcome: InterviewLastOutcome | null }
+  | {
+      readonly kind: "ask";
+      readonly target: NonNullable<InterviewQuestionTarget>;
+      readonly lastOutcome: InterviewLastOutcome | null;
+      /**
+       * 이 요청이 속한 턴 번호입니다. 계측만 씁니다(이슈 #126, PR #139 리뷰 1라운드).
+       *
+       * 호출부가 확정한 값을 요청과 함께 받습니다. 이 훅이 옵션으로 받은 `turnsUsed`를 요청 시점에
+       * 읽으면 한 턴 뒤처진 값이 담깁니다. 호출부는 `onBeforeQuestion` 안에서 턴 수를 올린 직후 이
+       * 훅의 `start()`를 부르는데, 그 사이에 렌더가 끝나지 않아 옵션을 옮겨 담는 effect가 아직
+       * 돌지 않았기 때문입니다. 2026-09-17 실측에서 두 번째 질문까지 턴 0으로 기록되었습니다.
+       */
+      readonly turn: number;
+    }
   | { readonly kind: "ready_to_finish" }
   | { readonly kind: "stop" };
 
@@ -101,11 +114,15 @@ export interface UseInterviewStreamOptions {
     readonly history: readonly InterviewHistoryMessage[];
   }) => Promise<InterviewQuestionOutcome>;
   /**
-   * 지금까지 확정된 턴 수입니다. 계측이 이벤트에 실을 값이고 화면 동작에는 쓰지 않습니다(이슈 #126).
+   * 지금까지 확정된 턴 수입니다. 계측이 이벤트에 담을 값이고 화면 동작에는 쓰지 않습니다(이슈 #126).
    *
    * 세는 규칙을 이 훅이 다시 적지 않고 받습니다. 완료 대기 안내에 대한 보충 답변은 턴으로 세지
    * 않는데(설계 6-1절) 그 판정은 `useExperienceInterview`에 있습니다. 여기서 메시지를 다시 세면 두
-   * 곳이 갈라져 화면은 멀쩡한데 계측만 조용히 틀립니다.
+   * 곳의 기준이 달라져 화면은 정상인데 계측만 오류 없이 틀린 값을 전송합니다.
+   *
+   * 질문 요청에는 이 값을 쓰지 않습니다. 요청이 속한 턴은 `onBeforeQuestion`이 요청과 함께
+   * 돌려줍니다(`InterviewQuestionOutcome`의 `turn`). 이 옵션은 첫 질문의 턴과 답변 제출 시점의
+   * 턴에만 씁니다. 두 시점은 렌더가 끝난 뒤라 값이 최신입니다.
    */
   turnsUsed?: number;
 }
@@ -293,6 +310,19 @@ export function useInterviewStream({
    */
   const requestStartedAtRef = useRef<number | null>(null);
   const questionShownAtRef = useRef<number | null>(null);
+  /**
+   * 다음 질문 요청이 속한 턴 번호입니다. `pendingTargetRef`와 같은 자리에서 같은 방식으로 씁니다.
+   * 요청과 함께 나르지 않고 옵션을 요청 시점에 읽으면 한 턴 뒤처집니다(PR #139 리뷰 1라운드).
+   */
+  const pendingTurnRef = useRef(turnsUsed);
+  /**
+   * 화면에 있는 질문이 완료 대기 안내인지입니다. 그 안내는 모델이 만든 질문이 아니라 이 훅이 넣는
+   * 고정 문구이고, 거기에 답한 것은 턴으로 세지 않습니다(설계 6-1절).
+   *
+   * 표시를 안내를 넣는 그 한 곳에서 세우고 새 질문 요청에서 내립니다. 제출 시점에 마지막 메시지의
+   * 본문을 다시 비교하면 같은 판정이 두 곳에 생깁니다.
+   */
+  const isSupplementaryRef = useRef(false);
   const optionsRef = useRef({
     url,
     snapshot,
@@ -380,6 +410,10 @@ export function useInterviewStream({
      * 읽습니다. 계측이 따로 읽으면 그 사이에 값이 바뀔 때 질문과 다른 블록이 실립니다.
      */
     const target = pendingTargetRef.current;
+    // 이 요청이 속한 턴입니다. 대상과 같은 시점에 한 번만 읽어 둘이 어긋나지 않게 합니다.
+    const turn = pendingTurnRef.current;
+    // 새 질문을 요청하므로 완료 대기 안내는 더 이상 화면의 질문이 아닙니다.
+    isSupplementaryRef.current = false;
     // 계측이 첫 조각까지의 시간을 재는 기준점입니다(이슈 #126). 재시도는 그 시도부터 다시 잽니다.
     requestStartedAtRef.current = Date.now();
     let body: string | undefined;
@@ -443,7 +477,7 @@ export function useInterviewStream({
               if (target !== null) {
                 trackEvent({
                   name: "question_shown",
-                  turn: current.turnsUsed,
+                  turn,
                   block: target.targetBlock,
                   element: target.targetElement,
                   ttft_ms: now - startedAt,
@@ -471,7 +505,7 @@ export function useInterviewStream({
           // 자동 재연결이 끝내 실패한 것만 여기 옵니다. 재연결 중에는 오류를 세우지 않으므로
           // 이 건수는 사용자가 실제로 오류 안내를 본 횟수와 같습니다.
           try {
-            trackEvent({ name: "interview_stream_failed", turn: current.turnsUsed, error_kind: streamError.kind });
+            trackEvent({ name: "interview_stream_failed", turn, error_kind: streamError.kind });
           } catch {
             // 계측이 죽는 것이 오류 안내를 잃는 것보다 낫습니다.
           }
@@ -580,9 +614,12 @@ export function useInterviewStream({
        */
       try {
         const shownAt = questionShownAtRef.current;
+        // 완료 대기 안내에 대한 보충 답변은 턴을 올리지 않습니다(설계 6-1절). 올리면 뒤따르는
+        // 진짜 질문과 같은 턴 번호가 두 번 나갑니다.
+        const turnsUsedNow = optionsRef.current.turnsUsed;
         trackEvent({
           name: "answer_submitted",
-          turn: optionsRef.current.turnsUsed + 1,
+          turn: isSupplementaryRef.current ? turnsUsedNow : turnsUsedNow + 1,
           answer_length_bucket: answerLengthBucket(text.length),
           ...(shownAt === null ? {} : { think_time_ms: Date.now() - shownAt }),
         });
@@ -610,6 +647,13 @@ export function useInterviewStream({
           return;
         }
         if (outcome.kind === "ready_to_finish") {
+          /*
+           * 이 안내는 스트림으로 오지 않으므로 "질문을 읽기 시작한 시각"이 없습니다. 앞 질문의
+           * 시각을 그대로 두면 보충 답변의 `think_time_ms`에 앞 질문을 읽고 답한 시간까지
+           * 들어갑니다(PR #139 리뷰 1라운드).
+           */
+          questionShownAtRef.current = null;
+          isSupplementaryRef.current = true;
           // 유효한 질문 후보가 없습니다(설계 6-2절 6번). 완료 대기 안내를 "질문" 자리에 넣어 종료 전 보충 답변을 받을 때도(설계 6-3절) 질문·답변 교대 계약이 깨지지 않게 합니다.
           updateMessages((previous) => {
             messageCountRef.current += 1;
@@ -619,6 +663,7 @@ export function useInterviewStream({
           return;
         }
         pendingTargetRef.current = outcome.target;
+        pendingTurnRef.current = outcome.turn;
         pendingLastOutcomeRef.current = outcome.lastOutcome;
         start();
       });

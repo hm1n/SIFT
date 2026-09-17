@@ -570,6 +570,33 @@ describe("InterviewScreen 턴 계측", () => {
     });
   });
 
+  /**
+   * PR #139 리뷰 1라운드의 회귀 테스트입니다. 요청이 속한 턴을 옵션에서 읽으면 한 턴 뒤처집니다.
+   * 호출부가 턴 수를 올린 직후 이 훅이 요청을 보내는데, 그 사이에 렌더가 끝나지 않아 옵션을 옮겨
+   * 담는 effect가 아직 돌지 않습니다. 고치기 전에는 두 번째 질문도 턴 0으로 기록되었습니다.
+   */
+  it("두 번째 질문은 다음 턴 번호로 남긴다", async () => {
+    render(
+      <InterviewScreen
+        snapshot={evidenceSnapshotFixture()}
+        onBack={vi.fn()}
+        fetchImpl={testStreamFetch("normal")}
+      />
+    );
+    const answer = await screen.findByRole("textbox", { name: /답변/ });
+    fireEvent.change(answer, { target: { value: ANSWER } });
+    fireEvent.click(screen.getByRole("button", { name: "전송" }));
+
+    const shownTurns = () =>
+      trackEvent.mock.calls
+        .map(([event]) => event as { name: string; turn: number })
+        .filter((event) => event.name === "question_shown")
+        .map((event) => event.turn);
+
+    await waitFor(() => expect(shownTurns()).toHaveLength(2));
+    expect(shownTurns()).toEqual([0, 1]);
+  });
+
   it("답변이 블록에 반영되면 그 블록과 반응을 남긴다", async () => {
     render(
       <InterviewScreen

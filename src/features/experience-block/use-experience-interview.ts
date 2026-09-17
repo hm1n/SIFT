@@ -732,7 +732,10 @@ export function useExperienceInterview({
       answeredTargetRef.current = target;
       setCurrentTarget(target);
       answeredAskedCountRef.current = progressRef.current[next.block].elements[next.element].askedCount;
-      return { kind: "ask", target, lastOutcome };
+      // 이 요청이 속한 턴을 함께 돌려줍니다. 계측이 옵션으로 받은 값을 요청 시점에 읽으면 한 턴
+      // 뒤처집니다. 여기서 턴 수를 올린 직후 스트림 훅이 요청을 보내는데, 그 사이에 렌더가 끝나지
+      // 않아 옵션을 옮겨 담는 effect가 아직 돌지 않았기 때문입니다(PR #139 리뷰 1라운드).
+      return { kind: "ask", target, lastOutcome, turn: nextTurnsUsed };
     },
     [applyTurn]
   );
