@@ -151,12 +151,16 @@ describe("revokeGitHubGrant", () => {
     expect(init.body).toBe(JSON.stringify({ access_token: "user-token" }));
   });
 
-  /** 지울 grant가 없으면 권한도 남아 있지 않습니다. 목표가 이미 이뤄진 경우라 해제로 봅니다. */
-  it("404는 이미 해제된 것으로 본다", async () => {
+  /**
+   * 문서가 정한 성공은 204뿐이고 404가 grant 부재를 뜻한다는 계약은 없습니다(PR #147 리뷰 2라운드).
+   * 성공으로 보면 grant가 남아 있는데도 해제됐다고 알리게 되고, 사용자는 정리할 일이 남았다는 것을
+   * 모릅니다. 실패로 보면 이미 없는 권한을 확인하러 한 번 다녀오는 것이 비용의 전부입니다.
+   */
+  it("404는 해제로 보지 않는다", async () => {
     stubEnv(CREDENTIALS);
     stubFetch(Response.json({ message: "Not Found" }, { status: 404 }));
 
-    expect(await revokeGitHubGrant("user-token")).toEqual({ status: "revoked" });
+    expect(await revokeGitHubGrant("user-token")).toEqual({ status: "failed", reason: "rejected" });
   });
 
   /** 사용자 토큰 문제가 아니라 서버 설정 문제입니다. 다시 시도해도 같습니다. */
@@ -183,7 +187,7 @@ describe("revokeGitHubGrant", () => {
   });
 
   /** 한도가 아닌 403과 422, 5xx입니다. 사용자에게는 모두 "권한이 남았다"로 같습니다. */
-  it.each([403, 422, 500])("%i는 거절로 묶는다", async (status) => {
+  it.each([403, 404, 422, 500])("%i는 거절로 묶는다", async (status) => {
     stubEnv(CREDENTIALS);
     stubFetch(Response.json({ message: "nope" }, { status }));
 

@@ -125,10 +125,14 @@ const REVOKE_TIMEOUT_MS = 10_000;
  * 토큰 하나만 지우는 `DELETE /applications/{client_id}/token`을 쓰지 않습니다. 그 호출은 지금 브라우저의
  * 세션만 끊고 다른 기기에서 받아 둔 토큰은 남기므로, 권한을 끊었다고 말할 수 없습니다.
  *
- * 문서에 없는 상태 코드도 가립니다. 404는 지울 grant가 없는 경우입니다. 사용자가 GitHub 설정에서 이미
- * 해제했거나 토큰이 이미 죽은 것이고, 어느 쪽이든 "권한이 남지 않는다"는 목표는 이뤄져 있으므로
- * 해제로 봅니다. 401은 client id와 secret이 틀린 경우라 다시 시도해도 같습니다. 403과 429는
- * 요청 한도이므로 한도로 분류합니다. 그 밖(422와 5xx)은 거절로 묶습니다.
+ * 문서에 없는 상태 코드도 가립니다. 401은 client id와 secret이 틀린 경우라 다시 시도해도 같습니다.
+ * 403과 429는 요청 한도이므로 한도로 분류합니다. 그 밖(404와 422와 5xx)은 거절로 묶습니다.
+ *
+ * **404를 해제로 보지 않습니다.** 문서가 정한 성공은 204뿐이고 404가 grant 부재를 뜻한다는 계약은
+ * 없습니다(PR #147 리뷰 2라운드). 성공으로 보면 grant가 남아 있는데도 해제됐다고 알리게 되고, 그때
+ * 사용자는 정리할 일이 남았다는 것을 모릅니다. 실패로 보면 이미 없는 권한을 확인하러 GitHub 설정에
+ * 한 번 다녀오는 것이 비용의 전부입니다. 본문을 읽지 못한 경우를 확인할 일이 남은 쪽으로 두는
+ * `withdrawnMarker`와 같은 기준입니다.
  *
  * 응답 본문을 읽지 않습니다. 성공이 204라 읽을 것이 없고, 실패 분류에 필요한 본문은 한도 판별이
  * 자기 안에서 try/catch로 읽습니다.
@@ -154,7 +158,7 @@ export async function revokeGitHubGrant(token: string): Promise<RevokeGrantResul
     return { status: "failed", reason: "network" };
   }
 
-  if (response.status === 204 || response.status === 404) return { status: "revoked" };
+  if (response.status === 204) return { status: "revoked" };
   if (await isGitHubRateLimited(response)) return { status: "failed", reason: "rate_limit" };
   if (response.status === 401) return { status: "failed", reason: "invalid_credentials" };
   return { status: "failed", reason: "rejected" };
