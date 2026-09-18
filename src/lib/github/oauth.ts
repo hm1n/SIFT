@@ -102,6 +102,19 @@ const GRANT_URL = (clientId: string) =>
   `https://api.github.com/applications/${encodeURIComponent(clientId)}/grant`;
 
 /**
+ * grant 해제 호출의 제한 시간입니다.
+ *
+ * 없으면 GitHub이 응답도 실패도 하지 않을 때 탈퇴 요청 전체가 그대로 멈춥니다. 이 호출은 데이터를
+ * 지운 **뒤에** 오므로, 멈추는 동안 사용자는 지워진 데이터에 대한 결과도 못 받고 세션 쿠키도
+ * 지워지지 않습니다. 삭제는 끝났는데 로그인 상태로 남아 있는 것이 가장 나쁜 조합입니다.
+ *
+ * 10초입니다. 요청 하나뿐이고 본문도 작아 정상 응답은 1초 안에 옵니다. 라우트 예산(Vercel 기본
+ * 60초) 안에서 결과 안내와 쿠키 삭제까지 끝낼 여유를 둡니다. 시간이 다 되면 `fetch`가
+ * `TimeoutError`로 reject하므로 아래 catch가 `network`로 분류합니다.
+ */
+const REVOKE_TIMEOUT_MS = 10_000;
+
+/**
  * 사용자가 이 OAuth App에 준 grant를 지웁니다(이슈 #145, 회원 탈퇴).
  *
  * 문서(`DELETE /applications/{client_id}/grant`, 2026-09-18 확인)가 정하는 계약입니다. 인증은 Basic이고
@@ -135,6 +148,7 @@ export async function revokeGitHubGrant(token: string): Promise<RevokeGrantResul
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ access_token: token }),
+      signal: AbortSignal.timeout(REVOKE_TIMEOUT_MS),
     });
   } catch {
     return { status: "failed", reason: "network" };

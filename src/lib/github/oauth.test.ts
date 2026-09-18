@@ -190,6 +190,32 @@ describe("revokeGitHubGrant", () => {
     expect(await revokeGitHubGrant("user-token")).toEqual({ status: "failed", reason: "rejected" });
   });
 
+  /**
+   * 제한 시간이 없으면 GitHub이 응답도 실패도 하지 않을 때 탈퇴 요청 전체가 멈춥니다. 이 호출은
+   * 데이터를 지운 뒤에 오므로 그동안 결과 안내도 세션 쿠키 삭제도 일어나지 않습니다.
+   */
+  it("제한 시간을 걸어 보낸다", async () => {
+    stubEnv(CREDENTIALS);
+    const fetchMock = stubFetch(new Response(null, { status: 204 }));
+
+    await revokeGitHubGrant("user-token");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(init.signal?.aborted).toBe(false);
+  });
+
+  /** 시간이 다 되면 `fetch`가 `TimeoutError`로 reject합니다. 다시 시도할 여지가 있는 실패입니다. */
+  it("제한 시간을 넘기면 network다", async () => {
+    stubEnv(CREDENTIALS);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new DOMException("The operation was aborted due to timeout", "TimeoutError"))
+    );
+
+    expect(await revokeGitHubGrant("user-token")).toEqual({ status: "failed", reason: "network" });
+  });
+
   it("전송이 실패하면 network다", async () => {
     stubEnv(CREDENTIALS);
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("connect ECONNRESET")));
