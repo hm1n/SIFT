@@ -35,7 +35,6 @@
  */
 
 import { chromium } from "@playwright/test";
-import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -118,32 +117,44 @@ async function waitUntil(predicate: () => boolean, timeoutMs: number): Promise<b
 }
 
 /**
- * release 이름이 클라이언트 번들에 인라인됐는지 확인합니다.
+ * 빌드가 정한 release 이름이 클라이언트 번들에 인라인됐는지 확인합니다.
  *
  * 이슈 #81은 붙지 않는 것을 확인했고 이슈 #144에서 기대가 뒤집혔습니다. `release.create`를 켜면
  * `resolveReleaseName`이 이름을 해소하고 `next.config`의 `env._sentryRelease`로 넣어 모든 이벤트에
  * release가 붙습니다. 이 값이 없으면 배포 사이를 가를 수 없습니다.
  *
- * 기대하는 이름은 SDK의 해소 순서를 따릅니다. `SENTRY_RELEASE`가 있으면 그 값이고, 없으면 Git
- * revision입니다. CI 환경변수로 해소되는 경우는 이 스크립트가 도는 로컬 확인 절차의 대상이 아닙니다.
+ * 기대하는 이름을 이 스크립트가 다시 만들지 않고 빌드가 적어 둔 것을 읽습니다. SDK의 해소 순서는
+ * `SENTRY_RELEASE`, CI 환경변수, Git revision 순인데 그 입력이 빌드 시점과 확인 시점에 같다는 보장이
+ * 없습니다. 빌드한 뒤 커밋을 하나만 더 쌓아도 Git revision이 달라져, 멀쩡히 주입된 빌드를 실패로
+ * 보고하게 됩니다. `required-server-files.json`은 빌드가 확정한 설정을 그대로 담으므로 검사 대상과
+ * 기대값의 출처가 하나가 됩니다.
+ *
+ * 이름이 아예 없는 경우와 이름은 있는데 번들에 없는 경우를 가릅니다. 전자는 설정이 release를 끈
+ * 것이고 후자는 주입 경로가 끊긴 것이라 볼 자리가 다릅니다.
+ *
+ * `.next`는 이 프로젝트가 바꾸지 않는 기본 `distDir`입니다. 메타데이터 파일 자체가 그 아래 있으므로
+ * 경로의 시작점은 상수일 수밖에 없습니다.
  *
  * 이 검사는 프로덕션 빌드 산출물을 읽으므로 vitest 스위트에 넣을 수 없습니다. 확인 절차가 이미
  * 프로덕션 빌드를 전제하므로 여기에 둡니다.
  */
 function checkReleaseInjected(): { ok: boolean; detail: string } {
-  let expected: string;
-  const fromEnv = process.env.SENTRY_RELEASE?.trim();
-  if (fromEnv) {
-    expected = fromEnv;
-  } else {
-    try {
-      expected = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-    } catch {
-      return {
-        ok: false,
-        detail: "release 이름을 알 수 없습니다. git revision을 읽을 수 없고 SENTRY_RELEASE도 없습니다.",
-      };
-    }
+  const metaPath = join(".next", "required-server-files.json");
+  let meta: { config?: { env?: Record<string, string> } };
+  try {
+    meta = JSON.parse(readFileSync(metaPath, "utf8")) as typeof meta;
+  } catch (error) {
+    return {
+      ok: false,
+      detail: `${metaPath}을 읽지 못했습니다. 프로덕션 빌드가 필요합니다. ${String(error)}`,
+    };
+  }
+  const expected = meta.config?.env?._sentryRelease;
+  if (!expected) {
+    return {
+      ok: false,
+      detail: `빌드가 release 이름을 정하지 않았습니다. ${metaPath}에 _sentryRelease가 없습니다.`,
+    };
   }
   const staticDir = join(".next", "static");
   let files: string[];
