@@ -522,6 +522,60 @@ describe("메모리 저장 계층", () => {
     });
   });
 
+  describe("회원 탈퇴", () => {
+    it("분석과 딸린 인터뷰를 함께 지운다", async () => {
+      const store = createInMemoryStore();
+      const { analysisId, interviewId } = await seed(store);
+
+      expect(await store.deleteUserData(OWNER_ID)).toBe(1);
+      expect(await store.getAnalysis(analysisId, OWNER_ID)).toBeNull();
+      expect(await store.getInterview(interviewId, OWNER_ID)).toBeNull();
+      expect(await store.listInterviews(OWNER_ID)).toEqual([]);
+    });
+
+    /** 이슈 #145 Constraint입니다. 대상은 받은 사용자 번호뿐입니다. */
+    it("다른 사용자의 분석과 인터뷰는 남긴다", async () => {
+      const store = createInMemoryStore();
+      const mine = await seed(store);
+      const theirs = await seed(store, OTHER_ID);
+
+      expect(await store.deleteUserData(OWNER_ID)).toBe(1);
+      expect(await store.getAnalysis(mine.analysisId, OWNER_ID)).toBeNull();
+      expect(await store.getAnalysis(theirs.analysisId, OTHER_ID)).not.toBeNull();
+      expect(await store.getInterview(theirs.interviewId, OTHER_ID)).not.toBeNull();
+      expect((await store.listInterviews(OTHER_ID)).length).toBe(1);
+    });
+
+    /** 경험을 아직 고르지 않은 분석입니다. 인터뷰가 없어도 근거 스냅샷은 들고 있습니다. */
+    it("인터뷰가 붙지 않은 분석도 지운다", async () => {
+      const store = createInMemoryStore();
+      const analysisId = await store.saveAnalysis({
+        githubUserId: OWNER_ID,
+        repoOwner: "hm1n",
+        repoName: "SIFT",
+        contributionItems: [],
+        candidates: [],
+        stageASummary: {},
+      });
+
+      expect(await store.deleteUserData(OWNER_ID)).toBe(1);
+      expect(await store.getAnalysis(analysisId, OWNER_ID)).toBeNull();
+    });
+
+    it("저장한 적 없는 사용자는 0이고 오류가 아니다", async () => {
+      const store = createInMemoryStore();
+      expect(await store.deleteUserData(OWNER_ID)).toBe(0);
+    });
+
+    it("두 번 부르면 두 번째는 0이다", async () => {
+      const store = createInMemoryStore();
+      await seed(store);
+
+      expect(await store.deleteUserData(OWNER_ID)).toBe(1);
+      expect(await store.deleteUserData(OWNER_ID)).toBe(0);
+    });
+  });
+
   describe("저장된 분석 읽기", () => {
     it("저장한 값을 그대로 돌려주고 사용자 번호는 싣지 않는다", async () => {
       const store = createInMemoryStore();

@@ -8,3 +8,9 @@ export const LOGIN_PATH = "/api/auth/github/login";
 
 /** 세션 삭제 라우트입니다. `DELETE`로 부르면 세션 쿠키를 지웁니다. */
 export const SESSION_PATH = "/api/auth/session";
+
+/**
+ * 회원 탈퇴 라우트입니다(이슈 #145). `DELETE`로 부르면 저장된 데이터를 지우고 GitHub 권한을
+ * 해제하고 세션 쿠키를 지웁니다. 대상은 세션의 사용자 번호뿐이라 본문이 없습니다.
+ */
+export const ACCOUNT_PATH = "/api/account";

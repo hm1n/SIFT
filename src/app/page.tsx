@@ -10,6 +10,8 @@ import { cookies } from "next/headers";
 interface HomeSearchParams {
   auth_error?: string | string[];
   login?: string | string[];
+  /** 회원 탈퇴를 끝낸 계정 메뉴가 붙여 보내는 표시입니다(이슈 #145). */
+  withdrawn?: string | string[];
 }
 
 function firstValue(value: string | string[] | undefined): string | undefined {
@@ -71,7 +73,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<Hom
           loginResult={loginResult}
           urlAfterReport={urlWithoutLoginMarker(authError)}
         />
-        <LoginScreen authError={authError} />
+        <LoginScreen authError={authError} withdrawn={firstValue(params.withdrawn)} />
         {/*
           법적 고지 링크는 로그인 화면 밖에 둡니다. 그 화면은 상태가 셋이고 인증 중과 오류는
           `StatusScreen`이라 동의 문장이 없습니다. 안쪽에 두면 세 상태 중 하나에서만 링크가 보입니다.

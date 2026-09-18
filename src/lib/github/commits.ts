@@ -1,4 +1,5 @@
 import { GitHubFetchError, type GitHubFetchErrorKind } from "./errors";
+import { isGitHubRateLimited } from "./rate-limit";
 import type { CommitSummary, GitHubAuth } from "./types";
 
 export const GITHUB_API_BASE = "https://api.github.com";
@@ -31,36 +32,14 @@ function githubHeaders(token: string): HeadersInit {
   };
 }
 
-async function readErrorMessage(response: Response): Promise<string> {
-  try {
-    const body: unknown = await response.clone().json();
-    const message = (body as { message?: unknown } | null)?.message;
-    return typeof message === "string" ? message : "";
-  } catch {
-    return "";
-  }
-}
-
 export async function classifyErrorResponse(response: Response): Promise<GitHubFetchErrorKind> {
   if (response.status === 404) return "repo_not_found";
   if (response.status === 401) return "auth_revoked";
-  if (response.status === 429) return "rate_limit";
   if (response.status === 422) return "server_error";
-  if (response.status === 403) {
-    // 1차 rate limit: x-ratelimit-remaining이 0. 2차(secondary) rate limit: remaining이 남아 있고
-    // retry-after 헤더도 없을 수 있어, 이때는 응답 본문 메시지로 판별한다. 다 놓치면 정상 유저가
-    // 인증 취소로 오분류된다.
-    const remaining = response.headers.get("x-ratelimit-remaining");
-    const retryAfter = response.headers.get("retry-after");
-    if (remaining === "0" || retryAfter !== null) return "rate_limit";
-
-    // ponytail: 메시지 문자열 매칭은 GitHub가 문구를 바꾸면 깨지는 얕은 방법이지만, 공식
-    // 문서에 나온 두 문구만 대응하는 지금 수준에서는 충분함. 오분류가 실제로 관찰되면 그때
-    // 패턴을 넓히면 됨.
-    const message = await readErrorMessage(response);
-    if (/secondary rate limit|abuse detection/i.test(message)) return "rate_limit";
-    return "auth_revoked";
-  }
+  // 1차와 2차(secondary)를 함께 가립니다. 판별을 `rate-limit.ts`에 둔 이유는 그 파일 주석에 있습니다.
+  if (await isGitHubRateLimited(response)) return "rate_limit";
+  // 한도가 아닌 403은 권한 문제입니다. 한도를 다 놓치면 정상 유저가 인증 취소로 오분류됩니다.
+  if (response.status === 403) return "auth_revoked";
   return "server_error";
 }
 
