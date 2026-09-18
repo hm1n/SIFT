@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LEGAL_LINK_COPY } from "@/copy/legal";
+import { SiftMark } from "./sift-mark";
 import styles from "./site-footer.module.css";
 
 /**
@@ -9,21 +10,34 @@ import styles from "./site-footer.module.css";
  * 공개하라고 요구합니다. 로그인 화면의 안내 문구에만 링크를 걸면 로그인한 뒤에는 처리방침에 닿을
  * 길이 없어져 그 요구를 만족하지 못합니다.
  *
- * `flex-shrink: 0`인 28px 줄 하나라 아래 화면들의 배치 규칙을 바꾸지 않습니다. `.shell`과 로그인
- * 화면은 `flex: 1`로 남은 높이를 받으므로 이 줄의 높이만큼만 줄어듭니다.
+ * 배치와 타이포그래피는 디자인 파일 `App.tsx`의 랜딩 푸터를 옮겼습니다. 왼쪽에 마크와 워드마크,
+ * 오른쪽에 한 덩어리입니다. 원본의 오른쪽은 `DEVELOPER TOOL · AI INTERVIEW` 태그라인인데 그 자리에
+ * 법적 고지 링크를 넣었습니다. 태그라인은 이 저장소에 없는 랜딩 화면의 문구입니다.
  *
- * 처리방침 링크를 약관 링크보다 진하게 그립니다. 표준지침 제20조가 "개인정보 처리방침"이라는 명칭을
+ * 원본과 다른 것이 하나 있습니다. 원본의 오른쪽 글자는 neutral-300이라 흰 배경에서 대비가 약
+ * 1.6:1입니다. 그 색을 링크에 쓰면 표준지침 제20조가 요구하는 "쉽게 확인할 수 있도록"에 어긋나므로
+ * 링크만 `--color-muted-foreground`로 올렸습니다. 왼쪽 브랜드는 원본 색 그대로입니다.
+ *
+ * 처리방침 링크를 약관 링크보다 진하게 그립니다. 같은 조항이 "개인정보 처리방침"이라는 명칭을
  * 글자 크기나 색상으로 다른 고지사항과 구분하라고 정하고 있습니다.
  */
 export function SiteFooter() {
   return (
     <footer className={styles.footer} aria-label={LEGAL_LINK_COPY.footerLabel}>
-      <Link className={styles.privacyLink} href="/privacy">
-        {LEGAL_LINK_COPY.privacy}
-      </Link>
-      <Link className={styles.link} href="/terms">
-        {LEGAL_LINK_COPY.terms}
-      </Link>
+      <div className={styles.inner}>
+        <div className={styles.brand}>
+          <SiftMark size={14} />
+          <span className={styles.brandName}>SIFT</span>
+        </div>
+        <div className={styles.links}>
+          <Link className={styles.privacyLink} href="/privacy">
+            {LEGAL_LINK_COPY.privacy}
+          </Link>
+          <Link className={styles.link} href="/terms">
+            {LEGAL_LINK_COPY.terms}
+          </Link>
+        </div>
+      </div>
     </footer>
   );
 }

@@ -15,6 +15,15 @@
   --color-primary-foreground: #ffffff;
   --color-accent: #f5f5f5;
 
+  /*
+   * 본문보다 흐린 텍스트 회색입니다. 디자인 파일의 neutral-400이고 푸터의 브랜드 워드마크가 씁니다.
+   * 값은 아래 `--color-scrollbar-hover`와 같지만 역할이 달라 따로 둡니다. 스크롤바 색을 바꾸려고
+   * 그 값을 고쳤을 때 글자 색까지 함께 바뀌면 안 됩니다.
+   *
+   * 흰 배경에서 대비가 약 2.5:1이라 본문이나 읽어야 하는 글자에는 쓰지 않습니다.
+   */
+  --color-foreground-faint: #a3a3a3;
+
   /* 스크롤바와 호버 경계에 쓰는 보조 회색입니다. 디자인 파일의 neutral-300과 neutral-400입니다. */
   --color-scrollbar: #d4d4d4;
   --color-scrollbar-hover: #a3a3a3;

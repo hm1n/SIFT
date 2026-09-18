@@ -23,4 +23,20 @@ describe("SiteFooter", () => {
     render(<SiteFooter />);
     expect(screen.getByRole("contentinfo", { name: LEGAL_LINK_COPY.footerLabel })).toBeInTheDocument();
   });
+
+  /**
+   * 디자인 파일의 랜딩 푸터를 옮기면서 왼쪽에 브랜드가 생겼습니다. 마크는 `aria-hidden`이라 워드마크
+   * 글자만 읽힙니다.
+   */
+  it("왼쪽에 브랜드 워드마크를 그린다", () => {
+    render(<SiteFooter />);
+    const footer = screen.getByRole("contentinfo", { name: LEGAL_LINK_COPY.footerLabel });
+    expect(footer).toHaveTextContent("SIFT");
+  });
+
+  /** 브랜드는 링크가 아닙니다. 상단 헤더의 마크가 이미 홈으로 가는 링크라 같은 자리를 둘로 만들지 않습니다. */
+  it("브랜드를 링크로 만들지 않는다", () => {
+    render(<SiteFooter />);
+    expect(screen.getAllByRole("link")).toHaveLength(2);
+  });
 });
