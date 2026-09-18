@@ -1,4 +1,5 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
+import { isGitHubRateLimited } from "./rate-limit";
 
 export const GITHUB_OAUTH_STATE_COOKIE = "github_oauth_state";
 
@@ -26,11 +27,23 @@ const AUTHORIZE_URL = "https://github.com/login/oauth/authorize";
 const ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token";
 export type GitHubOAuthConfig = { clientId: string; clientSecret: string; redirectUri: string };
 
-export function getGitHubOAuthConfig(requestUrl: string): GitHubOAuthConfig {
+/**
+ * OAuth App의 client id와 secret입니다. 둘 중 하나라도 없으면 `null`입니다.
+ *
+ * 두 환경변수를 읽는 자리를 이 함수 하나로 둡니다. 로그인은 없으면 던져야 하고(사용자가 할 수 있는
+ * 일이 없는 서버 설정 문제입니다) 회원 탈퇴의 grant 해제는 없어도 데이터 삭제를 끝내야 해서, 두
+ * 경로가 없을 때 하는 일이 다릅니다. 그 차이는 각자 정하게 하고 이름은 한 곳에 둡니다.
+ */
+function oauthAppCredentials(): { clientId: string; clientSecret: string } | null {
   const clientId = process.env.GITHUB_OAUTH_CLIENT_ID;
   const clientSecret = process.env.GITHUB_OAUTH_CLIENT_SECRET;
-  if (!clientId || !clientSecret) throw new GitHubOAuthConfigError("GitHub OAuth configuration is missing");
-  return { clientId, clientSecret, redirectUri: process.env.GITHUB_OAUTH_REDIRECT_URI ?? new URL("/api/auth/github/callback", new URL(requestUrl).origin).toString() };
+  return clientId && clientSecret ? { clientId, clientSecret } : null;
+}
+
+export function getGitHubOAuthConfig(requestUrl: string): GitHubOAuthConfig {
+  const credentials = oauthAppCredentials();
+  if (credentials === null) throw new GitHubOAuthConfigError("GitHub OAuth configuration is missing");
+  return { ...credentials, redirectUri: process.env.GITHUB_OAUTH_REDIRECT_URI ?? new URL("/api/auth/github/callback", new URL(requestUrl).origin).toString() };
 }
 
 /**
@@ -73,4 +86,62 @@ export async function exchangeGitHubCode(config: GitHubOAuthConfig, code: string
   const token = "access_token" in body ? body.access_token : undefined;
   if (typeof token !== "string" || !token) throw new Error("GitHub token exchange returned no access token");
   return token;
+}
+
+/**
+ * grant 해제의 결과입니다. 실패해도 회원 탈퇴는 계속 진행하므로 예외가 아니라 값으로 돌려줍니다.
+ *
+ * 실패 이유를 나누는 이유는 둘입니다. 사용자에게 다시 시도할 여지가 있는지 알려 주려면 한도 초과와
+ * 서버 설정 누락을 갈라야 하고, Sentry에 남는 값으로 어느 쪽이 실제로 일어나는지 봐야 합니다.
+ */
+export type RevokeGrantFailure = "config_missing" | "invalid_credentials" | "rate_limit" | "rejected" | "network";
+
+export type RevokeGrantResult = { status: "revoked" } | { status: "failed"; reason: RevokeGrantFailure };
+
+const GRANT_URL = (clientId: string) =>
+  `https://api.github.com/applications/${encodeURIComponent(clientId)}/grant`;
+
+/**
+ * 사용자가 이 OAuth App에 준 grant를 지웁니다(이슈 #145, 회원 탈퇴).
+ *
+ * 문서(`DELETE /applications/{client_id}/grant`, 2026-09-18 확인)가 정하는 계약입니다. 인증은 Basic이고
+ * username이 client id, password가 client secret입니다. 사용자 토큰은 본문의 `access_token`으로 보냅니다.
+ * 성공은 204이고 본문이 없습니다. grant를 지우면 그 사용자에게 발급된 이 App의 토큰이 모두 죽고
+ * GitHub의 승인된 앱 목록에서도 사라집니다.
+ *
+ * 토큰 하나만 지우는 `DELETE /applications/{client_id}/token`을 쓰지 않습니다. 그 호출은 지금 브라우저의
+ * 세션만 끊고 다른 기기에서 받아 둔 토큰은 남기므로, 권한을 끊었다고 말할 수 없습니다.
+ *
+ * 문서에 없는 상태 코드도 가립니다. 404는 지울 grant가 없는 경우입니다. 사용자가 GitHub 설정에서 이미
+ * 해제했거나 토큰이 이미 죽은 것이고, 어느 쪽이든 "권한이 남지 않는다"는 목표는 이뤄져 있으므로
+ * 해제로 봅니다. 401은 client id와 secret이 틀린 경우라 다시 시도해도 같습니다. 403과 429는
+ * 요청 한도이므로 한도로 분류합니다. 그 밖(422와 5xx)은 거절로 묶습니다.
+ *
+ * 응답 본문을 읽지 않습니다. 성공이 204라 읽을 것이 없고, 실패 분류에 필요한 본문은 한도 판별이
+ * 자기 안에서 try/catch로 읽습니다.
+ */
+export async function revokeGitHubGrant(token: string): Promise<RevokeGrantResult> {
+  const credentials = oauthAppCredentials();
+  if (credentials === null) return { status: "failed", reason: "config_missing" };
+
+  let response: Response;
+  try {
+    response = await fetch(GRANT_URL(credentials.clientId), {
+      method: "DELETE",
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${credentials.clientId}:${credentials.clientSecret}`).toString("base64")}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ access_token: token }),
+    });
+  } catch {
+    return { status: "failed", reason: "network" };
+  }
+
+  if (response.status === 204 || response.status === 404) return { status: "revoked" };
+  if (await isGitHubRateLimited(response)) return { status: "failed", reason: "rate_limit" };
+  if (response.status === 401) return { status: "failed", reason: "invalid_credentials" };
+  return { status: "failed", reason: "rejected" };
 }
