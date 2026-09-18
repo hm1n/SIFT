@@ -146,6 +146,25 @@ describe("회원 탈퇴", () => {
     expect(await store.getAnalysis(analysisId, OWNER_ID)).toBeNull();
   });
 
+  /**
+   * 값을 돌려주기 전에 동기적으로 던지는 경우입니다. `.catch`는 거부된 Promise만 잡으므로 이 경로가
+   * 통과하면 이미 끝난 삭제가 500으로 보고되고 쿠키도 남습니다(PR #147 리뷰 2라운드).
+   */
+  it("권한 해제가 동기 예외로 끝나도 삭제 결과를 뒤집지 않는다", async () => {
+    const store = createInMemoryStore();
+    const { analysisId } = await seed(store);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const response = await handleDeleteAccount(request(), store, () => {
+      throw new Error("동기 예외");
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ deleted: 1, revoked: false });
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+    expect(await store.getAnalysis(analysisId, OWNER_ID)).toBeNull();
+  });
+
   it("권한 해제에는 세션의 토큰을 넘긴다", async () => {
     const store = createInMemoryStore();
     await seed(store);
