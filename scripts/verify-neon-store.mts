@@ -302,7 +302,17 @@ async function main(): Promise<void> {
     const keptId = await store.saveAnalysis({ ...leavingAnalysis, githubUserId: OTHER_USER_ID });
 
     check("탈퇴는 그 사용자의 분석을 모두 지운다", await store.deleteUserData(leavingUserId), 2);
-    check("딸린 인터뷰도 cascade로 사라진다", await store.getInterview(leavingInterviewId ?? "", leavingUserId), null);
+    /*
+     * 인터뷰 행을 직접 셉니다(PR #147 리뷰 2라운드). `getInterview`와 `listInterviews`는 소유자를
+     * 보려고 `repository_analysis`를 join하므로, 분석만 지워지고 인터뷰 행이 남은 상태에서도 아무
+     * 줄도 돌려주지 않습니다. 그 둘로만 보면 cascade가 실제로 돌았는지 확인할 수 없습니다.
+     */
+    const leftover = await sql.query(
+      "select count(*)::int as n from interview_session where analysis_id = $1::uuid",
+      [withInterview]
+    );
+    check("딸린 인터뷰 행이 cascade로 사라진다", Number(leftover[0].n), 0);
+    check("복원 경로에서도 보이지 않는다", await store.getInterview(leavingInterviewId ?? "", leavingUserId), null);
     check("탈퇴 뒤 목록이 비어 있다", (await store.listInterviews(leavingUserId)).length, 0);
     check("두 번 부르면 두 번째는 0이다", await store.deleteUserData(leavingUserId), 0);
     check("남의 분석은 남는다", (await store.getAnalysis(keptId, OTHER_USER_ID))?.id, keptId);
