@@ -12,7 +12,7 @@ import { INTERVIEW_SCREEN_COPY, PAAR_PANEL_COPY, STREAM_VIEW_COPY } from "./inte
 import { REPOSITORY_SELECT_COPY, RESUME_ERROR_COPY } from "./repository";
 import { SAVED_INTERVIEW_LIST_COPY, SAVED_INTERVIEW_SCREEN_COPY } from "./saved";
 import { CONTINUE_INTERVIEW } from "./shared";
-import { ACCOUNT_MENU_COPY, APP_SHELL_COPY } from "./shell";
+import { ACCOUNT_MENU_COPY, APP_SHELL_COPY, GLOBAL_ERROR_COPY } from "./shell";
 
 /**
  * 레퍼런스 `Chat Interface Design/src/App.tsx`의 `TRANSLATIONS.ko`를 옮겨 둔 것입니다.
@@ -24,8 +24,11 @@ import { ACCOUNT_MENU_COPY, APP_SHELL_COPY } from "./shell";
  * 번역했기 때문입니다. 문구가 39개 파일에 흩어져 있어 대조할 방법이 없었습니다. 이제 어긋남은
  * 둘 중 하나입니다. 이 표를 고치지 않은 실수이거나, 이 표에 사유를 적은 결정입니다.
  *
- * 레퍼런스 화면 중 이 Repository에 없는 것(랜딩, Sessions, 계정 삭제)은 담지 않습니다. 대조할
- * 자리가 없어 결정이 아니라 미구현입니다. 목록은 디자인 개편 backlog 31번에 있습니다.
+ * 레퍼런스 화면 중 이 Repository에 없는 것(랜딩, Sessions)은 담지 않습니다. 대조할 자리가 없어
+ * 결정이 아니라 미구현입니다. 목록은 디자인 개편 backlog 31번에 있습니다.
+ *
+ * 계정 삭제는 이슈 #145에서 회원 탈퇴로 구현했습니다. 문구 셋을 모두 다르게 쓰기로 정했고 사유는
+ * 아래 표에 있습니다.
  */
 const REFERENCE_KO: readonly {
   readonly key: string;
@@ -46,7 +49,11 @@ const REFERENCE_KO: readonly {
   { key: "terms", text: "계속하면 이용약관에 동의하는 것입니다" },
   { key: "githubAccount", text: "GitHub 계정" },
   { key: "signOut", text: "로그아웃", at: [ACCOUNT_MENU_COPY.signOut] },
-  { key: "cancel", text: "취소", at: [SAVED_INTERVIEW_LIST_COPY.cancel, SAVED_INTERVIEW_SCREEN_COPY.cancel] },
+  {
+    key: "cancel",
+    text: "취소",
+    at: [SAVED_INTERVIEW_LIST_COPY.cancel, SAVED_INTERVIEW_SCREEN_COPY.cancel, ACCOUNT_MENU_COPY.cancel],
+  },
   { key: "delete", text: "삭제", at: [SAVED_INTERVIEW_LIST_COPY.delete] },
   {
     key: "connectingGitHub",
@@ -89,7 +96,21 @@ const REFERENCE_KO: readonly {
   { key: "loadLatest", text: "최신 내용 불러오기" },
   { key: "noInterviewsYet", text: "인터뷰가 없습니다. 경험 후보를 선택해 시작하세요." },
   { key: "errAuthLabel", text: "GitHub에 연결할 수 없습니다." },
-  { key: "tryAgain", text: "다시 시도", at: [LOGIN_COPY.tryAgain, STREAM_VIEW_COPY.retry, PAAR_PANEL_COPY.retry, REPOSITORY_SELECT_COPY.tryAgain, RESUME_ERROR_COPY.tryAgain, SAVED_INTERVIEW_LIST_COPY.retry] },
+  {
+    key: "tryAgain",
+    text: "다시 시도",
+    // 이 문구를 쓰는 상수를 모두 답니다. 빠진 상수는 검사를 받지 않아 혼자 다른 문구로 흘러갑니다.
+    at: [
+      LOGIN_COPY.tryAgain,
+      STREAM_VIEW_COPY.retry,
+      PAAR_PANEL_COPY.retry,
+      REPOSITORY_SELECT_COPY.tryAgain,
+      RESUME_ERROR_COPY.tryAgain,
+      SAVED_INTERVIEW_LIST_COPY.retry,
+      GLOBAL_ERROR_COPY.retry,
+      ACCOUNT_MENU_COPY.withdrawRetry,
+    ],
+  },
 
   // --- 의도적으로 다르게 씁니다 ---
   {
@@ -154,6 +175,23 @@ const REFERENCE_KO: readonly {
     deviation: "이 Repository의 분석 체크리스트는 6단계라 레퍼런스의 4단계와 구성이 다릅니다. 대응하는 단계가 없습니다.",
   },
   { key: "stepChanges", text: "코드 변경사항 분석 중", deviation: "`stepConnected`와 같습니다." },
+  {
+    key: "deleteAccount",
+    text: "계정 삭제",
+    deviation:
+      "이 서비스에는 지울 회원 레코드가 없고 GitHub 계정도 그대로 남습니다. 지우는 것은 저장된 분석과 인터뷰이고 함께 끊는 것은 GitHub 권한이라, 계정을 지운다고 하면 실제보다 큰 일을 말하게 됩니다. `회원 탈퇴`로 씁니다(이슈 #145).",
+  },
+  {
+    key: "deleteAccountConfirm",
+    text: "계정을 삭제할까요?",
+    deviation: "`deleteAccount`와 같습니다. `회원 탈퇴할까요?`로 씁니다.",
+  },
+  {
+    key: "deleteAccountWarning",
+    text: "모든 기록이 삭제됩니다. 되돌릴 수 없습니다.",
+    deviation:
+      "무엇이 사라지는지를 `기록`으로 뭉치지 않고 저장된 분석과 인터뷰로 적고, GitHub 연결 해제를 함께 밝힙니다. 해제하면 다음 로그인에서 권한 승인 화면을 다시 보게 되는데 말해 두지 않으면 그게 왜 나오는지 알 수 없습니다.",
+  },
   {
     key: "clarify",
     text: "보완",
