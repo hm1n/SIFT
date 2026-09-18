@@ -85,6 +85,7 @@ describe("Neon 저장 계층", () => {
       ["completeInterview", (store) => store.completeInterview(INTERVIEW_ID, OWNER_ID)],
       ["getInterview", (store) => store.getInterview(INTERVIEW_ID, OWNER_ID)],
       ["deleteInterview", (store) => store.deleteInterview(INTERVIEW_ID, OWNER_ID)],
+      ["deleteUserData", (store) => store.deleteUserData(OWNER_ID)],
     ];
 
     it.each(operations)("%s은 사용자 번호를 질의에 싣는다", async (_name, run) => {
@@ -626,6 +627,26 @@ describe("Neon 저장 계층", () => {
     it("정리 작업은 지운 줄 수를 돌려준다", async () => {
       const { execute } = fakeExecute([[{ id: "a" }, { id: "b" }]]);
       expect(await neonStore(execute).purgeInterviewsOpenedBefore(new Date())).toBe(2);
+    });
+
+    /**
+     * 회원 탈퇴는 분석만 지웁니다(이슈 #145). 인터뷰를 함께 지우는 문장을 얹으면 한 요청이 두
+     * 트랜잭션으로 갈라져 앞 문장만 성공한 상태가 생깁니다. 그때 남는 것이 근거 스냅샷을 든
+     * 분석입니다.
+     */
+    it("회원 탈퇴는 분석만 지우고 인터뷰는 cascade에 맡긴다", async () => {
+      const { execute, calls } = fakeExecute([[{ id: "a" }, { id: "b" }]]);
+
+      expect(await neonStore(execute).deleteUserData(OWNER_ID)).toBe(2);
+      expect(calls).toHaveLength(1);
+      expect(calls[0].text).toContain("delete from repository_analysis");
+      expect(calls[0].text).not.toContain("interview_session");
+      expect(calls[0].params).toEqual([OWNER_ID]);
+    });
+
+    it("지울 분석이 없으면 0이다", async () => {
+      const { execute } = fakeExecute([[]]);
+      expect(await neonStore(execute).deleteUserData(OWNER_ID)).toBe(0);
     });
   });
 });

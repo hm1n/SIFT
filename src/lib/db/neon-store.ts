@@ -423,6 +423,25 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
       return rows.length > 0;
     },
 
+    /**
+     * 그 사용자의 분석을 모두 지웁니다. 딸린 인터뷰는 `on delete cascade`가 함께 지웁니다(이슈 #145).
+     *
+     * 인터뷰를 먼저 지우고 분석을 지우는 두 문장으로 나누지 않습니다. 드라이버가 HTTP 한 번에 한
+     * 문장을 보내고 그 한 문장이 한 트랜잭션이라, 나누면 앞 문장만 성공한 채로 끝날 수 있습니다.
+     * 그때 남는 것이 근거 스냅샷을 든 분석이고, 그 안에 비공개 저장소의 코드가 들어 있습니다.
+     *
+     * 지운 인터뷰 수는 세지 않습니다. cascade로 사라지는 줄은 `returning`에 오지 않아 이 문장으로는
+     * 셀 수 없고, 세려면 삭제 전 스냅샷을 읽는 CTE를 얹어야 합니다. 인터뷰는 분석 없이 존재할 수
+     * 없으므로 분석 수만으로 빈 계정을 가를 수 있습니다(`store.ts`의 계약).
+     */
+    async deleteUserData(githubUserId: number): Promise<number> {
+      const rows = await run(
+        `delete from repository_analysis where github_user_id = $1::bigint returning id`,
+        [githubUserId]
+      );
+      return rows.length;
+    },
+
     /** 정리 작업만 사용자 번호를 받지 않습니다. 부르는 자리는 `/api/cron/purge`입니다(이슈 #116). */
     async purgeInterviewsOpenedBefore(before: Date): Promise<number> {
       const rows = await run(
