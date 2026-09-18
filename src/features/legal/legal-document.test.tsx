@@ -2,7 +2,7 @@
 
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PRIVACY_OFFICER, PRIVACY_POLICY, TERMS_OF_SERVICE, type LegalDocument as LegalDocumentData } from "@/copy/legal";
 import { LegalDocument } from "./legal-document";
 
@@ -53,6 +53,42 @@ describe("LegalDocument", () => {
     expect(screen.getAllByRole("columnheader", { name: "이전 국가" })).toHaveLength(2);
     expect(screen.getAllByRole("columnheader", { name: "이전 시기와 방법" })).toHaveLength(2);
     expect(screen.getAllByRole("columnheader", { name: "보유·이용 기간" })).toHaveLength(2);
+  });
+
+  /**
+   * 표가 좁은 화면에서 가로로 스크롤되는데 상자 안에 포커스 받을 요소가 없습니다. 브라우저에 따라
+   * Tab 순서에 들어가지 않아 키보드만 쓰는 사용자가 오른쪽 칸에 갈 수 없습니다(PR #146 리뷰).
+   */
+  it("표 스크롤 상자를 키보드로 잡을 수 있고 이름을 가진다", () => {
+    render(<LegalDocument document={PRIVACY_POLICY} />);
+    const scrollers = screen.getAllByRole("group");
+    expect(scrollers.length).toBe(PRIVACY_POLICY.sections.flatMap((s) => s.blocks).filter((b) => b.kind === "table").length);
+    for (const scroller of scrollers) {
+      expect(scroller).toHaveAttribute("tabindex", "0");
+      expect(scroller).toHaveAccessibleName();
+    }
+  });
+
+  /**
+   * key를 셀 내용으로 달면 한 행에 같은 값이 두 칸 들어가는 순간 중복 key가 됩니다(PR #146 리뷰).
+   * 같은 값이 반복되는 표를 그려도 경고 없이 두 칸이 모두 남아야 합니다.
+   */
+  it("한 행에 같은 값이 반복돼도 칸을 잃지 않는다", () => {
+    const warn = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const document = {
+      ...PRIVACY_POLICY,
+      sections: [
+        {
+          id: "repeat",
+          heading: "반복 표",
+          blocks: [{ kind: "table" as const, head: ["가", "나"], rows: [["같은 값", "같은 값"]] }],
+        },
+      ],
+    };
+    render(<LegalDocument document={document} />);
+    expect(screen.getAllByText("같은 값")).toHaveLength(2);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it("홈으로 돌아가는 링크를 둔다", () => {

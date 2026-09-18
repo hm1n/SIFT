@@ -55,7 +55,7 @@ export function LegalDocument({ document }: LegalDocumentProps) {
           <section className={styles.section} key={section.id} id={section.id}>
             <h2 className={styles.heading}>{section.heading}</h2>
             {section.blocks.map((block, index) => (
-              <LegalBlockView block={block} key={index} />
+              <LegalBlockView block={block} label={section.heading} key={index} />
             ))}
           </section>
         ))}
@@ -73,8 +73,15 @@ export function LegalDocument({ document }: LegalDocumentProps) {
 /**
  * 표는 가로로 넘칠 수 있어 스크롤 상자로 감쌉니다. 국외 이전 표가 여섯 칸이라 좁은 화면에서 칸이
  * 뭉개집니다. 칸을 줄이는 쪽은 택하지 않았습니다. 여섯 칸 모두 법이 요구하는 기재사항입니다.
+ *
+ * 그 상자에 `tabIndex`와 이름을 답니다. 스크롤이 생겨도 상자 안에 포커스 받을 요소가 없어서, 브라우저에
+ * 따라 Tab 순서에 들어가지 않고 키보드만 쓰는 사용자가 오른쪽 칸으로 갈 수 없습니다(PR #146 리뷰).
+ * 이름은 그 표가 속한 절의 제목입니다. 이름 없는 포커스 지점을 만들면 어디에 있는지 알 수 없습니다.
+ *
+ * key를 내용이 아니라 순서로 답니다. 한 행에 같은 값이 두 칸 들어가는 순간 중복 key가 되는데, 표의
+ * 행과 칸은 데이터 순서가 그대로 화면 순서라 순서가 안정된 식별자입니다.
  */
-function LegalBlockView({ block }: { readonly block: LegalBlock }) {
+function LegalBlockView({ block, label }: { readonly block: LegalBlock; readonly label: string }) {
   if (block.kind === "paragraph") return <p className={styles.paragraph}>{block.text}</p>;
 
   if (block.kind === "list") {
@@ -88,7 +95,7 @@ function LegalBlockView({ block }: { readonly block: LegalBlock }) {
   }
 
   return (
-    <div className={styles.tableScroll}>
+    <div className={styles.tableScroll} tabIndex={0} role="group" aria-label={label}>
       <table className={styles.table}>
         <thead>
           <tr>
@@ -102,11 +109,11 @@ function LegalBlockView({ block }: { readonly block: LegalBlock }) {
         <tbody>
           {block.rows.map((row) => (
             <tr key={row.join("|")}>
-              {row.map((cell) => (
-                <td key={cell}>
+              {row.map((cell, cellIndex) => (
+                <td key={cellIndex}>
                   {/* 셀 안에서 줄을 나눠야 하는 값이 있습니다. 이전받는 자의 이름과 연락처가 그렇습니다. */}
-                  {cell.split("\n").map((line) => (
-                    <span className={styles.cellLine} key={line}>
+                  {cell.split("\n").map((line, lineIndex) => (
+                    <span className={styles.cellLine} key={lineIndex}>
                       {line}
                     </span>
                   ))}
