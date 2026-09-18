@@ -118,21 +118,32 @@ async function waitUntil(predicate: () => boolean, timeoutMs: number): Promise<b
 }
 
 /**
- * 커밋 SHA가 클라이언트 번들에 release로 인라인되지 않았는지 확인합니다.
+ * release 이름이 클라이언트 번들에 인라인됐는지 확인합니다.
  *
- * `withSentryConfig`의 `release.create`가 기본값이면 `resolveReleaseName`이 Git revision을 탐색해
- * `_sentryRelease`로 번들에 주입합니다. 그러면 auth token이 없어도 모든 이벤트에 release 값이
- * 붙습니다. 이슈 #81의 Non-goal이 Releases를 범위 밖으로 두었으므로 붙지 않아야 합니다.
+ * 이슈 #81은 붙지 않는 것을 확인했고 이슈 #144에서 기대가 뒤집혔습니다. `release.create`를 켜면
+ * `resolveReleaseName`이 이름을 해소하고 `next.config`의 `env._sentryRelease`로 넣어 모든 이벤트에
+ * release가 붙습니다. 이 값이 없으면 배포 사이를 가를 수 없습니다.
+ *
+ * 기대하는 이름은 SDK의 해소 순서를 따릅니다. `SENTRY_RELEASE`가 있으면 그 값이고, 없으면 Git
+ * revision입니다. CI 환경변수로 해소되는 경우는 이 스크립트가 도는 로컬 확인 절차의 대상이 아닙니다.
  *
  * 이 검사는 프로덕션 빌드 산출물을 읽으므로 vitest 스위트에 넣을 수 없습니다. 확인 절차가 이미
  * 프로덕션 빌드를 전제하므로 여기에 둡니다.
  */
-function checkReleaseNotInjected(): { ok: boolean; detail: string } {
-  let sha: string;
-  try {
-    sha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-  } catch {
-    return { ok: true, detail: "git revision을 읽을 수 없어 건너뜁니다." };
+function checkReleaseInjected(): { ok: boolean; detail: string } {
+  let expected: string;
+  const fromEnv = process.env.SENTRY_RELEASE?.trim();
+  if (fromEnv) {
+    expected = fromEnv;
+  } else {
+    try {
+      expected = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+    } catch {
+      return {
+        ok: false,
+        detail: "release 이름을 알 수 없습니다. git revision을 읽을 수 없고 SENTRY_RELEASE도 없습니다.",
+      };
+    }
   }
   const staticDir = join(".next", "static");
   let files: string[];
@@ -148,16 +159,21 @@ function checkReleaseNotInjected(): { ok: boolean; detail: string } {
   }
   // 청크를 읽다 실패하면 검사 결과를 모른 채로 통과시키지 않고 실패로 보고합니다. 읽을 수 없는
   // 산출물은 확인이 안 된 것이지 문제가 없는 것이 아닙니다.
-  let leaked: string[];
+  let carrying: string[];
   try {
-    leaked = files.filter((name) => readFileSync(join(staticDir, name), "utf8").includes(sha));
+    carrying = files.filter((name) =>
+      readFileSync(join(staticDir, name), "utf8").includes(expected)
+    );
   } catch (error) {
     return { ok: false, detail: `${staticDir}의 청크를 읽지 못했습니다. ${String(error)}` };
   }
-  if (leaked.length > 0) {
-    return { ok: false, detail: `커밋 SHA가 ${leaked.join(", ")}에 인라인되어 있습니다.` };
+  if (carrying.length === 0) {
+    return {
+      ok: false,
+      detail: `release 이름 ${expected}이 클라이언트 청크 ${files.length}개 어디에도 없습니다.`,
+    };
   }
-  return { ok: true, detail: `커밋 SHA가 클라이언트 청크 ${files.length}개에 없습니다.` };
+  return { ok: true, detail: `release 이름 ${expected}이 ${carrying.join(", ")}에 있습니다.` };
 }
 
 /**
@@ -270,8 +286,8 @@ async function main() {
       }
     }
 
-    const release = checkReleaseNotInjected();
-    console.log(`release 주입: ${release.ok ? "없음" : "있음"} — ${release.detail}`);
+    const release = checkReleaseInjected();
+    console.log(`release 주입: ${release.ok ? "있음" : "없음"} — ${release.detail}`);
     if (!release.ok) failures.push(release.detail);
 
     if (failures.length > 0) {
