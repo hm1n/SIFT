@@ -49,7 +49,14 @@ export async function handleDeleteAccount(
     return savedInterviewErrorResponseFor(error);
   }
 
-  const revocation = await revoke(session.session.token);
+  /*
+   * 해제가 값 대신 예외로 끝나도 삭제는 이미 끝났습니다. 예외를 그대로 올리면 지운 데이터가 500으로
+   * 보고되고 쿠키도 남습니다. 지금 구현(`revokeGitHubGrant`)은 전송 실패까지 값으로 돌려주지만 이
+   * 함수는 매개변수로 들어오므로 계약을 여기서 한 번 더 막습니다.
+   */
+  const revocation = await revoke(session.session.token).catch(
+    () => ({ status: "failed", reason: "network" }) as RevokeGrantResult
+  );
   if (revocation.status === "failed") {
     // cron 정리와 같은 방식입니다. `reportServerError`는 5xx 응답에만 보내고 이 요청은 200이라
     // Sentry로는 가지 않습니다. 실패가 실제로 얼마나 일어나는지 볼 수단을 넓히는 일은 뗐습니다(위키 backlog).

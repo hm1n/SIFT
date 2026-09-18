@@ -127,6 +127,25 @@ describe("회원 탈퇴", () => {
     }
   );
 
+/**
+   * 해제 함수가 값 대신 예외로 끝난 경우입니다. 예외를 그대로 올리면 이미 끝난 삭제가 500으로
+   * 보고되고 쿠키도 남아, 사용자가 지워진 데이터를 다시 지우려 합니다.
+   */
+  it("권한 해제가 예외로 끝나도 삭제 결과를 뒤집지 않는다", async () => {
+    const store = createInMemoryStore();
+    const { analysisId } = await seed(store);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const response = await handleDeleteAccount(request(), store, async () => {
+      throw new Error("흉내 낸 오류");
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ deleted: 1, revoked: false });
+    expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+    expect(await store.getAnalysis(analysisId, OWNER_ID)).toBeNull();
+  });
+
   it("권한 해제에는 세션의 토큰을 넘긴다", async () => {
     const store = createInMemoryStore();
     await seed(store);
