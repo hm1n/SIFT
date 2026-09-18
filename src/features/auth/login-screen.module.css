@@ -79,6 +79,16 @@
   color: var(--color-muted-foreground);
 }
 
+/* 문장 안의 링크입니다. 밑줄로만 구분합니다. 문장의 다른 글자와 크기와 색이 같아야 문장으로 읽힙니다. */
+.termsLink {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.termsLink:hover {
+  color: var(--color-foreground);
+}
+
 @media (max-width: 560px) {
   .screen { padding: 32px 16px; }
 }

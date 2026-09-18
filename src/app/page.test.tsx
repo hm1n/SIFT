@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthTransitionProvider } from "@/components/shell/auth-transition";
+import { LEGAL_LINK_COPY } from "@/copy/legal";
 import { GA_USER_ID_SECRET_ENV } from "@/lib/analytics/user-id";
 import {
   GITHUB_SESSION_COOKIE,
@@ -78,6 +79,28 @@ describe("Home", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Loading Repositories");
     expect(fetch).toHaveBeenCalledWith("/api/github/repositories", undefined);
     expect(screen.queryByRole("link", { name: "GitHub으로 계속하기" })).not.toBeInTheDocument();
+  });
+
+  /**
+   * 푸터는 로그인 화면 밖, 세션 없는 분기 전체에 있습니다(이슈 #141). 로그인 화면은 상태가 셋인데
+   * 인증 중과 오류는 `StatusScreen`이라 동의 문장이 없습니다. `LoginScreen` 안쪽에 두면 기본 상태에서만
+   * 링크가 보입니다. 오류 상태까지 함께 보는 이유입니다.
+   */
+  it.each([
+    ["기본", {}],
+    ["오류", { auth_error: "access_denied" }],
+  ])("세션이 없으면 %s 상태에서도 푸터의 법적 고지 링크를 그린다", async (_name, params) => {
+    render(await renderHome(params));
+    const footer = screen.getByRole("contentinfo");
+    expect(within(footer).getByRole("link", { name: LEGAL_LINK_COPY.privacy })).toHaveAttribute("href", "/privacy");
+    expect(within(footer).getByRole("link", { name: LEGAL_LINK_COPY.terms })).toHaveAttribute("href", "/terms");
+  });
+
+  /** 로그인한 뒤에는 계정 메뉴가 같은 역할을 합니다. 워크스페이스가 푸터에 세로 공간을 내주지 않습니다. */
+  it("세션이 있으면 푸터를 그리지 않는다", async () => {
+    cookieNames.add(GITHUB_SESSION_COOKIE);
+    render(await renderHome());
+    expect(screen.queryByRole("contentinfo")).not.toBeInTheDocument();
   });
 
   it("세션 쿠키가 없고 auth_error가 있으면 ERROR / AUTH 상태를 그린다", async () => {

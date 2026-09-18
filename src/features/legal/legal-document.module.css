@@ -1,0 +1,183 @@
+/*
+ * 개인정보 처리방침과 이용약관 화면입니다. 색과 라운드와 폰트는 globals.css 토큰만 씁니다.
+ *
+ * 셸(AppShell)을 쓰지 않습니다. 사이드바와 워크스페이스가 필요 없는 읽기 전용 문서이고, 로그인
+ * 여부와 상관없이 같은 화면이어야 합니다. 화면이 뷰포트를 넘으면 globals.css의 설명대로 body가
+ * 스크롤합니다.
+ */
+.screen {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  padding: 40px 24px 64px;
+  background: var(--color-card);
+}
+
+.document {
+  width: 100%;
+  max-width: 720px;
+}
+
+.header {
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+/*
+ * 제목입니다. 표준지침 제20조가 "개인정보 처리방침"이라는 명칭을 글자 크기와 색상으로 다른
+ * 고지사항과 구분해 쉽게 확인할 수 있게 하라고 요구합니다. 본문보다 2배 이상 크고 전경색을 씁니다.
+ */
+.title {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--color-foreground);
+}
+
+.effectiveDate {
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: var(--label-size-md);
+  letter-spacing: var(--label-tracking-wide);
+  color: var(--color-muted-foreground);
+}
+
+.intro {
+  margin-top: 16px;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--color-muted-foreground);
+}
+
+.contents {
+  margin-top: 24px;
+  padding: 16px 20px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-muted);
+}
+
+.contentsLabel {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+.contentsList {
+  margin-top: 10px;
+  display: grid;
+  gap: 6px;
+  padding-left: 0;
+  list-style: none;
+}
+
+.contentsLink {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-foreground);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--color-border);
+}
+
+.contentsLink:hover {
+  text-decoration-color: var(--color-foreground);
+}
+
+.section {
+  margin-top: 40px;
+  /*
+   * 목차 링크로 이동할 때 제목이 뷰포트 맨 위에 붙지 않게 합니다. 상단 헤더가 44px 고정이라 그
+   * 아래로 내려와야 제목이 보입니다.
+   */
+  scroll-margin-top: 60px;
+}
+
+.heading {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--color-foreground);
+}
+
+.paragraph {
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--color-foreground);
+}
+
+.list {
+  margin-top: 12px;
+  padding-left: 18px;
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.8;
+  color: var(--color-foreground);
+}
+
+.tableScroll {
+  margin-top: 16px;
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.table th,
+.table td {
+  padding: 10px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.table th {
+  font-weight: 500;
+  color: var(--color-muted-foreground);
+  background: var(--color-muted);
+  white-space: nowrap;
+}
+
+.table tbody tr:last-child th,
+.table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* 이전받는 자의 이름과 연락처처럼 한 칸 안에서 줄을 나눠야 하는 값입니다. */
+.cellLine {
+  display: block;
+  /*
+   * 주소는 어절이 없어 `keep-all`로는 칸을 넘칩니다. `word-break: break-all`을 쓰면 주소뿐 아니라
+   * 같은 규칙을 받는 한국어 문장까지 어절 중간에서 끊깁니다. 모든 셀의 모든 줄이 이 클래스를 받으므로
+   * 처리 목적과 처리 항목 칸이 그렇게 됩니다(PR #146 리뷰). `overflow-wrap: anywhere`는 칸을 넘칠 때만
+   * 끊으므로 일반 문장의 줄바꿈 규칙이 그대로 남습니다.
+   */
+  overflow-wrap: anywhere;
+}
+
+.documentFooter {
+  margin-top: 48px;
+  padding-top: 24px;
+  border-top: 1px solid var(--color-border);
+}
+
+.backLink {
+  font-size: 13px;
+  color: var(--color-muted-foreground);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.backLink:hover {
+  color: var(--color-foreground);
+}

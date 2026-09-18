@@ -3,6 +3,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { LEGAL_LINK_COPY } from "@/copy/legal";
 import { LOGIN_PATH, SESSION_PATH } from "@/lib/github/auth-paths";
 import { AuthTransitionProvider } from "./auth-transition";
 import { TopHeader, type TopHeaderProps } from "./top-header";
@@ -85,6 +86,24 @@ describe("TopHeader", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
     fireEvent.click(trigger);
     expect(screen.getByRole("menuitem", { name: "로그아웃" })).toBeEnabled();
+  });
+
+  /**
+   * 푸터가 로그인 후 화면에서 사라졌으므로 로그인한 사용자가 처리방침에 닿는 길은 이 메뉴뿐입니다.
+   * 작성지침이 로그인 여부와 상관없이 확인할 수 있어야 한다고 요구하므로 주소까지 고정합니다(이슈 #141).
+   */
+  it("계정 메뉴에 처리방침과 약관 링크를 둔다", () => {
+    renderHeader({ isAuthenticated: true });
+    fireEvent.click(screen.getByRole("button", { name: /계정/ }));
+    expect(screen.getByRole("menuitem", { name: LEGAL_LINK_COPY.privacy })).toHaveAttribute("href", "/privacy");
+    expect(screen.getByRole("menuitem", { name: LEGAL_LINK_COPY.terms })).toHaveAttribute("href", "/terms");
+  });
+
+  it("법적 고지 링크를 누르면 메뉴가 닫힌다", () => {
+    renderHeader({ isAuthenticated: true });
+    fireEvent.click(screen.getByRole("button", { name: /계정/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: LEGAL_LINK_COPY.privacy }));
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
   it("Escape와 바깥 클릭으로 메뉴가 닫힌다", async () => {

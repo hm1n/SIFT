@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { trackEvent } from "@/features/analytics/events";
@@ -80,7 +81,16 @@ export function LoginScreen({ authError }: LoginScreenProps) {
         </div>
         <div className={styles.actions}>
           <LoginLink variant="primary" className={styles.login} iconSize={16}>{LOGIN_COPY.continueWithGitHub}</LoginLink>
-          <p className={styles.terms}>{LOGIN_COPY.terms}</p>
+          {/*
+            동의 문장의 `이용약관`만 링크입니다. 처리방침은 동의 대상이 아니라 같은 문장에 넣지
+            않습니다. 작성지침 Part 02가 개인정보 처리방침은 동의를 얻어야 하는 문서가 아니라고
+            밝히고 있습니다. 처리방침 링크는 이 화면 아래의 푸터가 답니다(이슈 #141).
+          */}
+          <p className={styles.terms}>
+            {LOGIN_COPY.termsSentence.lead}
+            <Link className={styles.termsLink} href="/terms">{LOGIN_COPY.termsSentence.link}</Link>
+            {LOGIN_COPY.termsSentence.tail}
+          </p>
         </div>
       </div>
     </div>
