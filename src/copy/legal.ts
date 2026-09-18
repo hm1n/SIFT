@@ -65,9 +65,13 @@ const SERVICE_NAME = "SIFT";
  * 국가는 실제 배포 값에서 확인했습니다. Neon은 `us-east-2`, Sentry는 `ingest.us.sentry.io`이고
  * Vercel은 리전을 지정하지 않아 기본값을 씁니다. 넷 다 미국입니다.
  *
+ * **표를 둘로 나눕니다.** 서비스를 실행하는 데 필요한 이전과 끄더라도 서비스가 도는 이전은 거부의
+ * 효과가 정반대입니다. 한 표에 담으면 "거부하면 서비스를 이용할 수 없습니다" 한 문장이 이용 통계까지
+ * 덮어 사실과 달라지고, 7번 절의 "다른 기능은 그대로 이용할 수 있습니다"와 충돌합니다(PR #146 리뷰).
+ *
  * 연락처 칸은 각 사업자의 개인정보 처리방침 주소입니다. 주소가 바뀌면 함께 고쳐야 합니다.
  */
-const CROSS_BORDER_ROWS = [
+const REQUIRED_CROSS_BORDER_ROWS = [
   [
     "Vercel Inc.\nhttps://vercel.com/legal/privacy-policy",
     "미국",
@@ -87,10 +91,10 @@ const CROSS_BORDER_ROWS = [
   [
     "Google LLC\nhttps://policies.google.com/privacy",
     "미국",
-    "경험 후보 선별과 인터뷰 질문 생성(Gemini API), 서비스 이용 통계(Google Analytics)",
-    "저장소의 커밋과 변경 코드, 인터뷰 대화, 서비스 이용 기록",
+    "경험 후보 선별과 인터뷰 질문 생성(Gemini API)",
+    "저장소의 커밋과 변경 코드, 인터뷰 대화",
     "분석과 인터뷰를 진행하는 시점에 네트워크로 전송",
-    "Gemini API는 요청을 처리하는 동안, Google Analytics는 14개월",
+    "요청을 처리하는 동안",
   ],
   [
     "Functional Software, Inc. (Sentry)\nhttps://sentry.io/privacy/",
@@ -99,6 +103,24 @@ const CROSS_BORDER_ROWS = [
     "오류가 난 코드 위치와 오류 메시지",
     "오류가 발생하는 시점에 네트워크로 전송",
     "Sentry가 정한 보관 기간",
+  ],
+] as const;
+
+/**
+ * 끄더라도 서비스가 그대로 도는 이전입니다. 지금은 이용 통계 하나뿐입니다.
+ *
+ * 보유 기간을 "Google Analytics가 정한 기간"이 아니라 14개월로 적습니다. 그 값은 이 저장소가 정한
+ * 속성 설정이고 `llm-wiki/wiki/2026-09-15-GA4-퍼널-계측.md`의 속성 설정표에 있습니다. Sentry는 같은
+ * 기록이 없어 숫자를 적지 않습니다(PR #146 리뷰).
+ */
+const OPTIONAL_CROSS_BORDER_ROWS = [
+  [
+    "Google LLC\nhttps://policies.google.com/privacy",
+    "미국",
+    "서비스 이용 통계(Google Analytics)",
+    "서비스 이용 기록, GitHub 계정 식별번호를 되돌릴 수 없는 값으로 바꾼 식별자",
+    "서비스를 이용하는 시점에 네트워크로 전송",
+    "14개월",
   ],
 ] as const;
 
@@ -212,7 +234,7 @@ export const PRIVACY_POLICY: LegalDocument = {
       blocks: [
         {
           kind: "paragraph",
-          text: "서비스는 서비스를 제공하기 위해 아래와 같이 개인정보 처리 업무를 국외 사업자에게 위탁하고 있으며, 「개인정보 보호법」 제28조의8제2항에 따라 다음과 같이 안내합니다. 국외 이전의 법적 근거는 같은 법 제28조의8제1항제3호(계약의 이행을 위한 처리위탁·보관)입니다.",
+          text: "서비스는 서비스를 제공하기 위해 아래와 같이 개인정보 처리 업무를 국외 사업자에게 위탁하고 있으며, 「개인정보 보호법」 제28조의8제2항에 따라 다음과 같이 안내합니다. 국외 이전의 법적 근거는 같은 법 제28조의8제1항제3호(계약의 이행을 위한 처리위탁·보관)입니다. 이 근거는 위 1번의 수집·이용 근거와 별개이며, 국외로 옮기는 행위에만 적용됩니다.",
         },
         {
           kind: "table",
@@ -224,11 +246,31 @@ export const PRIVACY_POLICY: LegalDocument = {
             "이전 시기와 방법",
             "보유·이용 기간",
           ],
-          rows: CROSS_BORDER_ROWS,
+          rows: REQUIRED_CROSS_BORDER_ROWS,
         },
         {
           kind: "paragraph",
-          text: "국외 이전을 거부하면 서비스를 이용할 수 없습니다. 서비스가 저장소를 분석하고 결과를 보여 주는 일 자체가 위 사업자들의 실행 환경과 저장소를 거치기 때문입니다. 국외 이전을 원하지 않는 경우에는 서비스 이용을 중단하고 아래 8번의 방법으로 저장된 데이터의 삭제를 요청할 수 있습니다.",
+          text: "위 표의 이전을 거부하면 서비스를 이용할 수 없습니다. 서비스가 저장소를 분석하고 결과를 보여 주는 일 자체가 이 사업자들의 실행 환경과 저장소와 모델을 거치기 때문입니다. 이전을 원하지 않는 경우에는 서비스 이용을 중단하고 아래 8번의 방법으로 저장된 데이터의 삭제를 요청할 수 있습니다.",
+        },
+        {
+          kind: "paragraph",
+          text: "아래는 서비스를 실행하는 데 필요하지 않은 이전입니다. 거부해도 서비스의 모든 기능을 그대로 이용할 수 있습니다.",
+        },
+        {
+          kind: "table",
+          head: [
+            "이전받는 자(수탁자)와 연락처",
+            "이전 국가",
+            "위탁하는 업무와 이용 목적",
+            "이전하는 항목",
+            "이전 시기와 방법",
+            "보유·이용 기간",
+          ],
+          rows: OPTIONAL_CROSS_BORDER_ROWS,
+        },
+        {
+          kind: "paragraph",
+          text: "이 이전을 거부하는 방법은 아래 7번의 Google Analytics 거부 방법과 같습니다. 구글이 제공하는 차단 부가기능을 설치하면 수집이 중단되고, 서비스의 다른 기능은 영향을 받지 않습니다.",
         },
       ],
     },
@@ -276,7 +318,7 @@ export const PRIVACY_POLICY: LegalDocument = {
             [
               "Google Analytics 쿠키",
               "이용 흐름 분석과 서비스 개선",
-              "Google Analytics가 정한 기간",
+              "14개월",
             ],
           ],
         },

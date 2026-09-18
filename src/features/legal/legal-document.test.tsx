@@ -49,10 +49,10 @@ describe("LegalDocument", () => {
 
   it("표의 머리글을 열 이름으로 읽을 수 있다", () => {
     render(<LegalDocument document={PRIVACY_POLICY} />);
-    // 국외 이전 표입니다. 법이 요구하는 기재사항이 한 칸도 빠지지 않아야 합니다.
-    expect(screen.getByRole("columnheader", { name: "이전 국가" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "이전 시기와 방법" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "보유·이용 기간" })).toBeInTheDocument();
+    // 국외 이전 표 둘입니다. 법이 요구하는 기재사항이 한 칸도 빠지지 않아야 합니다.
+    expect(screen.getAllByRole("columnheader", { name: "이전 국가" })).toHaveLength(2);
+    expect(screen.getAllByRole("columnheader", { name: "이전 시기와 방법" })).toHaveLength(2);
+    expect(screen.getAllByRole("columnheader", { name: "보유·이용 기간" })).toHaveLength(2);
   });
 
   it("홈으로 돌아가는 링크를 둔다", () => {
@@ -89,7 +89,37 @@ describe("개인정보 처리방침의 법정 기재사항", () => {
   it("국외 이전의 법적 근거와 거부 방법과 그 효과를 적는다", () => {
     render(<LegalDocument document={PRIVACY_POLICY} />);
     expect(screen.getByText(/제28조의8제1항제3호/)).toBeInTheDocument();
-    expect(screen.getByText(/국외 이전을 거부하면 서비스를 이용할 수 없습니다/)).toBeInTheDocument();
+    expect(screen.getByText(/위 표의 이전을 거부하면 서비스를 이용할 수 없습니다/)).toBeInTheDocument();
+  });
+
+  /**
+   * PR #146 리뷰가 지적한 것입니다. 이용 통계는 측정 ID가 없으면 스크립트를 싣지 않고 없어도 서비스가
+   * 그대로 돕니다. 서비스 실행에 필요한 이전과 한 표에 담으면 거부의 효과가 정반대인 둘을 한 문장이
+   * 덮습니다. 표를 나눈 것과 거부 효과를 가른 것을 함께 고정합니다.
+   */
+  it("서비스 실행에 필요한 이전과 선택적 이전을 나눠 적는다", () => {
+    render(<LegalDocument document={PRIVACY_POLICY} />);
+    expect(
+      screen.getByText(/거부해도 서비스의 모든 기능을 그대로 이용할 수 있습니다/)
+    ).toBeInTheDocument();
+
+    // 국외 이전 표 둘만 고릅니다. 문서에는 처리 목적 표와 쿠키 표도 있습니다.
+    const [required, optional] = screen
+      .getAllByRole("table")
+      .filter((table) => table.textContent?.includes("이전 국가"));
+    // 이용 통계는 선택적 이전 표에만 있어야 합니다.
+    expect(within(required).queryByText(/Google Analytics/)).not.toBeInTheDocument();
+    expect(within(optional).getByText(/Google Analytics/)).toBeInTheDocument();
+  });
+
+  /**
+   * 이용 통계의 보유 기간은 이 저장소가 정한 GA4 속성 설정(14개월)입니다. "Google Analytics가 정한
+   * 기간"이라고 쓰면 사용자가 보는 문서가 실제 설정과 달라집니다(PR #146 리뷰).
+   */
+  it("이용 통계의 보유 기간을 14개월로 적는다", () => {
+    render(<LegalDocument document={PRIVACY_POLICY} />);
+    expect(screen.getAllByText("14개월").length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText(/Google Analytics가 정한 기간/)).not.toBeInTheDocument();
   });
 
   /**
