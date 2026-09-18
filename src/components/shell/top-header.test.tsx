@@ -190,7 +190,11 @@ describe("회원 탈퇴", () => {
 
     fireEvent.click(screen.getByRole("menuitem", { name: ACCOUNT_MENU_COPY.withdrawConfirmAction }));
 
-    expect(fetchImpl).toHaveBeenCalledWith(ACCOUNT_PATH, { method: "DELETE" });
+    expect(fetchImpl).toHaveBeenCalledWith(ACCOUNT_PATH, {
+      method: "DELETE",
+      // 제한 시간이 없으면 응답이 오지 않을 때 `탈퇴 중…`에서 멈추고 메뉴도 닫히지 않습니다.
+      signal: expect.any(AbortSignal),
+    });
     await waitFor(() => expect(routerMock.push).toHaveBeenCalledWith(url));
     expect(routerMock.refresh).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
@@ -241,6 +245,32 @@ describe("회원 탈퇴", () => {
 
     await waitFor(() => expect(routerMock.push).toHaveBeenCalledWith("/?withdrawn=done"));
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  /** 확인 단계와 같은 규칙입니다. 요청이 도는 중에 취소로 빠져나가면 결과를 받을 자리가 사라집니다. */
+  it("실패 뒤 다시 시도하는 중에도 취소가 잠긴다", async () => {
+    let finish: (value: Response) => void = () => undefined;
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ error: {} }, { status: 503 }))
+      .mockReturnValueOnce(
+        new Promise<Response>((resolve) => {
+          finish = resolve;
+        })
+      );
+    renderHeader({ isAuthenticated: true, fetchImpl });
+    openMenu();
+    fireEvent.click(screen.getByRole("menuitem", { name: ACCOUNT_MENU_COPY.withdraw }));
+    fireEvent.click(screen.getByRole("menuitem", { name: ACCOUNT_MENU_COPY.withdrawConfirmAction }));
+    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("menuitem", { name: ACCOUNT_MENU_COPY.withdrawRetry }));
+
+    expect(await screen.findByRole("menuitem", { name: ACCOUNT_MENU_COPY.withdrawing })).toBeDisabled();
+    expect(screen.getByRole("menuitem", { name: ACCOUNT_MENU_COPY.cancel })).toBeDisabled();
+
+    finish(Response.json({ deleted: 1, revoked: true }, { status: 200 }));
+    await waitFor(() => expect(routerMock.push).toHaveBeenCalledWith("/?withdrawn=done"));
   });
 
   /** 닫히면 실패 안내가 갈 자리가 사라지고, 잠기지 않으면 같은 요청이 두 번 나갑니다. */

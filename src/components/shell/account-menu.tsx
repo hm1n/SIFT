@@ -22,6 +22,19 @@ export interface AccountMenuProps {
 type MenuMode = "items" | "confirm" | "failed";
 
 /**
+ * 탈퇴 요청의 제한 시간입니다.
+ *
+ * 브라우저 `fetch`에는 기본 제한 시간이 없습니다. 응답이 오지 않으면 버튼이 `탈퇴 중…`에서 멈추고,
+ * 그 사이에는 바깥 클릭으로 메뉴를 닫지도 못하므로(위 effect) 사용자가 빠져나올 자리가 없습니다.
+ * 서버 쪽 제한 시간(`revokeGitHubGrant`의 10초)은 GitHub 호출만 묶습니다.
+ *
+ * 30초입니다. 라우트가 하는 일은 삭제 한 문장과 해제 한 번이라 정상 응답이 이 안에 들어옵니다.
+ * 시간이 다 되면 `fetch`가 reject하고 아래 catch가 실패 안내로 보냅니다. 그 뒤 다시 시도하면
+ * 이미 지워진 경우 `deleted`가 0이라 빈 계정 문구를 받습니다.
+ */
+const WITHDRAW_TIMEOUT_MS = 30_000;
+
+/**
  * 로그인 뒤 헤더 오른쪽의 계정 메뉴입니다. 항목은 개인정보 처리방침과 이용약관, 로그아웃, 회원 탈퇴입니다.
  *
  * 법적 고지 링크가 여기 있는 이유입니다(이슈 #141). 푸터는 로그인 화면과 문서 화면에만 있고 로그인한
@@ -102,7 +115,10 @@ export function AccountMenu({ fetchImpl }: AccountMenuProps) {
     setIsWithdrawing(true);
     const doFetch = fetchImpl ?? fetch;
     try {
-      const response = await doFetch(ACCOUNT_PATH, { method: "DELETE" });
+      const response = await doFetch(ACCOUNT_PATH, {
+        method: "DELETE",
+        signal: AbortSignal.timeout(WITHDRAW_TIMEOUT_MS),
+      });
       if (!response.ok) {
         setMode("failed");
         return;
@@ -196,7 +212,13 @@ export function AccountMenu({ fetchImpl }: AccountMenuProps) {
             <div className={styles.confirm} role="group" aria-label={ACCOUNT_MENU_COPY.withdrawFailed}>
               <p className={styles.confirmText} role="alert">{ACCOUNT_MENU_COPY.withdrawFailed}</p>
               <div className={styles.confirmActions}>
-                <button type="button" role="menuitem" className={styles.cancel} onClick={() => setMode("items")}>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={styles.cancel}
+                  onClick={() => setMode("items")}
+                  disabled={isWithdrawing}
+                >
                   {ACCOUNT_MENU_COPY.cancel}
                 </button>
                 <button type="button" role="menuitem" className={styles.withdraw} onClick={withdraw} disabled={isWithdrawing}>
