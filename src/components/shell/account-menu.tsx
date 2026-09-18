@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { ACCOUNT_MENU_COPY } from "@/copy/shell";
 import { LEGAL_LINK_COPY } from "@/copy/legal";
-import { withdrawnMarker } from "@/features/auth/withdrawal";
+import { UNKNOWN_WITHDRAWAL_MARKER, withdrawnMarker } from "@/features/auth/withdrawal";
 import { ACCOUNT_PATH, SESSION_PATH } from "@/lib/github/auth-paths";
 import styles from "./top-header.module.css";
 
@@ -107,11 +107,11 @@ export function AccountMenu({ fetchImpl }: AccountMenuProps) {
         setMode("failed");
         return;
       }
-      let marker: string;
+      let marker = UNKNOWN_WITHDRAWAL_MARKER;
       try {
         marker = withdrawnMarker(await response.json());
       } catch {
-        marker = withdrawnMarker(null);
+        // 기본값을 그대로 씁니다. 이유는 `UNKNOWN_WITHDRAWAL_MARKER` 주석에 있습니다.
       }
       router.push(`/?withdrawn=${marker}`);
       router.refresh();
