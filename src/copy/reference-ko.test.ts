@@ -12,7 +12,7 @@ import { INTERVIEW_SCREEN_COPY, PAAR_PANEL_COPY, STREAM_VIEW_COPY } from "./inte
 import { REPOSITORY_SELECT_COPY, RESUME_ERROR_COPY } from "./repository";
 import { SAVED_INTERVIEW_LIST_COPY, SAVED_INTERVIEW_SCREEN_COPY } from "./saved";
 import { CONTINUE_INTERVIEW } from "./shared";
-import { ACCOUNT_MENU_COPY, APP_SHELL_COPY } from "./shell";
+import { ACCOUNT_MENU_COPY, APP_SHELL_COPY, GLOBAL_ERROR_COPY } from "./shell";
 
 /**
  * 레퍼런스 `Chat Interface Design/src/App.tsx`의 `TRANSLATIONS.ko`를 옮겨 둔 것입니다.
@@ -96,7 +96,21 @@ const REFERENCE_KO: readonly {
   { key: "loadLatest", text: "최신 내용 불러오기" },
   { key: "noInterviewsYet", text: "인터뷰가 없습니다. 경험 후보를 선택해 시작하세요." },
   { key: "errAuthLabel", text: "GitHub에 연결할 수 없습니다." },
-  { key: "tryAgain", text: "다시 시도", at: [LOGIN_COPY.tryAgain, STREAM_VIEW_COPY.retry, PAAR_PANEL_COPY.retry, REPOSITORY_SELECT_COPY.tryAgain, RESUME_ERROR_COPY.tryAgain, SAVED_INTERVIEW_LIST_COPY.retry] },
+  {
+    key: "tryAgain",
+    text: "다시 시도",
+    // 이 문구를 쓰는 상수를 모두 답니다. 빠진 상수는 검사를 받지 않아 혼자 다른 문구로 흘러갑니다.
+    at: [
+      LOGIN_COPY.tryAgain,
+      STREAM_VIEW_COPY.retry,
+      PAAR_PANEL_COPY.retry,
+      REPOSITORY_SELECT_COPY.tryAgain,
+      RESUME_ERROR_COPY.tryAgain,
+      SAVED_INTERVIEW_LIST_COPY.retry,
+      GLOBAL_ERROR_COPY.retry,
+      ACCOUNT_MENU_COPY.withdrawRetry,
+    ],
+  },
 
   // --- 의도적으로 다르게 씁니다 ---
   {
