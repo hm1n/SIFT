@@ -107,6 +107,12 @@ Releases와 Source Map 업로드 후속 작업에서 auth token을 넣으면 경
 그리고 커밋 SHA가 release로 인라인되지 않았는지의 검사가 각각 실제로 실패하는 것을 확인했습니다.
 DSN 판정과 예외 격리와 실험 옵션 배선은 `src/lib/sentry/client.test.ts`가 SDK를 mock해 고정합니다.
 
+**2026-09-18에 이 공백이 한 번 더 드러났습니다.** 이슈 #144의 자체 리뷰가 `checkReleaseInjected()`의
+기대값 계산을 지적했고 고쳤지만, 회귀 테스트를 붙이지 못했습니다. 검사 함수가 고정 경로의 실제
+파일시스템을 읽어서 하네스를 만들려면 경로 주입으로 스크립트를 다시 설계해야 합니다. 이 항목을 풀 때
+`checkReleaseInjected()`를 첫 대상으로 삼습니다. 기대값을 빌드 메타데이터에서 읽는 경로와, 메타데이터가
+없거나 `_sentryRelease`가 비어 있는 두 실패 경로가 검사 대상입니다.
+
 ## 9. 확인 절차를 CI에서 돌리지 않음
 
 `scripts/measure-sentry-web-vitals.mts`는 이제 종료 코드로 실패를 알립니다. 그런데 사람이 손으로

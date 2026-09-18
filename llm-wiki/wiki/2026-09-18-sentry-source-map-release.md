@@ -92,6 +92,12 @@ Organization Auth Token(`sntrys_`로 시작)을 권장하고, 개인 토큰을 �
 release 이름이 클라이언트 청크에 실제로 실렸는지 확인합니다. 이슈 #81 시점에는 같은 자리에서
 **실리지 않았는지**를 확인했습니다. 기대가 뒤집힌 검사입니다.
 
+**기대값은 `.next/required-server-files.json`의 `config.env._sentryRelease`에서 읽습니다.** 빌드가
+확정한 값이라 검사 대상과 기대값의 출처가 하나입니다. 확인 시점에 `SENTRY_RELEASE`와 Git revision을
+다시 읽으면 빌드 뒤에 커밋을 하나만 더 쌓아도 값이 달라져, 멀쩡히 주입된 빌드를 실패로 보고합니다.
+2026-09-18 자체 리뷰에서 지적받아 고쳤고, 고친 뒤 빌드 기록과 HEAD가 다른 상태에서 통과하는 것을
+확인했습니다.
+
 ## 실측 (2026-09-18, auth token 없음)
 
 - 빌드 성공. 경고는 `Will not create release.`와 `Will not upload source maps.` 두 줄.
