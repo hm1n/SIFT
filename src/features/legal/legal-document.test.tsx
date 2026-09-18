@@ -180,7 +180,17 @@ describe("개인정보 처리방침의 법정 기재사항", () => {
   it("권리 행사 방법에 화면에서 직접 지우는 경로를 적는다", () => {
     render(<LegalDocument document={PRIVACY_POLICY} />);
     expect(screen.getByText(/계정 메뉴의 회원 탈퇴를 이용하면/)).toBeInTheDocument();
-    expect(screen.getByText(/GitHub에서 받은 권한도 함께 해제합니다/)).toBeInTheDocument();
+    expect(screen.getByText(/한 번에 모두 지웁니다/)).toBeInTheDocument();
+  });
+
+  /**
+   * 권한 해제는 실패할 수 있고 화면이 그 결과를 따로 알립니다(PR #147 리뷰 2라운드). 문서가 항상
+   * 해제된다고 적으면 사용자가 보는 화면과 어긋나고, 남은 권한을 정리할 일이 있다는 것도 가려집니다.
+   */
+  it("권한 해제를 항상 완료한 것으로 적지 않는다", () => {
+    render(<LegalDocument document={PRIVACY_POLICY} />);
+    expect(screen.getByText(/권한의 해제도 함께 요청하며/)).toBeInTheDocument();
+    expect(screen.getByText(/해제하지 못한 경우에는 그 사실과 직접 해제하는 방법을 화면에서 알립니다/)).toBeInTheDocument();
   });
 
   it("파기 절차에 이용자가 직접 지우는 경우를 적는다", () => {
@@ -198,5 +208,12 @@ describe("이용약관의 이용 종료", () => {
     render(<LegalDocument document={TERMS_OF_SERVICE} />);
     expect(screen.getByText(/계정 메뉴의 회원 탈퇴로 언제든지 서비스 이용을 끝낼 수 있습니다/)).toBeInTheDocument();
     expect(screen.getByText(/지운 데이터는 되살릴 수 없습니다/)).toBeInTheDocument();
+  });
+
+  /** 처리방침 8번과 같은 이유입니다. 해제는 요청이고 실패할 수 있습니다. */
+  it("권한 해제를 단정하지 않고 실패 시 방법을 적는다", () => {
+    render(<LegalDocument document={TERMS_OF_SERVICE} />);
+    expect(screen.getByText(/권한의 해제를 함께 요청합니다/)).toBeInTheDocument();
+    expect(screen.getByText(/GitHub 계정 설정에서 직접 해제할 수 있습니다/)).toBeInTheDocument();
   });
 });
