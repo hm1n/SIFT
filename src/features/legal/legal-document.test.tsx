@@ -79,7 +79,7 @@ describe("개인정보 처리방침의 법정 기재사항", () => {
     "안전성 확보 조치",
     "자동 수집 장치",
     "권리",
-    "개인정보 보호책임자",
+    "고충사항을 처리하는 창구",
     "권익침해 구제",
     "변경",
   ])("'%s'를 다루는 절이 있다", (keyword) => {
@@ -92,9 +92,13 @@ describe("개인정보 처리방침의 법정 기재사항", () => {
     expect(screen.getByText(/국외 이전을 거부하면 서비스를 이용할 수 없습니다/)).toBeInTheDocument();
   });
 
-  it("개인정보 보호책임자의 성명과 연락처를 적는다", () => {
+  /**
+   * 법 제30조제1항제6호는 보호책임자의 성명 또는 고충사항을 처리하는 부서의 명칭과 연락처 중
+   * 하나를 요구합니다. 이 서비스는 뒤쪽을 골랐으므로 창구 이름과 전자우편이 둘 다 있어야 합니다.
+   */
+  it("고충사항을 처리하는 창구의 이름과 연락처를 적는다", () => {
     render(<LegalDocument document={PRIVACY_POLICY} />);
-    expect(screen.getByText(`성명 : ${PRIVACY_OFFICER.name}`)).toBeInTheDocument();
+    expect(screen.getByText(`창구 : ${PRIVACY_OFFICER.department}`)).toBeInTheDocument();
     expect(screen.getByText(`전자우편 : ${PRIVACY_OFFICER.email}`)).toBeInTheDocument();
   });
 
