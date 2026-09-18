@@ -11,6 +11,22 @@ export const DOCUMENT_COPY = {
   description: "GitHub Repository의 코드와 커밋에서 설명할 개발 경험을 찾습니다.",
 } as const;
 
+/**
+ * 법적 고지 화면의 metadata입니다(이슈 #141). 화면 문구와 같은 자리에 둡니다.
+ *
+ * 두 화면이 각자 `metadata`를 내보내야 해서 `DOCUMENT_COPY`처럼 하나로 합칠 수 없습니다.
+ */
+export const LEGAL_PAGE_METADATA = {
+  privacy: {
+    title: "개인정보 처리방침 | SIFT",
+    description: "SIFT가 처리하는 개인정보의 항목과 목적, 보유 기간, 국외 이전을 안내합니다.",
+  },
+  terms: {
+    title: "이용약관 | SIFT",
+    description: "SIFT를 이용하는 데 필요한 조건과 절차, 이용자와 서비스의 권리와 의무를 정합니다.",
+  },
+} as const;
+
 export const TOP_HEADER_COPY = {
   /** 브랜드 마크 링크의 접근성 이름입니다. 보이는 글자는 `SIFT` 마크뿐입니다. */
   homeLabel: "SIFT 홈",
