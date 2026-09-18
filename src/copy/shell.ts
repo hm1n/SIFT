@@ -41,6 +41,27 @@ export const ACCOUNT_MENU_COPY = {
   account: "GitHub 계정",
   signOut: "로그아웃",
   signingOut: "로그아웃 중…",
+  /**
+   * 회원 탈퇴입니다(이슈 #145). 저장된 데이터를 모두 지우고 GitHub 연결을 해제합니다.
+   *
+   * 레퍼런스의 `계정 삭제`를 쓰지 않습니다. 이 서비스에는 지울 회원 레코드가 없고 GitHub 계정은
+   * 그대로 남으므로, 계정을 지운다고 하면 실제보다 큰 일을 말하는 것이 됩니다. 사유는
+   * `reference-ko.test.ts`의 대조 표에도 적었습니다.
+   */
+  withdraw: "회원 탈퇴",
+  withdrawConfirm: "회원 탈퇴할까요?",
+  /**
+   * 무엇이 사라지는지와 되돌릴 수 없다는 것을 함께 말합니다. GitHub 연결 해제를 빼지 않는 이유는
+   * 해제하면 다음 로그인에서 권한 승인 화면을 다시 보게 되는데, 말해 두지 않으면 그게 왜 나오는지
+   * 알 수 없기 때문입니다.
+   */
+  withdrawWarning: "저장된 분석과 인터뷰를 모두 지우고 GitHub 연결도 해제합니다. 되돌릴 수 없습니다.",
+  withdrawConfirmAction: "탈퇴",
+  withdrawing: "탈퇴 중…",
+  /** 실패 원인을 말하지 않습니다. 사용자가 할 수 있는 일은 원인과 무관하게 다시 시도하는 것뿐입니다. */
+  withdrawFailed: "탈퇴를 끝내지 못했습니다. 잠시 뒤에 다시 시도해 주세요.",
+  withdrawRetry: "다시 시도",
+  cancel: "취소",
 } as const;
 
 export const APP_SHELL_COPY = {

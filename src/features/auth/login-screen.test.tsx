@@ -4,7 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AuthTransitionProvider } from "@/components/shell/auth-transition";
-import { LOGIN_COPY } from "@/copy/auth";
+import { LOGIN_COPY, WITHDRAWN_COPY, WITHDRAWN_GRANT_GUIDE } from "@/copy/auth";
 import { LEGAL_LINK_COPY } from "@/copy/legal";
 import { TopHeader } from "@/components/shell/top-header";
 import { LOGIN_PATH } from "@/lib/github/auth-paths";
@@ -203,5 +203,59 @@ describe("LoginScreen 계측", () => {
     const { rerender } = renderLogin("access_denied");
     rerender(<AuthTransitionProvider><LoginScreen /></AuthTransitionProvider>);
     expect(trackEvent).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * 회원 탈퇴를 끝낸 직후의 안내입니다(이슈 #145). 계정 메뉴가 표시를 주소에 실어 보내고 이 화면이
+ * 문구를 고릅니다. 탈퇴한 사용자가 마지막으로 보는 화면이라 결과를 여기서 알려야 합니다.
+ */
+describe("LoginScreen 탈퇴 안내", () => {
+  function renderWithdrawn(withdrawn?: string) {
+    return render(
+      <AuthTransitionProvider>
+        <LoginScreen withdrawn={withdrawn} />
+      </AuthTransitionProvider>,
+    );
+  }
+
+  it.each(Object.keys(WITHDRAWN_COPY))("%s 표시의 문구를 그린다", (marker) => {
+    renderWithdrawn(marker);
+    expect(screen.getByRole("status")).toHaveTextContent(WITHDRAWN_COPY[marker].text);
+  });
+
+  /** 남았다는 사실만 알리고 끝내면 사용자가 할 수 있는 일이 없습니다. */
+  it.each(Object.keys(WITHDRAWN_COPY).filter((marker) => WITHDRAWN_COPY[marker].grantKept))(
+    "%s 표시에는 GitHub 설정에서 직접 해제하는 방법을 함께 준다",
+    (marker) => {
+      renderWithdrawn(marker);
+      const link = within(screen.getByRole("status")).getByRole("link", { name: WITHDRAWN_GRANT_GUIDE.link });
+      expect(link).toHaveAttribute("href", WITHDRAWN_GRANT_GUIDE.href);
+      expect(link).toHaveAttribute("target", "_blank");
+      expect(screen.getByRole("status")).toHaveTextContent(WITHDRAWN_GRANT_GUIDE.tail);
+    },
+  );
+
+  it.each(Object.keys(WITHDRAWN_COPY).filter((marker) => !WITHDRAWN_COPY[marker].grantKept))(
+    "%s 표시에는 해제 방법을 덧붙이지 않는다",
+    (marker) => {
+      renderWithdrawn(marker);
+      expect(screen.getByRole("status")).not.toHaveTextContent(WITHDRAWN_GRANT_GUIDE.tail);
+    },
+  );
+
+  /** 주소창의 쿼리는 아무 값이나 올 수 있습니다. `auth_error`와 같은 기준으로 표에 있는 값만 씁니다. */
+  it.each([["표시가 없으면", undefined], ["표에 없는 값이면", "지워짐"], ["프로토타입 키면", "toString"]])(
+    "%s 안내를 그리지 않는다",
+    (_name, marker) => {
+      renderWithdrawn(marker);
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    },
+  );
+
+  /** 안내가 로그인 자리를 가리면 다시 시작할 수 없습니다. 같은 화면에 함께 있어야 합니다. */
+  it("안내와 함께 로그인 버튼을 그린다", () => {
+    renderWithdrawn("done");
+    expect(screen.getByRole("link", { name: LOGIN_COPY.continueWithGitHub })).toHaveAttribute("href", LOGIN_PATH);
   });
 });

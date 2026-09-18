@@ -162,3 +162,82 @@
   opacity: 0.5;
   cursor: wait;
 }
+
+/*
+ * 회원 탈퇴 항목입니다(이슈 #145). 로그아웃 바로 아래에 있고 되돌릴 수 없는 조작이라 색으로도
+ * 가릅니다. 빨강은 저장된 인터뷰의 삭제 버튼과 같은 값이고 레퍼런스 디자인의 red-500입니다.
+ * 토큰으로 두지 않는 이유는 그 값이 아직 두 곳에서만 쓰이고, 뜻이 비슷한
+ * `--color-diff-del`(diff 삭제 줄)과 역할이 달라 같은 이름으로 묶으면 한쪽을 고칠 때 다른 쪽이
+ * 함께 바뀌기 때문입니다.
+ */
+.menuItemDanger {
+  composes: menuItem;
+  color: #ef4444;
+}
+
+.menuItemDanger:hover,
+.menuItemDanger:focus-visible {
+  background: #fef2f2;
+  outline: none;
+}
+
+/* 확인 단계와 실패 안내입니다. 대화상자를 띄우지 않고 메뉴 본문 자리를 그대로 씁니다. */
+.confirm {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.confirmTitle {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-foreground);
+}
+
+.confirmText {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--color-muted-foreground);
+}
+
+.confirmActions {
+  display: flex;
+  gap: 6px;
+}
+
+.cancel,
+.withdraw {
+  flex: 1;
+  padding: 6px 0;
+  border-radius: 4px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cancel {
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-muted-foreground);
+}
+
+.cancel:hover {
+  border-color: var(--color-scrollbar-hover);
+}
+
+.withdraw {
+  border: 0;
+  background: #ef4444;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.withdraw:hover {
+  background: #dc2626;
+}
+
+.cancel:disabled,
+.withdraw:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
