@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { ACCOUNT_MENU_COPY } from "@/copy/shell";
+import { LEGAL_LINK_COPY } from "@/copy/legal";
 import { SESSION_PATH } from "@/lib/github/auth-paths";
 import styles from "./top-header.module.css";
 
@@ -11,7 +13,12 @@ export interface AccountMenuProps {
 }
 
 /**
- * 로그인 뒤 헤더 오른쪽의 계정 메뉴입니다. 항목은 로그아웃 하나입니다.
+ * 로그인 뒤 헤더 오른쪽의 계정 메뉴입니다. 항목은 개인정보 처리방침과 이용약관, 로그아웃입니다.
+ *
+ * 법적 고지 링크가 여기 있는 이유입니다(이슈 #141). 푸터는 로그인 화면과 문서 화면에만 있고 로그인한
+ * 뒤에는 그리지 않습니다. 디자인 파일이 앱 화면에 푸터를 두지 않고, 인터뷰 워크스페이스가 세로 공간을
+ * 55px 잃기 때문입니다. 그러면 로그인한 사용자가 처리방침에 닿을 곳이 필요한데, 개인정보 처리방침
+ * 작성지침이 "로그인 여부와 상관없이" 확인할 수 있어야 한다고 요구합니다. 그 자리가 이 메뉴입니다.
  *
  * 세션 쿠키에는 GitHub 사용자 정보가 없으므로 이니셜과 사용자명 자리에 GitHub 마크 문구를 둡니다.
  * 로그아웃은 세션 삭제 라우트를 부른 뒤 첫 화면으로 이동하고 서버 컴포넌트를 다시 그립니다. 헤더는 layout이
@@ -77,6 +84,14 @@ export function AccountMenu({ fetchImpl }: AccountMenuProps) {
             </div>
           </div>
           <div className={styles.menuBody}>
+            {/* 메뉴를 열어 둔 채로 이동하면 돌아왔을 때 열려 있으므로 누를 때 닫습니다. */}
+            <Link role="menuitem" className={styles.menuLink} href="/privacy" onClick={() => setIsOpen(false)}>
+              {LEGAL_LINK_COPY.privacy}
+            </Link>
+            <Link role="menuitem" className={styles.menuLink} href="/terms" onClick={() => setIsOpen(false)}>
+              {LEGAL_LINK_COPY.terms}
+            </Link>
+            <div className={styles.menuDivider} role="separator" />
             <button type="button" role="menuitem" className={styles.menuItem} onClick={signOut} disabled={isSigningOut}>
               {isSigningOut ? ACCOUNT_MENU_COPY.signingOut : ACCOUNT_MENU_COPY.signOut}
             </button>

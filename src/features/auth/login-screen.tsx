@@ -9,7 +9,6 @@ import { LoginLink, useAuthTransition } from "@/components/shell/auth-transition
 import { SiftMark } from "@/components/shell/sift-mark";
 import { StatusScreen } from "@/components/shell/status-screen";
 import { AUTH_ERROR_COPY, LOGIN_COPY } from "@/copy/auth";
-import { LEGAL_LINK_COPY } from "@/copy/legal";
 import styles from "./login-screen.module.css";
 
 export interface LoginScreenProps {
@@ -83,16 +82,15 @@ export function LoginScreen({ authError }: LoginScreenProps) {
         <div className={styles.actions}>
           <LoginLink variant="primary" className={styles.login} iconSize={16}>{LOGIN_COPY.continueWithGitHub}</LoginLink>
           {/*
-            동의 문장의 `이용약관`만 링크입니다. 처리방침은 동의 대상이 아니므로 같은 문장에 넣지
-            않고 링크만 따로 둡니다. 작성지침 Part 02가 개인정보 처리방침은 동의를 얻어야 하는
-            문서가 아니라고 밝히고 있습니다(이슈 #141).
+            동의 문장의 `이용약관`만 링크입니다. 처리방침은 동의 대상이 아니라 같은 문장에 넣지
+            않습니다. 작성지침 Part 02가 개인정보 처리방침은 동의를 얻어야 하는 문서가 아니라고
+            밝히고 있습니다. 처리방침 링크는 이 화면 아래의 푸터가 답니다(이슈 #141).
           */}
           <p className={styles.terms}>
             {LOGIN_COPY.termsSentence.lead}
             <Link className={styles.termsLink} href="/terms">{LOGIN_COPY.termsSentence.link}</Link>
             {LOGIN_COPY.termsSentence.tail}
           </p>
-          <Link className={styles.privacyLink} href="/privacy">{LEGAL_LINK_COPY.privacy}</Link>
         </div>
       </div>
     </div>

@@ -89,21 +89,6 @@
   color: var(--color-foreground);
 }
 
-/*
- * 개인정보 처리방침 링크입니다. 표준지침 제20조가 이 명칭을 다른 고지사항과 구분해 표시하도록
- * 정하고 있어 위 동의 문장보다 진하게 그립니다.
- */
-.privacyLink {
-  /* 세로 간격은 `.actions`의 grid gap이 정합니다. 여기서 margin을 더하면 gap과 합쳐져 두 배가 됩니다. */
-  text-align: center;
-  font-family: var(--font-mono);
-  font-size: var(--label-size-sm);
-  letter-spacing: var(--label-tracking-wide);
-  color: var(--color-foreground);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
 @media (max-width: 560px) {
   .screen { padding: 32px 16px; }
 }

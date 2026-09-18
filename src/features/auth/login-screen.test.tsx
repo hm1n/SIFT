@@ -86,14 +86,13 @@ describe("LoginScreen", () => {
   });
 
   /**
-   * 처리방침은 동의 대상이 아니므로 동의 문장 밖에 있어야 합니다. 작성지침 Part 02가 처리방침은
-   * 동의를 얻어야 하는 문서가 아니라고 밝히고 있습니다.
+   * 처리방침은 동의 대상이 아니라 이 화면이 링크를 갖지 않습니다. 작성지침 Part 02가 처리방침은
+   * 동의를 얻어야 하는 문서가 아니라고 밝히고 있습니다. 링크는 이 화면 아래의 푸터에 있고 그쪽은
+   * `site-footer.test.tsx`와 `page.test.tsx`가 봅니다.
    */
-  it("처리방침 링크는 동의 문장 밖에 따로 둔다", () => {
+  it("처리방침 링크를 동의 문장에 넣지 않는다", () => {
     renderLogin();
-    const privacy = screen.getByRole("link", { name: LEGAL_LINK_COPY.privacy });
-    expect(privacy).toHaveAttribute("href", "/privacy");
-    expect(termsParagraph()).not.toContainElement(privacy);
+    expect(screen.queryByRole("link", { name: LEGAL_LINK_COPY.privacy })).not.toBeInTheDocument();
   });
 
   it("버튼을 누르면 브라우저가 이동하기 전까지 AUTHENTICATING 상태를 그린다", () => {

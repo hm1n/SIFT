@@ -130,6 +130,28 @@
   cursor: pointer;
 }
 
+/*
+ * 메뉴 안의 링크입니다. 항목 모양은 버튼과 같아야 하고, `a`는 기본이 inline이라 칸 전체를 채우도록
+ * `display: block`만 더합니다.
+ */
+.menuLink {
+  composes: menuItem;
+  display: block;
+}
+
+.menuLink:hover,
+.menuLink:focus-visible {
+  background: var(--color-accent);
+  outline: none;
+}
+
+/* 법적 고지 링크와 로그아웃을 가릅니다. 성격이 다른 항목이 붙어 있으면 잘못 누르기 쉽습니다. */
+.menuDivider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--color-muted);
+}
+
 .menuItem:hover,
 .menuItem:focus-visible {
   background: var(--color-accent);
