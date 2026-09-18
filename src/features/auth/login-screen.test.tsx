@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AuthTransitionProvider } from "@/components/shell/auth-transition";
+import { LOGIN_COPY } from "@/copy/auth";
+import { LEGAL_LINK_COPY } from "@/copy/legal";
 import { TopHeader } from "@/components/shell/top-header";
 import { LOGIN_PATH } from "@/lib/github/auth-paths";
 import { LoginScreen } from "./login-screen";
@@ -42,6 +44,17 @@ function click(name: string, init?: MouseEventInit) {
   fireEvent.click(link, init);
 }
 
+/**
+ * 동의 문장이 들어 있는 문단입니다. 문장 안에 링크가 있어 `getByText`로는 잡히지 않습니다.
+ * `getByText`는 자식 요소로 쪼개진 글자를 한 덩어리로 보지 않습니다.
+ */
+function termsParagraph(): HTMLElement {
+  const link = screen.getByRole("link", { name: LOGIN_COPY.termsSentence.link });
+  const paragraph = link.closest("p");
+  if (paragraph === null) throw new Error("약관 동의 문장을 찾지 못했습니다.");
+  return paragraph;
+}
+
 function expectAuthenticating() {
   const status = screen.getByRole("status");
   expect(status).toHaveAttribute("data-status-kind", "loading");
@@ -56,9 +69,31 @@ describe("LoginScreen", () => {
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(/코드 속에 숨겨진/);
     expect(screen.getByText(/GitHub의 코드와 커밋을 근거로/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "GitHub으로 계속하기" })).toHaveAttribute("href", LOGIN_PATH);
-    expect(screen.getByText("계속하면 이용약관에 동의하는 것입니다")).toBeInTheDocument();
+    expect(termsParagraph()).toHaveTextContent(LOGIN_COPY.terms);
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  /**
+   * 동의 문장을 조각으로 나눠 링크를 넣었습니다(이슈 #141). 나눈 조각이 원래 문장을 그대로 이루는지
+   * 화면에서 읽은 글자로 확인합니다. `copy/auth.ts`에서 조각과 `terms`가 어긋나면 여기서 드러납니다.
+   */
+  it("약관 동의 문장의 `이용약관`만 링크이고 문장 전체는 그대로다", () => {
+    renderLogin();
+    const terms = termsParagraph();
+    expect(terms).toHaveTextContent(LOGIN_COPY.terms);
+    expect(within(terms).getByRole("link", { name: LOGIN_COPY.termsSentence.link })).toHaveAttribute("href", "/terms");
+  });
+
+  /**
+   * 처리방침은 동의 대상이 아니므로 동의 문장 밖에 있어야 합니다. 작성지침 Part 02가 처리방침은
+   * 동의를 얻어야 하는 문서가 아니라고 밝히고 있습니다.
+   */
+  it("처리방침 링크는 동의 문장 밖에 따로 둔다", () => {
+    renderLogin();
+    const privacy = screen.getByRole("link", { name: LEGAL_LINK_COPY.privacy });
+    expect(privacy).toHaveAttribute("href", "/privacy");
+    expect(termsParagraph()).not.toContainElement(privacy);
   });
 
   it("버튼을 누르면 브라우저가 이동하기 전까지 AUTHENTICATING 상태를 그린다", () => {

@@ -1,0 +1,35 @@
+/*
+ * 공통 푸터입니다. 높이를 28px로 묶어 워크스페이스가 잃는 세로 공간을 최소로 둡니다.
+ * 상단 헤더(44px)와 달리 그림자나 z-index를 두지 않습니다. 겹칠 요소가 없습니다.
+ */
+.footer {
+  height: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 0 20px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-card);
+}
+
+.link {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--color-muted-foreground);
+}
+
+.link:hover {
+  color: var(--color-foreground);
+}
+
+/*
+ * 개인정보 처리방침 링크입니다. 표준지침 제20조가 이 명칭을 다른 고지사항과 구분해 표시하도록
+ * 정하고 있어 약관 링크보다 진하고 굵게 그립니다. 색만으로 가르지 않도록 굵기도 함께 다릅니다.
+ */
+.privacyLink {
+  composes: link;
+  font-weight: 500;
+  color: var(--color-foreground);
+}

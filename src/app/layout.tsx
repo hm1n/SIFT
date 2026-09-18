@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { DOCUMENT_COPY } from "@/copy/shell";
 import { AuthTransitionProvider } from "@/components/shell/auth-transition";
 import { TopHeader } from "@/components/shell/top-header";
+import { SiteFooter } from "@/components/shell/site-footer";
 import { GoogleAnalyticsScript } from "@/features/analytics/ga-script";
 import { GITHUB_SESSION_COOKIE } from "@/lib/github/auth-session";
 import "./globals.css";
@@ -41,6 +42,8 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
         <AuthTransitionProvider>
           <TopHeader isAuthenticated={cookieStore.has(GITHUB_SESSION_COOKIE)} />
           {children}
+          {/* 처리방침과 약관은 로그인 여부와 무관하게 닿아야 하므로 provider 안쪽의 모든 화면 아래에 둡니다. */}
+          <SiteFooter />
         </AuthTransitionProvider>
         <GoogleAnalyticsScript />
       </body>
