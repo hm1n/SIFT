@@ -8,6 +8,7 @@ import { REPOSITORY_FETCH_ERROR_SUB, REPOSITORY_SELECT_COPY } from "@/copy/repos
 import { SESSION_PATH } from "@/lib/github/auth-paths";
 import { GitHubFetchError, type GitHubFetchErrorKind } from "@/lib/github/errors";
 import type { RepositorySummary } from "@/lib/github/types";
+import { fetchAnalysisUsage, type AnalysisUsage } from "@/features/usage-limit/usage-client";
 import { parseContributionItems } from "./contribution-items";
 import { fetchRepositoriesFromApi } from "./repository-client";
 import { formatUpdatedLabel } from "./updated-label";
@@ -27,6 +28,8 @@ export interface RepositorySelectScreenProps {
   fetchRepositories?: () => Promise<RepositorySummary[]>;
   /** `UPDATED nD AGO` 계산 기준 시각입니다. 테스트가 고정합니다. */
   now?: () => number;
+  /** 테스트에서 오늘 쓴 분석 횟수 조회를 대체하는 통로입니다. */
+  fetchUsage?: () => Promise<AnalysisUsage | null>;
 }
 
 /**
@@ -36,13 +39,21 @@ export interface RepositorySelectScreenProps {
  * 기여 항목은 `contribution-context.md`대로 목록 카드 아래 별도 섹션이고 선택 사항입니다. 항목 경계는 줄바꿈입니다.
  * 검색은 이미 받은 목록을 owner와 name으로 클라이언트에서 거릅니다. 목록 조회는 마운트 시 한 번이고 Try again이 다시 부릅니다.
  */
-export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRepositoriesFromApi, now = Date.now }: RepositorySelectScreenProps) {
+export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRepositoriesFromApi, now = Date.now, fetchUsage = fetchAnalysisUsage }: RepositorySelectScreenProps) {
   const router = useRouter();
   const [attempt, setAttempt] = useState(0);
   const [list, setList] = useState<ListState>({ status: "loading" });
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [contribution, setContribution] = useState("");
+  /**
+   * 오늘 쓴 분석 횟수입니다(이슈 #142). 아직 읽지 못했거나 읽는 데 실패하면 `null`입니다.
+   *
+   * 두 경우를 가르지 않습니다. 안내를 그리지 않고 분석도 막지 않는 동작이 같습니다. 읽지 못한 것을
+   * 오류 화면으로 올리지도 않습니다. 상한은 Stage A 라우트가 집행하므로, 이 값을 못 읽었다고
+   * 분석을 막으면 아직 횟수가 남은 사용자까지 막습니다.
+   */
+  const [usage, setUsage] = useState<AnalysisUsage | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // 방향키로 라디오 그룹을 오갈 때 다음 행에 실제 DOM 포커스를 옮기는 데 씁니다. 콜백 ref가 매 렌더 커밋마다
   // 자기 인덱스 자리를 스스로 채우고, 행이 사라지면 React가 같은 콜백을 null로 불러 스스로 비웁니다.
@@ -64,6 +75,17 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
       stale = true;
     };
   }, [fetchRepositories, attempt]);
+
+  // 목록과 따로 읽습니다. 한 요청에 묶으면 횟수를 읽지 못한 것만으로 목록까지 오류 화면이 됩니다.
+  useEffect(() => {
+    let stale = false;
+    fetchUsage().then((value) => {
+      if (!stale) setUsage(value);
+    });
+    return () => {
+      stale = true;
+    };
+  }, [fetchUsage]);
 
   // 디자인대로 3행에서 시작해 내용에 맞춰 160px까지 늘어납니다. jsdom은 scrollHeight가 0이라 테스트에서는 효과가 없습니다.
   useEffect(() => {
@@ -130,6 +152,14 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
         repository.name.toLowerCase().includes(normalizedQuery) || repository.owner.toLowerCase().includes(normalizedQuery)
       );
   const selected = repositories.find((repository) => repository.id === selectedId) ?? null;
+  /**
+   * 상한에 닿았는지입니다. 횟수를 읽지 못했으면 닿지 않은 것으로 봅니다(이슈 #142).
+   *
+   * 읽지 못한 경우를 막힌 것으로 보면 조회가 한 번 실패했다는 이유로 아직 횟수가 남은 사용자가
+   * 분석을 시작하지 못합니다. 반대로 열어 두면 남지 않은 사용자가 한 번 헛걸음하고 Stage A 라우트의
+   * 429를 받습니다. 틀렸을 때 잃는 것이 적은 쪽을 고릅니다.
+   */
+  const limitReached = usage !== null && usage.used >= usage.limit;
   const currentTime = now();
   const selectedFilteredIndex = filtered.findIndex((repository) => repository.id === selectedId);
 
@@ -246,11 +276,20 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
       </div>
 
       <footer className={styles.footer}>
-        <span className={styles.selection}>{selected ? `${selected.owner} / ${selected.name}` : REPOSITORY_SELECT_COPY.noSelection}</span>
+        <div className={styles.footerStatus}>
+          <span className={styles.selection}>{selected ? `${selected.owner} / ${selected.name}` : REPOSITORY_SELECT_COPY.noSelection}</span>
+          {usage ? (
+            <span className={limitReached ? styles.usageExceeded : styles.usage}>
+              {limitReached
+                ? REPOSITORY_SELECT_COPY.analysisLimitReached
+                : REPOSITORY_SELECT_COPY.analysisUsage(usage.used, usage.limit)}
+            </span>
+          ) : null}
+        </div>
         <Button
           variant="primary"
-          disabled={selected === null}
-          onClick={() => selected && onAnalyze(selected, parseContributionItems(contribution))}
+          disabled={selected === null || limitReached}
+          onClick={() => selected && !limitReached && onAnalyze(selected, parseContributionItems(contribution))}
         >
           {REPOSITORY_SELECT_COPY.analyze} <span className={styles.arrow} aria-hidden="true">→</span>
         </Button>
