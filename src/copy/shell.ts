@@ -26,11 +26,28 @@ const DOCUMENT_TITLE = "SIFT | Repository 분석";
 const DOCUMENT_DESCRIPTION = "GitHub Repository의 코드와 커밋에서 설명할 개발 경험을 찾습니다.";
 
 /**
+ * 공유 미리보기 이미지입니다(이슈 #149).
+ *
+ * `public/og-image.png`이고 주소는 `/og-image.png`입니다. `src/app/opengraph-image.png` 파일 규약을
+ * 쓰지 않았습니다. 규약은 메타 태그를 자동으로 만들어 주지만 파일 위치가 `src/app` 아래로 정해지고
+ * 주소에 해시가 붙습니다. `public/`에 두면 주소가 고정돼 다른 곳에서도 같은 값으로 가리킬 수 있습니다.
+ *
+ * 가로·세로를 손으로 적습니다. 파일 규약이 하던 일이라 여기서는 실제 파일과 어긋날 수 있고, 어긋나면
+ * 플랫폼이 잘린 카드를 그립니다. `shell.test.ts`가 PNG 헤더를 읽어 이 값과 맞춥니다.
+ */
+const OPEN_GRAPH_IMAGE = {
+  url: "/og-image.png",
+  width: 1730,
+  height: 909,
+  /** 이미지에 글자가 없어 제목과 설명을 되풀이하지 않고 무엇이 그려져 있는지만 적습니다. */
+  alt: "SIFT 브랜드 마크와 워드마크",
+} as const;
+
+/**
  * 화면마다 반복되는 Open Graph 필드입니다(이슈 #149).
  *
- * 이미지는 `src/app/opengraph-image.*` 파일 규약이 붙입니다. 여기서 `images`를 들지 않는 이유입니다.
- * 파일 규약은 절대 주소와 가로·세로·타입 메타 태그를 함께 만들어 주고, X는 `twitter:image`가 없으면
- * `og:image`를 그대로 씁니다. 그래서 이미지 파일 하나면 두 미리보기가 모두 채워집니다.
+ * 이미지는 여기 넣지 않고 쓰는 자리에서 `images: [OPEN_GRAPH_IMAGE]`로 답니다. `as const`가 배열까지
+ * 읽기 전용으로 만드는데 Next의 `OGImage[]`는 바꿀 수 있는 배열이라 대입되지 않습니다.
  */
 const OPEN_GRAPH_BASE = {
   siteName: "SIFT",
@@ -55,11 +72,17 @@ export const DOCUMENT_COPY = {
     url: "/",
     title: DOCUMENT_TITLE,
     description: DOCUMENT_DESCRIPTION,
+    images: [OPEN_GRAPH_IMAGE],
   },
   twitter: {
     card: "summary_large_image",
     title: DOCUMENT_TITLE,
     description: DOCUMENT_DESCRIPTION,
+    /*
+     * X는 `twitter:image`가 없으면 `og:image`를 대신 쓰지만, 그 대체 동작에 기대지 않고 적습니다.
+     * 여기가 비어 있으면 카드가 왜 그렇게 나오는지 태그만 보고는 알 수 없습니다.
+     */
+    images: [OPEN_GRAPH_IMAGE.url],
   },
 } satisfies Metadata;
 
@@ -99,8 +122,9 @@ function legalPageMetadata({
     title,
     description,
     alternates: { canonical: path },
-    openGraph: { ...OPEN_GRAPH_BASE, url: path, title, description },
-    twitter: { card: "summary_large_image", title, description },
+    /* 세 화면이 같은 이미지를 씁니다. 제목과 설명은 각자 다르지만 이미지는 서비스를 가리키는 브랜드 마크 하나입니다. */
+    openGraph: { ...OPEN_GRAPH_BASE, url: path, title, description, images: [OPEN_GRAPH_IMAGE] },
+    twitter: { card: "summary_large_image", title, description, images: [OPEN_GRAPH_IMAGE.url] },
   } satisfies Metadata;
 }
 
