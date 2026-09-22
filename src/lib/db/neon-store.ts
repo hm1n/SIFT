@@ -423,6 +423,75 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
       return rows.length > 0;
     },
 
+    /**
+     * 검사와 증가를 한 문장에 둡니다(이슈 #142). 드라이버가 HTTP 한 번에 한 문장을 보내고 그 한
+     * 문장이 한 트랜잭션이므로, 이 문장 하나가 곧 원자적인 증가입니다.
+     *
+     * 줄이 없으면 `insert`가 1을 넣고 1을 돌려줍니다. 줄이 있고 아직 상한 아래이면 `do update`가
+     * 1을 올리고 올린 값을 돌려줍니다. 이미 상한에 닿아 있으면 `where`가 거짓이라 아무것도 쓰지
+     * 않고 돌려주는 줄도 없습니다. 호출하는 쪽은 줄이 없는 것을 상한 초과로 읽습니다.
+     *
+     * `limit`이 0 이하인 경우만 이 문장으로 막지 못합니다. 줄이 아직 없으면 `on conflict` 가지로
+     * 가지 않아 조건을 보지 않기 때문입니다. 그 경우는 질의 전에 막습니다.
+     */
+    async consumeAnalysisQuota(
+      githubUserId: number,
+      usageDate: string,
+      limit: number
+    ): Promise<number | null> {
+      if (limit <= 0) return null;
+      const rows = await run(
+        `insert into analysis_usage (github_user_id, usage_date, run_count)
+         values ($1::bigint, $2::date, 1)
+         on conflict (github_user_id, usage_date)
+         do update set run_count = analysis_usage.run_count + 1
+           where analysis_usage.run_count < $3::int
+         returning run_count`,
+        [githubUserId, usageDate, limit]
+      );
+      return rows.length > 0 ? (rows[0].run_count as number) : null;
+    },
+
+    /** 늘리지 않고 읽기만 합니다. 줄이 없으면 아직 한 번도 안 돌린 것이므로 0입니다(이슈 #142). */
+    async getAnalysisQuotaUsage(githubUserId: number, usageDate: string): Promise<number> {
+      const rows = await run(
+        `select run_count from analysis_usage
+          where github_user_id = $1::bigint and usage_date = $2::date`,
+        [githubUserId, usageDate]
+      );
+      return rows.length > 0 ? (rows[0].run_count as number) : 0;
+    },
+
+    /**
+     * 그 사용자의 분석을 모두 지웁니다. 딸린 인터뷰는 `on delete cascade`가 함께 지웁니다(이슈 #145).
+     *
+     * 인터뷰를 먼저 지우고 분석을 지우는 두 문장으로 나누지 않습니다. 드라이버가 HTTP 한 번에 한
+     * 문장을 보내고 그 한 문장이 한 트랜잭션이라, 나누면 앞 문장만 성공한 채로 끝날 수 있습니다.
+     * 그때 남는 것이 근거 스냅샷을 든 분석이고, 그 안에 비공개 저장소의 코드가 들어 있습니다.
+     *
+     * 지운 인터뷰 수는 세지 않습니다. cascade로 사라지는 줄은 `returning`에 오지 않아 이 문장으로는
+     * 셀 수 없고, 세려면 삭제 전 스냅샷을 읽는 CTE를 얹어야 합니다. 인터뷰는 분석 없이 존재할 수
+     * 없으므로 분석 수만으로 빈 계정을 가를 수 있습니다(`store.ts`의 계약).
+     *
+     * **분석 횟수는 따로 지웁니다(이슈 #142).** `analysis_usage`에는 외래 키가 없습니다. 90일
+     * 자동 정리가 세는 값을 지우면 안 되므로 일부러 분석에 매달지 않았고, 그래서 cascade 대상이
+     * 아닙니다. 이 문장이 없으면 탈퇴한 사용자의 GitHub 번호가 그 표에 남습니다.
+     *
+     * 위 "한 문장" 원칙의 예외입니다. 원칙이 막으려는 것은 앞 문장만 성공했을 때 근거 스냅샷을 든
+     * 분석이 남는 경우인데, 여기서 뒤 문장이 실패해 남는 것은 사용자 번호와 숫자 한 줄입니다.
+     * 그래서 위험이 큰 분석을 먼저 지우고 횟수를 나중에 지웁니다.
+     *
+     * 돌려주는 수는 그대로 분석 수입니다. 횟수 줄은 빈 계정을 가르는 판단에 들어가지 않습니다.
+     */
+    async deleteUserData(githubUserId: number): Promise<number> {
+      const rows = await run(
+        `delete from repository_analysis where github_user_id = $1::bigint returning id`,
+        [githubUserId]
+      );
+      await run(`delete from analysis_usage where github_user_id = $1::bigint`, [githubUserId]);
+      return rows.length;
+    },
+
     /** 정리 작업만 사용자 번호를 받지 않습니다. 부르는 자리는 `/api/cron/purge`입니다(이슈 #116). */
     async purgeInterviewsOpenedBefore(before: Date): Promise<number> {
       const rows = await run(

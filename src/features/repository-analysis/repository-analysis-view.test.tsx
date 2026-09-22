@@ -596,6 +596,30 @@ describe("RepositoryAnalysisView Error", () => {
     expect(screen.getByRole("button", { name: action })).toBeInTheDocument();
   });
 
+  /**
+   * 하루 분석 횟수 상한입니다(이슈 #142). 다시 시도로 풀리지 않으므로 동작 버튼을 그리지 않습니다.
+   * 버튼을 그리면 눌러도 또 429를 받습니다.
+   */
+  it("분석 횟수 상한 오류는 동작 버튼 없이 이유와 해제 시점만 그린다", async () => {
+    mockState({
+      status: "error",
+      error: {
+        kind: "usage_limit_exceeded",
+        title: "오늘의 분석 횟수를 모두 사용했습니다",
+        message: "내일 다시 시도해주세요.",
+        recovery: "wait",
+      },
+    });
+    await renderAndAnalyze();
+
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent("ERROR / LIMIT");
+    expect(alert).toHaveTextContent("내일 다시 시도해주세요.");
+    expect(screen.queryByRole("button", { name: "분석 전체 다시 시도" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "다른 Repository 선택" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "GitHub에 다시 로그인" })).not.toBeInTheDocument();
+  });
+
   it("네트워크·서버 오류의 재시도 버튼은 같은 Repository와 기여 항목으로 전체 재조회한다", async () => {
     const error: AnalysisError = { kind: "network", title: "네트워크 실패", message: "연결 확인", recovery: "retry" };
     mockState({ status: "error", error });

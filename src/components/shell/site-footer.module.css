@@ -1,0 +1,94 @@
+/*
+ * 공통 푸터입니다. 디자인 파일 `App.tsx`의 랜딩 푸터를 옮겼습니다.
+ *
+ * 원본은 `border-t border-neutral-200 py-5`이고 안쪽이 `max-w-6xl mx-auto px-8`입니다. 상하 패딩
+ * 20px과 14px 마크를 더해 약 54px입니다. 상단 헤더(44px)보다 높습니다.
+ *
+ * 이 높이만큼 아래 화면들이 세로 공간을 잃습니다. body가 flex column이고 그 아래 화면들이 `flex: 1`로
+ * 남은 높이를 받으므로 배치 규칙 자체는 그대로입니다. 인터뷰 워크스페이스처럼 세로를 빽빽하게 쓰는
+ * 화면이 그만큼 좁아지는 것을 받아들이고 원본 높이를 씁니다.
+ */
+.footer {
+  flex-shrink: 0;
+  padding: 20px 0;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-card);
+}
+
+/* 원본의 `max-w-6xl mx-auto px-8`입니다. max-w-6xl은 72rem입니다. */
+.inner {
+  max-width: 1152px;
+  margin: 0 auto;
+  padding: 0 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+/*
+ * 왼쪽 브랜드입니다. 원본의 `text-neutral-400`을 그대로 씁니다. 마크는 `currentColor`를 따르므로
+ * 이 색 하나가 마크와 워드마크에 함께 적용됩니다.
+ *
+ * 이 회색은 흰 배경에서 대비가 약 2.5:1이라 읽어야 하는 글자에는 쓰지 않는 값입니다. 여기서는
+ * 상단 헤더에 늘 떠 있는 워드마크를 아래에서 한 번 더 보여 주는 장식이라 원본 값을 유지합니다.
+ */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-foreground-faint);
+}
+
+.brandName {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  letter-spacing: var(--label-tracking-wide);
+  text-transform: uppercase;
+}
+
+/* 원본의 오른쪽 태그라인 자리입니다. 링크 둘이 들어갑니다. */
+.links {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/*
+ * 원본 태그라인은 neutral-300(약 1.6:1)이지만 링크는 읽혀야 하므로 올렸습니다. 이 색은 흰 배경에서
+ * 약 4.6:1이라 작은 글자의 기준(4.5:1)을 넘습니다.
+ */
+.link {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  letter-spacing: var(--label-tracking-wide);
+  line-height: 1;
+  color: var(--color-muted-foreground);
+}
+
+.link:hover {
+  color: var(--color-foreground);
+}
+
+/*
+ * 개인정보 처리방침 링크입니다. 표준지침 제20조가 이 명칭을 다른 고지사항과 구분해 표시하도록
+ * 정하고 있어 약관 링크보다 진하고 굵게 그립니다. 색만으로 가르지 않도록 굵기도 함께 다릅니다.
+ */
+.privacyLink {
+  composes: link;
+  font-weight: 500;
+  color: var(--color-foreground);
+}
+
+/*
+ * 좁은 화면에서는 좌우 배치가 무너집니다. 워드마크와 링크 둘이 한 줄에 들어가지 않아 링크가 줄바꿈
+ * 되는데, 그때 위아래로 쌓는 편이 읽기 좋습니다.
+ */
+@media (max-width: 480px) {
+  .inner {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 0 20px;
+  }
+}

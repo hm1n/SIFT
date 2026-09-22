@@ -1,0 +1,143 @@
+import { readFileSync } from "node:fs";
+import { describe, expect, it } from "vitest";
+import { DOCUMENT_COPY, LEGAL_PAGE_METADATA, SITE_URL } from "./shell";
+
+/**
+ * 검색 노출 설정입니다(이슈 #149).
+ *
+ * `layout.tsx`가 아니라 이 상수를 봅니다. layout은 `next/font/google`을 부르고 서버 전용 API를
+ * 쓰므로 테스트에서 그대로 읽을 수 없습니다. 값이 여기 있으면 검사할 자리가 하나로 모입니다.
+ */
+describe("문서 metadata", () => {
+  it("metadataBase가 기준 도메인이다", () => {
+    expect(DOCUMENT_COPY.metadataBase.origin).toBe(SITE_URL);
+  });
+
+  it("`/`의 canonical과 Open Graph url이 루트를 가리킨다", () => {
+    expect(DOCUMENT_COPY.alternates.canonical).toBe("/");
+    expect(DOCUMENT_COPY.openGraph.url).toBe("/");
+  });
+
+  it("Open Graph와 Twitter Card가 문서 제목과 설명을 그대로 쓴다", () => {
+    expect(DOCUMENT_COPY.openGraph.title).toBe(DOCUMENT_COPY.title);
+    expect(DOCUMENT_COPY.openGraph.description).toBe(DOCUMENT_COPY.description);
+    expect(DOCUMENT_COPY.twitter.title).toBe(DOCUMENT_COPY.title);
+    expect(DOCUMENT_COPY.twitter.description).toBe(DOCUMENT_COPY.description);
+    expect(DOCUMENT_COPY.twitter.card).toBe("summary_large_image");
+  });
+
+  it("한국어 사이트임을 Open Graph에 밝힌다", () => {
+    expect(DOCUMENT_COPY.openGraph.locale).toBe("ko_KR");
+    expect(DOCUMENT_COPY.openGraph.type).toBe("website");
+  });
+});
+
+/**
+ * Search Console 소유권 확인입니다(이슈 #152).
+ *
+ * 값이 틀려도 화면은 멀쩡하고 빌드도 통과합니다. 드러나는 자리가 Search Console의 확인 실패뿐이라
+ * 여기서 모양을 봅니다.
+ */
+describe("소유권 확인", () => {
+  it("토큰이 비어 있지 않다", () => {
+    /* Next는 빈 문자열이면 meta 태그를 아예 만들지 않습니다. 태그가 없으면 속성 확인이 해제됩니다. */
+    expect(DOCUMENT_COPY.verification.google.length).toBeGreaterThan(0);
+  });
+
+  it("토큰이 DNS TXT 값이나 태그 전체가 아니다", () => {
+    /*
+     * 확인 방법마다 구글이 주는 모양이 다릅니다. DNS TXT는 `google-site-verification=...`이고
+     * HTML 태그는 `content`의 값만입니다. 앞의 것을 그대로 옮기면 확인이 실패합니다.
+     */
+    expect(DOCUMENT_COPY.verification.google).not.toMatch(/^google-site-verification\s*[=:]/);
+    expect(DOCUMENT_COPY.verification.google).not.toContain("<");
+  });
+
+  it("법적 고지 화면은 자기 verification을 두지 않는다", () => {
+    /* 자식이 정의하지 않으면 루트 값을 물려받습니다. 선언 자리를 루트 하나로 둡니다. */
+    expect("verification" in LEGAL_PAGE_METADATA.privacy).toBe(false);
+    expect("verification" in LEGAL_PAGE_METADATA.terms).toBe(false);
+  });
+});
+
+/**
+ * 공유 미리보기 이미지입니다.
+ *
+ * `src/app/opengraph-image.png` 파일 규약을 쓰지 않아 가로·세로를 손으로 적습니다. 규약이 하던 일을
+ * 사람이 하므로 실제 파일과 어긋날 수 있고, 어긋나면 플랫폼이 잘린 카드를 그립니다. 그래서 선언한
+ * 값을 파일에서 읽은 값과 맞춥니다.
+ */
+describe("Open Graph 이미지", () => {
+  const [image] = DOCUMENT_COPY.openGraph.images;
+
+  /**
+   * PNG 파일의 첫 8바이트입니다. 뒤의 `PNG`만 보면 `00 50 4E 47`로 시작하는 값도 통과하므로 전부
+   * 비교합니다. `src/app/icon.test.ts`가 ICO 안의 항목을 같은 값으로 확인합니다.
+   */
+  const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+  /** PNG의 IHDR은 항상 첫 청크이고 가로·세로가 16바이트와 20바이트에 있습니다. */
+  function pngSize(path: string): { width: number; height: number } {
+    const bytes = readFileSync(path);
+    expect(bytes.subarray(0, PNG_SIGNATURE.length)).toEqual(PNG_SIGNATURE);
+    expect(bytes.subarray(12, 16).toString()).toBe("IHDR");
+    return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+  }
+
+  it("선언한 크기가 실제 파일의 크기와 같다", () => {
+    const actual = pngSize(`public${image.url}`);
+    expect({ width: image.width, height: image.height }).toEqual(actual);
+  });
+
+  /**
+   * 카드가 큰 이미지로 그려지는 최소 폭이 1200입니다. 그보다 작으면 `summary_large_image`를 걸어도
+   * 작은 정사각 카드로 떨어집니다.
+   */
+  it("큰 카드로 그려지는 가로 폭과 비율을 만족한다", () => {
+    expect(image.width).toBeGreaterThanOrEqual(1200);
+    expect(image.width / image.height).toBeCloseTo(1200 / 630, 1);
+  });
+
+  it("대체 텍스트가 있다", () => {
+    expect(image.alt.length).toBeGreaterThan(0);
+  });
+
+  /** 이미지가 없는 화면이 생기면 그 화면만 미리보기 카드가 비어 보입니다. */
+  it("세 화면이 모두 같은 이미지를 가리킨다", () => {
+    for (const page of [DOCUMENT_COPY, LEGAL_PAGE_METADATA.privacy, LEGAL_PAGE_METADATA.terms]) {
+      expect(page.openGraph.images[0].url).toBe(image.url);
+      expect(page.twitter.images).toEqual([image.url]);
+    }
+  });
+});
+
+/**
+ * 자식 화면이 `openGraph`나 `alternates`를 정의하지 않으면 루트 값을 통째로 물려받습니다.
+ * 그래서 두 문서가 각자의 값을 들어야 합니다. 물려받으면 두 문서를 공유했을 때 랜딩의 제목이
+ * 나가고, 검색엔진이 세 주소를 모두 `/`의 사본으로 읽습니다.
+ */
+describe("법적 고지 화면 metadata", () => {
+  it.each([
+    ["privacy", "/privacy"],
+    ["terms", "/terms"],
+  ] as const)("%s는 자기 경로를 canonical로 쓴다", (key, path) => {
+    expect(LEGAL_PAGE_METADATA[key].alternates.canonical).toBe(path);
+    expect(LEGAL_PAGE_METADATA[key].openGraph.url).toBe(path);
+  });
+
+  it.each(["privacy", "terms"] as const)("%s의 Open Graph 제목과 설명이 자기 것이다", (key) => {
+    const page = LEGAL_PAGE_METADATA[key];
+    expect(page.openGraph.title).toBe(page.title);
+    expect(page.openGraph.description).toBe(page.description);
+    expect(page.title).not.toBe(DOCUMENT_COPY.title);
+  });
+
+  it("세 화면의 canonical이 서로 다르다", () => {
+    const canonicals = [
+      DOCUMENT_COPY.alternates.canonical,
+      LEGAL_PAGE_METADATA.privacy.alternates.canonical,
+      LEGAL_PAGE_METADATA.terms.alternates.canonical,
+    ];
+    expect(new Set(canonicals).size).toBe(canonicals.length);
+  });
+});

@@ -22,6 +22,12 @@ export const REPOSITORY_SELECT_COPY = {
   contributionPlaceholder: "실시간 채팅, 푸시 알림, TypeScript 전환 작업을 주로 담당했습니다.",
   noSelection: NO_REPOSITORY_SELECTED,
   analyze: "분석하기",
+  /**
+   * 오늘 남은 분석 횟수입니다(이슈 #142). 디자인 파일 `RepoSelectScreen`의 `analysisUsageRemaining`과
+   * `analysisLimitReached`입니다. 상한에 닿기 전에는 쓴 횟수를 알리고, 닿으면 언제 풀리는지를 알립니다.
+   */
+  analysisUsage: (used: number, limit: number) => `오늘 분석 ${used}/${limit}회 사용`,
+  analysisLimitReached: "오늘의 분석 횟수를 모두 사용했습니다. 내일 다시 시도해주세요.",
   /** 목록을 읽는 중입니다. `code`는 mono 상태 코드라 영어로 남습니다. */
   loadingLabel: "GitHub에서 Repository 목록을 불러오는 중…",
   /** 목록이 비었을 때입니다. */
@@ -205,6 +211,18 @@ export const DIFF_REFETCH_GUIDANCE: Record<Exclude<GitHubFetchErrorKind, "partia
 
 /** 후보 생성이 실패했을 때입니다. 갈래마다 사용자가 할 수 있는 일이 다릅니다. */
 export const CANDIDATE_GENERATION_ERROR_COPY = {
+  /**
+   * 하루 분석 횟수 상한에 닿았습니다(이슈 #142). 선택 화면이 버튼을 미리 막지만 다른 탭이 먼저
+   * 썼거나 화면을 열어 둔 사이에 상한에 닿으면 여기까지 옵니다.
+   *
+   * 다시 시도로 풀리지 않으므로 무엇을 지금 할 수 있는지를 함께 적습니다. 저장된 분석을 다시 보는
+   * 것은 모델을 부르지 않아 횟수를 쓰지 않습니다.
+   */
+  usageLimitExceeded: {
+    title: "오늘의 분석 횟수를 모두 사용했습니다",
+    message:
+      "내일 다시 시도해주세요. 이미 분석한 Repository는 저장된 결과로 계속 볼 수 있습니다.",
+  },
   unknown: {
     title: "경험 후보를 만들지 못했습니다",
     message: "예기치 못한 오류가 발생했습니다. 후보 생성을 다시 시도해 주세요.",
