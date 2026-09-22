@@ -1,7 +1,8 @@
 import { SiteFooter } from "@/components/shell/site-footer";
 import { AnalyticsSession, type LoginResult } from "@/features/analytics/analytics-session";
 import { toAuthErrorParam } from "@/features/auth/auth-error";
-import { LoginScreen } from "@/features/auth/login-screen";
+import { UnauthenticatedScreen } from "@/features/auth/unauthenticated-screen";
+import { LandingPage } from "@/features/landing/landing-page";
 import { RepositoryFlow } from "@/features/repository-selection/repository-flow";
 import { toAnalyticsUserId } from "@/lib/analytics/user-id";
 import { GITHUB_SESSION_COOKIE, decryptGitHubSession } from "@/lib/github/auth-session";
@@ -45,7 +46,7 @@ function urlWithoutLoginMarker(authError: string | undefined): string {
 }
 
 /**
- * 세션 여부의 출처는 서버가 읽는 세션 쿠키 하나입니다. 쿠키가 없으면 로그인 화면, 있으면 Repository 선택부터 시작하는 흐름을 그립니다.
+ * 세션 여부의 출처는 서버가 읽는 세션 쿠키 하나입니다. 쿠키가 없으면 랜딩, 있으면 Repository 선택부터 시작하는 흐름을 그립니다.
  * 로그아웃은 세션 삭제 뒤 `router.refresh()`로 여기를 다시 실행시켜 헤더와 화면을 함께 로그인 전 상태로 바꿉니다.
  * 그때 흐름 컴포넌트가 통째로 내려가므로 선택과 분석 상태도 함께 사라집니다.
  *
@@ -73,11 +74,17 @@ export default async function Home({ searchParams }: { searchParams: Promise<Hom
           loginResult={loginResult}
           urlAfterReport={urlWithoutLoginMarker(authError)}
         />
-        <LoginScreen authError={authError} withdrawn={firstValue(params.withdrawn)} />
         {/*
-          법적 고지 링크는 로그인 화면 밖에 둡니다. 그 화면은 상태가 셋이고 인증 중과 오류는
-          `StatusScreen`이라 동의 문장이 없습니다. 안쪽에 두면 세 상태 중 하나에서만 링크가 보입니다.
-          로그인한 뒤에는 계정 메뉴가 같은 역할을 합니다(이슈 #141).
+          랜딩을 여기서 그려 넘깁니다(이슈 #149). `UnauthenticatedScreen`은 인증 중 상태를 구독하는
+          클라이언트 컴포넌트라, 랜딩을 그 안에서 import하면 정적 마크업 전체가 JS 번들에 실립니다.
+        */}
+        <UnauthenticatedScreen authError={authError} withdrawn={firstValue(params.withdrawn)}>
+          <LandingPage />
+        </UnauthenticatedScreen>
+        {/*
+          법적 고지 링크는 세션 없는 분기 전체에 둡니다. 그 분기는 상태가 셋이고 인증 중과 오류는
+          `StatusScreen`이라 동의 문장이 없습니다. 랜딩 안쪽에 두면 세 상태 중 하나에서만 링크가
+          보입니다. 로그인한 뒤에는 계정 메뉴가 같은 역할을 합니다(이슈 #141).
         */}
         <SiteFooter />
       </>

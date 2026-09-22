@@ -5,6 +5,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthTransitionProvider } from "@/components/shell/auth-transition";
 import { WITHDRAWN_COPY } from "@/copy/auth";
+import { LANDING_COPY } from "@/copy/landing";
 import { LEGAL_LINK_COPY } from "@/copy/legal";
 import { GA_USER_ID_SECRET_ENV } from "@/lib/analytics/user-id";
 import {
@@ -73,9 +74,14 @@ afterEach(() => {
 });
 
 describe("Home", () => {
-  it("세션 쿠키가 없으면 로그인 화면만 그리고 Repository 목록을 조회하지 않는다", async () => {
+  /**
+   * 랜딩의 로그인 CTA는 Hero와 마지막 둘입니다(이슈 #149). 하나만 찾는 조회로는 잡히지 않아
+   * 개수까지 함께 봅니다. CTA 개수 자체는 `landing-page.test.tsx`가 봅니다.
+   */
+  it("세션 쿠키가 없으면 랜딩만 그리고 Repository 목록을 조회하지 않는다", async () => {
     render(await renderHome());
-    expect(screen.getByRole("link", { name: "GitHub으로 계속하기" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(LANDING_COPY.hero.headline[0]);
+    expect(screen.getAllByRole("link", { name: LANDING_COPY.cta })).toHaveLength(2);
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(fetch).not.toHaveBeenCalled();
   });
@@ -85,12 +91,12 @@ describe("Home", () => {
     render(await renderHome());
     expect(screen.getByRole("status")).toHaveTextContent("Loading Repositories");
     expect(fetch).toHaveBeenCalledWith("/api/github/repositories", undefined);
-    expect(screen.queryByRole("link", { name: "GitHub으로 계속하기" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: LANDING_COPY.cta })).not.toBeInTheDocument();
   });
 
   /**
-   * 푸터는 로그인 화면 밖, 세션 없는 분기 전체에 있습니다(이슈 #141). 로그인 화면은 상태가 셋인데
-   * 인증 중과 오류는 `StatusScreen`이라 동의 문장이 없습니다. `LoginScreen` 안쪽에 두면 기본 상태에서만
+   * 푸터는 랜딩 밖, 세션 없는 분기 전체에 있습니다(이슈 #141). 세션 없는 화면은 상태가 셋인데
+   * 인증 중과 오류는 `StatusScreen`이라 동의 문장이 없습니다. 랜딩 안쪽에 두면 기본 상태에서만
    * 링크가 보입니다. 오류 상태까지 함께 보는 이유입니다.
    */
   it.each([
@@ -150,7 +156,7 @@ describe("Home", () => {
   });
 
   // 로그아웃은 세션 삭제 뒤 router.refresh()로 서버가 이 페이지를 다시 실행하는 방식입니다. 그 결과가 화면을 바꿔야 합니다.
-  it("서버가 세션 없이 다시 그리면 Repository 흐름을 내리고 로그인 진입점을 표시한다", async () => {
+  it("서버가 세션 없이 다시 그리면 Repository 흐름을 내리고 랜딩을 표시한다", async () => {
     cookieNames.add(GITHUB_SESSION_COOKIE);
     const { rerender } = render(await renderHome());
     expect(screen.getByRole("status")).toHaveTextContent("Loading Repositories");
@@ -158,7 +164,7 @@ describe("Home", () => {
     cookieNames.delete(GITHUB_SESSION_COOKIE);
     rerender(await renderHome());
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "GitHub으로 계속하기" })).toBeInTheDocument();
+    expect(screen.getAllByRole("link", { name: LANDING_COPY.cta }).length).toBeGreaterThan(0);
   });
 });
 
