@@ -21,11 +21,7 @@ import {
 } from "@/features/experience-candidates/stage-a";
 import { modelFacingUnitId } from "@/features/experience-candidates/work-unit";
 import { resolveLlmTimeoutMs } from "@/features/experience-candidates/llm-provider";
-import {
-  analysisQuotaResetAt,
-  analysisUsageDate,
-  DAILY_ANALYSIS_LIMIT,
-} from "@/features/usage-limit/quota";
+import { analysisUsageDate, DAILY_ANALYSIS_LIMIT } from "@/features/usage-limit/quota";
 import { neonStore } from "@/lib/db/neon-store";
 import type { SiftStore } from "@/lib/db/store";
 import { reportServerError } from "@/lib/sentry/server";
@@ -237,8 +233,6 @@ export async function handleStageA(
         error: {
           kind: "usage_limit_exceeded",
           message: CANDIDATE_ROUTE_COPY.dailyLimitExceeded(DAILY_ANALYSIS_LIMIT),
-          limit: DAILY_ANALYSIS_LIMIT,
-          resetAt: analysisQuotaResetAt(usageDate).toISOString(),
           retryable: false,
         },
       }, { status: 429 });

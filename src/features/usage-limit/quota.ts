@@ -23,8 +23,6 @@
  */
 export const DAILY_ANALYSIS_LIMIT = 3;
 
-const DAY_MS = 86_400_000;
-
 /**
  * 초기화 기준 시간대입니다. 한국 표준시 자정에 횟수가 다시 0이 됩니다.
  *
@@ -45,12 +43,3 @@ export function analysisUsageDate(now: number = Date.now()): string {
   return new Date(now + KST_OFFSET_MS).toISOString().slice(0, 10);
 }
 
-/**
- * 그 한국 날짜의 횟수가 풀리는 시각입니다. 다음 한국 자정이고 UTC 기준 `Date`로 돌려줍니다.
- *
- * 화면이 "언제 다시 할 수 있는지"를 그리는 값이라 상한을 검사한 라우트가 응답에 실어 보냅니다.
- * 화면이 스스로 계산하면 서버가 쓴 날짜 기준과 어긋날 수 있습니다.
- */
-export function analysisQuotaResetAt(usageDate: string): Date {
-  return new Date(Date.parse(`${usageDate}T00:00:00Z`) + DAY_MS - KST_OFFSET_MS);
-}

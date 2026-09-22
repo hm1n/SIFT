@@ -48,7 +48,7 @@ async function renderReady(
 }
 
 function usage(used: number, limit = 3): AnalysisUsage {
-  return { used, limit, resetAt: "2026-09-12T15:00:00.000Z" };
+  return { used, limit };
 }
 
 beforeEach(() => {

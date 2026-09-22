@@ -3,11 +3,7 @@ import {
   savedInterviewErrorResponseFor,
 } from "@/features/saved-interviews/errors";
 import { requireUserId } from "@/features/saved-interviews/route-request";
-import {
-  analysisQuotaResetAt,
-  analysisUsageDate,
-  DAILY_ANALYSIS_LIMIT,
-} from "@/features/usage-limit/quota";
+import { analysisUsageDate, DAILY_ANALYSIS_LIMIT } from "@/features/usage-limit/quota";
 import { neonStore } from "@/lib/db/neon-store";
 import type { SiftStore } from "@/lib/db/store";
 
@@ -42,11 +38,7 @@ export async function handleGetAnalysisUsage(
   const usageDate = analysisUsageDate(now());
   try {
     const used = await store.getAnalysisQuotaUsage(session.userId, usageDate);
-    return Response.json({
-      used,
-      limit: DAILY_ANALYSIS_LIMIT,
-      resetAt: analysisQuotaResetAt(usageDate).toISOString(),
-    });
+    return Response.json({ used, limit: DAILY_ANALYSIS_LIMIT });
   } catch (error) {
     return savedInterviewErrorResponseFor(error);
   }

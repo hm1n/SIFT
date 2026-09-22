@@ -38,12 +38,7 @@ describe("GET /api/usage/analysis", () => {
     const response = await handleGetAnalysisUsage(request(), createInMemoryStore(), () => NOON_KST);
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({
-      used: 0,
-      limit: DAILY_ANALYSIS_LIMIT,
-      // 한국 시간 2026-09-23 자정입니다.
-      resetAt: "2026-09-22T15:00:00.000Z",
-    });
+    expect(await response.json()).toEqual({ used: 0, limit: DAILY_ANALYSIS_LIMIT });
   });
 
   it("쓴 만큼을 돌려준다", async () => {
@@ -91,7 +86,7 @@ describe("GET /api/usage/analysis", () => {
     );
 
     expect(await sameDay.json()).toMatchObject({ used: 1 });
-    expect(await nextDay.json()).toMatchObject({ used: 0, resetAt: "2026-09-23T15:00:00.000Z" });
+    expect(await nextDay.json()).toMatchObject({ used: 0 });
   });
 
   it("세션이 없으면 401이다", async () => {

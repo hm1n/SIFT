@@ -565,9 +565,7 @@ describe("POST /api/candidates/stage-a 하루 분석 횟수 상한", () => {
     expect(called).toBe(false);
   });
 
-  it("막힌 응답이 상한과 해제 시각을 함께 알려준다", async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(NOON_KST);
+  it("막힌 응답이 사유를 알려주고 다시 시도를 권하지 않는다", async () => {
     const store = createInMemoryStore();
     for (let i = 0; i < DAILY_ANALYSIS_LIMIT; i += 1) await analyze(store);
 
@@ -577,9 +575,6 @@ describe("POST /api/candidates/stage-a 하루 분석 횟수 상한", () => {
       error: {
         kind: "usage_limit_exceeded",
         message: CANDIDATE_ROUTE_COPY.dailyLimitExceeded(DAILY_ANALYSIS_LIMIT),
-        limit: DAILY_ANALYSIS_LIMIT,
-        // 한국 시간 2026-09-23 자정입니다.
-        resetAt: "2026-09-22T15:00:00.000Z",
         retryable: false,
       },
     });

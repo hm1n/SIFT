@@ -714,8 +714,6 @@ describe("분석 횟수 상한 응답", () => {
             error: {
               kind: "usage_limit_exceeded",
               message: "오늘 분석할 수 있는 3번을 모두 썼습니다.",
-              limit: 3,
-              resetAt: "2026-09-22T15:00:00.000Z",
               retryable: false,
             },
           },

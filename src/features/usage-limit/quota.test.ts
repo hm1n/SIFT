@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { analysisQuotaResetAt, analysisUsageDate, DAILY_ANALYSIS_LIMIT } from "./quota";
+import { analysisUsageDate, DAILY_ANALYSIS_LIMIT } from "./quota";
 
 describe("하루 분석 횟수 상한", () => {
   it("상한은 3회다", () => {
@@ -22,18 +22,8 @@ describe("하루 분석 횟수 상한", () => {
     });
   });
 
-  it("해제 시각은 그 한국 날짜의 다음 자정이다", () => {
-    // 2026-09-22(한국)은 UTC로 2026-09-21T15:00Z부터 2026-09-22T15:00Z까지입니다.
-    expect(analysisQuotaResetAt("2026-09-22").toISOString()).toBe("2026-09-22T15:00:00.000Z");
-  });
-
-  it("해제 시각은 언제나 그 날짜가 끝난 뒤다", () => {
-    const now = Date.parse("2026-09-22T14:59:59.999Z");
-    expect(analysisQuotaResetAt(analysisUsageDate(now)).getTime()).toBeGreaterThan(now);
-  });
-
-  it("월과 해가 바뀌는 경계에서도 다음 자정을 가리킨다", () => {
-    expect(analysisQuotaResetAt("2026-12-31").toISOString()).toBe("2026-12-31T15:00:00.000Z");
+  it("해가 바뀌는 경계에서도 한국 날짜로 넘어간다", () => {
+    expect(analysisUsageDate(Date.parse("2026-12-31T14:59:59.999Z"))).toBe("2026-12-31");
     expect(analysisUsageDate(Date.parse("2026-12-31T15:00:00Z"))).toBe("2027-01-01");
   });
 });

@@ -47,12 +47,13 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
   const [query, setQuery] = useState("");
   const [contribution, setContribution] = useState("");
   /**
-   * 오늘 쓴 분석 횟수입니다(이슈 #142). `undefined`는 아직 읽는 중이고, `null`은 읽지 못한 것입니다.
+   * 오늘 쓴 분석 횟수입니다(이슈 #142). 아직 읽지 못했거나 읽는 데 실패하면 `null`입니다.
    *
-   * 읽지 못한 경우를 오류 화면으로 올리지 않고 안내 한 줄을 접는 것으로 끝냅니다. 상한은 Stage A
-   * 라우트가 집행하므로, 이 값을 못 읽었다고 분석을 막으면 아직 횟수가 남은 사용자까지 막습니다.
+   * 두 경우를 가르지 않습니다. 안내를 그리지 않고 분석도 막지 않는 동작이 같습니다. 읽지 못한 것을
+   * 오류 화면으로 올리지도 않습니다. 상한은 Stage A 라우트가 집행하므로, 이 값을 못 읽었다고
+   * 분석을 막으면 아직 횟수가 남은 사용자까지 막습니다.
    */
-  const [usage, setUsage] = useState<AnalysisUsage | null | undefined>(undefined);
+  const [usage, setUsage] = useState<AnalysisUsage | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // 방향키로 라디오 그룹을 오갈 때 다음 행에 실제 DOM 포커스를 옮기는 데 씁니다. 콜백 ref가 매 렌더 커밋마다
   // 자기 인덱스 자리를 스스로 채우고, 행이 사라지면 React가 같은 콜백을 null로 불러 스스로 비웁니다.
@@ -158,7 +159,7 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
    * 분석을 시작하지 못합니다. 반대로 열어 두면 남지 않은 사용자가 한 번 헛걸음하고 Stage A 라우트의
    * 429를 받습니다. 틀렸을 때 잃는 것이 적은 쪽을 고릅니다.
    */
-  const limitReached = usage !== undefined && usage !== null && usage.used >= usage.limit;
+  const limitReached = usage !== null && usage.used >= usage.limit;
   const currentTime = now();
   const selectedFilteredIndex = filtered.findIndex((repository) => repository.id === selectedId);
 
@@ -278,7 +279,7 @@ export function RepositorySelectScreen({ onAnalyze, fetchRepositories = fetchRep
         <div className={styles.footerStatus}>
           <span className={styles.selection}>{selected ? `${selected.owner} / ${selected.name}` : REPOSITORY_SELECT_COPY.noSelection}</span>
           {usage ? (
-            <span className={`${styles.usage} ${limitReached ? styles.usageExceeded : ""}`}>
+            <span className={limitReached ? styles.usageExceeded : styles.usage}>
               {limitReached
                 ? REPOSITORY_SELECT_COPY.analysisLimitReached
                 : REPOSITORY_SELECT_COPY.analysisUsage(usage.used, usage.limit)}

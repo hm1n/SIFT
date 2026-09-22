@@ -1,11 +1,9 @@
 export const ANALYSIS_USAGE_PATH = "/api/usage/analysis";
 
-/** 오늘 쓴 분석 횟수와 상한, 그리고 풀리는 시각입니다. */
+/** 오늘 쓴 분석 횟수와 상한입니다. */
 export interface AnalysisUsage {
   readonly used: number;
   readonly limit: number;
-  /** ISO 8601 문자열입니다. 서버가 한국 날짜 기준으로 계산해 실어 보냅니다. */
-  readonly resetAt: string;
 }
 
 /**
@@ -43,7 +41,6 @@ function isAnalysisUsage(value: unknown): value is AnalysisUsage {
     Number.isInteger(usage.used) &&
     (usage.used as number) >= 0 &&
     Number.isInteger(usage.limit) &&
-    (usage.limit as number) > 0 &&
-    typeof usage.resetAt === "string"
+    (usage.limit as number) > 0
   );
 }
