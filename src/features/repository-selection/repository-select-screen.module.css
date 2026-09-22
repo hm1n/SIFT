@@ -294,12 +294,19 @@
   overflow-wrap: anywhere;
 }
 
-/* 디자인의 `font-mono text-[9px] tracking-wider text-neutral-300`입니다. */
+/*
+ * 디자인의 `font-mono text-[9px] tracking-wider text-neutral-300`입니다. 색만 바꿨습니다.
+ *
+ * 디자인의 neutral-300(`#d4d4d4`)은 흰 배경에서 대비가 1.48:1이라 9px 글자로는 읽히지 않습니다.
+ * 처음에 `--color-scrollbar`를 썼는데 그 토큰은 스크롤바와 호버 경계용이고 글자에 쓰라고 둔 값이
+ * 아닙니다(PR #151 리뷰 1라운드). `--color-muted-foreground`는 4.74:1로 작은 글자 기준 4.5:1을
+ * 넘습니다. 상한 문구를 red-500에서 한 단계 내린 것과 같은 판단입니다.
+ */
 .usage {
   font-family: var(--font-mono);
   font-size: var(--label-size-xs);
   letter-spacing: var(--label-tracking-wide);
-  color: var(--color-scrollbar);
+  color: var(--color-muted-foreground);
 }
 
 /*
