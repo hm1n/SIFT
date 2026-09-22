@@ -23,6 +23,10 @@ DSN이 생기면 `scripts/measure-sentry-web-vitals.mts`의 가로채기를 끄�
 두었으므로 서버 스택트레이스도 minified 상태로 보입니다. 위 확인을 할 때 서버 Issue의 프레임이
 읽을 만한지 함께 봅니다.
 
+**2026-09-18에 이슈 #144가 Source Map 업로드를 켰습니다.** 이제 확인할 것은 프레임이 읽을 만한지가
+아니라 원래 코드의 파일과 줄을 가리키는지입니다. release가 이벤트에 붙는지도 같은 화면에서 함께
+봅니다.
+
 ## 2. 초기화 비용 21.5~33.3밀리초를 줄일 수 있는지
 
 `instrumentation-client.ts` 실행이 Next.js 경고 기준 16밀리초를 넘습니다. 중앙값 26.1밀리초이고
@@ -83,8 +87,12 @@ auth token 검사가 `create` 값보다 먼저 반환하기 때문입니다.
 release 이름 해소를 막습니다. 경위는 `raw/2026-09-08-sentry-release-주입-정정-session-log.md`에
 있습니다.
 
-Releases와 Source Map 업로드 후속 작업에서 auth token을 넣으면 경고가 사라집니다. 그때까지 남겨
-둡니다.
+Releases와 Source Map 업로드 후속 작업에서 auth token을 넣으면 경고가 사라집니다.
+
+**2026-09-18에 이슈 #144 브랜치에서 닫았습니다.** `sourcemaps.disable`과 `release.create`를 걷어내고
+`SENTRY_AUTH_TOKEN`을 빌드 파이프라인에 넣었습니다. 토큰이 있는 빌드에서는 경고가 나오지 않고, 없는
+빌드는 경고만 남긴 채 그대로 끝납니다. 설정과 실측은 `wiki/2026-09-18-sentry-source-map-release.md`에
+있습니다.
 
 ## 8. 측정 스크립트에 vitest 회귀 테스트가 없음
 
@@ -98,6 +106,26 @@ Releases와 Source Map 업로드 후속 작업에서 auth token을 넣으면 경
 대신 스크립트 자신이 기대와 다를 때 종료 코드 1을 내도록 만들었습니다. `on` 모드와 `off` 모드,
 그리고 커밋 SHA가 release로 인라인되지 않았는지의 검사가 각각 실제로 실패하는 것을 확인했습니다.
 DSN 판정과 예외 격리와 실험 옵션 배선은 `src/lib/sentry/client.test.ts`가 SDK를 mock해 고정합니다.
+
+**2026-09-18에 이 공백이 한 번 더 드러났습니다.** 이슈 #144의 자체 리뷰가 `checkReleaseInjected()`의
+기대값 계산을 지적했고 고쳤지만, 회귀 테스트를 붙이지 못했습니다. 검사 함수가 고정 경로의 실제
+파일시스템을 읽어서 하네스를 만들려면 경로 주입으로 스크립트를 다시 설계해야 합니다.
+
+**PR #148 리뷰에서 CodeRabbit이 같은 공백을 지적했습니다.** P2로 판정해 이번 PR에서 반영하지 않고 이
+항목으로 합쳤습니다. 이슈 #144의 Goal과 Constraints에 걸리지 않고, 수정 비용이 작다는 예외에도
+해당하지 않습니다. `scripts/measure-sentry-web-vitals.mts`가 모듈 최상위에서 `main()`을 실행하므로
+테스트가 import하는 순간 Playwright가 실행됩니다. 검사 함수를 분리하는 것만으로 끝나지 않고 진입점의
+실행 조건까지 바꿔야 하며, 그 변경이 잘못되면 확인 절차가 아무 일도 하지 않으면서 통과합니다.
+
+이 항목을 풀 때 `checkReleaseInjected()`를 첫 대상으로 삼습니다. 검사할 경우는 셋입니다.
+
+- `.next/required-server-files.json`이 없거나 파싱되지 않는 경우
+- 메타데이터에 `_sentryRelease`가 없거나 비어 있는 경우
+- release 이름과 일치하는 클라이언트 청크가 있는 경우와 없는 경우
+
+**검사 함수 하나만 떼어내는 것으로는 부족합니다.** 테스트가 없는 것은 이 함수만이 아닙니다. envelope
+요청 수 판정, `EXPECTED_VITALS` 조합 판정, Chromium 종료 처리까지 이 스크립트 전체가 테스트 밖에
+있습니다. 함수 하나에만 테스트를 붙이면 같은 지적이 다른 줄에서 다시 나옵니다.
 
 ## 9. 확인 절차를 CI에서 돌리지 않음
 
@@ -253,3 +281,12 @@ LLM 호출이 실패하면 `mapInterviewLlmError`가 provider 오류를 `cause`�
 지어낸 커밋 식별자입니다. 그 식별자가 이 오류를 재현할 유일한 단서이므로 지우면 Issue가 쓸모를
 잃습니다. 비공개 저장소의 커밋 식별자를 외부 수집처에 두는 것 자체를 문제로 볼지는 별도 판단이
 필요해 여기 남깁니다.
+
+## 22. preview 배포도 Release를 만들고 소스맵을 올림
+
+이슈 #144가 Source Map 업로드를 켠 뒤로 preview 배포마다 Release가 하나씩 생기고 맵이 올라갑니다.
+Sentry 할당량을 preview가 먹는 구조입니다.
+
+실사용 배포 빈도와 할당량 소모를 아직 재지 않았습니다. 이슈 #144의 작업 원칙이 추측성 조정을
+금지하므로 양을 보고 나서 preview만 끌지 판단합니다. 끄는 방법은 Vercel에서
+`SENTRY_AUTH_TOKEN`을 Production 범위로만 두는 것입니다.
