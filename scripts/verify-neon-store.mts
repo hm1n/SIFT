@@ -285,6 +285,67 @@ async function main(): Promise<void> {
   );
   check("만든 횟수 줄을 지웠다", usageLeft[0].n, 0);
 
+  /*
+   * 회원 탈퇴입니다(이슈 #145). 사용자 번호를 조건으로 지우는 유일한 연산이라 번호를 따로 씁니다.
+   * 위 검사가 쓴 번호로 돌리면 그 번호로 심은 줄이 한 번에 사라져 뒤에 올 검사가 근거를 잃습니다.
+   *
+   * 지우기 전에 그 번호에 남은 줄이 없는지 먼저 봅니다. PR #127 리뷰가 지적한 위험이 여기에도
+   * 있습니다. 번호는 무작위로 고른 것이라 데이터베이스가 예약해 주지 않으므로, 이미 쓰이고 있는
+   * 번호였다면 이 연산이 남의 줄을 지웁니다. 확인하지 않고 돌릴 수 없는 유일한 검사입니다.
+   */
+  const leavingUserId = USER_ID + 2;
+  const existing = await sql.query(
+    "select count(*)::int as n from repository_analysis where github_user_id = $1::bigint",
+    [leavingUserId]
+  );
+  if (Number(existing[0].n) !== 0) {
+    failures += 1;
+    console.log(`실패  탈퇴 검사를 건너뜁니다. 번호 ${leavingUserId}에 이미 ${existing[0].n}줄이 있습니다`);
+  } else {
+    const emptyCandidates = {
+      candidates: { candidates: [], insufficientCandidatesReason: null, diffs: [] },
+      includedCommits: [],
+    };
+    const emptySummary = { excludedUnits: [], selectedUnitCount: 0, thresholdScore: 0, unjudgedShas: [] };
+    const leavingAnalysis = {
+      githubUserId: leavingUserId,
+      repoOwner: "hm1n",
+      repoName: "SIFT",
+      contributionItems: [],
+      candidates: emptyCandidates,
+      stageASummary: emptySummary,
+    };
+    const withInterview = await store.saveAnalysis(leavingAnalysis);
+    const leavingInterviewId = await store.createInterview({
+      githubUserId: leavingUserId,
+      analysisId: withInterview,
+      candidateKey: "candidate-1",
+      title: "탈퇴 검사",
+      evidence: { commits: [] },
+    });
+    // 경험을 아직 고르지 않은 분석입니다. 인터뷰가 없어도 근거 스냅샷은 들고 있어 함께 지워야 합니다.
+    await store.saveAnalysis({ ...leavingAnalysis, repoName: "SIFT-후보만" });
+    const keptId = await store.saveAnalysis({ ...leavingAnalysis, githubUserId: OTHER_USER_ID });
+
+    check("탈퇴는 그 사용자의 분석을 모두 지운다", await store.deleteUserData(leavingUserId), 2);
+    /*
+     * 인터뷰 행을 직접 셉니다(PR #147 리뷰 2라운드). `getInterview`와 `listInterviews`는 소유자를
+     * 보려고 `repository_analysis`를 join하므로, 분석만 지워지고 인터뷰 행이 남은 상태에서도 아무
+     * 줄도 돌려주지 않습니다. 그 둘로만 보면 cascade가 실제로 돌았는지 확인할 수 없습니다.
+     */
+    const leftover = await sql.query(
+      "select count(*)::int as n from interview_session where analysis_id = $1::uuid",
+      [withInterview]
+    );
+    check("딸린 인터뷰 행이 cascade로 사라진다", Number(leftover[0].n), 0);
+    check("복원 경로에서도 보이지 않는다", await store.getInterview(leavingInterviewId ?? "", leavingUserId), null);
+    check("탈퇴 뒤 목록이 비어 있다", (await store.listInterviews(leavingUserId)).length, 0);
+    check("두 번 부르면 두 번째는 0이다", await store.deleteUserData(leavingUserId), 0);
+    check("남의 분석은 남는다", (await store.getAnalysis(keptId, OTHER_USER_ID))?.id, keptId);
+
+    await sql.query("delete from repository_analysis where id = $1::uuid", [keptId]);
+  }
+
   console.log(failures === 0 ? "\n모두 통과했습니다." : `\n${failures}건 실패했습니다.`);
   process.exitCode = failures === 0 ? 0 : 1;
 }

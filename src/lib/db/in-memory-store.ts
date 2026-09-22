@@ -240,6 +240,21 @@ export function createInMemoryStore(): SiftStore {
       return quotas.get(`${githubUserId}:${usageDate}`) ?? 0;
     },
 
+    async deleteUserData(githubUserId) {
+      let deleted = 0;
+      for (const [id, analysis] of analyses) {
+        if (analysis.githubUserId !== githubUserId) continue;
+        // 실제 구현에서는 `on delete cascade`가 하는 일입니다. 흉내 내지 않으면 지운 분석에 딸린
+        // 인터뷰가 메모리에 남아 목록과 복원에 계속 보입니다.
+        for (const [interviewId, interview] of interviews) {
+          if (interview.analysisId === id) interviews.delete(interviewId);
+        }
+        analyses.delete(id);
+        deleted += 1;
+      }
+      return deleted;
+    },
+
     async purgeInterviewsOpenedBefore(before) {
       let purged = 0;
       for (const [id, interview] of interviews) {

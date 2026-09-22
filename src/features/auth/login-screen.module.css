@@ -92,3 +92,30 @@
 @media (max-width: 560px) {
   .screen { padding: 32px 16px; }
 }
+
+/*
+ * 회원 탈퇴를 끝낸 직후의 안내입니다(이슈 #145). 카드 위에 둡니다.
+ *
+ * 카드 안에 넣지 않는 이유는 카드가 로그인을 권하는 자리이고, 이 문장은 방금 끝난 일의 결과라
+ * 성격이 다르기 때문입니다. 폭을 카드와 맞춰 두 덩어리가 한 줄 위에 쌓인 것처럼 보이게 합니다.
+ */
+.notice {
+  width: 100%;
+  max-width: 384px;
+  margin-bottom: 24px;
+  padding: 12px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-muted);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-foreground);
+  text-align: center;
+}
+
+/* 링크임을 색만으로 가르지 않습니다. 표준지침 제20조가 요구하는 기준을 푸터와 같게 맞춥니다. */
+.noticeLink {
+  font-weight: 500;
+  color: var(--color-foreground);
+  text-decoration: underline;
+}

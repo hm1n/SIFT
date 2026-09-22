@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { savedInterviewErrorResponse } from "./errors";
-import { getGitHubSessionFromRequest } from "@/lib/github/auth-session";
+import { getGitHubSessionFromRequest, type GitHubSession } from "@/lib/github/auth-session";
 import { GitHubFetchError } from "@/lib/github/errors";
 import { reportServerError } from "@/lib/sentry/server";
 
@@ -14,8 +14,20 @@ import { reportServerError } from "@/lib/sentry/server";
 
 /** 세션에서 사용자 번호를 꺼냅니다. 꺼내지 못하면 그대로 돌려줄 응답을 냅니다. */
 export function requireUserId(request: NextRequest): { userId: number } | { response: Response } {
+  const session = requireSession(request);
+  return "response" in session ? session : { userId: session.session.githubUserId };
+}
+
+/**
+ * 세션을 그대로 꺼냅니다. 꺼내지 못하면 돌려줄 응답을 냅니다.
+ *
+ * 사용자 번호만 쓰는 라우트가 대부분이라 `requireUserId`가 먼저 있었습니다. 회원 탈퇴는 GitHub에
+ * 준 권한을 해제하는 데 토큰이 필요해서(이슈 #145) 세션 전체를 받습니다. 같은 오류 판정을 두 번
+ * 적지 않도록 번호를 꺼내는 쪽이 이 함수를 거칩니다.
+ */
+export function requireSession(request: NextRequest): { session: GitHubSession } | { response: Response } {
   try {
-    return { userId: getGitHubSessionFromRequest(request).githubUserId };
+    return { session: getGitHubSessionFromRequest(request) };
   } catch (error) {
     if (error instanceof GitHubFetchError && error.kind === "auth_revoked") {
       return { response: savedInterviewErrorResponse("unauthorized", "GitHub 인증 세션이 필요합니다.") };

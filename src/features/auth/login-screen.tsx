@@ -8,12 +8,18 @@ import { toAuthErrorParam } from "./auth-error";
 import { LoginLink, useAuthTransition } from "@/components/shell/auth-transition";
 import { SiftMark } from "@/components/shell/sift-mark";
 import { StatusScreen } from "@/components/shell/status-screen";
-import { AUTH_ERROR_COPY, LOGIN_COPY } from "@/copy/auth";
+import { AUTH_ERROR_COPY, LOGIN_COPY, WITHDRAWN_COPY, WITHDRAWN_GRANT_GUIDE } from "@/copy/auth";
 import styles from "./login-screen.module.css";
 
 export interface LoginScreenProps {
   /** `page.tsx`가 `searchParams.auth_error`에서 읽어 넘기는 오류 종류입니다. 표에 없는 값은 안내로 취급하지 않습니다. */
   authError?: string;
+  /**
+   * 회원 탈퇴를 끝낸 직후의 표시입니다(이슈 #145). `page.tsx`가 `searchParams.withdrawn`에서 읽어
+   * 넘기고, `WITHDRAWN_COPY`에 있는 값만 안내로 취급합니다. 주소창의 쿼리는 아무 값이나 올 수
+   * 있으므로 `auth_error`와 같은 기준을 씁니다.
+   */
+  withdrawn?: string;
 }
 
 /**
@@ -26,7 +32,7 @@ export interface LoginScreenProps {
  * 인증 중 상태는 layout의 `AuthTransitionProvider`가 들고 있습니다. 헤더의 로그인 링크로 시작한 인증도 이 화면이
  * AUTHENTICATING으로 그려야 하므로, 인증 중 판정을 오류 판정보다 앞에 둡니다.
  */
-export function LoginScreen({ authError }: LoginScreenProps) {
+export function LoginScreen({ authError, withdrawn }: LoginScreenProps) {
   const router = useRouter();
   const { isAuthenticating } = useAuthTransition();
   // 개발 모드의 StrictMode는 effect를 두 번 실행합니다. 한 번 들어온 화면을 두 번 세지 않습니다.
@@ -67,8 +73,39 @@ export function LoginScreen({ authError }: LoginScreenProps) {
     );
   }
 
+  /**
+   * 탈퇴 안내입니다. 셋 중 기본 화면에만 그립니다. 인증 중과 오류는 앞에서 먼저 돌려주므로 여기까지
+   * 오지 않고, 탈퇴한 직후에는 그 둘에 해당할 일도 없습니다.
+   */
+  const withdrawalNotice =
+    withdrawn !== undefined && Object.hasOwn(WITHDRAWN_COPY, withdrawn) ? WITHDRAWN_COPY[withdrawn] : undefined;
+
   return (
     <div className={styles.screen}>
+      {withdrawalNotice ? (
+        <p className={styles.notice} role="status">
+          {withdrawalNotice.text}
+          {/*
+            연결이 남은 경우에만 할 일을 덧붙입니다. 남았다는 사실만 알리고 끝내면 사용자가 할 수
+            있는 일이 없습니다. GitHub 설정은 이 서비스 밖이라 새 탭으로 엽니다.
+          */}
+          {withdrawalNotice.grantKept ? (
+            <>
+              {" "}
+              {WITHDRAWN_GRANT_GUIDE.lead}
+              <a
+                className={styles.noticeLink}
+                href={WITHDRAWN_GRANT_GUIDE.href}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {WITHDRAWN_GRANT_GUIDE.link}
+              </a>
+              {WITHDRAWN_GRANT_GUIDE.tail}
+            </>
+          ) : null}
+        </p>
+      ) : null}
       <div className={styles.card}>
         <div className={styles.graphic}>
           <div className={styles.placeholder} aria-hidden="true">

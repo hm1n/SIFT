@@ -139,6 +139,22 @@ export interface SiftStore {
    * 비교하는 자리가 생기면 두 요청이 같은 값을 읽어 둘 다 통과합니다. 화면이 쓰는 안내용 값입니다.
    */
   getAnalysisQuotaUsage(githubUserId: number, usageDate: string): Promise<number>;
+  /**
+   * 그 사용자의 분석을 모두 지우고 지운 수를 돌려줍니다. 딸린 인터뷰는 `on delete cascade`로 함께
+   * 사라집니다(이슈 #145, 회원 탈퇴).
+   *
+   * 인터뷰 수를 따로 돌려주지 않습니다. 인터뷰는 분석에 매달려 있어 분석 없이 존재할 수 없으므로,
+   * 0은 그 사용자에게 저장된 것이 하나도 없었다는 뜻입니다. 빈 계정을 가르는 데 이 값만 있으면
+   * 됩니다.
+   *
+   * 지운 것이 없어도 오류가 아닙니다. 저장한 적 없는 사용자가 탈퇴를 누른 경우이고, 할 일이 없었을
+   * 뿐 실패한 요청이 아닙니다.
+   *
+   * 대상을 사용자 번호 하나로만 정합니다. 식별자 목록을 받지 않는 이유는 남의 줄을 지목할 자리를
+   * 만들지 않기 위해서입니다. 다른 연산과 달리 지울 대상을 조건으로만 고르므로, 이 번호가 곧
+   * 삭제 범위입니다.
+   */
+  deleteUserData(githubUserId: number): Promise<number>;
   /** 마지막으로 연 시각이 `before`보다 오래된 인터뷰를 지우고 지운 수를 돌려줍니다. */
   purgeInterviewsOpenedBefore(before: Date): Promise<number>;
   /**

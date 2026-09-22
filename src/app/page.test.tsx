@@ -4,6 +4,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthTransitionProvider } from "@/components/shell/auth-transition";
+import { WITHDRAWN_COPY } from "@/copy/auth";
 import { LEGAL_LINK_COPY } from "@/copy/legal";
 import { GA_USER_ID_SECRET_ENV } from "@/lib/analytics/user-id";
 import {
@@ -39,7 +40,13 @@ vi.mock("@/features/analytics/events", () => ({
 }));
 
 /** layout이 감싸는 provider를 함께 둡니다. 로그인 화면은 provider 밖에서 그릴 수 없습니다. */
-async function renderHome(searchParams: { auth_error?: string | string[]; login?: string | string[] } = {}) {
+async function renderHome(
+  searchParams: {
+    auth_error?: string | string[];
+    login?: string | string[];
+    withdrawn?: string | string[];
+  } = {}
+) {
   return <AuthTransitionProvider>{await Home({ searchParams: Promise.resolve(searchParams) })}</AuthTransitionProvider>;
 }
 
@@ -106,6 +113,27 @@ describe("Home", () => {
   it("세션 쿠키가 없고 auth_error가 있으면 ERROR / AUTH 상태를 그린다", async () => {
     render(await renderHome({ auth_error: "access_denied" }));
     expect(screen.getByRole("alert")).toHaveTextContent("ERROR / AUTH");
+  });
+
+  /** 회원 탈퇴를 끝낸 계정 메뉴가 붙여 보내는 표시입니다(이슈 #145). */
+  it("세션 쿠키가 없고 withdrawn이 있으면 탈퇴 안내를 그린다", async () => {
+    render(await renderHome({ withdrawn: "done" }));
+    expect(screen.getByRole("status")).toHaveTextContent(WITHDRAWN_COPY.done.text);
+  });
+
+  it("withdrawn이 여러 번 오면 첫 값만 쓴다", async () => {
+    render(await renderHome({ withdrawn: ["done_kept", "done"] }));
+    expect(screen.getByRole("status")).toHaveTextContent(WITHDRAWN_COPY.done_kept.text);
+  });
+
+  /*
+   * 탈퇴한 뒤 쿠키가 지워졌는데도 세션이 있는 경우입니다. 다른 탭에서 다시 로그인한 뒤 뒤로 가기로
+   * 이 주소에 돌아오면 일어납니다. 그때는 방금 끝난 일의 결과가 아니므로 그리지 않습니다.
+   */
+  it("세션 쿠키가 있으면 withdrawn 쿼리가 있어도 탈퇴 안내를 그리지 않는다", async () => {
+    cookieNames.add(GITHUB_SESSION_COOKIE);
+    render(await renderHome({ withdrawn: "done" }));
+    expect(screen.queryByText(WITHDRAWN_COPY.done.text)).not.toBeInTheDocument();
   });
 
   it("auth_error가 여러 번 오면 첫 값만 쓴다", async () => {

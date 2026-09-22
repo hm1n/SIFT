@@ -11,6 +11,31 @@ export const AUTH_ERROR_COPY: Record<string, string> = {
 };
 
 /**
+ * 회원 탈퇴를 끝낸 뒤 로그인 화면에 보이는 안내입니다(이슈 #145).
+ *
+ * `auth_error`와 같은 방식입니다. 계정 메뉴가 `?withdrawn=`에 표시를 실어 보내고 이 표에 있는 값만
+ * 안내로 취급합니다. 표시를 넷으로 두는 이유는 사용자가 알아야 할 것이 둘이기 때문입니다. 지울
+ * 데이터가 있었는지와, GitHub 연결이 실제로 끊겼는지입니다.
+ *
+ * 연결이 남은 경우에는 문장 뒤에 `WITHDRAWN_GRANT_GUIDE`가 붙습니다. 데이터는 지웠지만 권한이
+ * 남았다는 사실만 알리고 끝내면 사용자가 할 수 있는 일이 없습니다.
+ */
+export const WITHDRAWN_COPY: Record<string, { readonly text: string; readonly grantKept: boolean }> = {
+  done: { text: "저장된 분석과 인터뷰를 모두 지웠고 GitHub 연결도 해제했습니다.", grantKept: false },
+  empty: { text: "지울 데이터가 없어 GitHub 연결만 해제했습니다.", grantKept: false },
+  done_kept: { text: "저장된 분석과 인터뷰를 모두 지웠습니다. GitHub 연결은 아직 남아 있습니다.", grantKept: true },
+  empty_kept: { text: "지울 데이터가 없었습니다. GitHub 연결은 아직 남아 있습니다.", grantKept: true },
+};
+
+/** 연결이 남은 경우에 이어 붙이는 안내입니다. `이용약관`처럼 링크를 걸어야 해서 조각으로 나눕니다. */
+export const WITHDRAWN_GRANT_GUIDE = {
+  lead: "GitHub 설정의 ",
+  link: "승인된 앱 목록",
+  tail: "에서 SIFT 권한을 직접 해제해 주세요.",
+  href: "https://github.com/settings/applications",
+} as const;
+
+/**
  * 약관 동의 안내 문장입니다. `이용약관`에 링크를 걸어야 해서 조각으로 나눠 둡니다(이슈 #141).
  *
  * 문장을 나눈 것이지 문구를 바꾼 것이 아닙니다. 조각을 이어 붙이면 아래 `terms`와 같고, 그 사실을
