@@ -10,6 +10,12 @@ import { describe, expect, it } from "vitest";
  */
 const CIRCLE = /<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)" opacity="([\d.]+)"\s*\/>/g;
 
+/**
+ * PNG 파일의 첫 8바이트입니다. 뒤의 `PNG`만 보면 `00 50 4E 47`로 시작하는 값도 통과하므로 전부
+ * 비교합니다. 앞의 `89`와 뒤의 `0D 0A 1A 0A`는 전송 중 줄바꿈 변환을 잡으려고 규격이 둔 값입니다.
+ */
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
 /** 파일에서 원을 뽑아 비교할 수 있는 문자열로 만듭니다. JSX와 SVG의 문법 차이를 여기서 지웁니다. */
 function circles(path: string): string[] {
   const source = readFileSync(path, "utf8");
@@ -46,7 +52,7 @@ describe("탭 아이콘", () => {
     expect(entries.map((entry) => entry.width)).toEqual([16, 32, 48]);
     for (const entry of entries) {
       /* 항목을 PNG로 담았습니다. 헤더의 크기와 실제 데이터가 어긋나면 아이콘이 깨집니다. */
-      expect(bytes.subarray(entry.offset + 1, entry.offset + 4).toString()).toBe("PNG");
+      expect(bytes.subarray(entry.offset, entry.offset + PNG_SIGNATURE.length)).toEqual(PNG_SIGNATURE);
       expect(entry.offset + entry.length).toBeLessThanOrEqual(bytes.length);
     }
   });

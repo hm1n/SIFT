@@ -70,10 +70,16 @@ describe("소유권 확인", () => {
 describe("Open Graph 이미지", () => {
   const [image] = DOCUMENT_COPY.openGraph.images;
 
+  /**
+   * PNG 파일의 첫 8바이트입니다. 뒤의 `PNG`만 보면 `00 50 4E 47`로 시작하는 값도 통과하므로 전부
+   * 비교합니다. `src/app/icon.test.ts`가 ICO 안의 항목을 같은 값으로 확인합니다.
+   */
+  const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
   /** PNG의 IHDR은 항상 첫 청크이고 가로·세로가 16바이트와 20바이트에 있습니다. */
   function pngSize(path: string): { width: number; height: number } {
     const bytes = readFileSync(path);
-    expect(bytes.subarray(1, 4).toString()).toBe("PNG");
+    expect(bytes.subarray(0, PNG_SIGNATURE.length)).toEqual(PNG_SIGNATURE);
     expect(bytes.subarray(12, 16).toString()).toBe("IHDR");
     return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
   }
