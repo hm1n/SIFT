@@ -33,6 +33,34 @@ describe("문서 metadata", () => {
 });
 
 /**
+ * Search Console 소유권 확인입니다(이슈 #152).
+ *
+ * 값이 틀려도 화면은 멀쩡하고 빌드도 통과합니다. 드러나는 자리가 Search Console의 확인 실패뿐이라
+ * 여기서 모양을 봅니다.
+ */
+describe("소유권 확인", () => {
+  it("토큰이 비어 있지 않다", () => {
+    /* Next는 빈 문자열이면 meta 태그를 아예 만들지 않습니다. 태그가 없으면 속성 확인이 해제됩니다. */
+    expect(DOCUMENT_COPY.verification.google.length).toBeGreaterThan(0);
+  });
+
+  it("토큰이 DNS TXT 값이나 태그 전체가 아니다", () => {
+    /*
+     * 확인 방법마다 구글이 주는 모양이 다릅니다. DNS TXT는 `google-site-verification=...`이고
+     * HTML 태그는 `content`의 값만입니다. 앞의 것을 그대로 옮기면 확인이 실패합니다.
+     */
+    expect(DOCUMENT_COPY.verification.google).not.toMatch(/^google-site-verification\s*[=:]/);
+    expect(DOCUMENT_COPY.verification.google).not.toContain("<");
+  });
+
+  it("법적 고지 화면은 자기 verification을 두지 않는다", () => {
+    /* 자식이 정의하지 않으면 루트 값을 물려받습니다. 선언 자리를 루트 하나로 둡니다. */
+    expect("verification" in LEGAL_PAGE_METADATA.privacy).toBe(false);
+    expect("verification" in LEGAL_PAGE_METADATA.terms).toBe(false);
+  });
+});
+
+/**
  * 공유 미리보기 이미지입니다.
  *
  * `src/app/opengraph-image.png` 파일 규약을 쓰지 않아 가로·세로를 손으로 적습니다. 규약이 하던 일을

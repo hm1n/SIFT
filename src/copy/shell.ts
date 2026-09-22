@@ -67,6 +67,20 @@ export const DOCUMENT_COPY = {
   title: DOCUMENT_TITLE,
   description: DOCUMENT_DESCRIPTION,
   alternates: { canonical: "/" },
+  /**
+   * Google Search Console의 소유권 확인 토큰입니다(이슈 #152). `<meta
+   * name="google-site-verification">`으로 나갑니다.
+   *
+   * `sift-dev.vercel.app`은 URL 접두어 속성으로 등록했습니다. 도메인 속성은 DNS TXT 레코드를
+   * 요구하는데 이 주소는 Vercel이 소유한 `vercel.app`의 서브도메인이라 그 zone을 고칠 수 없습니다.
+   * 확인 방법마다 토큰이 다르므로 DNS용으로 받은 값을 여기 넣으면 확인이 실패합니다.
+   *
+   * HTML 응답에 그대로 나가는 공개 값이라 환경변수로 빼지 않고 `SITE_URL` 옆에 둡니다.
+   *
+   * 확인이 끝난 뒤에도 지우면 안 됩니다. 구글이 주기적으로 다시 확인하고, 태그가 없으면 속성
+   * 확인이 해제됩니다.
+   */
+  verification: { google: "vfWA9bPzc9OdVG5XzZ--ElkRwzOZvDsYuRw_LCzwv1s" },
   openGraph: {
     ...OPEN_GRAPH_BASE,
     url: "/",
