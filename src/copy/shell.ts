@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import {
   CHANGE_REPOSITORY,
   CONNECTING_GITHUB,
@@ -5,27 +6,103 @@ import {
   NO_REPOSITORY_SELECTED,
   SECTION_INTERVIEWS,
 } from "./shared";
-/** 문서 metadata입니다. 검색 결과와 브라우저 탭에 나갑니다. */
-export const DOCUMENT_COPY = {
-  title: "SIFT | Repository 분석",
-  description: "GitHub Repository의 코드와 커밋에서 설명할 개발 경험을 찾습니다.",
+
+/**
+ * 검색 노출의 기준 도메인입니다(이슈 #149). canonical과 sitemap, Open Graph url이 모두 이 값에서
+ * 나옵니다.
+ *
+ * GitHub Repository의 homepage에 설정된 값이고 사용자가 이 값으로 가기로 정했습니다. 도메인이
+ * 바뀌면 여기 한 줄만 고치면 됩니다. 각 화면이 절대 주소를 따로 들지 않고 `metadataBase`에 상대
+ * 경로를 얹는 이유입니다.
+ *
+ * 환경변수로 두지 않았습니다. 미리보기 배포마다 주소가 달라지는데 canonical은 어디서 열리든 정식
+ * 주소 하나를 가리켜야 합니다. 배포 환경을 따라 움직이면 미리보기 주소가 정식 주소로 색인될 수
+ * 있습니다.
+ */
+export const SITE_URL = "https://sift-dev.vercel.app";
+
+/** 검색 결과와 브라우저 탭에 나가는 값입니다. */
+const DOCUMENT_TITLE = "SIFT | Repository 분석";
+const DOCUMENT_DESCRIPTION = "GitHub Repository의 코드와 커밋에서 설명할 개발 경험을 찾습니다.";
+
+/**
+ * 화면마다 반복되는 Open Graph 필드입니다(이슈 #149).
+ *
+ * 이미지는 `src/app/opengraph-image.*` 파일 규약이 붙입니다. 여기서 `images`를 들지 않는 이유입니다.
+ * 파일 규약은 절대 주소와 가로·세로·타입 메타 태그를 함께 만들어 주고, X는 `twitter:image`가 없으면
+ * `og:image`를 그대로 씁니다. 그래서 이미지 파일 하나면 두 미리보기가 모두 채워집니다.
+ */
+const OPEN_GRAPH_BASE = {
+  siteName: "SIFT",
+  locale: "ko_KR",
+  type: "website",
 } as const;
+
+/**
+ * 루트 레이아웃의 metadata입니다. `/`의 값이기도 합니다.
+ *
+ * 주의할 점이 하나 있습니다. 자식 화면이 `openGraph`나 `alternates`를 정의하지 않으면 이 값을
+ * 통째로 물려받습니다. 그래서 `/privacy`와 `/terms`가 자기 canonical과 Open Graph를 각각 들어야
+ * 합니다. 아래 `LEGAL_PAGE_METADATA`가 그 자리입니다.
+ */
+export const DOCUMENT_COPY = {
+  metadataBase: new URL(SITE_URL),
+  title: DOCUMENT_TITLE,
+  description: DOCUMENT_DESCRIPTION,
+  alternates: { canonical: "/" },
+  openGraph: {
+    ...OPEN_GRAPH_BASE,
+    url: "/",
+    title: DOCUMENT_TITLE,
+    description: DOCUMENT_DESCRIPTION,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: DOCUMENT_TITLE,
+    description: DOCUMENT_DESCRIPTION,
+  },
+} satisfies Metadata;
 
 /**
  * 법적 고지 화면의 metadata입니다(이슈 #141). 화면 문구와 같은 자리에 둡니다.
  *
  * 두 화면이 각자 `metadata`를 내보내야 해서 `DOCUMENT_COPY`처럼 하나로 합칠 수 없습니다.
+ *
+ * canonical과 Open Graph를 각각 답니다(이슈 #149). 제목과 설명만 두면 루트의 `og:title`과
+ * canonical을 물려받아, 두 문서를 공유했을 때 랜딩의 제목이 나가고 검색엔진이 세 주소를 모두 `/`의
+ * 사본으로 읽습니다.
  */
 export const LEGAL_PAGE_METADATA = {
-  privacy: {
+  privacy: legalPageMetadata({
+    path: "/privacy",
     title: "개인정보 처리방침 | SIFT",
     description: "SIFT가 처리하는 개인정보의 항목과 목적, 보유 기간, 국외 이전을 안내합니다.",
-  },
-  terms: {
+  }),
+  terms: legalPageMetadata({
+    path: "/terms",
     title: "이용약관 | SIFT",
     description: "SIFT를 이용하는 데 필요한 조건과 절차, 이용자와 서비스의 권리와 의무를 정합니다.",
-  },
+  }),
 } as const;
+
+/** 두 법적 고지 화면이 같은 모양의 metadata를 갖도록 한 자리에서 만듭니다. */
+function legalPageMetadata({
+  path,
+  title,
+  description,
+}: {
+  path: string;
+  title: string;
+  description: string;
+}) {
+  return {
+    title,
+    description,
+    alternates: { canonical: path },
+    openGraph: { ...OPEN_GRAPH_BASE, url: path, title, description },
+    twitter: { card: "summary_large_image", title, description },
+  } satisfies Metadata;
+}
 
 export const TOP_HEADER_COPY = {
   /** 브랜드 마크 링크의 접근성 이름입니다. 보이는 글자는 `SIFT` 마크뿐입니다. */
