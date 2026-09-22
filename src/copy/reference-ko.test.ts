@@ -2,17 +2,19 @@ import { describe, expect, it } from "vitest";
 import * as authCopy from "./auth";
 import * as candidatesCopy from "./candidates";
 import * as interviewCopy from "./interview";
+import * as landingCopy from "./landing";
 import * as repositoryCopy from "./repository";
 import * as savedCopy from "./saved";
 import * as sharedCopy from "./shared";
 import * as shellCopy from "./shell";
 import { LOGIN_COPY } from "./auth";
+import { LANDING_COPY } from "./landing";
 import { CANDIDATE_DETAIL_COPY } from "./candidates";
 import { INTERVIEW_SCREEN_COPY, PAAR_PANEL_COPY, STREAM_VIEW_COPY } from "./interview";
 import { REPOSITORY_SELECT_COPY, RESUME_ERROR_COPY } from "./repository";
 import { SAVED_INTERVIEW_LIST_COPY, SAVED_INTERVIEW_SCREEN_COPY } from "./saved";
 import { CONTINUE_INTERVIEW } from "./shared";
-import { ACCOUNT_MENU_COPY, APP_SHELL_COPY, GLOBAL_ERROR_COPY } from "./shell";
+import { ACCOUNT_MENU_COPY, APP_SHELL_COPY, GLOBAL_ERROR_COPY, TOP_HEADER_COPY } from "./shell";
 
 /**
  * 레퍼런스 `Chat Interface Design/src/App.tsx`의 `TRANSLATIONS.ko`를 옮겨 둔 것입니다.
@@ -24,8 +26,8 @@ import { ACCOUNT_MENU_COPY, APP_SHELL_COPY, GLOBAL_ERROR_COPY } from "./shell";
  * 번역했기 때문입니다. 문구가 39개 파일에 흩어져 있어 대조할 방법이 없었습니다. 이제 어긋남은
  * 둘 중 하나입니다. 이 표를 고치지 않은 실수이거나, 이 표에 사유를 적은 결정입니다.
  *
- * 레퍼런스 화면 중 이 Repository에 없는 것(랜딩, Sessions)은 담지 않습니다. 대조할 자리가 없어
- * 결정이 아니라 미구현입니다. 목록은 디자인 개편 backlog 31번에 있습니다.
+ * 레퍼런스 화면 중 이 Repository에 없는 것(Sessions)은 담지 않습니다. 대조할 자리가 없어 결정이
+ * 아니라 미구현입니다. 랜딩은 이슈 #149에서 만들었고 backlog 31번이 닫혔습니다.
  *
  * 계정 삭제는 이슈 #145에서 회원 탈퇴로 구현했습니다. 문구 셋을 모두 다르게 쓰기로 정했고 사유는
  * 아래 표에 있습니다.
@@ -44,9 +46,67 @@ const REFERENCE_KO: readonly {
   readonly at?: readonly string[];
 }[] = [
   // --- 그대로 씁니다 ---
-  { key: "landingCTA", text: "GitHub으로 계속하기" },
-  { key: "landingLogIn", text: "GitHub으로 로그인" },
-  { key: "terms", text: "계속하면 이용약관에 동의하는 것입니다" },
+  { key: "landingCTA", text: "GitHub으로 계속하기", at: [LANDING_COPY.cta] },
+  { key: "landingLogIn", text: "GitHub으로 로그인", at: [TOP_HEADER_COPY.logIn] },
+  { key: "terms", text: "계속하면 이용약관에 동의하는 것입니다", at: [LOGIN_COPY.terms] },
+
+  // --- 랜딩 화면(이슈 #149) ---
+  { key: "landingTagline", text: "Developer Tool · AI Interview", at: [LANDING_COPY.hero.tagline] },
+  /*
+   * 레퍼런스가 `\n`으로 끊어 둔 문구입니다. 이 Repository는 줄을 배열로 들고 화면이 `<br />`로
+   * 잇습니다. 이어 붙인 값이 레퍼런스와 같은지 봅니다. 줄을 나누는 자리까지 함께 지킵니다.
+   */
+  { key: "landingH1", text: "코드에는 이미\n당신의 이야기가 담겨 있습니다.", at: [LANDING_COPY.hero.headline.join("\n")] },
+  {
+    key: "landingSubtext",
+    text: "SIFT는 저장소의 코드와 커밋 히스토리를 분석해 이야기할 가치가 있는 개발 경험을 찾아내고,\n실제 근거에 기반한 AI 인터뷰로 체계적으로 정리합니다.",
+    at: [LANDING_COPY.hero.subtext.join("\n")],
+  },
+  { key: "steps[0].label", text: "ANALYZE", at: [LANDING_COPY.steps.items[0].label] },
+  { key: "steps[0].desc", text: "저장소 코드, 커밋 히스토리, 변경 파일, diff를 분석합니다.", at: [LANDING_COPY.steps.items[0].description] },
+  { key: "steps[1].label", text: "DISCOVER", at: [LANDING_COPY.steps.items[1].label] },
+  { key: "steps[1].desc", text: "설명할 가치가 있는 개발 경험을 발견합니다.", at: [LANDING_COPY.steps.items[1].description] },
+  { key: "steps[2].label", text: "INTERVIEW", at: [LANDING_COPY.steps.items[2].label] },
+  { key: "steps[2].desc", text: "실제 저장소 근거에 기반한 AI 인터뷰를 진행합니다.", at: [LANDING_COPY.steps.items[2].description] },
+  { key: "steps[3].label", text: "STRUCTURE", at: [LANDING_COPY.steps.items[3].label] },
+  {
+    key: "steps[3].desc",
+    text: "대화를 Problem · Analyze · Action · Result 구조로 정리합니다.",
+    at: [LANDING_COPY.steps.items[3].description],
+  },
+  { key: "coreModelTitle", text: "핵심 제품 모델", at: [LANDING_COPY.coreModel.title] },
+  { key: "codeLabel", text: "CODE / EVIDENCE", at: [LANDING_COPY.coreModel.columns[0].label] },
+  { key: "codeQ", text: "실제로 무슨 일이 있었나요?", at: [LANDING_COPY.coreModel.columns[0].question] },
+  {
+    key: "codeDesc",
+    text: "커밋, 변경 파일, diff, 코드를 직접 참조합니다. 저장소에서 실제로 일어난 일만 근거로 삼습니다.",
+    at: [LANDING_COPY.coreModel.columns[0].description],
+  },
+  { key: "interviewLabel", text: "INTERVIEW", at: [LANDING_COPY.coreModel.columns[1].label] },
+  { key: "interviewQ", text: "왜 그런 결정을 내렸나요?", at: [LANDING_COPY.coreModel.columns[1].question] },
+  {
+    key: "interviewDesc",
+    text: "저장소 근거를 바탕으로 질문합니다. 기술 선택의 이유와 트레이드오프를 이끌어냅니다.",
+    at: [LANDING_COPY.coreModel.columns[1].description],
+  },
+  { key: "experienceLabel", text: "EXPERIENCE", at: [LANDING_COPY.coreModel.columns[2].label] },
+  { key: "experienceQ", text: "어떻게 구조화할 수 있나요?", at: [LANDING_COPY.coreModel.columns[2].question] },
+  {
+    key: "experienceDesc",
+    text: "대화를 PAAR 구조로 정리합니다. 문제 정의부터 결과까지 일관된 경험 서술을 만듭니다.",
+    at: [LANDING_COPY.coreModel.columns[2].description],
+  },
+  { key: "evidenceTitle", text: "근거 기반 접근", at: [LANDING_COPY.evidence.title] },
+  { key: "evidenceH2a", text: "추측이 아니라", at: [LANDING_COPY.evidence.headline[0]] },
+  { key: "evidenceH2b", text: "근거로 만들어집니다.", at: [LANDING_COPY.evidence.headline[1]] },
+  {
+    key: "evidenceSubtext",
+    text: "SIFT는 저장소에서 검증된 사실과 사용자가 제공한 맥락을 명확히 구분합니다. 실제 커밋, 변경 파일, 코드, diff만이 저장소 근거로 인정됩니다. 검증되지 않은 정보를 근거로 제시하지 않습니다.",
+    at: [LANDING_COPY.evidence.subtext],
+  },
+  { key: "finalLabel", text: "시작하기", at: [LANDING_COPY.final.label] },
+  { key: "finalH2a", text: "코드 속에 숨겨진", at: [LANDING_COPY.final.headline[0]] },
+  { key: "finalH2b", text: "경험을 발견하세요.", at: [LANDING_COPY.final.headline[1]] },
   { key: "githubAccount", text: "GitHub 계정" },
   { key: "signOut", text: "로그아웃", at: [ACCOUNT_MENU_COPY.signOut] },
   {
@@ -113,6 +173,18 @@ const REFERENCE_KO: readonly {
   },
 
   // --- 의도적으로 다르게 씁니다 ---
+  {
+    key: "landingFree",
+    text: "무료 · 카드 등록 불필요",
+    deviation:
+      "Hero의 CTA 옆 문구입니다. 옮기지 않았습니다. 정해진 과금 정책이 없어 무료라고 단정할 수 없습니다(이슈 #149, 사용자 결정). 같은 이유로 랜딩의 `SoftwareApplication` 구조화 데이터에도 `offers`를 넣지 않았습니다.",
+  },
+  {
+    key: "footerTagline",
+    text: "DEVELOPER TOOL · AI INTERVIEW",
+    deviation:
+      "랜딩 푸터 오른쪽의 태그라인입니다. 그 자리를 법적 고지 링크가 씁니다(이슈 #141). 개인정보 처리방침 작성지침 Part 02가 로그인 여부와 무관하게 첫 화면에서 바로 찾을 수 있도록 공개하라고 요구합니다. 사유는 `site-footer.tsx`에 있습니다.",
+  },
   {
     key: "selectRepository",
     text: "저장소 선택",
@@ -205,6 +277,7 @@ function allCopyText(): string {
     authCopy,
     candidatesCopy,
     interviewCopy,
+    landingCopy,
     repositoryCopy,
     savedCopy,
     sharedCopy,
