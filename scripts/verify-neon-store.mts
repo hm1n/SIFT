@@ -247,6 +247,9 @@ async function main(): Promise<void> {
   check("막힌 호출은 횟수를 올리지 않는다", await store.consumeAnalysisQuota(USER_ID, usageDate, 4), 4);
   check("날짜가 다르면 따로 센다", await store.consumeAnalysisQuota(USER_ID, "2026-09-23", 3), 1);
   check("사용자가 다르면 따로 센다", await store.consumeAnalysisQuota(OTHER_USER_ID, usageDate, 3), 1);
+  check("읽기만 하면 횟수가 그대로다", await store.getAnalysisQuotaUsage(USER_ID, usageDate), 4);
+  check("읽은 뒤에도 값이 그대로다", await store.getAnalysisQuotaUsage(USER_ID, usageDate), 4);
+  check("줄이 없는 날짜는 0이다", await store.getAnalysisQuotaUsage(USER_ID, "2026-09-24"), 0);
 
   // 정리 작업은 사용자 번호를 받지 않으므로 이 실행이 만든 줄만 남았는지 확인한 뒤에 돌립니다.
   const leftover = await store.listInterviews(USER_ID);

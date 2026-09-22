@@ -129,6 +129,16 @@ export interface SiftStore {
     usageDate: string,
     limit: number
   ): Promise<number | null>;
+  /**
+   * 그 날 이미 쓴 분석 횟수입니다. 아직 한 번도 안 돌렸으면 0입니다(이슈 #142).
+   *
+   * 늘리지 않고 읽기만 합니다. Repository 선택 화면이 분석을 시작하기 전에 남은 횟수를 보여 주므로
+   * 화면을 그리는 것만으로 횟수가 줄면 안 됩니다. `consumeAnalysisQuota`와 나눠 둔 이유입니다.
+   *
+   * 이 값으로 상한을 판정하지 않습니다. 판정은 `consumeAnalysisQuota`가 질의 안에서 합니다. 읽어서
+   * 비교하는 자리가 생기면 두 요청이 같은 값을 읽어 둘 다 통과합니다. 화면이 쓰는 안내용 값입니다.
+   */
+  getAnalysisQuotaUsage(githubUserId: number, usageDate: string): Promise<number>;
   /** 마지막으로 연 시각이 `before`보다 오래된 인터뷰를 지우고 지운 수를 돌려줍니다. */
   purgeInterviewsOpenedBefore(before: Date): Promise<number>;
   /**

@@ -452,6 +452,16 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
       return rows.length > 0 ? (rows[0].run_count as number) : null;
     },
 
+    /** 늘리지 않고 읽기만 합니다. 줄이 없으면 아직 한 번도 안 돌린 것이므로 0입니다(이슈 #142). */
+    async getAnalysisQuotaUsage(githubUserId: number, usageDate: string): Promise<number> {
+      const rows = await run(
+        `select run_count from analysis_usage
+          where github_user_id = $1::bigint and usage_date = $2::date`,
+        [githubUserId, usageDate]
+      );
+      return rows.length > 0 ? (rows[0].run_count as number) : 0;
+    },
+
     /** 정리 작업만 사용자 번호를 받지 않습니다. 부르는 자리는 `/api/cron/purge`입니다(이슈 #116). */
     async purgeInterviewsOpenedBefore(before: Date): Promise<number> {
       const rows = await run(

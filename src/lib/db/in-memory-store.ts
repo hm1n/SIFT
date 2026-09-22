@@ -236,6 +236,10 @@ export function createInMemoryStore(): SiftStore {
       return next;
     },
 
+    async getAnalysisQuotaUsage(githubUserId, usageDate) {
+      return quotas.get(`${githubUserId}:${usageDate}`) ?? 0;
+    },
+
     async purgeInterviewsOpenedBefore(before) {
       let purged = 0;
       for (const [id, interview] of interviews) {

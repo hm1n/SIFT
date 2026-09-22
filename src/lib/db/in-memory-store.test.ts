@@ -640,3 +640,35 @@ describe("하루 분석 횟수 상한", () => {
     expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3)).toBeNull();
   });
 });
+
+describe("오늘 쓴 분석 횟수 읽기", () => {
+  const TODAY = "2026-09-22";
+
+  it("한 번도 안 썼으면 0이다", async () => {
+    expect(await createInMemoryStore().getAnalysisQuotaUsage(OWNER_ID, TODAY)).toBe(0);
+  });
+
+  it("쓴 만큼을 돌려준다", async () => {
+    const store = createInMemoryStore();
+    await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3);
+    await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3);
+
+    expect(await store.getAnalysisQuotaUsage(OWNER_ID, TODAY)).toBe(2);
+  });
+
+  /** 화면을 그리는 것만으로 횟수가 줄면 안 됩니다. */
+  it("읽어도 횟수가 늘지 않는다", async () => {
+    const store = createInMemoryStore();
+    for (let i = 0; i < 5; i += 1) await store.getAnalysisQuotaUsage(OWNER_ID, TODAY);
+
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3)).toBe(1);
+  });
+
+  it("사용자와 날짜가 다르면 따로 센다", async () => {
+    const store = createInMemoryStore();
+    await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3);
+
+    expect(await store.getAnalysisQuotaUsage(OTHER_ID, TODAY)).toBe(0);
+    expect(await store.getAnalysisQuotaUsage(OWNER_ID, "2026-09-23")).toBe(0);
+  });
+});

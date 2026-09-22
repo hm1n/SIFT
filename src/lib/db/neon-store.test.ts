@@ -86,6 +86,7 @@ describe("Neon 저장 계층", () => {
       ["getInterview", (store) => store.getInterview(INTERVIEW_ID, OWNER_ID)],
       ["deleteInterview", (store) => store.deleteInterview(INTERVIEW_ID, OWNER_ID)],
       ["consumeAnalysisQuota", (store) => store.consumeAnalysisQuota(OWNER_ID, "2026-09-22", 3)],
+      ["getAnalysisQuotaUsage", (store) => store.getAnalysisQuotaUsage(OWNER_ID, "2026-09-22")],
     ];
 
     it.each(operations)("%s은 사용자 번호를 질의에 싣는다", async (_name, run) => {
@@ -682,5 +683,35 @@ describe("하루 분석 횟수 상한", () => {
     await expect(neonStore(execute).consumeAnalysisQuota(OWNER_ID, USAGE_DATE, 3)).rejects.toBeInstanceOf(
       DatabaseError
     );
+  });
+});
+
+describe("오늘 쓴 분석 횟수 읽기", () => {
+  const USAGE_DATE = "2026-09-22";
+
+  it("줄이 없으면 0이다", async () => {
+    const { execute } = fakeExecute([[]]);
+
+    expect(await neonStore(execute).getAnalysisQuotaUsage(OWNER_ID, USAGE_DATE)).toBe(0);
+  });
+
+  it("줄이 있으면 그 값을 돌려준다", async () => {
+    const { execute } = fakeExecute([[{ run_count: 2 }]]);
+
+    expect(await neonStore(execute).getAnalysisQuotaUsage(OWNER_ID, USAGE_DATE)).toBe(2);
+  });
+
+  /** 읽기만 해야 합니다. 쓰는 문장이 섞이면 화면을 그리는 것만으로 횟수가 줄어듭니다. */
+  it("쓰는 문장을 보내지 않는다", async () => {
+    const { execute, calls } = fakeExecute([[{ run_count: 1 }]]);
+
+    await neonStore(execute).getAnalysisQuotaUsage(OWNER_ID, USAGE_DATE);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].text).toContain("select");
+    for (const keyword of ["insert", "update", "delete"]) {
+      expect(calls[0].text.toLowerCase()).not.toContain(keyword);
+    }
+    expect(calls[0].params).toEqual([OWNER_ID, USAGE_DATE]);
   });
 });
