@@ -176,6 +176,12 @@ export const CANDIDATE_ROUTE_COPY = {
   stageBFailed: "최종 선별에 실패했습니다.",
   stageBTimeBudget: "최종 선별이 제한 시간 안에 끝나지 않았습니다.",
   stageASelectedNone: "1차 선별에서 경험 후보를 찾지 못했습니다.",
+  /**
+   * 하루 분석 횟수 상한에 닿았을 때입니다(이슈 #142). 언제 풀리는지는 응답의 `resetAt`이 실어 보내고
+   * 화면이 그 값으로 시각을 그립니다. 초기화 기준이 한국 자정이라 문구에서는 "내일"이라고만 말합니다.
+   */
+  dailyLimitExceeded: (limit: number) =>
+    `오늘 분석할 수 있는 ${limit}번을 모두 썼습니다. 내일 다시 분석할 수 있습니다.`,
 } as const;
 
 /**

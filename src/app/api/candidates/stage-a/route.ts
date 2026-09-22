@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { CANDIDATE_ROUTE_COPY } from "@/copy/candidates";
-import { getGitHubTokenFromRequest } from "@/lib/github/auth-session";
+import { getGitHubSessionFromRequest } from "@/lib/github/auth-session";
 import { GitHubFetchError } from "@/lib/github/errors";
 import { ExperienceCandidateOutputError } from "@/features/experience-candidates/errors";
 import type {
@@ -21,6 +21,13 @@ import {
 } from "@/features/experience-candidates/stage-a";
 import { modelFacingUnitId } from "@/features/experience-candidates/work-unit";
 import { resolveLlmTimeoutMs } from "@/features/experience-candidates/llm-provider";
+import {
+  analysisQuotaResetAt,
+  analysisUsageDate,
+  DAILY_ANALYSIS_LIMIT,
+} from "@/features/usage-limit/quota";
+import { neonStore } from "@/lib/db/neon-store";
+import type { SiftStore } from "@/lib/db/store";
 import { reportServerError } from "@/lib/sentry/server";
 
 export const runtime = "nodejs";
@@ -138,7 +145,8 @@ function errorResponse(error: unknown): Response {
 export async function handleStageA(
   request: NextRequest,
   generate?: GenerateStageA,
-  timeoutMs?: number
+  timeoutMs?: number,
+  store: SiftStore = neonStore()
 ): Promise<Response> {
   /**
    * 예산을 라우트 전체로 한 번만 잽니다.
@@ -152,7 +160,7 @@ export async function handleStageA(
   const totalBudgetMs = timeoutMs ?? resolveLlmTimeoutMs(STAGE_A_TIMEOUT_MS);
   const remainingBudgetMs = () => totalBudgetMs - (Date.now() - startedAt);
   try {
-    getGitHubTokenFromRequest(request);
+    const session = getGitHubSessionFromRequest(request);
     const declaredLength = Number(request.headers.get("content-length"));
     if (declaredLength > MAX_STAGE_A_BODY_BYTES) {
       return Response.json({ error: { kind: "body_too_large", message: CANDIDATE_ROUTE_COPY.bodyTooLarge } }, { status: 413 });
@@ -199,6 +207,43 @@ export async function handleStageA(
         },
       }, { status: 422 });
     }
+    /**
+     * 하루 분석 횟수 상한을 검사하고 한 번을 씁니다(이슈 #142).
+     *
+     * **요청 검증을 모두 통과한 뒤에 셉니다.** 형식이 어긋난 요청은 모델을 부르지 않아 비용이 없고,
+     * 그런 요청이 횟수를 먹으면 사용자가 아무것도 얻지 못한 채 상한에 닿습니다.
+     *
+     * **모델을 부르기 전에 셉니다.** 부른 뒤에 세면 그 사이에 들어온 요청이 함께 통과해 상한을
+     * 넘깁니다. 그 대가로 모델이 실패한 시도도 한 번으로 세어집니다. 실패한 호출도 입력 토큰을
+     * 소비하므로(`llm-wiki/wiki/2026-09-02-LLM-비용-산정.md` 7절) 비용이 든 것은 사실입니다.
+     *
+     * 라우트 안의 복구 호출(`selectWithRecovery`)은 따로 세지 않습니다. 사용자가 시작한 분석은
+     * 한 번이고 복구는 그 한 번을 끝내려는 시도입니다.
+     *
+     * 저장 계층이 실패하면 분석을 막습니다. 세지 못하는 동안 열어 두면 그 시간만큼 비용이 다시
+     * 무제한이 됩니다. 이 실패는 사용자 입력 문제가 아니라 실제 장애이므로 아래 `catch`가 잡아
+     * `server_error` 500으로 돌려주고 Sentry에도 남깁니다.
+     */
+    const usageDate = analysisUsageDate();
+    const used = await store.consumeAnalysisQuota(
+      session.githubUserId,
+      usageDate,
+      DAILY_ANALYSIS_LIMIT
+    );
+    if (used === null) {
+      // 사용자 입력 문제라 5xx로 만들지 않습니다. `reportServerError`를 지나지 않으므로 Sentry에도
+      // 남지 않습니다. 제공자 쪽 한도인 `llm_rate_limit`(503)과는 다른 종류입니다.
+      return Response.json({
+        error: {
+          kind: "usage_limit_exceeded",
+          message: CANDIDATE_ROUTE_COPY.dailyLimitExceeded(DAILY_ANALYSIS_LIMIT),
+          limit: DAILY_ANALYSIS_LIMIT,
+          resetAt: analysisQuotaResetAt(usageDate).toISOString(),
+          retryable: false,
+        },
+      }, { status: 429 });
+    }
+
     /**
      * 병합 결과를 요청 상한까지 자릅니다.
      *
