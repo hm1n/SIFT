@@ -694,17 +694,22 @@ function errorStatusCode(kind: string): string {
       return "ERROR / GITHUB";
     case "partial_failure":
       return "ERROR / PARTIAL";
+    case "usage_limit_exceeded":
+      return "ERROR / LIMIT";
     default:
       return "ERROR";
   }
 }
 
 function ErrorState({ error, retryLabel, onRetry, onReauthenticate, onSelectRepository }: ErrorStateProps) {
-  const action = error.recovery === "reauthenticate"
-    ? { label: ANALYSIS_COPY.logInAgain, onClick: onReauthenticate }
-    : error.recovery === "select_repository"
-      ? { label: ANALYSIS_COPY.chooseAnother, onClick: onSelectRepository }
-      : { label: retryLabel, onClick: onRetry };
+  // `wait`는 지금 할 수 있는 일이 없는 갈래라 동작 버튼을 그리지 않습니다(이슈 #142).
+  const action = error.recovery === "wait"
+    ? undefined
+    : error.recovery === "reauthenticate"
+      ? { label: ANALYSIS_COPY.logInAgain, onClick: onReauthenticate }
+      : error.recovery === "select_repository"
+        ? { label: ANALYSIS_COPY.chooseAnother, onClick: onSelectRepository }
+        : { label: retryLabel, onClick: onRetry };
   return (
     <StatusScreen
       kind="error"

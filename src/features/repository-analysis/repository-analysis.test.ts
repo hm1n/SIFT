@@ -471,6 +471,7 @@ describe("toCandidateGenerationError", () => {
     ["unrelated_sha", "llm_hallucination_rejected", "retry"],
     ["unknown_file_path", "llm_hallucination_rejected", "retry"],
     ["body_too_large", "request_too_large", "select_repository"],
+    ["usage_limit_exceeded", "usage_limit_exceeded", "wait"],
     ["fetch_network", "network", "retry"],
   ] as const)("%s를 %s 오류와 %s 복구로 변환한다", (serverKind, kind, recovery) => {
     const error = new CandidateRequestError("stage_a", serverKind, "서버 메시지입니다.");
@@ -490,6 +491,25 @@ describe("toCandidateGenerationError", () => {
       causeKind,
       recovery,
     });
+  });
+
+  /**
+   * 하루 분석 횟수 상한입니다(이슈 #142). 서버가 보낸 문구를 그대로 쓰지 않고 화면이 소유한 문구를
+   * 씁니다. 이 종류는 화면이 무엇을 지금 할 수 있는지까지 함께 말해야 합니다.
+   */
+  it("분석 횟수 상한은 화면 문구를 쓰고 다시 시도를 권하지 않는다", () => {
+    const error = new CandidateRequestError("stage_a", "usage_limit_exceeded", "서버 메시지입니다.", {
+      retryable: false,
+    });
+
+    const mapped = toCandidateGenerationError(error, "stage_a");
+
+    expect(mapped.recovery).toBe("wait");
+    expect(mapped.message).not.toContain("서버 메시지입니다.");
+    expect(mapped.title).toContain("오늘의 분석 횟수를 모두 사용했습니다");
+    // 지금 다시 시도하라고 말하지 않습니다. 언제 풀리는지와 지금 할 수 있는 일을 말합니다.
+    expect(mapped.message).toContain("내일");
+    expect(mapped.message).toContain("저장된 결과");
   });
 
   it("세션 만료(unauthorized)는 기존 인증 재진행 안내로 복구한다", () => {

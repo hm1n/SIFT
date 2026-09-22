@@ -699,3 +699,34 @@ describe("fetchStageBCandidatesFromApi", () => {
     });
   });
 });
+
+/**
+ * 하루 분석 횟수 상한입니다(이슈 #142). 화이트리스트에 없으면 `server_error`로 접혀 화면이 일반
+ * 오류와 다시 시도 버튼을 그립니다. 종류가 끝까지 살아 오는지 봅니다.
+ */
+describe("분석 횟수 상한 응답", () => {
+  it("429를 server_error로 접지 않고 종류를 그대로 전달한다", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(
+          {
+            error: {
+              kind: "usage_limit_exceeded",
+              message: "오늘 분석할 수 있는 3번을 모두 썼습니다.",
+              limit: 3,
+              resetAt: "2026-09-22T15:00:00.000Z",
+              retryable: false,
+            },
+          },
+          429
+        )
+      )
+    );
+
+    await expectRequestError(fetchStageACandidatesFromApi([COMMIT], []), {
+      kind: "usage_limit_exceeded",
+      retryable: false,
+    });
+  });
+});

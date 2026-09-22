@@ -87,7 +87,13 @@ export type EmptyKind =
  */
 export type AnalysisEmptyKind = EmptyKind | "no_final_candidates";
 
-export type RecoveryAction = "retry" | "reauthenticate" | "select_repository";
+/**
+ * `wait`는 사용자가 지금 할 수 있는 일이 없는 경우입니다(이슈 #142). 하루 분석 횟수 상한이 이
+ * 갈래의 유일한 사례입니다. 나머지 셋 중 어느 것도 맞지 않습니다. 다시 시도하면 또 막히고, 다시
+ * 로그인해도 같은 사용자이며, 다른 Repository를 골라도 상한은 사용자 단위입니다. 화면은 이
+ * 갈래에서 동작 버튼을 그리지 않습니다.
+ */
+export type RecoveryAction = "retry" | "reauthenticate" | "select_repository" | "wait";
 
 /**
  * 이슈 #18이 구분하는 후보 생성 오류 4종과 요청 크기 초과, 그리고 서버 계약 위반입니다.
@@ -101,6 +107,7 @@ export type CandidateGenerationErrorKind =
   | "llm_hallucination_rejected"
   | "diff_refetch_failure"
   | "request_too_large"
+  | "usage_limit_exceeded"
   | "contract_violation";
 
 export interface AnalysisError {
@@ -466,6 +473,13 @@ export function toCandidateGenerationError(error: unknown, stage: CandidateStage
         title: CANDIDATE_GENERATION_ERROR_COPY.llmCallFailure.title,
         message: CANDIDATE_GENERATION_ERROR_COPY.llmCallFailure.message(error.message),
         recovery: "retry",
+      };
+    case "usage_limit_exceeded":
+      // 다시 시도로 풀리지 않습니다. 해제 시점은 문구가 말하고 동작 버튼은 그리지 않습니다.
+      return {
+        kind: "usage_limit_exceeded",
+        ...CANDIDATE_GENERATION_ERROR_COPY.usageLimitExceeded,
+        recovery: "wait",
       };
     case "body_too_large":
       return {
