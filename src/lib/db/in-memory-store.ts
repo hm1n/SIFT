@@ -252,6 +252,10 @@ export function createInMemoryStore(): SiftStore {
         analyses.delete(id);
         deleted += 1;
       }
+      // 실제 구현이 따로 지우는 표입니다. 외래 키가 없어 cascade 대상이 아닙니다(이슈 #142).
+      for (const key of quotas.keys()) {
+        if (key.startsWith(`${githubUserId}:`)) quotas.delete(key);
+      }
       return deleted;
     },
 

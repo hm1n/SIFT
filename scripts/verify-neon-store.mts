@@ -327,7 +327,12 @@ async function main(): Promise<void> {
     await store.saveAnalysis({ ...leavingAnalysis, repoName: "SIFT-후보만" });
     const keptId = await store.saveAnalysis({ ...leavingAnalysis, githubUserId: OTHER_USER_ID });
 
+    // 횟수 줄도 함께 사라져야 합니다(이슈 #142). 외래 키가 없어 cascade가 닿지 않는 표입니다.
+    await store.consumeAnalysisQuota(leavingUserId, "2026-09-22", 3);
+    check("탈퇴 전에는 횟수 줄이 있다", await store.getAnalysisQuotaUsage(leavingUserId, "2026-09-22"), 1);
+
     check("탈퇴는 그 사용자의 분석을 모두 지운다", await store.deleteUserData(leavingUserId), 2);
+    check("탈퇴가 횟수 줄도 지운다", await store.getAnalysisQuotaUsage(leavingUserId, "2026-09-22"), 0);
     /*
      * 인터뷰 행을 직접 셉니다(PR #147 리뷰 2라운드). `getInterview`와 `listInterviews`는 소유자를
      * 보려고 `repository_analysis`를 join하므로, 분석만 지워지고 인터뷰 행이 남은 상태에서도 아무

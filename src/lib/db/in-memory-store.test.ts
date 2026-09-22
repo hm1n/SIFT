@@ -726,3 +726,55 @@ describe("오늘 쓴 분석 횟수 읽기", () => {
     expect(await store.getAnalysisQuotaUsage(OWNER_ID, "2026-09-23")).toBe(0);
   });
 });
+
+describe("회원 탈퇴와 분석 횟수", () => {
+  const TODAY = "2026-09-22";
+
+  /**
+   * `analysis_usage`에는 외래 키가 없어 cascade가 닿지 않습니다(이슈 #142). 탈퇴할 때 함께 지우지
+   * 않으면 탈퇴한 사용자의 GitHub 번호가 그 표에 남습니다.
+   */
+  it("탈퇴하면 그 사용자의 횟수 줄이 사라진다", async () => {
+    const store = createInMemoryStore();
+    await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3);
+    await store.consumeAnalysisQuota(OWNER_ID, "2026-09-23", 3);
+
+    await store.deleteUserData(OWNER_ID);
+
+    expect(await store.getAnalysisQuotaUsage(OWNER_ID, TODAY)).toBe(0);
+    expect(await store.getAnalysisQuotaUsage(OWNER_ID, "2026-09-23")).toBe(0);
+  });
+
+  it("남의 횟수 줄은 남는다", async () => {
+    const store = createInMemoryStore();
+    await store.consumeAnalysisQuota(OTHER_ID, TODAY, 3);
+
+    await store.deleteUserData(OWNER_ID);
+
+    expect(await store.getAnalysisQuotaUsage(OTHER_ID, TODAY)).toBe(1);
+  });
+
+  /**
+   * 사용자 번호가 접두사로 겹치는 경우입니다. 키를 `번호:날짜`로 이어 붙이므로 `123`으로 지울 때
+   * `1234`의 줄까지 지워지면 안 됩니다.
+   */
+  it("번호가 접두사로 겹치는 남의 줄을 지우지 않는다", async () => {
+    const store = createInMemoryStore();
+    await store.consumeAnalysisQuota(12, TODAY, 3);
+    await store.consumeAnalysisQuota(123, TODAY, 3);
+
+    await store.deleteUserData(12);
+
+    expect(await store.getAnalysisQuotaUsage(12, TODAY)).toBe(0);
+    expect(await store.getAnalysisQuotaUsage(123, TODAY)).toBe(1);
+  });
+
+  /** 저장한 적 없는 사용자가 탈퇴해도 오류가 아닙니다. 돌려주는 수는 분석 수 그대로입니다. */
+  it("지울 것이 없어도 0을 돌려준다", async () => {
+    const store = createInMemoryStore();
+    await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3);
+
+    expect(await store.deleteUserData(OWNER_ID)).toBe(0);
+    expect(await store.getAnalysisQuotaUsage(OWNER_ID, TODAY)).toBe(0);
+  });
+});

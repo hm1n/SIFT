@@ -636,16 +636,33 @@ describe("Neon 저장 계층", () => {
      * 트랜잭션으로 갈라져 앞 문장만 성공한 상태가 생깁니다. 그때 남는 것이 근거 스냅샷을 든
      * 분석입니다.
      */
-    it("회원 탈퇴는 분석만 지우고 인터뷰는 cascade에 맡긴다", async () => {
+    it("회원 탈퇴는 분석을 한 문장으로 지우고 인터뷰는 cascade에 맡긴다", async () => {
       const { execute, calls } = fakeExecute([[{ id: "a" }, { id: "b" }]]);
 
       expect(await neonStore(execute).deleteUserData(OWNER_ID)).toBe(2);
-      expect(calls).toHaveLength(1);
       expect(calls[0].text).toContain("delete from repository_analysis");
       expect(calls[0].text).not.toContain("interview_session");
       expect(calls[0].params).toEqual([OWNER_ID]);
     });
 
+    /**
+     * `analysis_usage`에는 외래 키가 없어 cascade가 닿지 않습니다(이슈 #142). 이 문장이 없으면
+     * 탈퇴한 사용자의 GitHub 번호가 그 표에 남습니다.
+     *
+     * 순서도 함께 봅니다. 근거 스냅샷을 든 분석이 남는 쪽이 더 위험하므로 먼저 지웁니다.
+     */
+    it("회원 탈퇴가 분석 횟수 줄도 지운다", async () => {
+      const { execute, calls } = fakeExecute([[{ id: "a" }], []]);
+
+      await neonStore(execute).deleteUserData(OWNER_ID);
+
+      expect(calls).toHaveLength(2);
+      expect(calls[0].text).toContain("delete from repository_analysis");
+      expect(calls[1].text).toContain("delete from analysis_usage");
+      expect(calls[1].params).toEqual([OWNER_ID]);
+    });
+
+    /** 횟수 줄은 빈 계정을 가르는 판단에 들어가지 않습니다. 돌려주는 수는 분석 수 그대로입니다. */
     it("지울 분석이 없으면 0이다", async () => {
       const { execute } = fakeExecute([[]]);
       expect(await neonStore(execute).deleteUserData(OWNER_ID)).toBe(0);
