@@ -111,6 +111,24 @@ export interface SiftStore {
   completeInterview(id: string, githubUserId: number): Promise<boolean>;
   /** 지운 것이 없으면 `false`입니다. 없는 경우와 남의 것인 경우를 구분하지 않습니다. */
   deleteInterview(id: string, githubUserId: number): Promise<boolean>;
+  /**
+   * 그 날의 분석 실행 횟수를 하나 올리고 올린 뒤의 값을 돌려줍니다. 이미 상한에 닿아 있으면 올리지
+   * 않고 `null`입니다(이슈 #142).
+   *
+   * 검사와 증가를 한 연산으로 둡니다. 읽어서 비교한 뒤에 올리는 방식이면 두 요청이 같은 값을 읽어
+   * 둘 다 통과하고 상한을 넘깁니다. 블록 버전 판정을 `update ... where`에 넣은 것과 같은 이유입니다.
+   *
+   * `usageDate`는 한국 날짜이고 호출하는 쪽이 `analysisUsageDate()`로 만들어 넘깁니다. 저장 계층이
+   * 스스로 "오늘"을 정하지 않는 이유는 테스트가 날짜 경계를 시계 조작 없이 확인할 수 있어야 하기
+   * 때문입니다.
+   *
+   * `limit`도 받습니다. 상수를 저장 계층이 직접 참조하면 상한을 바꿀 때 값이 두 곳에 생깁니다.
+   */
+  consumeAnalysisQuota(
+    githubUserId: number,
+    usageDate: string,
+    limit: number
+  ): Promise<number | null>;
   /** 마지막으로 연 시각이 `before`보다 오래된 인터뷰를 지우고 지운 수를 돌려줍니다. */
   purgeInterviewsOpenedBefore(before: Date): Promise<number>;
   /**

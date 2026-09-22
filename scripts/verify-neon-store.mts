@@ -235,6 +235,19 @@ async function main(): Promise<void> {
   check("주인은 지울 수 있다", await store.deleteInterview(interviewId, USER_ID), true);
   check("두 번 지우면 false다", await store.deleteInterview(interviewId, USER_ID), false);
 
+  /*
+   * 하루 분석 횟수 상한입니다(이슈 #142). 검사와 증가가 한 문장이므로 그 문장이 실제 Postgres에서
+   * 도는지, 그리고 상한에 닿았을 때 돌려주는 줄이 정말 없는지는 여기서만 확인할 수 있습니다.
+   */
+  const usageDate = "2026-09-22";
+  check("첫 분석은 1을 돌려준다", await store.consumeAnalysisQuota(USER_ID, usageDate, 3), 1);
+  check("두 번째는 2다", await store.consumeAnalysisQuota(USER_ID, usageDate, 3), 2);
+  check("세 번째는 3이다", await store.consumeAnalysisQuota(USER_ID, usageDate, 3), 3);
+  check("상한을 넘기면 null이다", await store.consumeAnalysisQuota(USER_ID, usageDate, 3), null);
+  check("막힌 호출은 횟수를 올리지 않는다", await store.consumeAnalysisQuota(USER_ID, usageDate, 4), 4);
+  check("날짜가 다르면 따로 센다", await store.consumeAnalysisQuota(USER_ID, "2026-09-23", 3), 1);
+  check("사용자가 다르면 따로 센다", await store.consumeAnalysisQuota(OTHER_USER_ID, usageDate, 3), 1);
+
   // 정리 작업은 사용자 번호를 받지 않으므로 이 실행이 만든 줄만 남았는지 확인한 뒤에 돌립니다.
   const leftover = await store.listInterviews(USER_ID);
   check("지운 뒤 목록이 비어 있다", leftover.length, 0);
@@ -258,6 +271,16 @@ async function main(): Promise<void> {
     [madeAnalyses]
   );
   check("만든 분석 줄을 지웠다", rest[0].n, 0);
+
+  // 횟수 줄은 분석과 이어져 있지 않아 cascade로 사라지지 않습니다. 이 실행이 쓴 두 사용자 번호로 지웁니다.
+  await sql.query("delete from analysis_usage where github_user_id = any($1::bigint[])", [
+    [USER_ID, OTHER_USER_ID],
+  ]);
+  const usageLeft = await sql.query(
+    "select count(*)::int as n from analysis_usage where github_user_id = any($1::bigint[])",
+    [[USER_ID, OTHER_USER_ID]]
+  );
+  check("만든 횟수 줄을 지웠다", usageLeft[0].n, 0);
 
   console.log(failures === 0 ? "\n모두 통과했습니다." : `\n${failures}건 실패했습니다.`);
   process.exitCode = failures === 0 ? 0 : 1;

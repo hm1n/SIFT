@@ -85,6 +85,7 @@ describe("Neon 저장 계층", () => {
       ["completeInterview", (store) => store.completeInterview(INTERVIEW_ID, OWNER_ID)],
       ["getInterview", (store) => store.getInterview(INTERVIEW_ID, OWNER_ID)],
       ["deleteInterview", (store) => store.deleteInterview(INTERVIEW_ID, OWNER_ID)],
+      ["consumeAnalysisQuota", (store) => store.consumeAnalysisQuota(OWNER_ID, "2026-09-22", 3)],
     ];
 
     it.each(operations)("%s은 사용자 번호를 질의에 싣는다", async (_name, run) => {
@@ -627,5 +628,59 @@ describe("Neon 저장 계층", () => {
       const { execute } = fakeExecute([[{ id: "a" }, { id: "b" }]]);
       expect(await neonStore(execute).purgeInterviewsOpenedBefore(new Date())).toBe(2);
     });
+  });
+});
+
+describe("하루 분석 횟수 상한", () => {
+  const USAGE_DATE = "2026-09-22";
+
+  /**
+   * 검사와 증가가 한 문장이어야 합니다(이슈 #142). 읽고 나서 비교하면 두 요청이 같은 값을 읽어 둘 다
+   * 통과합니다. 질의를 몇 번 보내는지와 조건이 질의 안에 들어 있는지를 봅니다.
+   */
+  it("검사와 증가를 질의 한 번으로 끝낸다", async () => {
+    const { execute, calls } = fakeExecute([[{ run_count: 1 }]]);
+
+    await neonStore(execute).consumeAnalysisQuota(OWNER_ID, USAGE_DATE, 3);
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0].text).toContain("on conflict");
+    // 상한 비교가 질의 조건에 들어 있어야 합니다. 코드에서 비교하면 동시 요청을 막지 못합니다.
+    expect(calls[0].text).toContain("where analysis_usage.run_count <");
+    expect(calls[0].params).toEqual([OWNER_ID, USAGE_DATE, 3]);
+  });
+
+  it("돌려받은 줄의 횟수를 그대로 돌려준다", async () => {
+    const { execute } = fakeExecute([[{ run_count: 2 }]]);
+
+    expect(await neonStore(execute).consumeAnalysisQuota(OWNER_ID, USAGE_DATE, 3)).toBe(2);
+  });
+
+  /** 상한에 닿으면 `do update`의 조건이 거짓이라 돌려주는 줄이 없습니다. 그것을 초과로 읽습니다. */
+  it("돌려받은 줄이 없으면 상한 초과로 읽는다", async () => {
+    const { execute } = fakeExecute([[]]);
+
+    expect(await neonStore(execute).consumeAnalysisQuota(OWNER_ID, USAGE_DATE, 3)).toBeNull();
+  });
+
+  /**
+   * 줄이 아직 없으면 `on conflict` 가지로 가지 않아 상한 조건을 보지 않습니다. 상한 0을 질의에
+   * 맡기면 한 번이 통과합니다. 메모리 구현과 같은 자리에서 막는지 봅니다.
+   */
+  it("상한이 0 이하이면 질의하지 않고 막는다", async () => {
+    const { execute, calls } = fakeExecute([[{ run_count: 1 }]]);
+
+    expect(await neonStore(execute).consumeAnalysisQuota(OWNER_ID, USAGE_DATE, 0)).toBeNull();
+    expect(calls).toHaveLength(0);
+  });
+
+  it("드라이버 오류는 타입이 있는 오류로 바꾼다", async () => {
+    const execute: SqlExecutor = vi.fn(async () => {
+      throw new Error("connection reset");
+    });
+
+    await expect(neonStore(execute).consumeAnalysisQuota(OWNER_ID, USAGE_DATE, 3)).rejects.toBeInstanceOf(
+      DatabaseError
+    );
   });
 });

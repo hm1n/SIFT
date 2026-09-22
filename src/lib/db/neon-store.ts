@@ -423,6 +423,35 @@ export function neonStore(execute: SqlExecutor = defaultExecute): SiftStore {
       return rows.length > 0;
     },
 
+    /**
+     * 검사와 증가를 한 문장에 둡니다(이슈 #142). 드라이버가 HTTP 한 번에 한 문장을 보내고 그 한
+     * 문장이 한 트랜잭션이므로, 이 문장 하나가 곧 원자적인 증가입니다.
+     *
+     * 줄이 없으면 `insert`가 1을 넣고 1을 돌려줍니다. 줄이 있고 아직 상한 아래이면 `do update`가
+     * 1을 올리고 올린 값을 돌려줍니다. 이미 상한에 닿아 있으면 `where`가 거짓이라 아무것도 쓰지
+     * 않고 돌려주는 줄도 없습니다. 호출하는 쪽은 줄이 없는 것을 상한 초과로 읽습니다.
+     *
+     * `limit`이 0 이하인 경우만 이 문장으로 막지 못합니다. 줄이 아직 없으면 `on conflict` 가지로
+     * 가지 않아 조건을 보지 않기 때문입니다. 그 경우는 질의 전에 막습니다.
+     */
+    async consumeAnalysisQuota(
+      githubUserId: number,
+      usageDate: string,
+      limit: number
+    ): Promise<number | null> {
+      if (limit <= 0) return null;
+      const rows = await run(
+        `insert into analysis_usage (github_user_id, usage_date, run_count)
+         values ($1::bigint, $2::date, 1)
+         on conflict (github_user_id, usage_date)
+         do update set run_count = analysis_usage.run_count + 1
+           where analysis_usage.run_count < $3::int
+         returning run_count`,
+        [githubUserId, usageDate, limit]
+      );
+      return rows.length > 0 ? (rows[0].run_count as number) : null;
+    },
+
     /** 정리 작업만 사용자 번호를 받지 않습니다. 부르는 자리는 `/api/cron/purge`입니다(이슈 #116). */
     async purgeInterviewsOpenedBefore(before: Date): Promise<number> {
       const rows = await run(

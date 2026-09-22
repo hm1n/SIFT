@@ -574,3 +574,69 @@ describe("메모리 저장 계층", () => {
     });
   });
 });
+
+describe("하루 분석 횟수 상한", () => {
+  const TODAY = "2026-09-22";
+  const TOMORROW = "2026-09-23";
+
+  it("상한까지는 통과하고 쓴 횟수를 돌려준다", async () => {
+    const store = createInMemoryStore();
+
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3)).toBe(1);
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3)).toBe(2);
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3)).toBe(3);
+  });
+
+  /** 경계값입니다. 상한과 같아진 다음 호출부터 막혀야 합니다. */
+  it("상한을 채운 뒤에는 null이고 횟수가 더 오르지 않는다", async () => {
+    const store = createInMemoryStore();
+    for (let i = 0; i < 3; i += 1) await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3);
+
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3)).toBeNull();
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3)).toBeNull();
+
+    // 막힌 호출이 횟수를 올렸다면 상한을 1 올려도 여전히 막힙니다.
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, 4)).toBe(4);
+  });
+
+  it("날짜가 바뀌면 다시 상한만큼 쓸 수 있다", async () => {
+    const store = createInMemoryStore();
+    for (let i = 0; i < 3; i += 1) await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3);
+
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TOMORROW, 3)).toBe(1);
+  });
+
+  it("사용자마다 따로 센다", async () => {
+    const store = createInMemoryStore();
+    for (let i = 0; i < 3; i += 1) await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3);
+
+    expect(await store.consumeAnalysisQuota(OTHER_ID, TODAY, 3)).toBe(1);
+  });
+
+  /**
+   * 실제 구현의 `on conflict ... where`는 줄이 아직 없을 때 조건을 보지 않아 상한 0에서도 한 번을
+   * 통과시킵니다. 두 구현이 같은 판정을 하도록 양쪽에서 질의 전에 막습니다.
+   */
+  it("상한이 0 이하이면 처음부터 막는다", async () => {
+    const store = createInMemoryStore();
+
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, 0)).toBeNull();
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, -1)).toBeNull();
+  });
+
+  /**
+   * 90일 자동 정리가 세는 값을 지우면 안 됩니다(이슈 #142 Constraints). 분석과 인터뷰를 모두 지운
+   * 뒤에도 횟수가 남아 있는지 봅니다. 저장된 분석 줄을 세는 구현이었다면 여기서 초기화됩니다.
+   */
+  it("90일 정리가 돌아도 쓴 횟수가 남는다", async () => {
+    const store = createInMemoryStore();
+    await seed(store);
+    for (let i = 0; i < 3; i += 1) await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3);
+
+    const future = new Date(Date.now() + 91 * 86_400_000);
+    await store.purgeInterviewsOpenedBefore(future);
+    await store.purgeAnalysesWithoutInterviews(future);
+
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3)).toBeNull();
+  });
+});
