@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SESSION_PATH } from "@/lib/github/auth-paths";
 import { GitHubFetchError } from "@/lib/github/errors";
 import type { RepositorySummary } from "@/lib/github/types";
+import type { AnalysisUsage } from "@/features/usage-limit/usage-client";
 import { RepositorySelectScreen } from "./repository-select-screen";
 
 const routerMock = { push: vi.fn(), refresh: vi.fn(), replace: vi.fn() };
@@ -19,15 +20,35 @@ const REPOSITORIES: RepositorySummary[] = [
   { id: 3, owner: "shinhm1", name: "portfolio", visibility: "public", language: null, pushedAt: "2026-09-11T08:00:00Z" },
 ];
 
-function renderScreen(fetchRepositories: () => Promise<RepositorySummary[]>, onAnalyze = vi.fn()) {
-  const view = render(<RepositorySelectScreen onAnalyze={onAnalyze} fetchRepositories={fetchRepositories} now={() => NOW} />);
+/** 기본값은 횟수를 읽지 못한 경우입니다. 안내 한 줄이 접히고 나머지 동작은 그대로입니다. */
+function renderScreen(
+  fetchRepositories: () => Promise<RepositorySummary[]>,
+  onAnalyze = vi.fn(),
+  fetchUsage: () => Promise<AnalysisUsage | null> = () => Promise.resolve(null)
+) {
+  const view = render(
+    <RepositorySelectScreen
+      onAnalyze={onAnalyze}
+      fetchRepositories={fetchRepositories}
+      now={() => NOW}
+      fetchUsage={fetchUsage}
+    />
+  );
   return { ...view, onAnalyze };
 }
 
-async function renderReady(repositories = REPOSITORIES, onAnalyze = vi.fn()) {
-  const view = renderScreen(() => Promise.resolve(repositories), onAnalyze);
+async function renderReady(
+  repositories = REPOSITORIES,
+  onAnalyze = vi.fn(),
+  fetchUsage?: () => Promise<AnalysisUsage | null>
+) {
+  const view = renderScreen(() => Promise.resolve(repositories), onAnalyze, fetchUsage);
   await screen.findByRole("heading", { name: "분석할 Repository를 선택하세요." });
   return view;
+}
+
+function usage(used: number, limit = 3): AnalysisUsage {
+  return { used, limit, resetAt: "2026-09-12T15:00:00.000Z" };
 }
 
 beforeEach(() => {
@@ -255,5 +276,75 @@ describe("RepositorySelectScreen 라디오 그룹 키보드 동작", () => {
 
     fireEvent.keyDown(screen.getByRole("radio", { name: /Kori_Front_MVP2/ }), { key: "ArrowLeft" });
     expect(first).toHaveAttribute("aria-checked", "true");
+  });
+});
+
+/**
+ * 하루 분석 횟수 상한 안내입니다(이슈 #142). 디자인 파일 `RepoSelectScreen`의 푸터 두 번째 줄입니다.
+ */
+describe("RepositorySelectScreen 하루 분석 횟수", () => {
+  it("남은 횟수가 있으면 쓴 횟수를 알린다", async () => {
+    await renderReady(REPOSITORIES, vi.fn(), () => Promise.resolve(usage(2)));
+
+    expect(await screen.findByText("오늘 분석 2/3회 사용")).toBeInTheDocument();
+  });
+
+  it("한 번도 안 썼으면 0회로 알린다", async () => {
+    await renderReady(REPOSITORIES, vi.fn(), () => Promise.resolve(usage(0)));
+
+    expect(await screen.findByText("오늘 분석 0/3회 사용")).toBeInTheDocument();
+  });
+
+  it("상한에 닿으면 해제 시점을 알리고 분석하기를 막는다", async () => {
+    const { onAnalyze } = await renderReady(REPOSITORIES, vi.fn(), () => Promise.resolve(usage(3)));
+    await screen.findByText("오늘의 분석 횟수를 모두 사용했습니다. 내일 다시 시도해주세요.");
+
+    // 저장소를 골라도 열리지 않습니다. 고르지 않았을 때만 막히는 것과 갈라 봅니다.
+    fireEvent.click(screen.getByRole("radio", { name: /Andbread_Frontend/ }));
+    const analyze = screen.getByRole("button", { name: /분석하기/ });
+
+    expect(analyze).toBeDisabled();
+    fireEvent.click(analyze);
+    expect(onAnalyze).not.toHaveBeenCalled();
+  });
+
+  /**
+   * 상한을 넘겨 저장된 값이 상한보다 클 수 있습니다. 같음만 보면 그 경우가 새어 나갑니다.
+   */
+  it("저장된 횟수가 상한보다 크면 그대로 막는다", async () => {
+    await renderReady(REPOSITORIES, vi.fn(), () => Promise.resolve(usage(5)));
+
+    expect(await screen.findByText("오늘의 분석 횟수를 모두 사용했습니다. 내일 다시 시도해주세요.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /분석하기/ })).toBeDisabled();
+  });
+
+  /**
+   * 횟수를 읽지 못한 것을 막힌 것으로 보면 조회가 한 번 실패했다는 이유로 아직 횟수가 남은
+   * 사용자까지 분석을 시작하지 못합니다. 상한은 Stage A 라우트가 집행합니다.
+   */
+  it("횟수를 읽지 못하면 안내를 접고 분석은 막지 않는다", async () => {
+    const { onAnalyze } = await renderReady(REPOSITORIES, vi.fn(), () => Promise.resolve(null));
+    fireEvent.click(screen.getByRole("radio", { name: /Andbread_Frontend/ }));
+
+    expect(screen.queryByText(/오늘 분석/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/모두 사용했습니다/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /분석하기/ }));
+    expect(onAnalyze).toHaveBeenCalledTimes(1);
+  });
+
+  it("횟수를 읽는 동안에는 안내를 그리지 않는다", async () => {
+    await renderReady(REPOSITORIES, vi.fn(), () => new Promise(() => {}));
+
+    expect(screen.queryByText(/오늘 분석/)).not.toBeInTheDocument();
+  });
+
+  /** 목록 조회와 따로 읽습니다. 한쪽 실패가 다른 쪽 화면을 바꾸면 안 됩니다. */
+  it("목록 조회가 실패해도 횟수 조회를 이유로 화면이 갈리지 않는다", async () => {
+    const fetchUsage = vi.fn(() => Promise.resolve(usage(1)));
+    renderScreen(() => Promise.reject(new GitHubFetchError("server_error", "x")), vi.fn(), fetchUsage);
+
+    await screen.findByText(/ERROR \/ GITHUB/);
+    expect(screen.queryByText(/오늘 분석/)).not.toBeInTheDocument();
   });
 });
