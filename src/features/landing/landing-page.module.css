@@ -1,0 +1,516 @@
+/*
+ * 비로그인 `/`의 랜딩입니다. 레퍼런스 `App.tsx`의 `LandingPage`를 옮겼습니다.
+ *
+ * 레퍼런스의 `max-w-6xl mx-auto px-8`은 1152px 폭에 좌우 32px 여백입니다. `SiteFooter`가 이미 같은
+ * 값을 쓰고 있어 푸터와 본문의 좌우 선이 맞습니다. 이 파일에서는 `.inner`가 그 규칙입니다.
+ *
+ * 색은 토큰이 있는 것만 토큰을 씁니다. 자리가 없는 neutral 계열(neutral-600 `#525252`,
+ * neutral-700 `#404040`)은 `button.module.css`와 같이 리터럴로 둡니다.
+ */
+
+/*
+ * body가 flex column이고 헤더와 푸터가 고정 높이라, 본문이 `flex: 1`로 남은 높이를 받습니다.
+ * 랜딩은 뷰포트보다 길어서 body가 스크롤합니다. `globals.css`의 body 주석이 적어 둔 경로입니다.
+ */
+.landing {
+  flex: 1;
+  background: var(--color-card);
+}
+
+.inner {
+  max-width: 1152px;
+  margin: 0 auto;
+  padding: 0 32px;
+}
+
+/*
+ * 섹션 라벨입니다. Hero 태그라인과 세 섹션의 제목이 같은 모양입니다.
+ *
+ * mono가 아니라 sans입니다. 레퍼런스가 이 자리에 `font-mono`가 아니라 `font-ui`를 쓰고, KO에서
+ * `font-ui`는 Pretendard입니다. mono로 두면 `핵심 제품 모델`처럼 한국어가 들어오는 라벨이 Geist
+ * Mono에 한글 글리프가 없어 대체 글꼴로 떨어지고, 거기에 `0.1em` 자간까지 붙어 글자가 흩어집니다.
+ * 디자인 개편 backlog 29번이 적어 둔 문제와 같은 자리입니다. 아래 `.stepLabel`·`.columnLabel`·
+ * `.sampleTag`는 값이 영어 라벨이라 mono로 남습니다.
+ *
+ * 색은 레퍼런스의 neutral-400(`--color-foreground-faint`)이 아니라 한 단계 진한 회색입니다. 그
+ * 값은 흰 배경에서 대비가 약 2.5:1이라 `globals.css`가 "읽어야 하는 글자에는 쓰지 않는다"고 적어
+ * 둔 색이고, 이 자리의 셋은 섹션 제목(`h2`)입니다. `site-footer.module.css`가 같은 이유로 링크
+ * 색을 올렸습니다.
+ */
+.eyebrow {
+  font-family: var(--font-sans);
+  font-size: var(--label-size-sm);
+  font-weight: 400;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+/* ── Hero ────────────────────────────────────────────────── */
+
+.hero {
+  max-width: 1152px;
+  margin: 0 auto;
+  padding: 80px 32px 48px;
+  display: grid;
+  grid-template-columns: 1fr 200px;
+  gap: 48px;
+  align-items: start;
+}
+
+.heroCopy {
+  display: grid;
+  gap: 32px;
+  justify-items: start;
+}
+
+.headline {
+  margin-top: -12px;
+  font-size: 2.5rem;
+  font-weight: 600;
+  line-height: 1.12;
+  letter-spacing: -0.025em;
+  color: var(--color-foreground);
+}
+
+.subtext {
+  margin-top: -12px;
+  max-width: 640px;
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--color-muted-foreground);
+}
+
+/* Hero와 마지막 CTA가 같은 크기입니다. 로그인 카드의 버튼(40px)보다 조금 작고 좌우가 넓습니다. */
+.cta {
+  min-height: 40px;
+  padding: 0 20px;
+  gap: 10px;
+  font-size: 14px;
+}
+
+/*
+ * Hero 오른쪽의 큰 마크입니다. 장식이라 좁은 화면에서는 뺍니다. 자리를 지키면 본문 폭만 좁아집니다.
+ */
+.heroMark {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+  color: #262626;
+  opacity: 0.28;
+}
+
+/* ── 제품 미리보기 ───────────────────────────────────────── */
+
+.previewSection {
+  max-width: 1152px;
+  margin: 0 auto;
+  padding: 0 32px 80px;
+}
+
+/* ── 사용 흐름 01~04 ─────────────────────────────────────── */
+
+.stepsSection {
+  padding: 80px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  list-style: none;
+}
+
+/*
+ * 칸 사이를 gap이 아니라 경계선으로 가릅니다. 레퍼런스의 `divide-x`입니다. 첫 칸의 왼쪽 여백과
+ * 마지막 칸의 오른쪽 여백을 없애 본문 좌우 선과 맞춥니다.
+ */
+.step {
+  display: grid;
+  gap: 20px;
+  align-content: start;
+  padding: 0 32px;
+  border-left: 1px solid var(--color-border);
+}
+
+.step:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.step:last-child {
+  padding-right: 0;
+}
+
+.stepNumber {
+  font-family: var(--font-mono);
+  font-size: 2rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.025em;
+  color: var(--color-border);
+}
+
+.stepBody {
+  display: grid;
+  gap: 8px;
+}
+
+.stepLabel {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-md);
+  font-weight: 500;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--color-foreground);
+}
+
+.stepDescription {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--color-muted-foreground);
+}
+
+/* ── CODE → CHAT → PAAR ──────────────────────────────────── */
+
+/*
+ * 레퍼런스는 `bg-neutral-50/40`, 흰 바탕 위 40% 농도라 거의 `#fdfdfd`입니다. 그 값을 그대로 씁니다.
+ * `--color-muted`(`#f5f5f5`)로 올리면 이 섹션만 눈에 띄게 잠겨 리듬이 끊깁니다.
+ */
+.coreModelSection {
+  padding: 80px 0;
+  border-top: 1px solid var(--color-border);
+  background: #fdfdfd;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 48px;
+}
+
+.rule {
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+}
+
+.flow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  color: var(--color-foreground-faint);
+}
+
+.flowName {
+  letter-spacing: var(--label-tracking-wide);
+  color: #404040;
+}
+
+.flowArrow {
+  margin: 0 8px;
+}
+
+/*
+ * 세 칸 사이의 1px 선을 gap으로 만듭니다. 배경이 경계 색이고 칸이 흰색이라 칸과 칸 사이에만 선이
+ * 남습니다. 칸마다 border를 주면 맞닿는 자리가 2px이 됩니다.
+ */
+.columns {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-border);
+  overflow: hidden;
+}
+
+.column {
+  display: grid;
+  gap: 16px;
+  align-content: start;
+  padding: 32px;
+  background: var(--color-card);
+}
+
+.columnLabel {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+.columnQuestion {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.375;
+  color: var(--color-foreground);
+}
+
+.columnDescription {
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--color-muted-foreground);
+}
+
+/* ── 근거 기반 접근 ──────────────────────────────────────── */
+
+.evidenceSection {
+  padding: 80px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.innerSplit {
+  max-width: 1152px;
+  margin: 0 auto;
+  padding: 0 32px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 64px;
+  align-items: start;
+}
+
+.evidenceCopy {
+  display: grid;
+  gap: 24px;
+  align-content: start;
+}
+
+.sectionHeadline {
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.375;
+  letter-spacing: -0.025em;
+  color: var(--color-foreground);
+}
+
+.evidenceSubtext {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--color-muted-foreground);
+}
+
+.samples {
+  display: grid;
+}
+
+.sample {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--color-muted);
+}
+
+.sample:last-child {
+  border-bottom: 0;
+}
+
+/*
+ * 근거 종류 태그입니다. 값과 세로로 어긋나지 않게 폭을 고정합니다.
+ *
+ * 색을 레퍼런스의 neutral-400에서 한 단계 올렸습니다. 이 태그는 옆의 값이 무엇인지 알려주는
+ * 이름이라 읽어야 합니다. `.eyebrow`와 같은 판단입니다.
+ */
+.sampleTag {
+  width: 112px;
+  flex-shrink: 0;
+  padding-top: 1px;
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--color-muted-foreground);
+}
+
+.sampleBody {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* 커밋 SHA와 파일 경로와 코드입니다. mono 영역이라 한국어 줄바꿈 규칙을 되돌립니다. */
+.sampleValue,
+.sampleSub {
+  font-family: var(--font-mono);
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+.sampleValue {
+  font-size: var(--label-size-md);
+  color: #262626;
+}
+
+/* 값이 어디서 왔는지 적는 줄입니다. 값보다 흐리게 두되 읽을 수 있는 회색까지만 내립니다. */
+.sampleSub {
+  font-size: var(--label-size-xs);
+  color: var(--color-muted-foreground);
+}
+
+/* ── 마지막 CTA ──────────────────────────────────────────── */
+
+.finalSection {
+  padding: 112px 0;
+  border-top: 1px solid var(--color-border);
+}
+
+.finalInner {
+  position: relative;
+  max-width: 1152px;
+  margin: 0 auto;
+  padding: 0 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+/*
+ * 글 뒤에 깔리는 큰 마크입니다. 4% 농도라 글자 대비에 영향을 주지 않습니다. 레이아웃에서 빠져
+ * 있어야 글 높이가 마크 크기에 끌려가지 않습니다.
+ */
+.finalMark {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  user-select: none;
+  color: var(--color-foreground);
+  opacity: 0.04;
+}
+
+.finalCopy {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 28px;
+}
+
+.finalHeadline {
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.375;
+  letter-spacing: -0.025em;
+  color: var(--color-foreground);
+}
+
+/*
+ * 약관 동의 문장입니다. 레퍼런스가 이 자리에 `font-ui`를 써서 sans입니다. 한국어 문장이라 mono로
+ * 두면 대체 글꼴로 떨어집니다. `uppercase`도 걸지 않습니다. 한글에 무효입니다.
+ *
+ * 이슈 #149 전의 로그인 카드는 같은 문장을 mono로 그렸습니다. 그 카드가 없어졌으므로 두 곳이
+ * 어긋날 일은 없습니다.
+ */
+.terms {
+  font-family: var(--font-sans);
+  font-size: var(--label-size-sm);
+  letter-spacing: var(--label-tracking-wide);
+  color: var(--color-muted-foreground);
+}
+
+/* 문장 안의 링크입니다. 밑줄로만 구분합니다. 크기와 색이 같아야 한 문장으로 읽힙니다. */
+.termsLink {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.termsLink:hover {
+  color: var(--color-foreground);
+}
+
+/* ── 좁은 화면 ───────────────────────────────────────────── */
+
+/*
+ * 태블릿입니다. Hero의 장식 마크를 빼고 사용 흐름을 2열로 접습니다. 스펙의 "주변 요소를 줄이되
+ * 제품 위계는 지킨다"에 해당합니다. 제품 미리보기는 접지 않고 가로 스크롤로 둡니다.
+ */
+@media (max-width: 1024px) {
+  .hero {
+    grid-template-columns: 1fr;
+  }
+
+  .heroMark {
+    display: none;
+  }
+
+  .steps {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 48px;
+  }
+
+  .step {
+    padding: 0;
+    border-left: 0;
+  }
+
+  .columns {
+    grid-template-columns: 1fr;
+  }
+
+  .innerSplit {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+}
+
+@media (max-width: 640px) {
+  .hero {
+    padding: 48px 20px 32px;
+    gap: 32px;
+  }
+
+  .headline {
+    font-size: 2rem;
+  }
+
+  .inner,
+  .innerSplit,
+  .finalInner {
+    padding: 0 20px;
+  }
+
+  .previewSection {
+    padding: 0 20px 48px;
+  }
+
+  .stepsSection,
+  .coreModelSection,
+  .evidenceSection {
+    padding: 48px 0;
+  }
+
+  .finalSection {
+    padding: 64px 0;
+  }
+
+  .steps {
+    grid-template-columns: 1fr;
+    gap: 32px;
+  }
+
+  .column {
+    padding: 24px;
+  }
+
+  /* 태그와 값이 한 줄에 들어가지 않습니다. 폭을 놓고 위아래로 쌓습니다. */
+  .sample {
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .sampleTag {
+    width: auto;
+  }
+
+  .finalHeadline {
+    font-size: 24px;
+  }
+}

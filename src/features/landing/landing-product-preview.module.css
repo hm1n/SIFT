@@ -1,0 +1,699 @@
+/*
+ * 랜딩의 제품 화면 미리보기입니다. 레퍼런스 `App.tsx`의 `LandingProductPreview`를 옮겼습니다.
+ *
+ * 색은 토큰이 있는 것만 토큰을 씁니다. 디자인의 neutral 계열 중 `globals.css`에 자리가 없는 값
+ * (neutral-50 `#fafafa`, neutral-600 `#525252`, neutral-700 `#404040`, neutral-800 `#262626`)은
+ * 리터럴로 둡니다. `button.module.css`·`top-header.module.css`와 같은 방식입니다. 이 화면만을 위해
+ * 공용 토큰을 늘리지 않습니다.
+ *
+ * 글자 크기가 9~11px로 작은데, 읽는 글이 아니라 제품 화면을 축소해 보여 주는 그림이라 원본 크기를
+ * 그대로 씁니다. 안쪽 글자는 `role="img"`가 가려 보조기술이 읽지 않습니다.
+ */
+
+/*
+ * 좁은 화면에서는 3열을 접지 않고 가로로 스크롤합니다. 레퍼런스가 `overflow-x-auto`와
+ * `min-w-[820px]`로 잡아 둔 방식입니다. 3열이 나란한 배치 자체가 이 그림이 말하려는 것이라, 열을
+ * 쌓으면 보여 줄 것이 사라집니다. `body`의 `overflow-x: hidden`은 이 안쪽 스크롤을 막지 않습니다.
+ */
+.scroller {
+  overflow-x: auto;
+}
+
+.canvas {
+  min-width: 820px;
+}
+
+/* 원본의 그림자입니다. 디자인 언어가 그림자를 쓰지 않지만 이 자리만 예외로 창을 띄웁니다. */
+.window {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--color-card);
+  box-shadow: 0 2px 24px 0 rgba(0, 0, 0, 0.06);
+}
+
+/* ── 창 위쪽 ─────────────────────────────────────────────── */
+
+.chrome {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--color-border);
+  background: #fafafa;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-border);
+}
+
+.windowTitle {
+  flex: 1;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  letter-spacing: var(--label-tracking);
+  color: var(--color-foreground-faint);
+}
+
+.subHeader {
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.subHeaderLeft {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.back,
+.experienceLabel {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  letter-spacing: var(--label-tracking-wide);
+  white-space: nowrap;
+}
+
+.back {
+  color: var(--color-foreground-faint);
+}
+
+.experienceLabel {
+  color: var(--color-muted-foreground);
+}
+
+.divider {
+  color: var(--color-border);
+  font-size: 12px;
+}
+
+.experienceTitle {
+  font-size: 12px;
+  color: #525252;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subHeaderRight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.chip {
+  padding: 4px 8px;
+  border: 1px solid var(--color-scrollbar);
+  border-radius: 4px;
+  background: #fafafa;
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  letter-spacing: var(--label-tracking-wide);
+  color: #525252;
+  white-space: nowrap;
+}
+
+/* ── 3열 본문 ────────────────────────────────────────────── */
+
+/*
+ * 높이를 고정합니다. 안쪽 내용이 늘어도 창이 자라면 랜딩 전체 리듬이 흔들립니다. 원본과 같은
+ * 380px이고 넘치는 부분은 잘립니다. 잘린 아래쪽이 화면이 이어진다는 인상을 줍니다.
+ */
+.body {
+  display: flex;
+  height: 380px;
+  overflow: hidden;
+}
+
+.codeColumn,
+.paarColumn {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.codeColumn {
+  border-right: 1px solid var(--color-border);
+}
+
+.chatColumn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.columnHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.columnLabel {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+  color: var(--color-foreground-faint);
+}
+
+.modeToggle {
+  display: flex;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.mode {
+  padding: 2px 6px;
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  color: var(--color-foreground-faint);
+}
+
+.mode[data-active] {
+  background: var(--color-primary);
+  color: var(--color-primary-foreground);
+}
+
+/* ── 코드 열 ─────────────────────────────────────────────── */
+
+.filesBar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--color-muted);
+  background: #fafafa;
+  flex-shrink: 0;
+}
+
+.filesLabel,
+.filesCount {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  text-transform: uppercase;
+}
+
+.filesLabel {
+  color: var(--color-muted-foreground);
+}
+
+.filesCount {
+  color: var(--color-scrollbar);
+}
+
+.fileTree {
+  overflow: hidden;
+}
+
+.directoryRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+}
+
+.caret,
+.directoryName {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  color: var(--color-foreground-faint);
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px 4px 24px;
+  border-left: 2px solid transparent;
+}
+
+/* 고른 파일입니다. 배경과 왼쪽 막대와 글자 굵기로 함께 가릅니다. */
+.fileRow[data-selected] {
+  background: var(--color-muted);
+  border-left-color: #404040;
+}
+
+.fileBullet {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  color: transparent;
+}
+
+.fileRow[data-selected] .fileBullet {
+  color: #404040;
+}
+
+.fileName {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  color: var(--color-muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* 파일 경로는 mono 영역이라 한국어 줄바꿈 규칙을 되돌립니다. */
+  word-break: normal;
+}
+
+.fileRow[data-selected] .fileName {
+  color: var(--color-foreground);
+  font-weight: 500;
+}
+
+.added,
+.removed {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+}
+
+.added {
+  color: var(--color-diff-add);
+}
+
+.removed {
+  color: var(--color-diff-del);
+}
+
+.selectedFile {
+  display: grid;
+  gap: 2px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-muted);
+  margin-top: auto;
+  flex-shrink: 0;
+}
+
+.selectedFileLabel {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  text-transform: uppercase;
+  color: var(--color-foreground-faint);
+}
+
+.selectedFilePath {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  font-weight: 500;
+  color: #262626;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+}
+
+.diff {
+  padding: 2px 0;
+  flex-shrink: 0;
+}
+
+.diffLine {
+  display: flex;
+  align-items: flex-start;
+}
+
+.diffLine[data-kind="added"] {
+  background: var(--color-diff-add-surface);
+}
+
+.diffLine[data-kind="removed"] {
+  background: var(--color-diff-del-surface);
+}
+
+.diffLineNumber {
+  width: 24px;
+  flex-shrink: 0;
+  padding: 0 4px;
+  border-right: 1px solid var(--color-muted);
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  line-height: 20px;
+  color: var(--color-scrollbar);
+  user-select: none;
+}
+
+.diffMark {
+  width: 12px;
+  flex-shrink: 0;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  line-height: 20px;
+  color: transparent;
+}
+
+.diffLine[data-kind="added"] .diffMark {
+  color: var(--color-diff-add);
+}
+
+.diffLine[data-kind="removed"] .diffMark {
+  color: var(--color-diff-del);
+}
+
+.diffText {
+  flex: 1;
+  min-width: 0;
+  padding: 0 2px;
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  line-height: 20px;
+  color: #262626;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: normal;
+}
+
+.diffLine[data-kind="removed"] .diffText {
+  color: var(--color-foreground-faint);
+}
+
+/* ── 대화 열 ─────────────────────────────────────────────── */
+
+.messages {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.message {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-muted);
+}
+
+.role {
+  width: 44px;
+  flex-shrink: 0;
+  padding-top: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  font-weight: 500;
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+}
+
+.role[data-role="agent"] {
+  color: var(--color-foreground);
+}
+
+.role[data-role="you"] {
+  color: var(--color-foreground-faint);
+}
+
+.messageBody {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.messageMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stage,
+.evidenceChip {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  letter-spacing: var(--label-tracking-wide);
+  color: var(--color-foreground-faint);
+}
+
+.evidenceChip {
+  padding: 2px 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+}
+
+.messageText {
+  font-size: 14px;
+  line-height: 1.65;
+  color: #262626;
+}
+
+.time {
+  flex-shrink: 0;
+  padding-top: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  color: var(--color-scrollbar);
+}
+
+.composerArea {
+  flex-shrink: 0;
+  padding: 12px 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.composer {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.composerPlaceholder {
+  padding: 12px 16px 8px;
+  font-size: 14px;
+  color: var(--color-scrollbar);
+}
+
+.composerFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 12px 8px;
+}
+
+.composerStage {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  text-transform: uppercase;
+  color: var(--color-foreground-faint);
+}
+
+.composerActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.composerShortcut {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  color: var(--color-foreground-faint);
+}
+
+/*
+ * 보낼 수 없는 상태의 전송 버튼입니다. 원본이 비활성 모습을 그대로 보여 줍니다. 답을 아직 쓰지
+ * 않았으니 이 자리는 눌러도 되지 않는다는 것이 장면의 일부입니다.
+ */
+.composerSubmit {
+  padding: 6px 12px;
+  border-radius: 4px;
+  background: var(--color-border);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-foreground-faint);
+}
+
+/* ── PAAR 열 ─────────────────────────────────────────────── */
+
+.paarHeader {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.paarHeaderTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.paarProgress {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  color: var(--color-foreground-faint);
+}
+
+.markers {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.marker {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.markerMark {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+}
+
+.markerLetter {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  text-transform: uppercase;
+}
+
+.marker[data-state="complete"] .markerMark {
+  color: var(--color-foreground);
+}
+
+.marker[data-state="complete"] .markerLetter {
+  color: #404040;
+}
+
+.marker[data-state="in-progress"] .markerMark {
+  color: #525252;
+}
+
+.marker[data-state="in-progress"] .markerLetter {
+  color: var(--color-muted-foreground);
+}
+
+.marker[data-state="empty"] .markerMark,
+.marker[data-state="empty"] .markerLetter {
+  color: var(--color-scrollbar);
+}
+
+.paarCards {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 12px;
+  overflow: hidden;
+}
+
+.card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* 진행 중인 블록만 경계를 진하게 둡니다. 어디를 채우는 중인지가 이 열에서 제일 중요합니다. */
+.card[data-state="in-progress"] {
+  border-color: var(--color-foreground-faint);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: #fafafa;
+}
+
+.cardMark {
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.cardLabel {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-sm);
+  letter-spacing: var(--label-tracking);
+  text-transform: uppercase;
+}
+
+.cardNote {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  color: var(--color-foreground-faint);
+}
+
+.card[data-state="complete"] .cardMark {
+  color: var(--color-foreground);
+}
+
+.card[data-state="complete"] .cardLabel {
+  color: var(--color-muted-foreground);
+}
+
+.card[data-state="in-progress"] .cardMark {
+  color: #404040;
+}
+
+.card[data-state="in-progress"] .cardLabel {
+  color: #262626;
+}
+
+.card[data-state="empty"] .cardMark,
+.card[data-state="empty"] .cardLabel {
+  color: var(--color-scrollbar);
+}
+
+.cardText {
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.65;
+  color: #404040;
+}
+
+/* 아직 문장이 없는 블록의 자리 문구입니다. 실제 내용과 구분되도록 기울입니다. */
+.card[data-state="in-progress"] .cardText,
+.card[data-state="empty"] .cardText {
+  font-style: italic;
+  color: var(--color-scrollbar);
+}
+
+.card[data-state="in-progress"] .cardText {
+  color: var(--color-foreground-faint);
+}
+
+.cardVerified {
+  display: grid;
+  gap: 2px;
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--color-muted);
+}
+
+.cardVerifiedLabel,
+.cardVerifiedValue {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  color: var(--color-foreground-faint);
+}
+
+.cardVerifiedLabel {
+  letter-spacing: var(--label-tracking-wide);
+  text-transform: uppercase;
+}
