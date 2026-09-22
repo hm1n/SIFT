@@ -55,9 +55,39 @@ function check(label: string, actual: unknown, expected: unknown): void {
   console.log(`${ok ? "통과" : "실패"}  ${label}${ok ? "" : `\n      기대 ${JSON.stringify(expected)}\n      실제 ${JSON.stringify(actual)}`}`);
 }
 
+/**
+ * 이 실행이 쓸 번호가 비어 있는지 먼저 확인합니다(PR #151 리뷰 1라운드).
+ *
+ * 번호는 유한한 범위에서 무작위로 고른 값이라 데이터베이스가 예약해 주지 않습니다. 실제 사용자의
+ * 번호와 겹치면 이 스크립트가 남의 데이터를 건드립니다. 분석 줄은 식별자로 지우므로 지금까지는
+ * 문제가 드러나지 않았지만, `analysis_usage`는 조건이 사용자 번호뿐이라 사정이 다릅니다. 겹친 번호로
+ * 상한 검사를 돌리면 그 사용자의 하루 횟수를 대신 써 버리고, 뒷정리가 그 사용자의 모든 날짜 줄을
+ * 지웁니다. 탈퇴 검사도 이제 `analysis_usage`를 함께 지우므로 같은 위험이 있습니다.
+ *
+ * 그래서 두 표를 모두 보고, 하나라도 쓰여 있으면 아무것도 쓰지 않고 멈춥니다. 다시 돌리면 다른
+ * 번호가 뽑히므로 재시도가 곧 해결입니다.
+ */
+async function assertUserIdsFree(ids: readonly number[]): Promise<void> {
+  const sql = getSql();
+  for (const table of ["repository_analysis", "analysis_usage"] as const) {
+    const rows = await sql.query(
+      `select count(*)::int as n from ${table} where github_user_id = any($1::bigint[])`,
+      [[...ids]]
+    );
+    if (Number(rows[0].n) !== 0) {
+      throw new Error(
+        `번호 ${ids.join(", ")} 중 일부가 ${table}에 이미 쓰이고 있습니다(${rows[0].n}줄). ` +
+          "남의 데이터를 건드리지 않도록 멈춥니다. 다시 실행하면 새 번호를 뽑습니다."
+      );
+    }
+  }
+}
+
 async function main(): Promise<void> {
   loadLocalEnv();
   const store = neonStore();
+  // 첫 쓰기 전에 확인합니다. 탈퇴 검사가 쓰는 `USER_ID + 2`까지 함께 봅니다.
+  await assertUserIdsFree([USER_ID, OTHER_USER_ID, USER_ID + 2]);
   const blockAt = (version: number) => ({ ...emptyExperienceBlockState(), version });
 
   const analysisId = await store.saveAnalysis({
@@ -235,6 +265,22 @@ async function main(): Promise<void> {
   check("주인은 지울 수 있다", await store.deleteInterview(interviewId, USER_ID), true);
   check("두 번 지우면 false다", await store.deleteInterview(interviewId, USER_ID), false);
 
+  /*
+   * 하루 분석 횟수 상한입니다(이슈 #142). 검사와 증가가 한 문장이므로 그 문장이 실제 Postgres에서
+   * 도는지, 그리고 상한에 닿았을 때 돌려주는 줄이 정말 없는지는 여기서만 확인할 수 있습니다.
+   */
+  const usageDate = "2026-09-22";
+  check("첫 분석은 1을 돌려준다", await store.consumeAnalysisQuota(USER_ID, usageDate, 3), 1);
+  check("두 번째는 2다", await store.consumeAnalysisQuota(USER_ID, usageDate, 3), 2);
+  check("세 번째는 3이다", await store.consumeAnalysisQuota(USER_ID, usageDate, 3), 3);
+  check("상한을 넘기면 null이다", await store.consumeAnalysisQuota(USER_ID, usageDate, 3), null);
+  check("막힌 호출은 횟수를 올리지 않는다", await store.consumeAnalysisQuota(USER_ID, usageDate, 4), 4);
+  check("날짜가 다르면 따로 센다", await store.consumeAnalysisQuota(USER_ID, "2026-09-23", 3), 1);
+  check("사용자가 다르면 따로 센다", await store.consumeAnalysisQuota(OTHER_USER_ID, usageDate, 3), 1);
+  check("읽기만 하면 횟수가 그대로다", await store.getAnalysisQuotaUsage(USER_ID, usageDate), 4);
+  check("읽은 뒤에도 값이 그대로다", await store.getAnalysisQuotaUsage(USER_ID, usageDate), 4);
+  check("줄이 없는 날짜는 0이다", await store.getAnalysisQuotaUsage(USER_ID, "2026-09-24"), 0);
+
   // 정리 작업은 사용자 번호를 받지 않으므로 이 실행이 만든 줄만 남았는지 확인한 뒤에 돌립니다.
   const leftover = await store.listInterviews(USER_ID);
   check("지운 뒤 목록이 비어 있다", leftover.length, 0);
@@ -259,23 +305,25 @@ async function main(): Promise<void> {
   );
   check("만든 분석 줄을 지웠다", rest[0].n, 0);
 
+  // 횟수 줄은 분석과 이어져 있지 않아 cascade로 사라지지 않습니다. 이 실행이 쓴 두 사용자 번호로 지웁니다.
+  await sql.query("delete from analysis_usage where github_user_id = any($1::bigint[])", [
+    [USER_ID, OTHER_USER_ID],
+  ]);
+  const usageLeft = await sql.query(
+    "select count(*)::int as n from analysis_usage where github_user_id = any($1::bigint[])",
+    [[USER_ID, OTHER_USER_ID]]
+  );
+  check("만든 횟수 줄을 지웠다", usageLeft[0].n, 0);
+
   /*
    * 회원 탈퇴입니다(이슈 #145). 사용자 번호를 조건으로 지우는 유일한 연산이라 번호를 따로 씁니다.
    * 위 검사가 쓴 번호로 돌리면 그 번호로 심은 줄이 한 번에 사라져 뒤에 올 검사가 근거를 잃습니다.
    *
-   * 지우기 전에 그 번호에 남은 줄이 없는지 먼저 봅니다. PR #127 리뷰가 지적한 위험이 여기에도
-   * 있습니다. 번호는 무작위로 고른 것이라 데이터베이스가 예약해 주지 않으므로, 이미 쓰이고 있는
-   * 번호였다면 이 연산이 남의 줄을 지웁니다. 확인하지 않고 돌릴 수 없는 유일한 검사입니다.
+   * 이 번호가 비어 있는지는 `assertUserIdsFree`가 첫 쓰기 전에 이미 확인했습니다. 여기서 한 번 더
+   * 보던 검사는 그 뒤로 도달할 수 없어 걷어냈습니다(PR #151 리뷰 1라운드).
    */
   const leavingUserId = USER_ID + 2;
-  const existing = await sql.query(
-    "select count(*)::int as n from repository_analysis where github_user_id = $1::bigint",
-    [leavingUserId]
-  );
-  if (Number(existing[0].n) !== 0) {
-    failures += 1;
-    console.log(`실패  탈퇴 검사를 건너뜁니다. 번호 ${leavingUserId}에 이미 ${existing[0].n}줄이 있습니다`);
-  } else {
+  {
     const emptyCandidates = {
       candidates: { candidates: [], insufficientCandidatesReason: null, diffs: [] },
       includedCommits: [],
@@ -301,7 +349,12 @@ async function main(): Promise<void> {
     await store.saveAnalysis({ ...leavingAnalysis, repoName: "SIFT-후보만" });
     const keptId = await store.saveAnalysis({ ...leavingAnalysis, githubUserId: OTHER_USER_ID });
 
+    // 횟수 줄도 함께 사라져야 합니다(이슈 #142). 외래 키가 없어 cascade가 닿지 않는 표입니다.
+    await store.consumeAnalysisQuota(leavingUserId, "2026-09-22", 3);
+    check("탈퇴 전에는 횟수 줄이 있다", await store.getAnalysisQuotaUsage(leavingUserId, "2026-09-22"), 1);
+
     check("탈퇴는 그 사용자의 분석을 모두 지운다", await store.deleteUserData(leavingUserId), 2);
+    check("탈퇴가 횟수 줄도 지운다", await store.getAnalysisQuotaUsage(leavingUserId, "2026-09-22"), 0);
     /*
      * 인터뷰 행을 직접 셉니다(PR #147 리뷰 2라운드). `getInterview`와 `listInterviews`는 소유자를
      * 보려고 `repository_analysis`를 join하므로, 분석만 지워지고 인터뷰 행이 남은 상태에서도 아무

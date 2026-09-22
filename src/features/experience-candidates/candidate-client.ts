@@ -55,6 +55,7 @@ export type CandidateRequestErrorKind =
   | "llm_configuration"
   | "llm_request"
   | "llm_failure"
+  | "usage_limit_exceeded"
   | "auth_revoked"
   | "repo_not_found"
   | "rate_limit"
@@ -68,6 +69,7 @@ const KNOWN_ERROR_KINDS: readonly CandidateRequestErrorKind[] = [
   "unauthorized", "invalid_json", "invalid_request", "body_too_large",
   "json_parse", "schema_validation", "unknown_sha", "unrelated_sha", "unknown_file_path",
   "llm_network", "llm_auth", "llm_rate_limit", "llm_timeout", "llm_configuration", "llm_request", "llm_failure",
+  "usage_limit_exceeded",
   "auth_revoked", "repo_not_found", "rate_limit", "network", "server_error", "partial_failure",
 ];
 

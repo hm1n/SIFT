@@ -13,7 +13,29 @@ import {
   GITHUB_SESSION_KEY_ENV,
 } from "@/lib/github/auth-session";
 import { ExperienceCandidateOutputError } from "@/features/experience-candidates/errors";
-import { handleStageA, MAX_STAGE_A_BODY_BYTES } from "./route";
+import { CANDIDATE_ROUTE_COPY } from "@/copy/candidates";
+import { DAILY_ANALYSIS_LIMIT } from "@/features/usage-limit/quota";
+import { DatabaseError } from "@/lib/db/client";
+import { createInMemoryStore } from "@/lib/db/in-memory-store";
+import type { SiftStore } from "@/lib/db/store";
+import { handleStageA as routeHandleStageA, MAX_STAGE_A_BODY_BYTES } from "./route";
+
+/**
+ * 호출마다 빈 저장 계층을 줍니다.
+ *
+ * 라우트가 이제 하루 분석 횟수 상한을 검사하므로(이슈 #142) 저장 계층 없이는 돌지 않습니다.
+ * 기본값을 그대로 쓰면 실제 Neon에 붙으려 하고, 파일 하나가 저장 계층을 공유하면 성공 요청을
+ * 여러 번 보내는 기존 테스트가 상한에 걸려 이 이슈와 무관한 이유로 깨집니다. 상한 자체는 아래
+ * 전용 describe가 저장 계층을 명시해 확인합니다.
+ */
+function handleStageA(
+  request: NextRequest,
+  generate?: Parameters<typeof routeHandleStageA>[1],
+  timeoutMs?: number,
+  store: SiftStore = createInMemoryStore()
+) {
+  return routeHandleStageA(request, generate, timeoutMs, store);
+}
 
 function unit(number: number, representativeSha: string): StageAUnitInput {
   const unitId = `pr:${number}`;
@@ -497,5 +519,147 @@ describe("POST /api/candidates/stage-a", () => {
     const response = await responsePromise;
     expect(response.status).toBe(504);
     expect(await response.json()).toMatchObject({ error: { kind: "llm_timeout" } });
+  });
+});
+
+/**
+ * 하루 분석 횟수 상한입니다(이슈 #142).
+ *
+ * 이 describe만 저장 계층을 명시해 여러 요청이 같은 횟수를 공유하게 합니다. 위쪽 테스트들은
+ * 호출마다 빈 저장 계층을 받으므로 상한에 닿지 않습니다.
+ */
+describe("POST /api/candidates/stage-a 하루 분석 횟수 상한", () => {
+  const USER_ID = 4472785;
+  /** 한국 시간 2026-09-22 정오입니다. 날짜 경계에서 멀리 떨어진 시각을 고릅니다. */
+  const NOON_KST = Date.parse("2026-09-22T03:00:00Z");
+
+  function ok() {
+    return async () => ({
+      decisions: [{ unitId: "pr:1", contributionItem: null, recommended: false }],
+    });
+  }
+
+  function analyze(store: SiftStore, generate = ok()) {
+    return routeHandleStageA(request(body), generate, undefined, store);
+  }
+
+  it("상한까지는 통과한다", async () => {
+    const store = createInMemoryStore();
+
+    for (let i = 0; i < DAILY_ANALYSIS_LIMIT; i += 1) {
+      expect((await analyze(store)).status).toBe(200);
+    }
+  });
+
+  it("상한을 넘기면 429로 막고 모델을 부르지 않는다", async () => {
+    const store = createInMemoryStore();
+    for (let i = 0; i < DAILY_ANALYSIS_LIMIT; i += 1) await analyze(store);
+
+    let called = false;
+    const response = await analyze(store, async () => {
+      called = true;
+      return { decisions: [] };
+    });
+
+    expect(response.status).toBe(429);
+    expect(called).toBe(false);
+  });
+
+  it("막힌 응답이 사유를 알려주고 다시 시도를 권하지 않는다", async () => {
+    const store = createInMemoryStore();
+    for (let i = 0; i < DAILY_ANALYSIS_LIMIT; i += 1) await analyze(store);
+
+    const response = await analyze(store);
+
+    expect(await response.json()).toEqual({
+      error: {
+        kind: "usage_limit_exceeded",
+        message: CANDIDATE_ROUTE_COPY.dailyLimitExceeded(DAILY_ANALYSIS_LIMIT),
+        retryable: false,
+      },
+    });
+  });
+
+  it("한국 자정을 넘기면 다시 상한만큼 쓸 수 있다", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOON_KST);
+    const store = createInMemoryStore();
+    for (let i = 0; i < DAILY_ANALYSIS_LIMIT; i += 1) await analyze(store);
+    expect((await analyze(store)).status).toBe(429);
+
+    vi.setSystemTime(Date.parse("2026-09-22T15:00:00Z"));
+
+    expect((await analyze(store)).status).toBe(200);
+  });
+
+  /**
+   * 형식이 어긋난 요청은 모델을 부르지 않아 비용이 없습니다. 그런 요청이 횟수를 먹으면 사용자가
+   * 아무것도 얻지 못한 채 상한에 닿습니다.
+   */
+  it("422로 거절한 요청은 횟수를 쓰지 않는다", async () => {
+    const store = createInMemoryStore();
+    for (let i = 0; i < 5; i += 1) {
+      const rejected = await routeHandleStageA(
+        request({ units: [], contributionItems: [], candidateLimit: 1 }),
+        ok(),
+        undefined,
+        store
+      );
+      expect(rejected.status).toBe(422);
+    }
+
+    for (let i = 0; i < DAILY_ANALYSIS_LIMIT; i += 1) {
+      expect((await analyze(store)).status).toBe(200);
+    }
+  });
+
+  it("세션이 없어 401로 거절한 요청도 횟수를 쓰지 않는다", async () => {
+    const store = createInMemoryStore();
+    for (let i = 0; i < 5; i += 1) {
+      const rejected = await routeHandleStageA(request(body, false), ok(), undefined, store);
+      expect(rejected.status).toBe(401);
+    }
+
+    for (let i = 0; i < DAILY_ANALYSIS_LIMIT; i += 1) {
+      expect((await analyze(store)).status).toBe(200);
+    }
+  });
+
+  it("사용자마다 따로 센다", async () => {
+    const store = createInMemoryStore();
+    for (let i = 0; i < DAILY_ANALYSIS_LIMIT; i += 1) await analyze(store);
+
+    const other = new NextRequest("https://example.com/api/candidates/stage-a", {
+      method: "POST",
+      headers: {
+        cookie: `${GITHUB_SESSION_COOKIE}=${encryptGitHubSession({ token: "token", githubUserId: USER_ID + 1 })}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    expect((await routeHandleStageA(other, ok(), undefined, store)).status).toBe(200);
+  });
+
+  /**
+   * 저장 계층이 실패하면 분석을 막습니다. 세지 못하는 동안 열어 두면 그 시간만큼 비용이 다시
+   * 무제한이 됩니다. 실제 장애이므로 5xx가 맞습니다.
+   */
+  it("저장 계층이 실패하면 모델을 부르지 않고 실패한다", async () => {
+    const store: SiftStore = {
+      ...createInMemoryStore(),
+      async consumeAnalysisQuota() {
+        throw new DatabaseError("query_failed", "데이터베이스 질의에 실패했습니다.");
+      },
+    };
+
+    let called = false;
+    const response = await analyze(store, async () => {
+      called = true;
+      return { decisions: [] };
+    });
+
+    expect(response.status).toBe(500);
+    expect(called).toBe(false);
+    expect(await response.json()).toMatchObject({ error: { kind: "server_error" } });
   });
 });

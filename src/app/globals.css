@@ -46,6 +46,16 @@
   --color-warning-surface: #fffbeb;
   --color-warning-border: #fde68a;
 
+  /*
+   * 사용자가 한도에 닿았음을 알리는 빨강입니다(이슈 #142). 디자인 원본은 red-500(#ef4444)인데
+   * 한 단계 어둡게 내렸습니다. #ef4444는 흰 배경에서 대비가 3.8:1이라 작은 글자의 기준(4.5:1)에
+   * 못 미치고, 이 문구는 9~11px입니다. #dc2626은 4.8:1입니다. amber를 내린 것과 같은 이유입니다.
+   *
+   * `--color-diff-del`과 값이 같지만 역할이 달라 따로 둡니다. diff 삭제 줄의 색을 조정하려고 그
+   * 값을 고쳤을 때 한도 안내의 색까지 함께 바뀌면 안 됩니다.
+   */
+  --color-danger: #dc2626;
+
   --radius: 7px;
 
   /* 폰트. Inter와 Geist Mono는 layout.tsx가 next/font로 등록한 변수이고, Pretendard는 CDN 스타일시트가 제공합니다.

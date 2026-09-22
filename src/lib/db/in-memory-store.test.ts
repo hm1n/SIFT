@@ -628,3 +628,153 @@ describe("메모리 저장 계층", () => {
     });
   });
 });
+
+describe("하루 분석 횟수 상한", () => {
+  const TODAY = "2026-09-22";
+  const TOMORROW = "2026-09-23";
+
+  it("상한까지는 통과하고 쓴 횟수를 돌려준다", async () => {
+    const store = createInMemoryStore();
+
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3)).toBe(1);
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3)).toBe(2);
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3)).toBe(3);
+  });
+
+  /** 경계값입니다. 상한과 같아진 다음 호출부터 막혀야 합니다. */
+  it("상한을 채운 뒤에는 null이고 횟수가 더 오르지 않는다", async () => {
+    const store = createInMemoryStore();
+    for (let i = 0; i < 3; i += 1) await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3);
+
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3)).toBeNull();
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3)).toBeNull();
+
+    // 막힌 호출이 횟수를 올렸다면 상한을 1 올려도 여전히 막힙니다.
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, 4)).toBe(4);
+  });
+
+  it("날짜가 바뀌면 다시 상한만큼 쓸 수 있다", async () => {
+    const store = createInMemoryStore();
+    for (let i = 0; i < 3; i += 1) await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3);
+
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TOMORROW, 3)).toBe(1);
+  });
+
+  it("사용자마다 따로 센다", async () => {
+    const store = createInMemoryStore();
+    for (let i = 0; i < 3; i += 1) await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3);
+
+    expect(await store.consumeAnalysisQuota(OTHER_ID, TODAY, 3)).toBe(1);
+  });
+
+  /**
+   * 실제 구현의 `on conflict ... where`는 줄이 아직 없을 때 조건을 보지 않아 상한 0에서도 한 번을
+   * 통과시킵니다. 두 구현이 같은 판정을 하도록 양쪽에서 질의 전에 막습니다.
+   */
+  it("상한이 0 이하이면 처음부터 막는다", async () => {
+    const store = createInMemoryStore();
+
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, 0)).toBeNull();
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, -1)).toBeNull();
+  });
+
+  /**
+   * 90일 자동 정리가 세는 값을 지우면 안 됩니다(이슈 #142 Constraints). 분석과 인터뷰를 모두 지운
+   * 뒤에도 횟수가 남아 있는지 봅니다. 저장된 분석 줄을 세는 구현이었다면 여기서 초기화됩니다.
+   */
+  it("90일 정리가 돌아도 쓴 횟수가 남는다", async () => {
+    const store = createInMemoryStore();
+    await seed(store);
+    for (let i = 0; i < 3; i += 1) await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3);
+
+    const future = new Date(Date.now() + 91 * 86_400_000);
+    await store.purgeInterviewsOpenedBefore(future);
+    await store.purgeAnalysesWithoutInterviews(future);
+
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3)).toBeNull();
+  });
+});
+
+describe("오늘 쓴 분석 횟수 읽기", () => {
+  const TODAY = "2026-09-22";
+
+  it("한 번도 안 썼으면 0이다", async () => {
+    expect(await createInMemoryStore().getAnalysisQuotaUsage(OWNER_ID, TODAY)).toBe(0);
+  });
+
+  it("쓴 만큼을 돌려준다", async () => {
+    const store = createInMemoryStore();
+    await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3);
+    await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3);
+
+    expect(await store.getAnalysisQuotaUsage(OWNER_ID, TODAY)).toBe(2);
+  });
+
+  /** 화면을 그리는 것만으로 횟수가 줄면 안 됩니다. */
+  it("읽어도 횟수가 늘지 않는다", async () => {
+    const store = createInMemoryStore();
+    for (let i = 0; i < 5; i += 1) await store.getAnalysisQuotaUsage(OWNER_ID, TODAY);
+
+    expect(await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3)).toBe(1);
+  });
+
+  it("사용자와 날짜가 다르면 따로 센다", async () => {
+    const store = createInMemoryStore();
+    await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3);
+
+    expect(await store.getAnalysisQuotaUsage(OTHER_ID, TODAY)).toBe(0);
+    expect(await store.getAnalysisQuotaUsage(OWNER_ID, "2026-09-23")).toBe(0);
+  });
+});
+
+describe("회원 탈퇴와 분석 횟수", () => {
+  const TODAY = "2026-09-22";
+
+  /**
+   * `analysis_usage`에는 외래 키가 없어 cascade가 닿지 않습니다(이슈 #142). 탈퇴할 때 함께 지우지
+   * 않으면 탈퇴한 사용자의 GitHub 번호가 그 표에 남습니다.
+   */
+  it("탈퇴하면 그 사용자의 횟수 줄이 사라진다", async () => {
+    const store = createInMemoryStore();
+    await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3);
+    await store.consumeAnalysisQuota(OWNER_ID, "2026-09-23", 3);
+
+    await store.deleteUserData(OWNER_ID);
+
+    expect(await store.getAnalysisQuotaUsage(OWNER_ID, TODAY)).toBe(0);
+    expect(await store.getAnalysisQuotaUsage(OWNER_ID, "2026-09-23")).toBe(0);
+  });
+
+  it("남의 횟수 줄은 남는다", async () => {
+    const store = createInMemoryStore();
+    await store.consumeAnalysisQuota(OTHER_ID, TODAY, 3);
+
+    await store.deleteUserData(OWNER_ID);
+
+    expect(await store.getAnalysisQuotaUsage(OTHER_ID, TODAY)).toBe(1);
+  });
+
+  /**
+   * 사용자 번호가 접두사로 겹치는 경우입니다. 키를 `번호:날짜`로 이어 붙이므로 `123`으로 지울 때
+   * `1234`의 줄까지 지워지면 안 됩니다.
+   */
+  it("번호가 접두사로 겹치는 남의 줄을 지우지 않는다", async () => {
+    const store = createInMemoryStore();
+    await store.consumeAnalysisQuota(12, TODAY, 3);
+    await store.consumeAnalysisQuota(123, TODAY, 3);
+
+    await store.deleteUserData(12);
+
+    expect(await store.getAnalysisQuotaUsage(12, TODAY)).toBe(0);
+    expect(await store.getAnalysisQuotaUsage(123, TODAY)).toBe(1);
+  });
+
+  /** 저장한 적 없는 사용자가 탈퇴해도 오류가 아닙니다. 돌려주는 수는 분석 수 그대로입니다. */
+  it("지울 것이 없어도 0을 돌려준다", async () => {
+    const store = createInMemoryStore();
+    await store.consumeAnalysisQuota(OWNER_ID, TODAY, 3);
+
+    expect(await store.deleteUserData(OWNER_ID)).toBe(0);
+    expect(await store.getAnalysisQuotaUsage(OWNER_ID, TODAY)).toBe(0);
+  });
+});

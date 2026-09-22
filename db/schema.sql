@@ -47,3 +47,21 @@ create index if not exists interview_session_analysis_idx
 -- 되돌릴 수 없는 변경이 아니고, 여러 번 돌려도 결과가 같습니다.
 alter table interview_session
   add column if not exists progress jsonb not null default '{}'::jsonb;
+
+-- 사용자별 하루 분석 실행 횟수입니다(이슈 #142).
+--
+-- 표를 따로 두는 이유는 90일 자동 정리 때문입니다. `repository_analysis`의 줄을 세면 정리 작업이
+-- 지운 분석만큼 횟수가 줄어, 90일 전에 분석한 사용자가 상한을 다시 받습니다. 정리 대상과 겹치지
+-- 않는 자리에 둡니다.
+--
+-- `usage_date`는 한국 날짜입니다. 애플리케이션이 계산해 넘깁니다. `current_date`를 기본값으로 두면
+-- Neon이 UTC로 돌기 때문에 한국 시간 오전 9시에 횟수가 초기화됩니다.
+--
+-- 칸 이름을 `count`가 아니라 `run_count`로 둡니다. `count`는 집계 함수 이름과 같아서 `returning
+-- count`처럼 수식어 없이 쓰는 자리에서 무엇을 가리키는지 읽기 어렵습니다.
+create table if not exists analysis_usage (
+  github_user_id bigint  not null,
+  usage_date     date    not null,
+  run_count      integer not null,
+  primary key (github_user_id, usage_date)
+);

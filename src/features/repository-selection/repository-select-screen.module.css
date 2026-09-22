@@ -276,10 +276,49 @@
   background: var(--color-card);
 }
 
+/*
+ * 선택한 Repository와 오늘 남은 분석 횟수를 두 줄로 쌓습니다(이슈 #142). 디자인 파일
+ * `RepoSelectScreen`의 `flex flex-col gap-1 min-w-0`입니다. `min-width: 0`이 있어야 긴 저장소
+ * 이름이 버튼을 밀어내지 않고 자기 칸 안에서 줄바꿈합니다.
+ */
+.footerStatus {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
 .selection {
   font-size: 12px;
   color: #a3a3a3;
   overflow-wrap: anywhere;
+}
+
+/*
+ * 디자인의 `font-mono text-[9px] tracking-wider text-neutral-300`입니다. 색만 바꿨습니다.
+ *
+ * 디자인의 neutral-300(`#d4d4d4`)은 흰 배경에서 대비가 1.48:1이라 9px 글자로는 읽히지 않습니다.
+ * 처음에 `--color-scrollbar`를 썼는데 그 토큰은 스크롤바와 호버 경계용이고 글자에 쓰라고 둔 값이
+ * 아닙니다(PR #151 리뷰 1라운드). `--color-muted-foreground`는 4.74:1로 작은 글자 기준 4.5:1을
+ * 넘습니다. 상한 문구를 red-500에서 한 단계 내린 것과 같은 판단입니다.
+ */
+.usage {
+  font-family: var(--font-mono);
+  font-size: var(--label-size-xs);
+  letter-spacing: var(--label-tracking-wide);
+  color: var(--color-muted-foreground);
+}
+
+/*
+ * 상한에 닿았을 때입니다. `.usage`와 공통 속성이 없어 덮어쓰지 않고 따로 둡니다. 짧은 mono 수치와
+ * 달리 한 문장이라 본문 글꼴로 읽히는 편이 낫습니다.
+ *
+ * 색만으로 가르지 않습니다. 문구 자체가 "모두 사용했습니다"로 바뀌고 분석하기 버튼이 함께
+ * 비활성됩니다.
+ */
+.usageExceeded {
+  font-size: 11px;
+  color: var(--color-danger);
 }
 
 .arrow {

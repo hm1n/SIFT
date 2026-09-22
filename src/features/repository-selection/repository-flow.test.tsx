@@ -70,10 +70,36 @@ function stubFetch(handlers: Record<string, () => Promise<Response> | Response> 
       );
     }
     if (url.includes("/api/interviews")) return Promise.resolve(Response.json({ interviews: [] }));
+    // 선택 화면이 마운트마다 오늘 쓴 분석 횟수를 함께 읽습니다(이슈 #142). 값을 주지 않으면 이
+    // 요청이 저장소 목록 응답을 받아 모양이 어긋난 값으로 떨어지고, 화면이 그것을 버리는 시점이
+    // 실행마다 달라집니다.
+    if (url.includes("/api/usage/analysis")) {
+      return Promise.resolve(Response.json({ used: 0, limit: 3 }));
+    }
     return Promise.resolve(Response.json(LIST));
   });
   vi.stubGlobal("fetch", fetchImpl);
   return { calls, fetchImpl };
+}
+
+/**
+ * 저장이 밀린 턴이 생길 때까지 기다립니다. 알림이 보이는 것만으로는 부족합니다.
+ *
+ * 이탈 확인 대화가 뜰지는 흐름이 들고 있는 `hasUnsavedRef`로 갈리는데(`repository-flow.tsx`), 그
+ * ref를 채우는 것은 알림을 그린 커밋 **다음에** 도는 effect입니다(`interview-screen.tsx`의
+ * `onUnsavedChange`). 알림은 커밋과 함께 보이므로 `findByText`는 그 effect보다 먼저 끝날 수 있고,
+ * 그 틈에 "Repository 변경"을 누르면 확인 없이 그대로 선택 화면으로 넘어갑니다. 대화가 아예 뜨지
+ * 않으므로 누른 뒤에 `findByRole`로 기다려도 살아나지 않습니다.
+ *
+ * 스위트 전체를 돌릴 때만, 그것도 서너 번에 한 번 꼴로 드러났습니다.
+ * `wiki/2026-09-08-sentry-계측-후속-backlog.md` 19번이 같은 현상을 이미 적어 두었습니다.
+ * `waitFor`가 act 경계를 한 번 더 지나므로 밀린 effect가 여기서 흘러갑니다.
+ */
+async function waitForUnsavedTurn(): Promise<void> {
+  await screen.findByText("마지막 답변이 저장되지 않았습니다.");
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "← Repository 변경" })).toBeInTheDocument()
+  );
 }
 
 function repositoryListCalls(calls: readonly string[]): number {
@@ -274,7 +300,7 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
     const answer = await screen.findByRole("textbox", { name: /답변/ });
     fireEvent.change(answer, { target: { value: "화면이 비어 있었습니다." } });
     fireEvent.click(screen.getByRole("button", { name: "전송" }));
-    await screen.findByText("마지막 답변이 저장되지 않았습니다.");
+    await waitForUnsavedTurn();
 
     fireEvent.click(screen.getByRole("button", { name: "← Repository 변경" }));
 
@@ -294,10 +320,10 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
     const answer = await screen.findByRole("textbox", { name: /답변/ });
     fireEvent.change(answer, { target: { value: "화면이 비어 있었습니다." } });
     fireEvent.click(screen.getByRole("button", { name: "전송" }));
-    await screen.findByText("마지막 답변이 저장되지 않았습니다.");
+    await waitForUnsavedTurn();
 
     fireEvent.click(screen.getByRole("button", { name: "← Repository 변경" }));
-    fireEvent.click(screen.getByRole("button", { name: "나가기" }));
+    fireEvent.click(await screen.findByRole("button", { name: "나가기" }));
 
     await screen.findByRole("heading", { name: "분석할 Repository를 선택하세요." });
     expect(screen.queryByRole("region", { name: "Code / Evidence" })).not.toBeInTheDocument();
@@ -326,7 +352,7 @@ describe("RepositoryFlow 인터뷰 중 이탈", () => {
     const answer = await screen.findByRole("textbox", { name: /답변/ });
     fireEvent.change(answer, { target: { value: "화면이 비어 있었습니다." } });
     fireEvent.click(screen.getByRole("button", { name: "전송" }));
-    await screen.findByText("마지막 답변이 저장되지 않았습니다.");
+    await waitForUnsavedTurn();
 
     fireEvent.click(screen.getByRole("button", { name: "← Repository 변경" }));
     // 확인 대화는 클릭 다음 렌더에 나타납니다. 동기로 잡으면 전체 스위트의 부하에서 간헐적으로

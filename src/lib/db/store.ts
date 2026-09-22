@@ -112,8 +112,40 @@ export interface SiftStore {
   /** 지운 것이 없으면 `false`입니다. 없는 경우와 남의 것인 경우를 구분하지 않습니다. */
   deleteInterview(id: string, githubUserId: number): Promise<boolean>;
   /**
+   * 그 날의 분석 실행 횟수를 하나 올리고 올린 뒤의 값을 돌려줍니다. 이미 상한에 닿아 있으면 올리지
+   * 않고 `null`입니다(이슈 #142).
+   *
+   * 검사와 증가를 한 연산으로 둡니다. 읽어서 비교한 뒤에 올리는 방식이면 두 요청이 같은 값을 읽어
+   * 둘 다 통과하고 상한을 넘깁니다. 블록 버전 판정을 `update ... where`에 넣은 것과 같은 이유입니다.
+   *
+   * `usageDate`는 한국 날짜이고 호출하는 쪽이 `analysisUsageDate()`로 만들어 넘깁니다. 저장 계층이
+   * 스스로 "오늘"을 정하지 않는 이유는 테스트가 날짜 경계를 시계 조작 없이 확인할 수 있어야 하기
+   * 때문입니다.
+   *
+   * `limit`도 받습니다. 상수를 저장 계층이 직접 참조하면 상한을 바꿀 때 값이 두 곳에 생깁니다.
+   */
+  consumeAnalysisQuota(
+    githubUserId: number,
+    usageDate: string,
+    limit: number
+  ): Promise<number | null>;
+  /**
+   * 그 날 이미 쓴 분석 횟수입니다. 아직 한 번도 안 돌렸으면 0입니다(이슈 #142).
+   *
+   * 늘리지 않고 읽기만 합니다. Repository 선택 화면이 분석을 시작하기 전에 남은 횟수를 보여 주므로
+   * 화면을 그리는 것만으로 횟수가 줄면 안 됩니다. `consumeAnalysisQuota`와 나눠 둔 이유입니다.
+   *
+   * 이 값으로 상한을 판정하지 않습니다. 판정은 `consumeAnalysisQuota`가 질의 안에서 합니다. 읽어서
+   * 비교하는 자리가 생기면 두 요청이 같은 값을 읽어 둘 다 통과합니다. 화면이 쓰는 안내용 값입니다.
+   */
+  getAnalysisQuotaUsage(githubUserId: number, usageDate: string): Promise<number>;
+  /**
    * 그 사용자의 분석을 모두 지우고 지운 수를 돌려줍니다. 딸린 인터뷰는 `on delete cascade`로 함께
-   * 사라집니다(이슈 #145, 회원 탈퇴).
+   * 사라지고, 그 사용자의 분석 횟수 줄도 함께 지웁니다(이슈 #145, 회원 탈퇴).
+   *
+   * 횟수 줄을 여기서 함께 지우는 이유는 `analysis_usage`에 외래 키가 없기 때문입니다. 90일 자동
+   * 정리가 세는 값을 지우면 안 되므로 일부러 분석에 매달지 않았고, 그래서 cascade가 닿지 않습니다.
+   * 빠뜨리면 탈퇴한 사용자의 GitHub 번호가 그 표에 남습니다.
    *
    * 인터뷰 수를 따로 돌려주지 않습니다. 인터뷰는 분석에 매달려 있어 분석 없이 존재할 수 없으므로,
    * 0은 그 사용자에게 저장된 것이 하나도 없었다는 뜻입니다. 빈 계정을 가르는 데 이 값만 있으면

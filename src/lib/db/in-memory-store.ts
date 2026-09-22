@@ -75,6 +75,8 @@ function toAnalysisRecord(analysis: AnalysisRow): StoredAnalysisRecord {
 export function createInMemoryStore(): SiftStore {
   const analyses = new Map<string, AnalysisRow>();
   const interviews = new Map<string, InterviewRow>();
+  /** 키는 `사용자번호:한국날짜`입니다. 표의 기본 키 두 칸과 같은 조합입니다. */
+  const quotas = new Map<string, number>();
 
   function analysisOf(interview: InterviewRow): AnalysisRow | undefined {
     return analyses.get(interview.analysisId);
@@ -222,6 +224,22 @@ export function createInMemoryStore(): SiftStore {
       return interviews.delete(id);
     },
 
+    async consumeAnalysisQuota(githubUserId, usageDate, limit) {
+      // 상한이 0 이하이면 질의할 것 없이 막습니다. 실제 구현의 `on conflict ... where`는 줄이 아직
+      // 없을 때 조건을 보지 않으므로 이 경우에만 두 구현의 판정이 갈립니다. 양쪽에서 미리 막습니다.
+      if (limit <= 0) return null;
+      const key = `${githubUserId}:${usageDate}`;
+      const used = quotas.get(key) ?? 0;
+      if (used >= limit) return null;
+      const next = used + 1;
+      quotas.set(key, next);
+      return next;
+    },
+
+    async getAnalysisQuotaUsage(githubUserId, usageDate) {
+      return quotas.get(`${githubUserId}:${usageDate}`) ?? 0;
+    },
+
     async deleteUserData(githubUserId) {
       let deleted = 0;
       for (const [id, analysis] of analyses) {
@@ -233,6 +251,10 @@ export function createInMemoryStore(): SiftStore {
         }
         analyses.delete(id);
         deleted += 1;
+      }
+      // 실제 구현이 따로 지우는 표입니다. 외래 키가 없어 cascade 대상이 아닙니다(이슈 #142).
+      for (const key of quotas.keys()) {
+        if (key.startsWith(`${githubUserId}:`)) quotas.delete(key);
       }
       return deleted;
     },
