@@ -33,6 +33,34 @@ describe("문서 metadata", () => {
 });
 
 /**
+ * Search Console 소유권 확인입니다(이슈 #152).
+ *
+ * 값이 틀려도 화면은 멀쩡하고 빌드도 통과합니다. 드러나는 자리가 Search Console의 확인 실패뿐이라
+ * 여기서 모양을 봅니다.
+ */
+describe("소유권 확인", () => {
+  it("토큰이 비어 있지 않다", () => {
+    /* Next는 빈 문자열이면 meta 태그를 아예 만들지 않습니다. 태그가 없으면 속성 확인이 해제됩니다. */
+    expect(DOCUMENT_COPY.verification.google.length).toBeGreaterThan(0);
+  });
+
+  it("토큰이 DNS TXT 값이나 태그 전체가 아니다", () => {
+    /*
+     * 확인 방법마다 구글이 주는 모양이 다릅니다. DNS TXT는 `google-site-verification=...`이고
+     * HTML 태그는 `content`의 값만입니다. 앞의 것을 그대로 옮기면 확인이 실패합니다.
+     */
+    expect(DOCUMENT_COPY.verification.google).not.toMatch(/^google-site-verification\s*[=:]/);
+    expect(DOCUMENT_COPY.verification.google).not.toContain("<");
+  });
+
+  it("법적 고지 화면은 자기 verification을 두지 않는다", () => {
+    /* 자식이 정의하지 않으면 루트 값을 물려받습니다. 선언 자리를 루트 하나로 둡니다. */
+    expect("verification" in LEGAL_PAGE_METADATA.privacy).toBe(false);
+    expect("verification" in LEGAL_PAGE_METADATA.terms).toBe(false);
+  });
+});
+
+/**
  * 공유 미리보기 이미지입니다.
  *
  * `src/app/opengraph-image.png` 파일 규약을 쓰지 않아 가로·세로를 손으로 적습니다. 규약이 하던 일을
@@ -42,10 +70,16 @@ describe("문서 metadata", () => {
 describe("Open Graph 이미지", () => {
   const [image] = DOCUMENT_COPY.openGraph.images;
 
+  /**
+   * PNG 파일의 첫 8바이트입니다. 뒤의 `PNG`만 보면 `00 50 4E 47`로 시작하는 값도 통과하므로 전부
+   * 비교합니다. `src/app/icon.test.ts`가 ICO 안의 항목을 같은 값으로 확인합니다.
+   */
+  const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
   /** PNG의 IHDR은 항상 첫 청크이고 가로·세로가 16바이트와 20바이트에 있습니다. */
   function pngSize(path: string): { width: number; height: number } {
     const bytes = readFileSync(path);
-    expect(bytes.subarray(1, 4).toString()).toBe("PNG");
+    expect(bytes.subarray(0, PNG_SIGNATURE.length)).toEqual(PNG_SIGNATURE);
     expect(bytes.subarray(12, 16).toString()).toBe("IHDR");
     return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
   }
